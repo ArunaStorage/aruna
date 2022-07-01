@@ -1,4 +1,8 @@
+use database::connection::Database;
+
 mod api;
+mod database;
+
 fn main() {
-    println!("Hello, world!");
+    let db = Database::new();
 }
