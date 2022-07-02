@@ -1,11 +1,13 @@
-table! {
+// @generated automatically by Diesel CLI.
+
+diesel::table! {
     collection_labels (collection_id, label_id) {
         collection_id -> Uuid,
         label_id -> Uuid,
     }
 }
 
-table! {
+diesel::table! {
     collections (id) {
         id -> Uuid,
         name -> Text,
@@ -13,7 +15,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     labels (id) {
         id -> Uuid,
         key -> Text,
@@ -21,7 +23,7 @@ table! {
     }
 }
 
-allow_tables_to_appear_in_same_query!(
+diesel::allow_tables_to_appear_in_same_query!(
     collection_labels,
     collections,
     labels,
