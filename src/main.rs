@@ -3,6 +3,7 @@ mod api;
 extern crate diesel;
 
 mod database;
+mod s3;
 mod server;
 
 #[tokio::main]
