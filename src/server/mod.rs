@@ -1,1 +1,2 @@
-pub mod api {}
+mod collection;
+pub mod server;

@@ -1,11 +1,12 @@
-use database::connection::Database;
-
 mod api;
 #[macro_use]
 extern crate diesel;
 
 mod database;
+mod server;
 
-fn main() {
-    let db = Database::new();
+#[tokio::main]
+async fn main() {
+    let server = server::server::ServiceServer {};
+    server.run().await;
 }

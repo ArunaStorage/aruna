@@ -9,6 +9,11 @@ pub mod sciobjsdb {
                 #[path = "storage.models.v1.rs"]
                 pub mod v1;
             }
+            #[path = ""]
+            pub mod services {
+                #[path = "storage.services.v1.rs"]
+                pub mod v1;
+            }
         }
     }
 }

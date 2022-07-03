@@ -19,8 +19,8 @@ pub struct Label {
 }
 
 #[derive(Queryable, Insertable, Associations, Debug)]
-#[belongs_to(Collection)]
-#[belongs_to(Label)]
+#[diesel(belongs_to(Collection))]
+#[diesel(belongs_to(Label))]
 pub struct CollectionLabel {
     pub collection_id: uuid::Uuid,
     pub label_id: uuid::Uuid,
