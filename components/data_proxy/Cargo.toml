@@ -1,0 +1,31 @@
+[package]
+edition = "2021"
+name = "aos_data_proxy"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4"
+async-channel = "1.6"
+async-stream = "0.3.3"
+async-trait = "0.1"
+aws-config = "0"
+aws-sdk-s3 = "0"
+aws-smithy-http = "0.45.0"
+base64 = "0.13"
+bytes = "1.1.0"
+env_logger = "0.9.0"
+futures = "0.3.21"
+futures-channel = "0.3.21"
+futures-core = "0.3.21"
+futures-util = "0.3.21"
+hmac = "0.12"
+http = "0"
+hyper = { version = "0.14", features = ["full"] }
+log = "0.4.17"
+rand = "0.8"
+sha2 = {version = "0.10.2", features = ["std", "asm", "sha2-asm"]}
+tokio = {version = "1", features = ["full"]}
+url = "2.2"
+warp = "0.3.2"
