@@ -49,6 +49,6 @@ fn main() {
         .out_dir("src/api")
         .compile(
             &protos,
-            &["./".to_string(), "aruna/api/google".to_string()],
+            &["./".to_string(), "protos/aruna/api/google".to_string()],
         ).unwrap();
 }
