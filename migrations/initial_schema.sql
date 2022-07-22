@@ -26,7 +26,9 @@ CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
     endpoint_type ENDPOINT_TYPE NOT NULL,
     proxy_hostname VARCHAR(255) NOT NULL,
-    internal_hostname VARCHAR(255) NOT NULL
+    internal_hostname VARCHAR(255) NOT NULL,
+    documentation_path TEXT DEFAULT NULL,
+    is_public BOOL NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE sources (
