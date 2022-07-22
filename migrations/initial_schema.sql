@@ -1,8 +1,3 @@
-\c postgres;
-DROP DATABASE test;
-CREATE DATABASE test;
-\c test;
-
 CREATE TYPE OBJECT_STATUS AS ENUM ('INITIALIZING', 'AVAILABLE', 'UNAVAILABLE', 'ERROR');
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
@@ -12,12 +7,19 @@ CREATE TYPE IDP_TYPE AS ENUM ('OIDC');
 CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
 CREATE TYPE RESOURCES AS ENUM ('PROJECT', 'COLLECTION', 'OBJECT', 'OBJECT_GROUP');
 
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
+);
 
 CREATE TABLE projects (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    created_at DATE NOT NULL DEFAULT NOW()
+    created_at DATE NOT NULL DEFAULT NOW(),
+    created_by UUID NOT NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 CREATE TABLE endpoints (
@@ -38,13 +40,15 @@ CREATE TABLE objects (
     revision_number INT NOT NULL,
     filename TEXT NOT NULL,
     created_at DATE NOT NULL DEFAULT NOW(),
+    created_by UUID NOT NULL,
     content_len BIGINT NOT NULL DEFAULT 0,
     object_status OBJECT_STATUS NOT NULL DEFAULT 'INITIALIZING',
     dataclass DATACLASS NOT NULL DEFAULT 'PRIVATE',
     source_id UUID REFERENCES sources(id), 
     origin_id UUID, 
     origin_revision INT,
-    PRIMARY KEY (id, revision_number)
+    PRIMARY KEY (id, revision_number),
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 -- Because objects cannot reference itself, when created
@@ -104,10 +108,12 @@ CREATE TABLE collections(
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at DATE NOT NULL DEFAULT NOW(),
+    created_by UUID NOT NULL,
     version_id UUID REFERENCES collection_version(id),
     dataclass DATACLASS,
     project_id UUID NOT NULL,
-    FOREIGN KEY (project_id) REFERENCES projects(id)
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 CREATE INDEX major_version_idx ON collection_version (major);
@@ -149,7 +155,9 @@ CREATE TABLE object_groups (
     name TEXT,
     description TEXT,
     created_at DATE NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (id, revision_number)
+    created_by UUID NOT NULL,
+    PRIMARY KEY (id, revision_number),
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 CREATE TABLE collection_object_groups (
@@ -185,11 +193,6 @@ CREATE TABLE object_group_objects (
     FOREIGN KEY (object_group_id, object_group_revision) REFERENCES object_groups(id, revision_number)
 );
 
-CREATE TABLE users (
-    id UUID PRIMARY KEY,
-    display_name TEXT NOT NULL DEFAULT ''
-);
-
 CREATE TABLE idps (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
@@ -223,7 +226,7 @@ CREATE TABLE api_tokens (
     token TEXT NOT NULL,
     created_at DATE NOT NULL DEFAULT NOW(),
     expires_at DATE,
-    project_id UUID NOT NULL,
+    project_id UUID, -- IF collection_id and project_id is NULL, the token is a global personal token of creator_user_id
     collection_id UUID,
     user_right USER_RIGHTS NOT NULL DEFAULT 'READ',
     FOREIGN KEY (collection_id) REFERENCES collections(id),
@@ -239,4 +242,3 @@ CREATE TABLE notification_stream_groups (
     resource_type RESOURCES NOT NULL,
     notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
 );
-
