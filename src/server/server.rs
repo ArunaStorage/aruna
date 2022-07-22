@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tonic::transport::Server;
 
 use crate::{
-    api::sciobjsdb::api::storage::services::v1::collection_service_server::CollectionServiceServer,
+    api::aruna::api::storage::services::v1::collection_service_server::CollectionServiceServer,
     database::connection::Database,
 };
 

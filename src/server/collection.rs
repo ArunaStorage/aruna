@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tonic::Response;
 
-use crate::api::sciobjsdb::api::storage::services::v1::collection_service_server::CollectionService;
-use crate::api::sciobjsdb::api::storage::services::v1::*;
+use crate::api::aruna::api::storage::services::v1::collection_service_server::CollectionService;
+//use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 
 pub struct CollectionServiceImpl {
