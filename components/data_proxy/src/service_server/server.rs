@@ -118,7 +118,7 @@ impl InternalProxyService for InternalServerImpl {
         let resource = format!("/objects/upload/single/{bucket}/{key}");
         let duration = Duration::new(15 * 60, 0);
         url.set_path(resource.as_str());
-        let signed_url = self.signer.get_sign_url(resource, duration).unwrap();
+        let signed_url = self.signer.sign_url(duration, url).unwrap();
 
         let response = CreatePresignedUploadUrlResponse {
             url: signed_url.to_string(),
@@ -145,7 +145,10 @@ impl InternalProxyService for InternalServerImpl {
         let path = format!("/objects/download/{}/{}", location.bucket, location.path);
         let duration = Duration::new(15 * 60, 0);
 
-        let signed_url = self.signer.get_sign_url(path, duration).unwrap();
+        let mut url = url::Url::parse(self.data_proxy_hostname.as_str()).unwrap();
+        url.set_path(path.as_str());
+
+        let signed_url = self.signer.sign_url(duration, url).unwrap();
 
         let url = signed_url.as_str();
 

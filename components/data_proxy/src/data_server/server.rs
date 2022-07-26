@@ -12,9 +12,17 @@ use actix_web::{get, put, web, App, HttpRequest, HttpResponse, HttpServer};
 use async_channel::Sender;
 use async_stream::stream;
 use futures::{try_join, StreamExt};
+use serde::Deserialize;
 use tokio::fs::File;
 
 pub const UPLOAD_CHUNK_SIZE: usize = 6291456;
+
+#[derive(Deserialize, Default, Clone)]
+pub struct SignedParamsQuery {
+    pub signature: String,
+    pub salt: String,
+    pub expiry: String,
+}
 
 /// The DataServer handle the incoming and outcoming data streams
 /// It uses actix-rs as a regular HTTP server
@@ -27,7 +35,10 @@ pub struct DataServer {
     socket_addr: SocketAddr,
 }
 
-pub struct ServerState {}
+pub struct ServerState {
+    s3_client: Arc<S3Backend>,
+    signer: Arc<PresignHandler>,
+}
 
 impl DataServer {
     pub async fn new(
@@ -44,14 +55,17 @@ impl DataServer {
 
     /// Starts the DataServer to serve the actual data requests
     pub async fn serve(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let server_state = ServerState {};
+        let server_state = ServerState {
+            s3_client: self.s3_client.clone(),
+            signer: self.signer.clone(),
+        };
         let server: Data<ServerState> = Data::new(server_state);
 
         HttpServer::new(move || {
             App::new()
                 .service(single_upload)
                 .service(download)
-                .app_data(Data::clone(&server))
+                .app_data(server.clone())
                 .wrap(Logger::default())
         })
         .bind(self.socket_addr)?
@@ -66,18 +80,14 @@ impl DataServer {
 #[get("/objects/download/{bucket}/{key:.*}")]
 async fn download(
     req: HttpRequest,
-    server: web::Data<DataServer>,
+    server: web::Data<ServerState>,
     path: web::Path<(String, String)>,
+    sign_query: web::Query<SignedParamsQuery>,
 ) -> Result<HttpResponse, Error> {
-    let url = match url::Url::parse(req.uri().to_string().as_str()) {
-        Ok(value) => value,
-        Err(err) => {
-            log::debug!("{}", err);
-            return Ok(HttpResponse::BadRequest().body("could not parse URL"));
-        }
-    };
-
-    let verified = server.signer.verify_sign_url(url).unwrap();
+    let verified = server
+        .signer
+        .verify_sign_url(sign_query.0, req.path().to_string())
+        .unwrap();
     if !verified {
         return Ok(HttpResponse::Unauthorized().finish());
     }
@@ -125,19 +135,15 @@ async fn download(
 #[put("/objects/upload/single/{bucket}/{key:.*}")]
 async fn single_upload(
     req: HttpRequest,
-    server: web::Data<DataServer>,
+    server: web::Data<ServerState>,
     payload: web::Payload,
     path: web::Path<(String, String)>,
+    sign_query: web::Query<SignedParamsQuery>,
 ) -> Result<HttpResponse, Error> {
-    let url = match url::Url::parse(req.uri().to_string().as_str()) {
-        Ok(value) => value,
-        Err(err) => {
-            log::debug!("{}", err);
-            return Ok(HttpResponse::BadRequest().body("could not parse URL"));
-        }
-    };
-
-    let verified = server.signer.verify_sign_url(url).unwrap();
+    let verified = server
+        .signer
+        .verify_sign_url(sign_query.0, req.path().to_string())
+        .unwrap();
     if !verified {
         return Ok(HttpResponse::Unauthorized().finish());
     }
