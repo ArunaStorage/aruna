@@ -24,3 +24,7 @@ The configuration is provided via environment variables.
 | S3 endpoint                   | S3_ENDPOINT_HOST      | localhost:9000 |
 
 Required environment variables are marked with \*.
+
+## E2E tests
+
+If you encounter any bugs while using the software please try to replicate the bug as a test case in the [DataProxyTestSuite](https://github.com/ArunaStorage/DataProxyTestSuite).
