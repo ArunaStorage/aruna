@@ -114,7 +114,7 @@ pub struct UserPermission {
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
-#[table_name = "collection_version"]
+#[diesel(table_name = collection_version)]
 #[diesel(belongs_to(Collection))]
 pub struct CollectionVersion {
     pub id: uuid::Uuid,
@@ -139,7 +139,7 @@ pub struct Collection {
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
-#[table_name = "collection_key_value"]
+#[diesel(table_name = collection_key_value)]
 #[diesel(belongs_to(Collection))]
 pub struct CollectionKeyValue {
     pub id: uuid::Uuid,
@@ -203,4 +203,117 @@ pub struct ObjectLocation {
     pub object_id: uuid::Uuid,
     pub object_revision: i64,
     pub is_primary: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct HashType {
+    pub id: uuid::Uuid,
+    pub name: String,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Object))]
+#[diesel(belongs_to(HashType))]
+#[diesel(table_name = hashes)]
+pub struct Hash {
+    pub id: uuid::Uuid,
+    pub hash: String,
+    pub object_id: uuid::Uuid,
+    pub object_revision: i64,
+    pub hash_type: uuid::Uuid,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(table_name = object_key_value)]
+#[diesel(belongs_to(Object))]
+pub struct ObjectKeyValue {
+    pub id: uuid::Uuid,
+    pub object_id: uuid::Uuid,
+    pub object_revision: i64,
+    pub key: String,
+    pub value: String,
+    pub key_value_type: KeyValueType,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User))]
+pub struct ObjectGroup {
+    pub id: uuid::Uuid,
+    pub revision_number: i64,
+    pub name: String,
+    pub description: String,
+    pub created_at: Option<chrono::NaiveDate>,
+    pub created_by: uuid::Uuid,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(table_name = object_group_key_value)]
+#[diesel(belongs_to(ObjectGroup))]
+pub struct ObjectGroupKeyValue {
+    pub id: uuid::Uuid,
+    pub object_group_id: uuid::Uuid,
+    pub object_group_revision: i64,
+    pub key: String,
+    pub value: String,
+    pub key_value_type: KeyValueType,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Collection))]
+#[diesel(belongs_to(Object))]
+pub struct CollectionObject {
+    pub id: uuid::Uuid,
+    pub collection_id: uuid::Uuid,
+    pub object_id: uuid::Uuid,
+    pub object_revision: i64,
+    pub is_specification: bool,
+    pub writeable: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Collection))]
+#[diesel(belongs_to(ObjectGroup))]
+pub struct CollectionObjectGroup {
+    pub id: uuid::Uuid,
+    pub collection_id: uuid::Uuid,
+    pub object_group_id: uuid::Uuid,
+    pub object_group_revision: i64,
+    pub writeable: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(ObjectGroup))]
+#[diesel(belongs_to(Object))]
+pub struct ObjectGroupObject {
+    pub id: uuid::Uuid,
+    pub object_group_id: uuid::Uuid,
+    pub object_group_revision: i64,
+    pub object_id: uuid::Uuid,
+    pub object_revision: i64,
+    pub is_meta: bool,
+    pub writeable: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User))]
+#[diesel(belongs_to(Project))]
+#[diesel(belongs_to(Collection))]
+pub struct ApiToken {
+    pub id: uuid::Uuid,
+    pub creator_user_id: uuid::Uuid,
+    pub token: String,
+    pub created_at: chrono::NaiveDate,
+    pub expires_at: Option<chrono::NaiveDate>,
+    pub project_id: Option<uuid::Uuid>,
+    pub collection_id: Option<uuid::Uuid>,
+    pub user_right: UserRights,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct NotificationStreamGroup {
+    pub id: uuid::Uuid,
+    pub subject: String,
+    pub resource_id: uuid::Uuid,
+    pub resource_type: Resources,
+    pub notify_on_sub_resources: bool,
 }
