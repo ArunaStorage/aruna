@@ -1,4 +1,43 @@
-table! {
+// @generated automatically by Diesel CLI.
+
+pub mod sql_types {
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "dataclass"))]
+    pub struct Dataclass;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "endpoint_type"))]
+    pub struct EndpointType;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "identity_provider_type"))]
+    pub struct IdentityProviderType;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "key_value_type"))]
+    pub struct KeyValueType;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "object_status"))]
+    pub struct ObjectStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "resources"))]
+    pub struct Resources;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "source_type"))]
+    pub struct SourceType;
+
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "user_rights"))]
+    pub struct UserRights;
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::UserRights;
+
     api_tokens (id) {
         id -> Uuid,
         creator_user_id -> Uuid,
@@ -7,21 +46,24 @@ table! {
         expires_at -> Nullable<Date>,
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
-        user_right -> User_rights,
+        user_right -> UserRights,
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::KeyValueType;
+
     collection_key_value (id) {
         id -> Uuid,
         collection_id -> Uuid,
         key -> Varchar,
         value -> Varchar,
-        key_value_type -> Key_value_type,
+        key_value_type -> KeyValueType,
     }
 }
 
-table! {
+diesel::table! {
     collection_object_groups (id) {
         id -> Uuid,
         collection_id -> Uuid,
@@ -31,7 +73,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     collection_objects (id) {
         id -> Uuid,
         collection_id -> Uuid,
@@ -42,7 +84,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     collection_version (id) {
         id -> Uuid,
         major -> Int8,
@@ -51,7 +93,10 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::Dataclass;
+
     collections (id) {
         id -> Uuid,
         name -> Text,
@@ -64,10 +109,13 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::EndpointType;
+
     endpoints (id) {
         id -> Uuid,
-        endpoint_type -> Endpoint_type,
+        endpoint_type -> EndpointType,
         proxy_hostname -> Varchar,
         internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,
@@ -75,7 +123,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     external_user_ids (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -84,14 +132,14 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     hash_type (id) {
         id -> Uuid,
         name -> Varchar,
     }
 }
 
-table! {
+diesel::table! {
     hashes (id) {
         id -> Uuid,
         hash -> Text,
@@ -101,15 +149,21 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::IdentityProviderType;
+
     identity_providers (id) {
         id -> Uuid,
         name -> Text,
-        idp_type -> Identity_provider_type,
+        idp_type -> IdentityProviderType,
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::Resources;
+
     notification_stream_groups (id) {
         id -> Uuid,
         subject -> Text,
@@ -119,18 +173,21 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::KeyValueType;
+
     object_group_key_value (id) {
         id -> Uuid,
         object_group_id -> Uuid,
         object_group_revision -> Int8,
         key -> Varchar,
         value -> Varchar,
-        key_value_type -> Key_value_type,
+        key_value_type -> KeyValueType,
     }
 }
 
-table! {
+diesel::table! {
     object_group_objects (id) {
         id -> Uuid,
         object_group_id -> Uuid,
@@ -142,7 +199,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     object_groups (id, revision_number) {
         id -> Uuid,
         revision_number -> Int8,
@@ -153,18 +210,21 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::KeyValueType;
+
     object_key_value (id) {
         id -> Uuid,
         object_id -> Uuid,
         object_revision -> Int8,
         key -> Varchar,
         value -> Varchar,
-        key_value_type -> Key_value_type,
+        key_value_type -> KeyValueType,
     }
 }
 
-table! {
+diesel::table! {
     object_locations (id) {
         id -> Uuid,
         bucket -> Text,
@@ -176,7 +236,11 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::ObjectStatus;
+    use super::sql_types::Dataclass;
+
     objects (id, revision_number) {
         id -> Uuid,
         revision_number -> Int8,
@@ -184,7 +248,7 @@ table! {
         created_at -> Date,
         created_by -> Uuid,
         content_len -> Int8,
-        object_status -> Object_status,
+        object_status -> ObjectStatus,
         dataclass -> Dataclass,
         source_id -> Nullable<Uuid>,
         origin_id -> Nullable<Uuid>,
@@ -192,7 +256,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     projects (id) {
         id -> Uuid,
         name -> Text,
@@ -202,7 +266,7 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     required_labels (id) {
         id -> Uuid,
         collection_id -> Uuid,
@@ -210,24 +274,30 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::SourceType;
+
     sources (id) {
         id -> Uuid,
         link -> Text,
-        source_type -> Source_type,
+        source_type -> SourceType,
     }
 }
 
-table! {
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::UserRights;
+
     user_permissions (id) {
         id -> Uuid,
         user_id -> Uuid,
-        user_right -> User_rights,
+        user_right -> UserRights,
         project_id -> Uuid,
     }
 }
 
-table! {
+diesel::table! {
     users (id) {
         id -> Uuid,
         display_name -> Text,
@@ -235,28 +305,28 @@ table! {
     }
 }
 
-joinable!(api_tokens -> collections (collection_id));
-joinable!(api_tokens -> projects (project_id));
-joinable!(api_tokens -> users (creator_user_id));
-joinable!(collection_key_value -> collections (collection_id));
-joinable!(collection_object_groups -> collections (collection_id));
-joinable!(collection_objects -> collections (collection_id));
-joinable!(collections -> collection_version (version_id));
-joinable!(collections -> projects (project_id));
-joinable!(collections -> users (created_by));
-joinable!(external_user_ids -> identity_providers (idp_id));
-joinable!(external_user_ids -> users (user_id));
-joinable!(hashes -> hash_type (hash_type));
-joinable!(object_groups -> users (created_by));
-joinable!(object_locations -> endpoints (endpoint_id));
-joinable!(objects -> sources (source_id));
-joinable!(objects -> users (created_by));
-joinable!(projects -> users (created_by));
-joinable!(required_labels -> collections (collection_id));
-joinable!(user_permissions -> projects (project_id));
-joinable!(user_permissions -> users (user_id));
+diesel::joinable!(api_tokens -> collections (collection_id));
+diesel::joinable!(api_tokens -> projects (project_id));
+diesel::joinable!(api_tokens -> users (creator_user_id));
+diesel::joinable!(collection_key_value -> collections (collection_id));
+diesel::joinable!(collection_object_groups -> collections (collection_id));
+diesel::joinable!(collection_objects -> collections (collection_id));
+diesel::joinable!(collections -> collection_version (version_id));
+diesel::joinable!(collections -> projects (project_id));
+diesel::joinable!(collections -> users (created_by));
+diesel::joinable!(external_user_ids -> identity_providers (idp_id));
+diesel::joinable!(external_user_ids -> users (user_id));
+diesel::joinable!(hashes -> hash_type (hash_type));
+diesel::joinable!(object_groups -> users (created_by));
+diesel::joinable!(object_locations -> endpoints (endpoint_id));
+diesel::joinable!(objects -> sources (source_id));
+diesel::joinable!(objects -> users (created_by));
+diesel::joinable!(projects -> users (created_by));
+diesel::joinable!(required_labels -> collections (collection_id));
+diesel::joinable!(user_permissions -> projects (project_id));
+diesel::joinable!(user_permissions -> users (user_id));
 
-allow_tables_to_appear_in_same_query!(
+diesel::allow_tables_to_appear_in_same_query!(
     api_tokens,
     collection_key_value,
     collection_object_groups,

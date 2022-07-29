@@ -10,6 +10,7 @@ dependencies = [
  "aws-sdk-s3",
  "chrono",
  "diesel",
+ "diesel-derive-enum",
  "dotenv",
  "http",
  "prost",
@@ -554,6 +555,18 @@ dependencies = [
  "pq-sys",
  "r2d2",
  "uuid",
+]
+
+[[package]]
+name = "diesel-derive-enum"
+version = "2.0.0-rc.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f28fc9f5bf184ebc58ad9105dede024981e2303fe878a0fe16557f3a979064a"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

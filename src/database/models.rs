@@ -1,10 +1,6 @@
 use uuid;
 
-use super::schema::external_user_ids;
-use super::schema::identity_providers;
-use super::schema::projects;
-use super::schema::user_permissions;
-use super::schema::users;
+use super::schema::*;
 //
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 pub struct IdentityProvider {
@@ -51,25 +47,37 @@ pub struct UserPermission {
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(User))]
-#[diesel(belongs_to(Project))]
-pub struct UserPermission {
+#[table_name = "collection_version"]
+#[diesel(belongs_to(Collection))]
+pub struct CollectionVersion {
     pub id: uuid::Uuid,
-    pub user_id: uuid::Uuid,
-    pub user_right: String,
+    pub major: i64,
+    pub minor: i64,
+    pub patch: i64,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User))]
+#[diesel(belongs_to(CollectionVersion))]
+#[diesel(belongs_to(Project))]
+pub struct Collection {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub description: String,
+    pub created_at: Option<chrono::NaiveDate>,
+    pub created_by: uuid::Uuid,
+    pub version_id: uuid::Uuid,
+    pub dataclass: String,
     pub project_id: uuid::Uuid,
 }
-// #[derive(Queryable, Insertable, Identifiable, Debug)]
-// pub struct Label {
-//     pub id: uuid::Uuid,
-//     pub key: String,
-//     pub value: String,
-// }
-//
-// #[derive(Queryable, Insertable, Associations, Debug)]
-// #[diesel(belongs_to(Collection))]
-// #[diesel(belongs_to(Label))]
-// pub struct CollectionLabel {
-//     pub collection_id: uuid::Uuid,
-//     pub label_id: uuid::Uuid,
-// }
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[table_name = "collection_key_value"]
+#[diesel(belongs_to(Collection))]
+pub struct CollectionKeyValue {
+    pub id: uuid::Uuid,
+    pub collection_id: uuid::Uuid,
+    pub key: String,
+    pub value: String,
+    pub key_value_type: String,
+}
