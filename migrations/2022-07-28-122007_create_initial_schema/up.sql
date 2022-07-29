@@ -2,14 +2,11 @@
 -- All ENUM types have to be created before their usage in a table
 CREATE TYPE OBJECT_STATUS AS ENUM (
     'INITIALIZING',
-    'AVAILABLE' #[derive(Queryable, Insertable, Identifiable, Debug)]
-    pub struct HashType { pub id: uuid::Uuid,
-    pub name: String,
-    },
+    'AVAILABLE',
     'UNAVAILABLE',
     'ERROR'
 );
-CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
+CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FIE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
 CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
