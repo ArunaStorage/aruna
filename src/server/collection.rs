@@ -18,29 +18,29 @@ impl CollectionServiceImpl {
     }
 }
 
-#[tonic::async_trait]
-impl CollectionService for CollectionServiceImpl {
-    async fn create_collection(
-        &self,
-        request: tonic::Request<CreateCollectionRequest>,
-    ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
-        let id = self.database.create_collection(request.into_inner());
-
-        Ok(Response::new(CreateCollectionResponse {
-            id: id.to_string(),
-        }))
-    }
-
-    async fn get_collection(
-        &self,
-        request: tonic::Request<GetCollectionRequest>,
-    ) -> Result<tonic::Response<GetCollectionResponse>, tonic::Status> {
-        let request_uuid = uuid::Uuid::parse_str(request.into_inner().id.as_str()).unwrap();
-
-        let collection = self.database.get_collection(request_uuid);
-
-        Ok(Response::new(GetCollectionResponse {
-            collection: Some(collection),
-        }))
-    }
-}
+// #[tonic::async_trait]
+// impl CollectionService for CollectionServiceImpl {
+//     async fn create_collection(
+//         &self,
+//         request: tonic::Request<CreateCollectionRequest>,
+//     ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
+//         let id = self.database.create_collection(request.into_inner());
+//
+//         Ok(Response::new(CreateCollectionResponse {
+//             id: id.to_string(),
+//         }))
+//     }
+//
+//     async fn get_collection(
+//         &self,
+//         request: tonic::Request<GetCollectionRequest>,
+//     ) -> Result<tonic::Response<GetCollectionResponse>, tonic::Status> {
+//         let request_uuid = uuid::Uuid::parse_str(request.into_inner().id.as_str()).unwrap();
+//
+//         let collection = self.database.get_collection(request_uuid);
+//
+//         Ok(Response::new(GetCollectionResponse {
+//             collection: Some(collection),
+//         }))
+//     }
+// }
