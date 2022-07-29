@@ -6,13 +6,13 @@ use std::sync::Arc;
 //use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 
-pub struct CollectionServiceImpl {
+pub struct _CollectionServiceImpl {
     database: Arc<Database>,
 }
 
-impl CollectionServiceImpl {
-    pub async fn new(db: Arc<Database>) -> Self {
-        let collection_service = CollectionServiceImpl { database: db };
+impl _CollectionServiceImpl {
+    pub async fn _new(db: Arc<Database>) -> Self {
+        let collection_service = _CollectionServiceImpl { database: db };
 
         return collection_service;
     }

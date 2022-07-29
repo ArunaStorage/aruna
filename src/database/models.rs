@@ -147,7 +147,7 @@ pub struct CollectionKeyValue {
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
-
+}
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Collection))]
@@ -203,10 +203,4 @@ pub struct ObjectLocation {
     pub object_id: uuid::Uuid,
     pub object_revision: i64,
     pub is_primary: bool,
-}
-
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-pub struct HashType {
-    pub id: uuid::Uuid,
-    pub name: String,
 }
