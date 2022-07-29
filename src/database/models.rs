@@ -66,7 +66,7 @@ pub enum Resources {
     PROJECT,
     COLLECTION,
     OBJECT,
-    OBJECT_GROUP,
+    OBJECTGROUP,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
@@ -109,7 +109,7 @@ pub struct Project {
 pub struct UserPermission {
     pub id: uuid::Uuid,
     pub user_id: uuid::Uuid,
-    pub user_right: String,
+    pub user_right: UserRights,
     pub project_id: uuid::Uuid,
 }
 
@@ -134,7 +134,7 @@ pub struct Collection {
     pub created_at: Option<chrono::NaiveDate>,
     pub created_by: uuid::Uuid,
     pub version_id: uuid::Uuid,
-    pub dataclass: String,
+    pub dataclass: Dataclass,
     pub project_id: uuid::Uuid,
 }
 
@@ -146,5 +146,67 @@ pub struct CollectionKeyValue {
     pub collection_id: uuid::Uuid,
     pub key: String,
     pub value: String,
-    pub key_value_type: String,
+    pub key_value_type: KeyValueType,
+
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Collection))]
+pub struct RequiredLabel {
+    pub id: uuid::Uuid,
+    pub collection_id: uuid::Uuid,
+    pub label_key: String,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct Source {
+    pub id: uuid::Uuid,
+    pub link: String,
+    pub source_type: SourceType,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User))]
+#[diesel(belongs_to(Source))]
+#[diesel(belongs_to(Object))]
+pub struct Object {
+    pub id: uuid::Uuid,
+    pub revision_number: i64,
+    pub filename: String,
+    pub created_at: Option<chrono::NaiveDate>,
+    pub created_by: uuid::Uuid,
+    pub content_len: i64,
+    pub object_status: ObjectStatus,
+    pub dataclass: Dataclass,
+    pub source_id: uuid::Uuid,
+    pub origin_id: Option<uuid::Uuid>,
+    pub origin_revision: Option<i64>,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct Endpoint {
+    pub id: uuid::Uuid,
+    pub endpoint_type: EndpointType,
+    pub proxy_hostname: String,
+    pub internal_hostname: String,
+    pub documentation_path: String,
+    pub is_public: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Endpoint))]
+#[diesel(belongs_to(Object))]
+pub struct ObjectLocation {
+    pub id: uuid::Uuid,
+    pub bucket: String,
+    pub path: String,
+    pub endpoint_id: uuid::Uuid,
+    pub object_id: uuid::Uuid,
+    pub object_revision: i64,
+    pub is_primary: bool,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct HashType {
+    pub id: uuid::Uuid,
+    pub name: String,
 }

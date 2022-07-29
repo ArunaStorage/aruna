@@ -2,7 +2,10 @@
 -- All ENUM types have to be created before their usage in a table
 CREATE TYPE OBJECT_STATUS AS ENUM (
     'INITIALIZING',
-    'AVAILABLE',
+    'AVAILABLE' #[derive(Queryable, Insertable, Identifiable, Debug)]
+    pub struct HashType { pub id: uuid::Uuid,
+    pub name: String,
+    },
     'UNAVAILABLE',
     'ERROR'
 );
@@ -147,7 +150,7 @@ CREATE TABLE object_locations (
     FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number)
 );
 -- Table with hash type name definitions
-CREATE TABLE hash_type (
+CREATE TABLE hash_types (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     UNIQUE (name)
@@ -158,7 +161,7 @@ CREATE TABLE hashes (
     hash TEXT NOT NULL,
     object_id UUID,
     object_revision INT,
-    hash_type UUID NOT NULL REFERENCES hash_type(id),
+    hash_type UUID NOT NULL REFERENCES hash_types(id),
     FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number)
 );
 -- Table with the key-value pairs associated with specific objects
