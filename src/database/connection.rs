@@ -7,8 +7,8 @@ use diesel::result::Error;
 use diesel::PgConnection;
 use dotenv::dotenv;
 
-use crate::api::sciobjsdb::api::storage::models::v1::Collection;
-use crate::api::sciobjsdb::api::storage::services::v1::CreateCollectionRequest;
+use crate::api::aruna::api::storage::models::v1::Collection;
+use crate::api::aruna::api::storage::services::v1::CreateNewCollectionRequest;
 use crate::database::models::{self, CollectionLabel, Label};
 use crate::database::util;
 
@@ -40,8 +40,8 @@ impl Database {
 }
 
 impl Database {
-    pub fn create_collection(&self, create_request: CreateCollectionRequest) -> uuid::Uuid {
-        use crate::database::schema::collection_labels::dsl::*;
+    pub fn create_collection(&self, create_request: CreateNewCollectionRequest) -> uuid::Uuid {
+        use crate::database::schema::::dsl::*;
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::labels::dsl::*;
 
