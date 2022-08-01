@@ -6,7 +6,7 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'UNAVAILABLE',
     'ERROR'
 );
-CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FIE');
+CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
 CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
@@ -73,6 +73,11 @@ CREATE INDEX patch_version_idx ON collection_version (patch);
 -- Table with collections which act as a container for Objects
 CREATE TABLE collections (
     id UUID PRIMARY KEY,
+    -- Each collection has a shared_version_id / 
+    -- This is an internal id used to determine collections that are versions of each other
+    -- If Version_id is NULL this is the "latest" if not the specific version will be displayed
+    -- There is a Unique constraint on shared_version_id AND version_id including NULL
+    shared_version_id UUID NOT NULL,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at DATE NOT NULL DEFAULT NOW(),
@@ -106,7 +111,9 @@ CREATE TABLE sources (
 );
 -- Table with objects which represent individual data blobs
 CREATE TABLE objects (
+    -- The unique per object id
     id UUID NOT NULL,
+    shared_revision_id UUID NOT NULL,
     revision_number INT NOT NULL,
     filename TEXT NOT NULL,
     created_at DATE NOT NULL DEFAULT NOW(),
@@ -116,14 +123,13 @@ CREATE TABLE objects (
     dataclass DATACLASS NOT NULL DEFAULT 'PRIVATE',
     source_id UUID REFERENCES sources(id),
     origin_id UUID,
-    origin_revision INT,
-    PRIMARY KEY (id, revision_number),
+    PRIMARY KEY (id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 ALTER TABLE objects
-ADD FOREIGN KEY (origin_id, origin_revision) REFERENCES objects(id, revision_number);
+ADD FOREIGN KEY (origin_id) REFERENCES objects(id);
 -- objects table cannot reference itself until created
-CREATE INDEX objects_id ON objects (id);
+CREATE INDEX objects_id_idx ON objects (shared_revision_id, revision_number);
 -- Table with endpoints
 CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
@@ -139,12 +145,12 @@ CREATE TABLE object_locations (
     bucket TEXT NOT NULL,
     path TEXT NOT NULL,
     endpoint_id UUID NOT NULL REFERENCES endpoints(id),
+    -- Referencing the internal ID NOT the object_id 
     object_id UUID NOT NULL,
-    object_revision INT,
     is_primary BOOL DEFAULT TRUE,
     -- TRUE if TRUE otherwise NULL
-    UNIQUE (object_id, object_revision, is_primary),
-    FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number)
+    UNIQUE (object_id, is_primary),
+    FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 -- Table with hash type name definitions
 CREATE TABLE hash_types (
@@ -156,42 +162,43 @@ CREATE TABLE hash_types (
 CREATE TABLE hashes (
     id UUID PRIMARY KEY,
     hash TEXT NOT NULL,
-    object_id UUID,
-    object_revision INT,
+    object_id UUID NOT NULL,
     hash_type UUID NOT NULL REFERENCES hash_types(id),
-    FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number)
+    FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 -- Table with the key-value pairs associated with specific objects
 CREATE TABLE object_key_value (
     id UUID PRIMARY KEY,
     object_id UUID NOT NULL,
-    object_revision INT NOT NULL,
     key VARCHAR(255) NOT NULL,
     value VARCHAR(255) NOT NULL,
     key_value_type KEY_VALUE_TYPE NOT NULL,
-    FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number)
+    FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 /* ----- ObjectGroups ---------------------------------------------- */
 -- Table with object groups which act as a single level organization for objects in collections
 CREATE TABLE object_groups (
+    -- This is the internal ID used to specify a unique object_group
+    -- Users only get the object_group_id
     id UUID NOT NULL,
+    shared_revision_id UUID NOT NULL,
     revision_number INT NOT NULL,
     name TEXT,
     description TEXT,
     created_at DATE NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
-    PRIMARY KEY (id, revision_number),
+    PRIMARY KEY (id),
+    UNIQUE(shared_revision_id, revision_number),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 -- Table with the key-value pairs associated with specific object groups
 CREATE TABLE object_group_key_value (
     id UUID PRIMARY KEY,
     object_group_id UUID NOT NULL,
-    object_group_revision INT NOT NULL,
     key VARCHAR(255) NOT NULL,
     value VARCHAR(255) NOT NULL,
     key_value_type KEY_VALUE_TYPE NOT NULL,
-    FOREIGN KEY (object_group_id, object_group_revision) REFERENCES object_groups(id, revision_number)
+    FOREIGN KEY (object_group_id) REFERENCES object_groups(id)
 );
 /* ----- Join Tables ----------------------------------------------- */
 -- Join table between collections and objects
@@ -199,10 +206,9 @@ CREATE TABLE collection_objects (
     id UUID PRIMARY KEY,
     collection_id UUID NOT NULL,
     object_id UUID NOT NULL,
-    object_revision INT,
     is_specification BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
-    FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number),
+    FOREIGN KEY (object_id) REFERENCES objects(id),
     -- Funktioniert das ? JA !
     FOREIGN KEY (collection_id) REFERENCES collections(id)
 );
@@ -211,23 +217,20 @@ CREATE TABLE collection_object_groups (
     id UUID PRIMARY KEY,
     collection_id UUID NOT NULL,
     object_group_id UUID NOT NULL,
-    object_group_revision INT,
     writeable BOOL NOT NULL DEFAULT FALSE,
     -- True if read_only otherwise false
-    FOREIGN KEY (object_group_id, object_group_revision) REFERENCES object_groups(id, revision_number),
+    FOREIGN KEY (object_group_id) REFERENCES object_groups(id),
     FOREIGN KEY (collection_id) REFERENCES collections(id)
 );
 -- Join table between objects and object_groups
 CREATE TABLE object_group_objects (
     id UUID PRIMARY KEY,
-    object_group_id UUID NOT NULL,
-    object_group_revision INT,
     object_id UUID NOT NULL,
-    object_revision INT,
+    object_group_id UUID NOT NULL,
     is_meta BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
-    FOREIGN KEY (object_id, object_revision) REFERENCES objects(id, revision_number),
-    FOREIGN KEY (object_group_id, object_group_revision) REFERENCES object_groups(id, revision_number)
+    FOREIGN KEY (object_id) REFERENCES objects(id),
+    FOREIGN KEY (object_group_id) REFERENCES object_groups(id)
 );
 /* ----- Authorization --------------------------------------------- */
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection

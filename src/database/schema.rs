@@ -68,7 +68,6 @@ diesel::table! {
         id -> Uuid,
         collection_id -> Uuid,
         object_group_id -> Uuid,
-        object_group_revision -> Nullable<Int8>,
         writeable -> Bool,
     }
 }
@@ -78,7 +77,6 @@ diesel::table! {
         id -> Uuid,
         collection_id -> Uuid,
         object_id -> Uuid,
-        object_revision -> Nullable<Int8>,
         is_specification -> Bool,
         writeable -> Bool,
     }
@@ -99,6 +97,7 @@ diesel::table! {
 
     collections (id) {
         id -> Uuid,
+        shared_version_id -> Uuid,
         name -> Text,
         description -> Text,
         created_at -> Date,
@@ -143,8 +142,7 @@ diesel::table! {
     hashes (id) {
         id -> Uuid,
         hash -> Text,
-        object_id -> Nullable<Uuid>,
-        object_revision -> Nullable<Int8>,
+        object_id -> Uuid,
         hash_type -> Uuid,
     }
 }
@@ -180,7 +178,6 @@ diesel::table! {
     object_group_key_value (id) {
         id -> Uuid,
         object_group_id -> Uuid,
-        object_group_revision -> Int8,
         key -> Varchar,
         value -> Varchar,
         key_value_type -> KeyValueType,
@@ -190,18 +187,17 @@ diesel::table! {
 diesel::table! {
     object_group_objects (id) {
         id -> Uuid,
-        object_group_id -> Uuid,
-        object_group_revision -> Nullable<Int8>,
         object_id -> Uuid,
-        object_revision -> Nullable<Int8>,
+        object_group_id -> Uuid,
         is_meta -> Bool,
         writeable -> Bool,
     }
 }
 
 diesel::table! {
-    object_groups (id, revision_number) {
+    object_groups (id) {
         id -> Uuid,
+        shared_revision_id -> Uuid,
         revision_number -> Int8,
         name -> Nullable<Text>,
         description -> Nullable<Text>,
@@ -217,7 +213,6 @@ diesel::table! {
     object_key_value (id) {
         id -> Uuid,
         object_id -> Uuid,
-        object_revision -> Int8,
         key -> Varchar,
         value -> Varchar,
         key_value_type -> KeyValueType,
@@ -231,7 +226,6 @@ diesel::table! {
         path -> Text,
         endpoint_id -> Uuid,
         object_id -> Uuid,
-        object_revision -> Nullable<Int8>,
         is_primary -> Nullable<Bool>,
     }
 }
@@ -241,8 +235,9 @@ diesel::table! {
     use super::sql_types::ObjectStatus;
     use super::sql_types::Dataclass;
 
-    objects (id, revision_number) {
+    objects (id) {
         id -> Uuid,
+        shared_revision_id -> Uuid,
         revision_number -> Int8,
         filename -> Text,
         created_at -> Date,
@@ -252,7 +247,6 @@ diesel::table! {
         dataclass -> Dataclass,
         source_id -> Nullable<Uuid>,
         origin_id -> Nullable<Uuid>,
-        origin_revision -> Nullable<Int8>,
     }
 }
 
@@ -310,15 +304,23 @@ diesel::joinable!(api_tokens -> projects (project_id));
 diesel::joinable!(api_tokens -> users (creator_user_id));
 diesel::joinable!(collection_key_value -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> collections (collection_id));
+diesel::joinable!(collection_object_groups -> object_groups (object_group_id));
 diesel::joinable!(collection_objects -> collections (collection_id));
+diesel::joinable!(collection_objects -> objects (object_id));
 diesel::joinable!(collections -> collection_version (version_id));
 diesel::joinable!(collections -> projects (project_id));
 diesel::joinable!(collections -> users (created_by));
 diesel::joinable!(external_user_ids -> identity_providers (idp_id));
 diesel::joinable!(external_user_ids -> users (user_id));
 diesel::joinable!(hashes -> hash_types (hash_type));
+diesel::joinable!(hashes -> objects (object_id));
+diesel::joinable!(object_group_key_value -> object_groups (object_group_id));
+diesel::joinable!(object_group_objects -> object_groups (object_group_id));
+diesel::joinable!(object_group_objects -> objects (object_id));
 diesel::joinable!(object_groups -> users (created_by));
+diesel::joinable!(object_key_value -> objects (object_id));
 diesel::joinable!(object_locations -> endpoints (endpoint_id));
+diesel::joinable!(object_locations -> objects (object_id));
 diesel::joinable!(objects -> sources (source_id));
 diesel::joinable!(objects -> users (created_by));
 diesel::joinable!(projects -> users (created_by));

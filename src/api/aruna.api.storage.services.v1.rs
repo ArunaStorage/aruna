@@ -1,6 +1,6 @@
-// Models
-// These are the models for the above described requests and responses.
-// gRPC best practises advice each Request and Response message in a RPC to be called {rpc_name}Request and {rpc_name}Response.
+//  Models
+//  These are the models for the above described requests and responses.
+//  gRPC best practises advice each Request and Response message in a RPC to be called {rpc_name}Request and {rpc_name}Response.
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Url {
@@ -24,65 +24,65 @@ pub struct StageObject {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitializeNewObjectRequest {
-    /// This describes the object to be initialized.
+    ///  This describes the object to be initialized.
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<StageObject>,
-    /// Collection id of the collection to which the object will be added.
+    ///  Collection id of the collection to which the object will be added.
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Should the object be uploaded via multipart?
+    ///  Should the object be uploaded via multipart?
     #[prost(bool, tag="3")]
     pub multipart: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitializeNewObjectResponse {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
+    ///  Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
     #[prost(string, tag="2")]
     pub staging_id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetUploadUrlRequest {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
+    ///  Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
     #[prost(string, tag="2")]
     pub staging_id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Is this a multipart upload?
-    /// (optional) if multi was initialized 
+    ///  Is this a multipart upload?
+    ///  (optional) if multi was initialized 
     #[prost(int32, tag="4")]
     pub part_number: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetUploadUrlResponse {
-    /// URL
+    ///  URL
     #[prost(message, optional, tag="1")]
     pub url: ::core::option::Option<Url>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompletedParts {
-    /// Multipart identifier
+    ///  Multipart identifier
     #[prost(string, tag="1")]
     pub etag: ::prost::alloc::string::String,
-    /// Part number
+    ///  Part number
     #[prost(int64, tag="2")]
     pub part: i64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectRevision {
-    /// ObjectId
+    ///  ObjectId
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// (optional) revision number, will be latest if not set.
+    ///  (optional) revision number, will be latest if not set.
     #[prost(int64, tag="2")]
     pub revision: i64,
 }
@@ -100,10 +100,10 @@ pub struct GetDownloadUrlResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDownloadLinksBatchRequest {
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    /// ObjectIds
+    ///  ObjectIds
     #[prost(message, repeated, tag="2")]
     pub objects: ::prost::alloc::vec::Vec<ObjectRevision>,
 }
@@ -114,10 +114,10 @@ pub struct GetDownloadLinksBatchResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateDownloadLinksStreamRequest {
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    /// ObjectIds
+    ///  ObjectIds
     #[prost(message, repeated, tag="2")]
     pub objects: ::prost::alloc::vec::Vec<ObjectRevision>,
 }
@@ -128,30 +128,30 @@ pub struct CreateDownloadLinksStreamResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinishObjectStagingRequest {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
+    ///  Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
     #[prost(string, tag="2")]
     pub staging_id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Hash of the uploaded data - used to verify the data integrity.
-    /// This supports multiple hashing algorithms.
+    ///  Hash of the uploaded data - used to verify the data integrity.
+    ///  This supports multiple hashing algorithms.
     #[prost(message, optional, tag="4")]
     pub hash: ::core::option::Option<super::super::models::v1::Hash>,
-    /// If the upload was multipart, this is the list of parts that were uploaded.
-    /// Should be empty if the upload was not multipart.
-    /// (optional)
+    ///  If the upload was multipart, this is the list of parts that were uploaded.
+    ///  Should be empty if the upload was not multipart.
+    ///  (optional)
     #[prost(message, repeated, tag="5")]
     pub completed_parts: ::prost::alloc::vec::Vec<CompletedParts>,
-    /// Should the object be auto-updated in the owner collection?
-    /// default: false
+    ///  Should the object be auto-updated in the owner collection?
+    ///  default: false
     #[prost(bool, tag="6")]
     pub auto_update: bool,
-    /// Add the object automatically to these collections
-    /// (optional)
+    ///  Add the object automatically to these collections
+    ///  (optional)
     #[prost(string, repeated, tag="7")]
     pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -162,43 +162,43 @@ pub struct FinishObjectStagingResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateObjectRequest {
-    /// Existing object ID
+    ///  Existing object ID
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// collection ID
+    ///  collection ID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// New object data
+    ///  New object data
     #[prost(message, optional, tag="3")]
     pub object: ::core::option::Option<StageObject>,
-    /// Should new data be uploaded ?
+    ///  Should new data be uploaded ?
     #[prost(bool, tag="4")]
     pub reupload: bool,
-    /// Should a multipart upload be used?
+    ///  Should a multipart upload be used?
     #[prost(bool, tag="5")]
     pub multi_part: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateObjectResponse {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
+    ///  Staging ID, a generic ID when multipart is not enabled, otherwise the multipart upload ID.
     #[prost(string, tag="2")]
     pub staging_id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BorrowObjectRequest {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// OwnerCollectionID
+    ///  OwnerCollectionID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// BorrowerCollectionID
+    ///  BorrowerCollectionID
     #[prost(string, tag="3")]
     pub target_collection_id: ::prost::alloc::string::String,
 }
@@ -207,30 +207,30 @@ pub struct BorrowObjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloneObjectRequest {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloneObjectResponse {
-    /// This describes the new object.
+    ///  This describes the new object.
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteObjectRequest {
-    /// ObjectId 
+    ///  ObjectId 
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// CollectionID
+    ///  CollectionID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// This will by default delete the object only in the specified collection.
-    /// If the collection_id is the owner of the object, cascading=true will delete the object in all collections.
-    /// Default: false
+    ///  This will by default delete the object only in the specified collection.
+    ///  If the collection_id is the owner of the object, cascading=true will delete the object in all collections.
+    ///  Default: false
     #[prost(bool, tag="3")]
     pub cascade: bool,
 }
@@ -239,11 +239,11 @@ pub struct DeleteObjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectWithUrl {
-    /// Description of a specified object
+    ///  Description of a specified object
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
-    /// This is a associated download URL
-    /// Will be empty if request does not contain the associated with_url flag
+    ///  This is a associated download URL
+    ///  Will be empty if request does not contain the associated with_url flag
     #[prost(string, tag="2")]
     pub url: ::prost::alloc::string::String,
 }
@@ -255,7 +255,7 @@ pub struct GetObjectByIdRequest {
     pub object_id: ::prost::alloc::string::String,
     #[prost(int64, tag="3")]
     pub revision: i64,
-    /// With URL: Include URL in response ?
+    ///  With URL: Include URL in response ?
     #[prost(bool, tag="4")]
     pub with_url: bool,
 }
@@ -268,22 +268,22 @@ pub struct GetObjectByIdResponse {
 pub struct GetObjectsRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Paginate the results: Default is 20
+    ///  Paginate the results: Default is 20
     #[prost(message, optional, tag="2")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
-    /// Filter by Labels (optional) OR request a specific list of Objects
+    ///  Filter by Labels (optional) OR request a specific list of Objects
     #[prost(message, optional, tag="3")]
     pub label_id_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
-    /// With URL: Include URL in response ?
+    ///  With URL: Include URL in response ?
     #[prost(bool, tag="4")]
     pub with_url: bool,
-    /// Should this request consider older revisions of Objects ?
+    ///  Should this request consider older revisions of Objects ?
     #[prost(bool, tag="5")]
     pub include_history: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetObjectsResponse {
-    /// A List of objects with (optional) associated URLs
+    ///  A List of objects with (optional) associated URLs
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<ObjectWithUrl>,
 }
@@ -307,6 +307,7 @@ pub struct GetObjectHistoryByIdResponse {
 pub mod object_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct ObjectServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -333,6 +334,10 @@ pub mod object_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -352,19 +357,19 @@ pub mod object_service_client {
         {
             ObjectServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// This initializes a new object
@@ -784,8 +789,8 @@ pub mod object_service_server {
     #[derive(Debug)]
     pub struct ObjectServiceServer<T: ObjectService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: ObjectService> ObjectServiceServer<T> {
@@ -808,6 +813,18 @@ pub mod object_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for ObjectServiceServer<T>
@@ -1385,12 +1402,12 @@ pub mod object_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: ObjectService> tonic::transport::NamedService for ObjectServiceServer<T> {
+    impl<T: ObjectService> tonic::server::NamedService for ObjectServiceServer<T> {
         const NAME: &'static str = "aruna.api.storage.services.v1.ObjectService";
     }
 }
-// Models
-// This section contains the models for each individual Request and corresponding Response
+//  Models
+//  This section contains the models for each individual Request and corresponding Response
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateObjectGroupRequest {
@@ -1400,10 +1417,10 @@ pub struct CreateObjectGroupRequest {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
-    /// This is the reference to the Objects that should be added to the group
+    ///  This is the reference to the Objects that should be added to the group
     #[prost(message, repeated, tag="4")]
     pub objects: ::prost::alloc::vec::Vec<super::super::models::v1::Object>,
-    /// This is a reference to the Objects that are associated with "meta" data about corresponding objects in the group
+    ///  This is a reference to the Objects that are associated with "meta" data about corresponding objects in the group
     #[prost(message, repeated, tag="5")]
     pub meta_objects: ::prost::alloc::vec::Vec<super::super::models::v1::Object>,
     #[prost(message, repeated, tag="6")]
@@ -1426,10 +1443,10 @@ pub struct UpdateObjectGroupRequest {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub collection_id: ::prost::alloc::string::String,
-    /// This is the reference to the Objects that should be added to the group
+    ///  This is the reference to the Objects that should be added to the group
     #[prost(message, repeated, tag="5")]
     pub objects: ::prost::alloc::vec::Vec<super::super::models::v1::Object>,
-    /// This is a reference to the Objects that are associated with "meta" data about corresponding objects in the group
+    ///  This is a reference to the Objects that are associated with "meta" data about corresponding objects in the group
     #[prost(message, repeated, tag="6")]
     pub meta_objects: ::prost::alloc::vec::Vec<super::super::models::v1::Object>,
     #[prost(message, repeated, tag="7")]
@@ -1448,7 +1465,7 @@ pub struct GetObjectGroupByIdRequest {
     pub group_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Optional revision
+    ///  Optional revision
     #[prost(int64, tag="3")]
     pub revision: i64,
     #[prost(enumeration="super::super::models::v1::OutputFormat", tag="4")]
@@ -1505,7 +1522,7 @@ pub struct DeleteObjectGroupRequest {
     pub group_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Optional revision
+    ///  Optional revision
     #[prost(int64, tag="3")]
     pub revision: i64,
 }
@@ -1516,10 +1533,10 @@ pub struct DeleteObjectGroupResponse {
 pub struct GetObjectGroupsRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Paginate the results: Default is 20
+    ///  Paginate the results: Default is 20
     #[prost(message, optional, tag="2")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
-    /// Filter by Labels (optional) OR request a specific list of ObjectGroups
+    ///  Filter by Labels (optional) OR request a specific list of ObjectGroups
     #[prost(message, optional, tag="3")]
     pub label_id_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
     #[prost(enumeration="super::super::models::v1::OutputFormat", tag="4")]
@@ -1598,6 +1615,7 @@ pub struct CloneObjectGroupResponse {
 pub mod object_group_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct ObjectGroupServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -1624,6 +1642,10 @@ pub mod object_group_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -1643,19 +1665,19 @@ pub mod object_group_service_client {
         {
             ObjectGroupServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// CreateObjectGroup creates a new ObjectGroup in the collection
@@ -1928,8 +1950,8 @@ pub mod object_group_service_server {
     #[derive(Debug)]
     pub struct ObjectGroupServiceServer<T: ObjectGroupService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: ObjectGroupService> ObjectGroupServiceServer<T> {
@@ -1952,6 +1974,18 @@ pub mod object_group_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for ObjectGroupServiceServer<T>
@@ -2377,12 +2411,12 @@ pub mod object_group_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: ObjectGroupService> tonic::transport::NamedService
+    impl<T: ObjectGroupService> tonic::server::NamedService
     for ObjectGroupServiceServer<T> {
         const NAME: &'static str = "aruna.api.storage.services.v1.ObjectGroupService";
     }
 }
-// Models:
+//  Models:
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateNewCollectionRequest {
@@ -2428,7 +2462,7 @@ pub mod get_collection_by_id_response {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionsRequest {
-    /// Filter by Labels (optional) OR request a specific list of Collections
+    ///  Filter by Labels (optional) OR request a specific list of Collections
     #[prost(message, optional, tag="1")]
     pub label_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
     #[prost(message, optional, tag="2")]
@@ -2438,13 +2472,13 @@ pub struct GetCollectionsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionsResponse {
-    /// These are plural representations of their specific single counterparts
+    ///  These are plural representations of their specific single counterparts
     #[prost(oneof="get_collections_response::Collections", tags="1, 2, 3")]
     pub collections: ::core::option::Option<get_collections_response::Collections>,
 }
 /// Nested message and enum types in `GetCollectionsResponse`.
 pub mod get_collections_response {
-    /// These are plural representations of their specific single counterparts
+    ///  These are plural representations of their specific single counterparts
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Collections {
         #[prost(message, tag="1")]
@@ -2455,8 +2489,8 @@ pub mod get_collections_response {
         CollectionsFull(super::super::super::models::v1::Collections),
     }
 }
-/// This updates the collection
-/// Updating a pinned collection will require a new version to be created
+///  This updates the collection
+///  Updating a pinned collection will require a new version to be created
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionRequest {
     #[prost(string, tag="1")]
@@ -2471,10 +2505,10 @@ pub struct UpdateCollectionRequest {
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
     #[prost(message, repeated, tag="6")]
     pub authorization: ::prost::alloc::vec::Vec<super::super::models::v1::Authorization>,
-    /// If this is set, the collection will be automatically pinned to this version
-    /// Similar to the more explicit Pin request
-    /// Updating a pinned collection will make this field required
-    /// (optional if unpinned || required if pinned)
+    ///  If this is set, the collection will be automatically pinned to this version
+    ///  Similar to the more explicit Pin request
+    ///  Updating a pinned collection will make this field required
+    ///  (optional if unpinned || required if pinned)
     #[prost(message, optional, tag="7")]
     pub version: ::core::option::Option<super::super::models::v1::Version>,
 }
@@ -2499,10 +2533,10 @@ pub struct PinCollectionVersionResponse {
 pub struct DeleteCollectionRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Should the collection and all associated versions be deleted ?
+    ///  Should the collection and all associated versions be deleted ?
     #[prost(bool, tag="2")]
     pub with_versions: bool,
-    /// Should the deletion cascade to all owned objects ?
+    ///  Should the deletion cascade to all owned objects ?
     #[prost(bool, tag="3")]
     pub cascade: bool,
 }
@@ -2513,6 +2547,7 @@ pub struct DeleteCollectionResponse {
 pub mod collection_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct CollectionServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -2539,6 +2574,10 @@ pub mod collection_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -2558,19 +2597,19 @@ pub mod collection_service_client {
         {
             CollectionServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// CreateNewCollection creates a new Collection
@@ -2771,8 +2810,8 @@ pub mod collection_service_server {
     #[derive(Debug)]
     pub struct CollectionServiceServer<T: CollectionService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: CollectionService> CollectionServiceServer<T> {
@@ -2795,6 +2834,18 @@ pub mod collection_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionServiceServer<T>
@@ -3090,7 +3141,7 @@ pub mod collection_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: CollectionService> tonic::transport::NamedService
+    impl<T: CollectionService> tonic::server::NamedService
     for CollectionServiceServer<T> {
         const NAME: &'static str = "aruna.api.storage.services.v1.CollectionService";
     }
@@ -3109,7 +3160,7 @@ pub struct CreateProjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddUserToProjectRequest {
-    /// The id of the project to add the user to
+    ///  The id of the project to add the user to
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="3")]
@@ -3120,14 +3171,14 @@ pub struct AddUserToProjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateApiTokenRequest {
-    /// The id of the project to create the token for
+    ///  The id of the project to create the token for
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub user_id: ::prost::alloc::string::String,
     #[prost(enumeration="super::super::models::v1::TokenType", tag="3")]
     pub token_type: i32,
-    /// Empty if token_type is personal, otherwise the id of the collection to create the token for
+    ///  Empty if token_type is personal, otherwise the id of the collection to create the token for
     #[prost(string, repeated, tag="4")]
     pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(enumeration="super::super::models::v1::Permission", tag="5")]
@@ -3140,7 +3191,7 @@ pub struct CreateApiTokenResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProjectCollectionsRequest {
-    /// The id of the project to get the collections for
+    ///  The id of the project to get the collections for
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="2")]
@@ -3153,7 +3204,7 @@ pub struct GetProjectCollectionsResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetUserCollectionsRequest {
-    /// The id of the project to get the collections for
+    ///  The id of the project to get the collections for
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
@@ -3168,7 +3219,7 @@ pub struct GetUserCollectionsResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProjectRequest {
-    /// The id of the project to get
+    ///  The id of the project to get
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
@@ -3179,7 +3230,7 @@ pub struct GetProjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetApiTokensRequest {
-    /// The id of the project to get the API tokens for
+    ///  The id of the project to get the API tokens for
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
@@ -3189,13 +3240,13 @@ pub struct GetApiTokensRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetApiTokensResponse {
-    /// List of API tokens with redacted actual token
+    ///  List of API tokens with redacted actual token
     #[prost(message, repeated, tag="1")]
     pub token: ::prost::alloc::vec::Vec<super::super::models::v1::Token>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteApiTokenRequest {
-    /// The id of the project to delete the API token for
+    ///  The id of the project to delete the API token for
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
@@ -3208,7 +3259,7 @@ pub struct DeleteApiTokenResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DestroyProjectRequest {
-    /// The id of the project to destroy
+    ///  The id of the project to destroy
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
@@ -3219,6 +3270,7 @@ pub struct DestroyProjectResponse {
 pub mod auth_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct AuthServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -3245,6 +3297,10 @@ pub mod auth_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -3264,19 +3320,19 @@ pub mod auth_service_client {
         {
             AuthServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// This creates a new authorization group.option
@@ -3527,8 +3583,8 @@ pub mod auth_service_server {
     #[derive(Debug)]
     pub struct AuthServiceServer<T: AuthService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: AuthService> AuthServiceServer<T> {
@@ -3551,6 +3607,18 @@ pub mod auth_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for AuthServiceServer<T>
@@ -3964,7 +4032,7 @@ pub mod auth_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: AuthService> tonic::transport::NamedService for AuthServiceServer<T> {
+    impl<T: AuthService> tonic::server::NamedService for AuthServiceServer<T> {
         const NAME: &'static str = "aruna.api.storage.services.v1.AuthService";
     }
 }

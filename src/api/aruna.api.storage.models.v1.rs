@@ -1,6 +1,6 @@
-/// A Project is a list of collections with associated users
-/// This is used to manage access to multiple collections at the same time
-/// Each Collection can only be in one Project at a time
+///  A Project is a list of collections with associated users
+///  This is used to manage access to multiple collections at the same time
+///  Each Collection can only be in one Project at a time
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Project {
     #[prost(string, tag="1")]
@@ -33,7 +33,7 @@ pub struct Token {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
-    /// The actual token, this will be redacted on every get request
+    ///  The actual token, this will be redacted on every get request
     #[prost(string, tag="3")]
     pub token: ::prost::alloc::string::String,
     #[prost(enumeration="TokenType", tag="4")]
@@ -62,10 +62,10 @@ pub struct Authorization {
     pub permission: i32,
     #[prost(enumeration="PermType", tag="2")]
     pub perm_type: i32,
-    /// Can be userid, tokenid or anonymous id depending on perm_type
+    ///  Can be userid, tokenid or anonymous id depending on perm_type
     #[prost(string, tag="3")]
     pub client_id: ::prost::alloc::string::String,
-    /// Userid of the user who created the authorization
+    ///  Userid of the user who created the authorization
     #[prost(string, tag="4")]
     pub created_by: ::prost::alloc::string::String,
 }
@@ -73,27 +73,57 @@ pub struct Authorization {
 #[repr(i32)]
 pub enum Permission {
     Unspecified = 0,
-    /// No permissions granted, used for users that are in the project but have no default permissions
+    ///  No permissions granted, used for users that are in the project but have no default permissions
     None = 1,
-    /// Read only
+    ///  Read only
     Read = 2,
-    /// Append objects to the collection cannot modify existing objects
+    ///  Append objects to the collection cannot modify existing objects
     Append = 3,
-    /// Can Read/Append/Modify objects in the collection that owns the object / Create new collections
+    ///  Can Read/Append/Modify objects in the collection that owns the object / Create new collections
     Modify = 4,
-    /// Can modify the collections itself and permanently delete owned objects / move ownership of objects
+    ///  Can modify the collections itself and permanently delete owned objects / move ownership of objects
     Admin = 5,
+}
+impl Permission {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Permission::Unspecified => "PERMISSION_UNSPECIFIED",
+            Permission::None => "PERMISSION_NONE",
+            Permission::Read => "PERMISSION_READ",
+            Permission::Append => "PERMISSION_APPEND",
+            Permission::Modify => "PERMISSION_MODIFY",
+            Permission::Admin => "PERMISSION_ADMIN",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PermType {
     Unspecified = 0,
-    /// Regular OAuth users
+    ///  Regular OAuth users
     User = 1,
-    /// Anonymous users without an OAuth token
+    ///  Anonymous users without an OAuth token
     Anonymous = 2,
-    /// Access token on behalf of a user
+    ///  Access token on behalf of a user
     Token = 3,
+}
+impl PermType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            PermType::Unspecified => "PERM_TYPE_UNSPECIFIED",
+            PermType::User => "PERM_TYPE_USER",
+            PermType::Anonymous => "PERM_TYPE_ANONYMOUS",
+            PermType::Token => "PERM_TYPE_TOKEN",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -102,7 +132,20 @@ pub enum TokenType {
     Personal = 1,
     Scoped = 2,
 }
-/// A key value pair for hooks and labels
+impl TokenType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            TokenType::Unspecified => "TOKEN_TYPE_UNSPECIFIED",
+            TokenType::Personal => "TOKEN_TYPE_PERSONAL",
+            TokenType::Scoped => "TOKEN_TYPE_SCOPED",
+        }
+    }
+}
+///  A key value pair for hooks and labels
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyValue {
     #[prost(string, tag="1")]
@@ -112,17 +155,17 @@ pub struct KeyValue {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LabelOntology {
-    /// These are the keys for labels that are required for the collection
-    /// Adding an Object without these keys will result in an error
-    /// Defaults to empty string if not specified
+    ///  These are the keys for labels that are required for the collection
+    ///  Adding an Object without these keys will result in an error
+    ///  Defaults to empty string if not specified
     #[prost(string, repeated, tag="1")]
     pub required_label_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-/// This is a message to uniquely identify specific Objects
-/// IDs by itself are not unique
-/// Only the combination of ID and revision number is unique
-/// A revision number of -1 corresponds to a "latest" tag
-/// This will automatically update itself
+///  This is a message to uniquely identify specific Objects
+///  IDs by itself are not unique
+///  Only the combination of ID and revision number is unique
+///  A revision number of -1 corresponds to a "latest" tag
+///  This will automatically update itself
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RevId {
     #[prost(string, tag="1")]
@@ -130,18 +173,18 @@ pub struct RevId {
     #[prost(int64, tag="2")]
     pub revision: i64,
 }
-/// S3 location(s) for an object
+///  S3 location(s) for an object
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Location {
-    /// default location
+    ///  default location
     #[prost(message, optional, tag="1")]
     pub default: ::core::option::Option<ObjectLocation>,
-    /// list of locations
+    ///  list of locations
     #[prost(message, repeated, tag="2")]
     pub locations: ::prost::alloc::vec::Vec<ObjectLocation>,
 }
-/// A location in S3
-/// This can be either a location_id as a description e.g. "giessen" or a specific S3 location
+///  A location in S3
+///  This can be either a location_id as a description e.g. "giessen" or a specific S3 location
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectLocation {
     #[prost(oneof="object_location::Location", tags="1, 2")]
@@ -159,17 +202,17 @@ pub mod object_location {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct S3Location {
-    /// Bucket in S3
+    ///  Bucket in S3
     #[prost(string, tag="1")]
     pub bucket: ::prost::alloc::string::String,
-    /// Key in S3
+    ///  Key in S3
     #[prost(string, tag="2")]
     pub key: ::prost::alloc::string::String,
-    /// Object storage endpoint
+    ///  Object storage endpoint
     #[prost(string, tag="3")]
     pub url: ::prost::alloc::string::String,
 }
-/// Stats for a set of objects
+///  Stats for a set of objects
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Stats {
     #[prost(int64, tag="1")]
@@ -177,7 +220,7 @@ pub struct Stats {
     #[prost(int64, tag="2")]
     pub acc_size: i64,
 }
-/// Stats for a collection
+///  Stats for a collection
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionStats {
     #[prost(message, optional, tag="1")]
@@ -189,7 +232,7 @@ pub struct CollectionStats {
     #[prost(message, optional, tag="6")]
     pub last_date_updated: ::core::option::Option<::prost_types::Timestamp>,
 }
-/// Stats for an object group
+///  Stats for an object group
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroupStats {
     #[prost(message, optional, tag="1")]
@@ -199,7 +242,7 @@ pub struct ObjectGroupStats {
     #[prost(message, optional, tag="3")]
     pub meta_object_stats: ::core::option::Option<Stats>,
 }
-/// Semver version -> Alpha Beta release are not supported -> Use "latest" for mutable collections that are in development
+///  Semver version -> Alpha Beta release are not supported -> Use "latest" for mutable collections that are in development
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Version {
     #[prost(int32, tag="1")]
@@ -216,7 +259,7 @@ pub struct Hash {
     #[prost(string, tag="2")]
     pub hash: ::prost::alloc::string::String,
 }
-/// Origin of the object -> To be GDPA compliant
+///  Origin of the object -> To be GDPA compliant
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Origin {
     #[prost(enumeration="OriginType", tag="1")]
@@ -224,75 +267,75 @@ pub struct Origin {
     #[prost(string, tag="2")]
     pub id: ::prost::alloc::string::String,
 }
-// RULES for Objects:
-// 1.  Each object is "owned" by exactly one collection
-// 2.  Objects can be "borrowed" to multiple other collections
-// 3.  Objects are immutable, updating an object will create a new object with increased revision number
-//     only people with modify permissions in the owner collection can update an object
-// 3.1 Special cases: 
-//     Hooks: Can be added/removed and modified without changing the object revision number
-//     Labels: Can be added without changing the object revision number, removing or modifying labels WILL change the object revision number (append only)
-//     auto_update: Can be added/removed without changing the object revision number and is collection specific
-// 4.  Objects can only be permanently deleted by a person with admin rights on the owner collection
+//  RULES for Objects:
+//  1.  Each object is "owned" by exactly one collection
+//  2.  Objects can be "borrowed" to multiple other collections
+//  3.  Objects are immutable, updating an object will create a new object with increased revision number
+//      only people with modify permissions in the owner collection can update an object
+//  3.1 Special cases: 
+//      Hooks: Can be added/removed and modified without changing the object revision number
+//      Labels: Can be added without changing the object revision number, removing or modifying labels WILL change the object revision number (append only)
+//      auto_update: Can be added/removed without changing the object revision number and is collection specific
+//  4.  Objects can only be permanently deleted by a person with admin rights on the owner collection
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Object {
-    ///ObjectID -> This is not unique across the database -> Composite key with revision
+    /// ObjectID -> This is not unique across the database -> Composite key with revision
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Filename: Name of the original file e.g.: mydata.json
+    ///  Filename: Name of the original file e.g.: mydata.json
     #[prost(string, tag="2")]
     pub filename: ::prost::alloc::string::String,
-    /// Labels to additionally describe the object
+    ///  Labels to additionally describe the object
     #[prost(message, repeated, tag="4")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Hooks to be executed on the object
+    ///  Hooks to be executed on the object
     #[prost(message, repeated, tag="5")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, optional, tag="6")]
     pub created: ::core::option::Option<::prost_types::Timestamp>,
-    /// Each object is owned by exactly one collection
+    ///  Each object is owned by exactly one collection
     #[prost(string, tag="7")]
     pub collection_id: ::prost::alloc::string::String,
-    /// Location of the data
+    ///  Location of the data
     #[prost(message, optional, tag="8")]
     pub location: ::core::option::Option<Location>,
-    /// Lenght of the stored dataset
+    ///  Lenght of the stored dataset
     #[prost(int64, tag="9")]
     pub content_len: i64,
     #[prost(enumeration="Status", tag="10")]
     pub status: i32,
-    /// Origin of the object
+    ///  Origin of the object
     #[prost(message, optional, tag="11")]
     pub origin: ::core::option::Option<Origin>,
-    /// Confidentiality of the object
+    ///  Confidentiality of the object
     #[prost(enumeration="DataClass", tag="12")]
     pub data_class: i32,
-    /// MD5 hash of the data
+    ///  MD5 hash of the data
     #[prost(message, optional, tag="13")]
     pub hash: ::core::option::Option<Hash>,
-    /// Increasing revion number for each update -> This is used in the database
+    ///  Increasing revion number for each update -> This is used in the database
     #[prost(int64, tag="14")]
     pub rev_number: i64,
-    /// Is this the latest version of the object?
+    ///  Is this the latest version of the object?
     #[prost(bool, tag="15")]
     pub latest: bool,
-    /// This is a collection specific attribute
-    /// Must be false if collection is immutable
+    ///  This is a collection specific attribute
+    ///  Must be false if collection is immutable
     ///
-    /// If true, the object will be updated automatically when the data is changed
+    ///  If true, the object will be updated automatically when the data is changed
     #[prost(bool, tag="16")]
     pub auto_update: bool,
 }
-/// Multiple Objects
+///  Multiple Objects
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Objects {
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<Object>,
 }
-/// ObjectGroups are optional and can be used to group objects in a collection together
-/// They need to refer to objects in the same collection
-/// Objectgroups can be changed if the collection is mutable
+///  ObjectGroups are optional and can be used to group objects in a collection together
+///  They need to refer to objects in the same collection
+///  Objectgroups can be changed if the collection is mutable
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroup {
     #[prost(string, tag="1")]
@@ -301,17 +344,17 @@ pub struct ObjectGroup {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
-    /// Exactly one collection must be specified
+    ///  Exactly one collection must be specified
     #[prost(string, tag="4")]
     pub collection_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="6")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, repeated, tag="7")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Must be in collection objects
+    ///  Must be in collection objects
     #[prost(message, repeated, tag="8")]
     pub objects: ::prost::alloc::vec::Vec<Object>,
-    /// Must be in collection objects
+    ///  Must be in collection objects
     #[prost(message, repeated, tag="9")]
     pub meta_objects: ::prost::alloc::vec::Vec<Object>,
     #[prost(message, optional, tag="10")]
@@ -319,13 +362,13 @@ pub struct ObjectGroup {
     #[prost(int64, tag="11")]
     pub rev_number: i64,
 }
-/// Multiple ObjectGroups
+///  Multiple ObjectGroups
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroups {
     #[prost(message, repeated, tag="1")]
     pub object_groups: ::prost::alloc::vec::Vec<ObjectGroup>,
 }
-/// This is a representation of the ObjectGroup without the recursive nature of object references
+///  This is a representation of the ObjectGroup without the recursive nature of object references
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroupOverview {
     #[prost(string, tag="1")]
@@ -334,7 +377,7 @@ pub struct ObjectGroupOverview {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
-    /// Exactly one collection must be specified
+    ///  Exactly one collection must be specified
     #[prost(string, tag="4")]
     pub collection_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="6")]
@@ -346,13 +389,13 @@ pub struct ObjectGroupOverview {
     #[prost(int64, tag="9")]
     pub rev_number: i64,
 }
-/// Multiple ObjectGroupOverviews
+///  Multiple ObjectGroupOverviews
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroupOverviews {
     #[prost(message, repeated, tag="1")]
     pub object_group_overviews: ::prost::alloc::vec::Vec<ObjectGroupOverview>,
 }
-/// This is a representation of the ObjectGroup with only ObjectIDs instead of full objects
+///  This is a representation of the ObjectGroup with only ObjectIDs instead of full objects
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroupWithId {
     #[prost(string, tag="1")]
@@ -361,17 +404,17 @@ pub struct ObjectGroupWithId {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
-    /// Exactly one collection must be specified
+    ///  Exactly one collection must be specified
     #[prost(string, tag="4")]
     pub collection_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="6")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, repeated, tag="7")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Must be in collection objects
+    ///  Must be in collection objects
     #[prost(message, repeated, tag="8")]
     pub object_ids: ::prost::alloc::vec::Vec<RevId>,
-    /// Must be in collection objects
+    ///  Must be in collection objects
     #[prost(message, repeated, tag="9")]
     pub meta_object_ids: ::prost::alloc::vec::Vec<RevId>,
     #[prost(message, optional, tag="10")]
@@ -379,25 +422,25 @@ pub struct ObjectGroupWithId {
     #[prost(int64, tag="11")]
     pub rev_number: i64,
 }
-/// Multiple ObjectGroupWithIDs
+///  Multiple ObjectGroupWithIDs
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectGroupWithIDs {
     #[prost(message, repeated, tag="1")]
     pub object_group_with_ids: ::prost::alloc::vec::Vec<ObjectGroupWithId>,
 }
-// RULES for Collections:
-// 1. Each object is "owned" by exactly one collection
-// 2. Objects can be in multiple collections and must be in the owner collection
-// 3. Collections are either mutable with Version.latest == true or immutable with a fixed version number
-// 3.1 If a collection gets a fixed version a copy is created with all "latest" objects dereferenced to their respective revisions
-// 3.2 Modifying an immutable collection will create a new copy of the collection with a new version number
-// 4. Collections can be created by any user, but only the owner can modify or delete them
+//  RULES for Collections:
+//  1. Each object is "owned" by exactly one collection
+//  2. Objects can be in multiple collections and must be in the owner collection
+//  3. Collections are either mutable with Version.latest == true or immutable with a fixed version number
+//  3.1 If a collection gets a fixed version a copy is created with all "latest" objects dereferenced to their respective revisions
+//  3.2 Modifying an immutable collection will create a new copy of the collection with a new version number
+//  4. Collections can be created by any user, but only the owner can modify or delete them
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Collection {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Should be unique in authgroup
+    ///  Should be unique in authgroup
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -406,7 +449,7 @@ pub struct Collection {
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, repeated, tag="5")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Ontology for labels
+    ///  Ontology for labels
     #[prost(message, optional, tag="6")]
     pub label_ontology: ::core::option::Option<LabelOntology>,
     #[prost(message, optional, tag="7")]
@@ -436,13 +479,13 @@ pub mod collection {
         Latest(bool),
     }
 }
-/// Multiple Collections
+///  Multiple Collections
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Collections {
     #[prost(message, repeated, tag="1")]
     pub collections: ::prost::alloc::vec::Vec<Collection>,
 }
-/// This is a representation of the Collection without the recursive nature of objectreferences
+///  This is a representation of the Collection without the recursive nature of objectreferences
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOverview {
     #[prost(string, tag="1")]
@@ -455,7 +498,7 @@ pub struct CollectionOverview {
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, repeated, tag="5")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Ontology for labels
+    ///  Ontology for labels
     #[prost(message, optional, tag="6")]
     pub label_ontology: ::core::option::Option<LabelOntology>,
     #[prost(message, optional, tag="7")]
@@ -479,13 +522,13 @@ pub mod collection_overview {
         Latest(bool),
     }
 }
-/// Multiple CollectionOverviews
+///  Multiple CollectionOverviews
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOverviews {
     #[prost(message, repeated, tag="1")]
     pub collection_overviews: ::prost::alloc::vec::Vec<CollectionOverview>,
 }
-/// This is a representation of the Collection with only Resource RevisionIDs instead of full objects
+///  This is a representation of the Collection with only Resource RevisionIDs instead of full objects
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionWithId {
     #[prost(string, tag="1")]
@@ -498,7 +541,7 @@ pub struct CollectionWithId {
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
     #[prost(message, repeated, tag="5")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
-    /// Ontology for labels
+    ///  Ontology for labels
     #[prost(message, optional, tag="6")]
     pub label_ontology: ::core::option::Option<LabelOntology>,
     #[prost(message, optional, tag="7")]
@@ -528,13 +571,13 @@ pub mod collection_with_id {
         Latest(bool),
     }
 }
-/// Multiple CollectionWithIDs
+///  Multiple CollectionWithIDs
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionWithIDs {
     #[prost(message, repeated, tag="1")]
     pub collection_with_ids: ::prost::alloc::vec::Vec<CollectionWithId>,
 }
-/// An arbitrary status for Objects
+///  An arbitrary status for Objects
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Status {
@@ -542,6 +585,20 @@ pub enum Status {
     Initializing = 1,
     Available = 2,
     Unavailable = 3,
+}
+impl Status {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Status::Unspecified => "STATUS_UNSPECIFIED",
+            Status::Initializing => "STATUS_INITIALIZING",
+            Status::Available => "STATUS_AVAILABLE",
+            Status::Unavailable => "STATUS_UNAVAILABLE",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -554,17 +611,47 @@ pub enum Hashalgorithm {
     Murmur3a32 = 5,
     Xxhash32 = 6,
 }
-/// Specifies the Origin of the object
+impl Hashalgorithm {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Hashalgorithm::Unspecified => "HASHALGORITHM_UNSPECIFIED",
+            Hashalgorithm::Md5 => "HASHALGORITHM_MD5",
+            Hashalgorithm::Sha1 => "HASHALGORITHM_SHA1",
+            Hashalgorithm::Sha256 => "HASHALGORITHM_SHA256",
+            Hashalgorithm::Sha512 => "HASHALGORITHM_SHA512",
+            Hashalgorithm::Murmur3a32 => "HASHALGORITHM_MURMUR3A32",
+            Hashalgorithm::Xxhash32 => "HASHALGORITHM_XXHASH32",
+        }
+    }
+}
+///  Specifies the Origin of the object
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OriginType {
     Unspecified = 0,
-    /// User uploaded the object
+    ///  User uploaded the object
     User = 1,
-    /// Object was cloned from another object
+    ///  Object was cloned from another object
     Objclone = 2,
 }
-/// Dataclass defines the confidentiality of the object
+impl OriginType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            OriginType::Unspecified => "ORIGIN_TYPE_UNSPECIFIED",
+            OriginType::User => "ORIGIN_TYPE_USER",
+            OriginType::Objclone => "ORIGIN_TYPE_OBJCLONE",
+        }
+    }
+}
+///  Dataclass defines the confidentiality of the object
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum DataClass {
@@ -574,22 +661,37 @@ pub enum DataClass {
     Confidential = 3,
     Protected = 4,
 }
-/// This file contains parameters for queries that return a list of resources.
-/// The results are paginated.
-/// The page request specifies the page size and last_id.
-/// If page_size is not specified, it defaults to 20.
-/// If page_size is -1, it returns all objects.
+impl DataClass {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            DataClass::Unspecified => "DATA_CLASS_UNSPECIFIED",
+            DataClass::Public => "DATA_CLASS_PUBLIC",
+            DataClass::Private => "DATA_CLASS_PRIVATE",
+            DataClass::Confidential => "DATA_CLASS_CONFIDENTIAL",
+            DataClass::Protected => "DATA_CLASS_PROTECTED",
+        }
+    }
+}
+///  This file contains parameters for queries that return a list of resources.
+///  The results are paginated.
+///  The page request specifies the page size and last_id.
+///  If page_size is not specified, it defaults to 20.
+///  If page_size is -1, it returns all objects.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PageRequest {
-    /// This is the last ID of the previous returned request
+    ///  This is the last ID of the previous returned request
     #[prost(string, tag="1")]
     pub last_uuid: ::prost::alloc::string::String,
-    /// Default to 20, -1 for all
+    ///  Default to 20, -1 for all
     #[prost(uint64, tag="2")]
     pub page_size: u64,
 }
-/// LabelFilter is used to filter resources by labels.
-/// The labels are specified as a map of key-value pairs.
+///  LabelFilter is used to filter resources by labels.
+///  The labels are specified as a map of key-value pairs.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LabelFilter {
     #[prost(message, repeated, tag="1")]
@@ -602,8 +704,8 @@ pub struct ResourceIdList {
     #[prost(string, repeated, tag="1")]
     pub ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-/// This is a combined query for either a list of resource IDs or filtered by Label
-/// Can be expanded in the future to allow for more complex queries
+///  This is a combined query for either a list of resource IDs or filtered by Label
+///  Can be expanded in the future to allow for more complex queries
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LabelOrIdQuery {
     #[prost(oneof="label_or_id_query::Query", tags="1, 2")]
@@ -619,36 +721,65 @@ pub mod label_or_id_query {
         Ids(super::ResourceIdList),
     }
 }
-/// This defines the behaviour of the Query how to combine multiple Labels
-/// The default Query Type is: AND so each Label must be present in the result
+///  This defines the behaviour of the Query how to combine multiple Labels
+///  The default Query Type is: AND so each Label must be present in the result
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum LabelQueryType {
     Unspecified = 0,
-    /// A AND B
+    ///  A AND B
     And = 1,
-    /// A OR B including A AND B, This is similar to Any
+    ///  A OR B including A AND B, This is similar to Any
     Or = 2,
-    /// Either A OR B but not both
+    ///  Either A OR B but not both
     Xor = 3,
-    /// Return all objects with a specific Key independent of value
+    ///  Return all objects with a specific Key independent of value
     Key = 4,
 }
-/// OutputFormat is an enum for GET queries that specifies how the Response should be structured
-/// This is necessary because Collections and ObjectGroups can contain large number of objects
-/// The default behaviour is "OVERVIEW" this will only return statistics about the collection or objectgroup 
-/// but no specific IDs or additional information
-/// the "WITH_IDS" tag returns only lists of RevIDs
-/// If "FULL" is specified the complete recursive list of objects with all labels and meta-information will be returned
+impl LabelQueryType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            LabelQueryType::Unspecified => "LABEL_QUERY_TYPE_UNSPECIFIED",
+            LabelQueryType::And => "LABEL_QUERY_TYPE_AND",
+            LabelQueryType::Or => "LABEL_QUERY_TYPE_OR",
+            LabelQueryType::Xor => "LABEL_QUERY_TYPE_XOR",
+            LabelQueryType::Key => "LABEL_QUERY_TYPE_KEY",
+        }
+    }
+}
+///  OutputFormat is an enum for GET queries that specifies how the Response should be structured
+///  This is necessary because Collections and ObjectGroups can contain large number of objects
+///  The default behaviour is "OVERVIEW" this will only return statistics about the collection or objectgroup 
+///  but no specific IDs or additional information
+///  the "WITH_IDS" tag returns only lists of RevIDs
+///  If "FULL" is specified the complete recursive list of objects with all labels and meta-information will be returned
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputFormat {
-    /// Unspecified enum will default to overview
+    ///  Unspecified enum will default to overview
     Unspecified = 0,
-    /// Only give an overview of the resources
+    ///  Only give an overview of the resources
     Overview = 1,
-    /// Return only a list of RevIDs
+    ///  Return only a list of RevIDs
     WithIds = 2,
-    /// Return the full list of resources -> This may have slow performance
+    ///  Return the full list of resources -> This may have slow performance
     Full = 3,
+}
+impl OutputFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            OutputFormat::Unspecified => "OUTPUT_FORMAT_UNSPECIFIED",
+            OutputFormat::Overview => "OUTPUT_FORMAT_OVERVIEW",
+            OutputFormat::WithIds => "OUTPUT_FORMAT_WITH_IDS",
+            OutputFormat::Full => "OUTPUT_FORMAT_FULL",
+        }
+    }
 }
