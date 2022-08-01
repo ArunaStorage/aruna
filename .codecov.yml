@@ -4,3 +4,5 @@ ignore:
   - "src/bin" # don't consider binaries in coverage report
   - "tests" # we also don't care about coverage of test code
   - "benches" # or coverage of benchmarks
+  - "protos" # coverage for protos are not necessary either
+  - "migrations" # exclude database stuff

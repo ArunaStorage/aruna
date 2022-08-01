@@ -7,6 +7,7 @@ jobs:
   style:
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -14,7 +15,7 @@ jobs:
           components: rustfmt, clippy
       - uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: recursive
       - name: cargo fmt --check
         uses: actions-rs/cargo@v1
         with:

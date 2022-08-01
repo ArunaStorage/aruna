@@ -2,7 +2,6 @@ extern crate tonic_build;
 
 use std::fs;
 
-
 fn main() {
     let mut protos: Vec<String> = Vec::new();
 
@@ -30,7 +29,6 @@ fn main() {
         protos.push(rel_path);
     }
 
-
     let service_entries = fs::read_dir("protos/aruna/api/internal/v1/").unwrap();
 
     for entry in service_entries {
@@ -43,12 +41,15 @@ fn main() {
         protos.push(rel_path);
     }
 
-
     tonic_build::configure()
         .build_server(true)
         .out_dir("src/api")
         .compile(
             &protos,
-            &["./protos".to_string(), "protos/aruna/api/google".to_string()],
-        ).unwrap();
+            &[
+                "./protos".to_string(),
+                "protos/aruna/api/google".to_string(),
+            ],
+        )
+        .unwrap();
 }
