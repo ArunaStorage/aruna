@@ -1,16 +1,16 @@
-/// Locations is the path to the requested data.
+///  Locations is the path to the requested data.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Location {
     #[prost(enumeration="LocationType", tag="1")]
     pub r#type: i32,
-    /// This is the bucket name for S3. This is the folder name for local file.
+    ///  This is the bucket name for S3. This is the folder name for local file.
     #[prost(string, tag="2")]
     pub bucket: ::prost::alloc::string::String,
-    /// This is the key name for S3. This is the file name for local file.
+    ///  This is the key name for S3. This is the file name for local file.
     #[prost(string, tag="3")]
     pub path: ::prost::alloc::string::String,
 }
-/// Etag / Part combination to finish a presigned multipart upload.
+///  Etag / Part combination to finish a presigned multipart upload.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartETag {
     #[prost(string, tag="1")]
@@ -22,7 +22,7 @@ pub struct PartETag {
 pub struct InitPresignedUploadRequest {
     #[prost(message, optional, tag="1")]
     pub location: ::core::option::Option<Location>,
-    /// True if multipart upload is requested.
+    ///  True if multipart upload is requested.
     #[prost(bool, tag="2")]
     pub multipart: bool,
 }
@@ -40,7 +40,7 @@ pub struct CreatePresignedUploadUrlRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreatePresignedUploadUrlResponse {
-    /// The presigned URL to upload the file to.
+    ///  The presigned URL to upload the file to.
     #[prost(string, tag="1")]
     pub url: ::prost::alloc::string::String,
 }
@@ -55,7 +55,7 @@ pub struct FinishPresignedUploadRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinishPresignedUploadResponse {
-    /// If the upload finished successfully.
+    ///  If the upload finished successfully.
     #[prost(bool, tag="1")]
     pub ok: bool,
 }
@@ -70,17 +70,17 @@ pub struct Range {
 pub struct CreatePresignedDownloadRequest {
     #[prost(message, optional, tag="1")]
     pub location: ::core::option::Option<Location>,
-    /// optional Range
+    ///  optional Range
     #[prost(message, optional, tag="2")]
     pub range: ::core::option::Option<Range>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreatePresignedDownloadResponse {
-    /// The presigned URL to download the file to.
+    ///  The presigned URL to download the file to.
     #[prost(string, tag="1")]
     pub url: ::prost::alloc::string::String,
 }
-/// Enum to support multiple target Locations.
+///  Enum to support multiple target Locations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum LocationType {
@@ -88,10 +88,24 @@ pub enum LocationType {
     S3 = 1,
     File = 2,
 }
+impl LocationType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            LocationType::Unspecified => "LOCATION_TYPE_UNSPECIFIED",
+            LocationType::S3 => "LOCATION_TYPE_S3",
+            LocationType::File => "LOCATION_TYPE_FILE",
+        }
+    }
+}
 /// Generated client implementations.
 pub mod internal_proxy_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct InternalProxyServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -118,6 +132,10 @@ pub mod internal_proxy_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -137,19 +155,19 @@ pub mod internal_proxy_service_client {
         {
             InternalProxyServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         pub async fn init_presigned_upload(
@@ -275,8 +293,8 @@ pub mod internal_proxy_service_server {
     #[derive(Debug)]
     pub struct InternalProxyServiceServer<T: InternalProxyService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: InternalProxyService> InternalProxyServiceServer<T> {
@@ -299,6 +317,18 @@ pub mod internal_proxy_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
@@ -523,7 +553,7 @@ pub mod internal_proxy_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: InternalProxyService> tonic::transport::NamedService
+    impl<T: InternalProxyService> tonic::server::NamedService
     for InternalProxyServiceServer<T> {
         const NAME: &'static str = "aruna.api.internal.v1.InternalProxyService";
     }
