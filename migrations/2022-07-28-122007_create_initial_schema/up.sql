@@ -162,7 +162,7 @@ CREATE TABLE hash_types (
 CREATE TABLE hashes (
     id UUID PRIMARY KEY,
     hash TEXT NOT NULL,
-    object_id UUID,
+    object_id UUID NOT NULL,
     hash_type UUID NOT NULL REFERENCES hash_types(id),
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );

@@ -142,7 +142,7 @@ diesel::table! {
     hashes (id) {
         id -> Uuid,
         hash -> Text,
-        object_id -> Nullable<Uuid>,
+        object_id -> Uuid,
         hash_type -> Uuid,
     }
 }

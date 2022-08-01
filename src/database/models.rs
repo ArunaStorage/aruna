@@ -129,12 +129,13 @@ pub struct CollectionVersion {
 #[diesel(belongs_to(Project))]
 pub struct Collection {
     pub id: uuid::Uuid,
+    pub shared_version_id: uuid::Uuid,
     pub name: String,
     pub description: String,
     pub created_at: Option<chrono::NaiveDate>,
     pub created_by: uuid::Uuid,
-    pub version_id: uuid::Uuid,
-    pub dataclass: Dataclass,
+    pub version_id: Option<uuid::Uuid>,
+    pub dataclass: Option<Dataclass>,
     pub project_id: uuid::Uuid,
 }
 
@@ -170,6 +171,7 @@ pub struct Source {
 #[diesel(belongs_to(Object))]
 pub struct Object {
     pub id: uuid::Uuid,
+    pub shared_revision_id: uuid::Uuid,
     pub revision_number: i64,
     pub filename: String,
     pub created_at: Option<chrono::NaiveDate>,
@@ -177,9 +179,8 @@ pub struct Object {
     pub content_len: i64,
     pub object_status: ObjectStatus,
     pub dataclass: Dataclass,
-    pub source_id: uuid::Uuid,
+    pub source_id: Option<uuid::Uuid>,
     pub origin_id: Option<uuid::Uuid>,
-    pub origin_revision: Option<i64>,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
@@ -188,7 +189,7 @@ pub struct Endpoint {
     pub endpoint_type: EndpointType,
     pub proxy_hostname: String,
     pub internal_hostname: String,
-    pub documentation_path: String,
+    pub documentation_path: Option<String>,
     pub is_public: bool,
 }
 
@@ -201,7 +202,6 @@ pub struct ObjectLocation {
     pub path: String,
     pub endpoint_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
-    pub object_revision: i64,
     pub is_primary: bool,
 }
 
@@ -219,7 +219,6 @@ pub struct Hash {
     pub id: uuid::Uuid,
     pub hash: String,
     pub object_id: uuid::Uuid,
-    pub object_revision: i64,
     pub hash_type: uuid::Uuid,
 }
 
@@ -229,7 +228,6 @@ pub struct Hash {
 pub struct ObjectKeyValue {
     pub id: uuid::Uuid,
     pub object_id: uuid::Uuid,
-    pub object_revision: i64,
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
@@ -239,9 +237,10 @@ pub struct ObjectKeyValue {
 #[diesel(belongs_to(User))]
 pub struct ObjectGroup {
     pub id: uuid::Uuid,
+    pub shared_revision_id: uuid::Uuid,
     pub revision_number: i64,
-    pub name: String,
-    pub description: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
     pub created_at: Option<chrono::NaiveDate>,
     pub created_by: uuid::Uuid,
 }
@@ -252,7 +251,6 @@ pub struct ObjectGroup {
 pub struct ObjectGroupKeyValue {
     pub id: uuid::Uuid,
     pub object_group_id: uuid::Uuid,
-    pub object_group_revision: i64,
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
@@ -265,7 +263,6 @@ pub struct CollectionObject {
     pub id: uuid::Uuid,
     pub collection_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
-    pub object_revision: i64,
     pub is_specification: bool,
     pub writeable: bool,
 }
@@ -277,7 +274,6 @@ pub struct CollectionObjectGroup {
     pub id: uuid::Uuid,
     pub collection_id: uuid::Uuid,
     pub object_group_id: uuid::Uuid,
-    pub object_group_revision: i64,
     pub writeable: bool,
 }
 
@@ -287,9 +283,7 @@ pub struct CollectionObjectGroup {
 pub struct ObjectGroupObject {
     pub id: uuid::Uuid,
     pub object_group_id: uuid::Uuid,
-    pub object_group_revision: i64,
     pub object_id: uuid::Uuid,
-    pub object_revision: i64,
     pub is_meta: bool,
     pub writeable: bool,
 }
@@ -302,7 +296,7 @@ pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,
     pub token: String,
-    pub created_at: chrono::NaiveDate,
+    pub created_at: Option<chrono::NaiveDate>,
     pub expires_at: Option<chrono::NaiveDate>,
     pub project_id: Option<uuid::Uuid>,
     pub collection_id: Option<uuid::Uuid>,
