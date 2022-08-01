@@ -1,0 +1,20 @@
+on:
+  - push
+  - pull_request
+name: cargo test
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: test
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
