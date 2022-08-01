@@ -1,3 +1,3 @@
-[submodule "protos/API"]
-	path = protos/API
-	url = git@github.com:ScienceObjectsDB/API.git
+[submodule "protos"]
+	path = protos
+	url = git@github.com:ArunaStorage/ArunaAPI.git
