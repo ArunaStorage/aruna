@@ -10,6 +10,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
+          toolchain: stable
           components: rustfmt, clippy
       - uses: actions/checkout@v2
         with:
