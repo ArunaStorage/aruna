@@ -7,6 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     name: test
     steps:
+      - uses: arduino/setup-protoc@v1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
