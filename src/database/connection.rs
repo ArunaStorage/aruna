@@ -13,14 +13,14 @@ use dotenv::dotenv;
 //use crate::database::util;
 
 pub struct Database {
-    _pg_connection: Pool<ConnectionManager<PgConnection>>,
+    pub pg_connection: Pool<ConnectionManager<PgConnection>>,
 }
 
 impl Database {
     pub fn new() -> Self {
         let connection = Database::establish_connection();
         let database = Database {
-            _pg_connection: connection,
+            pg_connection: connection,
         };
 
         return database;

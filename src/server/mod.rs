@@ -1,2 +1,2 @@
-mod collection;
 pub mod server;
+pub mod services;

@@ -2,6 +2,7 @@
 #[macro_use]
 extern crate diesel;
 
+mod api;
 mod database;
 mod server;
 
