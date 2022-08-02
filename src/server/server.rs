@@ -18,11 +18,11 @@ impl ServiceServer {
 
         let addr = "[::1]:50051".parse().unwrap();
         let collection_service = CollectionServiceImpl::new(db_ref).await;
-
+        let collection_server = CollectionServiceServer::new(collection_service);
         println!("GreeterServer listening on {}", addr);
 
         Server::builder()
-            .add_service(CollectionServiceServer::new(collection_service))
+            .add_service(collection_server)
             .serve(addr)
             .await
             .unwrap();

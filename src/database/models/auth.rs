@@ -46,6 +46,12 @@ pub struct UserPermission {
     pub project_id: uuid::Uuid,
 }
 
+/// Tokentypes:
+/// Personal -> project_id && collection_id == None
+///          -> Tokenpermission == Vec<UserPermission>
+/// Scoped   -> project_id || collection_id != None
+///          -> ApiToken.user_right
+
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]

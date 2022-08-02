@@ -3,6 +3,9 @@ use std::sync::Arc;
 use crate::api::aruna::api::storage::services::v1::collection_service_server::CollectionService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
+use crate::database::models::enums::*;
+
+use super::authz::{Authz, Context};
 
 pub struct CollectionServiceImpl {
     database: Arc<Database>,
@@ -10,9 +13,7 @@ pub struct CollectionServiceImpl {
 
 impl CollectionServiceImpl {
     pub async fn new(db: Arc<Database>) -> Self {
-        let collection_service = CollectionServiceImpl { database: db };
-
-        return collection_service;
+        CollectionServiceImpl { database: db }
     }
 }
 
@@ -22,6 +23,16 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
+        let result = Authz::authorize(
+            self.database.clone(),
+            request.metadata(),
+            Context {
+                user_right: UserRights::WRITE,
+                resource_type: Resources::PROJECT,
+                uid: todo!(), // TODO: request.project
+            },
+        );
+
         todo!()
     }
     /// GetCollection queries a specific Collection by ID

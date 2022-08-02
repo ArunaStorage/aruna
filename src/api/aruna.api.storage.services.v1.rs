@@ -2424,11 +2424,13 @@ pub struct CreateNewCollectionRequest {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub description: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="3")]
-    pub labels: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
+    #[prost(string, tag="3")]
+    pub project_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="4")]
-    pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
+    pub labels: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
     #[prost(message, repeated, tag="5")]
+    pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
+    #[prost(message, repeated, tag="6")]
     pub authorization: ::prost::alloc::vec::Vec<super::super::models::v1::Authorization>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2680,9 +2682,9 @@ pub mod collection_service_client {
         }
         /// UpdateCollection updates the current collection
         /// This will update the collection in place if it is unversioned / latest
-        /// A versioned (pinned) collection requires a new semantic version after the update
-        /// This can be used to pin a collection to a specific version
-        /// similar to the PinCollectionVersion request
+        /// A versioned (pinned) collection requires a new semantic version after the
+        /// update This can be used to pin a collection to a specific version similar
+        /// to the PinCollectionVersion request
         pub async fn update_collection(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateCollectionRequest>,
@@ -2702,9 +2704,9 @@ pub mod collection_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// PinCollectionVersion this pins the current status of the version to a specific version
-        /// This effectively creates a copy of the collection with a stable version
-        /// All objects will be pinned to an explicit revision number
+        /// PinCollectionVersion this pins the current status of the version to a
+        /// specific version This effectively creates a copy of the collection with a
+        /// stable version All objects will be pinned to an explicit revision number
         /// Pinned collections can not be updated in place
         pub async fn pin_collection_version(
             &mut self,
@@ -2730,8 +2732,8 @@ pub mod collection_service_client {
         }
         /// This request deletes the collection.
         /// If with_version is true, it deletes the collection and all its versions.
-        /// If cascade is true, all objects that are owned by the collection will also deleted.
-        /// This should be avoided
+        /// If cascade is true, all objects that are owned by the collection will also
+        /// deleted. This should be avoided
         pub async fn delete_collection(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteCollectionRequest>,
@@ -2783,16 +2785,16 @@ pub mod collection_service_server {
         ) -> Result<tonic::Response<super::GetCollectionsResponse>, tonic::Status>;
         /// UpdateCollection updates the current collection
         /// This will update the collection in place if it is unversioned / latest
-        /// A versioned (pinned) collection requires a new semantic version after the update
-        /// This can be used to pin a collection to a specific version
-        /// similar to the PinCollectionVersion request
+        /// A versioned (pinned) collection requires a new semantic version after the
+        /// update This can be used to pin a collection to a specific version similar
+        /// to the PinCollectionVersion request
         async fn update_collection(
             &self,
             request: tonic::Request<super::UpdateCollectionRequest>,
         ) -> Result<tonic::Response<super::UpdateCollectionResponse>, tonic::Status>;
-        /// PinCollectionVersion this pins the current status of the version to a specific version
-        /// This effectively creates a copy of the collection with a stable version
-        /// All objects will be pinned to an explicit revision number
+        /// PinCollectionVersion this pins the current status of the version to a
+        /// specific version This effectively creates a copy of the collection with a
+        /// stable version All objects will be pinned to an explicit revision number
         /// Pinned collections can not be updated in place
         async fn pin_collection_version(
             &self,
@@ -2800,8 +2802,8 @@ pub mod collection_service_server {
         ) -> Result<tonic::Response<super::PinCollectionVersionResponse>, tonic::Status>;
         /// This request deletes the collection.
         /// If with_version is true, it deletes the collection and all its versions.
-        /// If cascade is true, all objects that are owned by the collection will also deleted.
-        /// This should be avoided
+        /// If cascade is true, all objects that are owned by the collection will also
+        /// deleted. This should be avoided
         async fn delete_collection(
             &self,
             request: tonic::Request<super::DeleteCollectionRequest>,
