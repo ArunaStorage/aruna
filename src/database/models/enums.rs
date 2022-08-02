@@ -1,8 +1,7 @@
-use crate::database::schema::*;
 use diesel_derive_enum::*;
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::ObjectStatus"]
+#[DieselTypePath = "crate::database::schema::sql_types::ObjectStatus"]
 pub enum ObjectStatus {
     INITIALIZING,
     AVAILABLE,
@@ -11,7 +10,7 @@ pub enum ObjectStatus {
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::EndpointType"]
+#[DieselTypePath = "crate::database::schema::sql_types::EndpointType"]
 pub enum EndpointType {
     INITIALIZING,
     AVAILABLE,
@@ -20,7 +19,7 @@ pub enum EndpointType {
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::Dataclass"]
+#[DieselTypePath = "crate::database::schema::sql_types::Dataclass"]
 pub enum Dataclass {
     PUBLIC,
     PRIVATE,
@@ -29,7 +28,7 @@ pub enum Dataclass {
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::SourceType"]
+#[DieselTypePath = "crate::database::schema::sql_types::SourceType"]
 pub enum SourceType {
     S3,
     URL,
@@ -37,20 +36,20 @@ pub enum SourceType {
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::KeyValueType"]
+#[DieselTypePath = "crate::database::schema::sql_types::KeyValueType"]
 pub enum KeyValueType {
     LABEL,
     URL,
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::IdentityProviderType"]
+#[DieselTypePath = "crate::database::schema::sql_types::IdentityProviderType"]
 pub enum IdentityProviderType {
     OIDC,
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::UserRights"]
+#[DieselTypePath = "crate::database::schema::sql_types::UserRights"]
 pub enum UserRights {
     READ,
     APPEND,
@@ -60,7 +59,7 @@ pub enum UserRights {
 }
 
 #[derive(Debug, DbEnum)]
-#[DieselTypePath = "sql_types::Resources"]
+#[DieselTypePath = "crate::database::schema::sql_types::Resources"]
 pub enum Resources {
     PROJECT,
     COLLECTION,

@@ -23,15 +23,15 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
-        let result = Authz::authorize(
-            self.database.clone(),
-            request.metadata(),
-            Context {
-                user_right: UserRights::WRITE,
-                resource_type: Resources::PROJECT,
-                uid: todo!(), // TODO: request.project
-            },
-        );
+        // let result = Authz::authorize(
+        //     self.database.clone(),
+        //     request.metadata(),
+        //     Context {
+        //         user_right: UserRights::WRITE,
+        //         resource_type: Resources::PROJECT,
+        //         uid: todo!(), // TODO: request.project
+        //     },
+        // );
 
         todo!()
     }

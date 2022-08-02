@@ -33,22 +33,23 @@ impl Database {
             created_at: None,
             version_id: None,
             dataclass: None,
-            project_id: request.,
+            project_id: uuid::Uuid::parse_str(&request.project_id)?,
         };
 
-        self.pg_connection
-            .get()
-            .unwrap()
-            .transaction::<_, Error, _>(|conn| {
-                db_labels.insert_into(labels).execute(conn)?;
-                db_collection.insert_into(collections).execute(conn)?;
-                db_collection_labels
-                    .insert_into(collection_labels)
-                    .execute(conn)?;
-                Ok(())
-            })
-            .unwrap();
+        Err(Box::new(Error::new(ErrorKind::Other, "oh no!")))
+        // self.pg_connection
+        //     .get()
+        //     .unwrap()
+        //     .transaction::<_, Error, _>(|conn| {
+        //         db_labels.insert_into(labels).execute(conn)?;
+        //         db_collection.insert_into(collections).execute(conn)?;
+        //         db_collection_labels
+        //             .insert_into(collection_labels)
+        //             .execute(conn)?;
+        //         Ok(())
+        //     })
+        //     .unwrap();
 
-        return collection_uuid;
+        // return collection_uuid;
     }
 }
