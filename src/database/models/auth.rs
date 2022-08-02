@@ -60,9 +60,9 @@ pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,
     pub token: String,
-    pub created_at: Option<chrono::NaiveDate>,
+    pub created_at: chrono::NaiveDate,
     pub expires_at: Option<chrono::NaiveDate>,
     pub project_id: Option<uuid::Uuid>,
     pub collection_id: Option<uuid::Uuid>,
-    pub user_right: UserRights,
+    pub user_right: Option<UserRights>,
 }

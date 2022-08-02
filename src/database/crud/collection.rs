@@ -1,7 +1,5 @@
 use std::io::{Error, ErrorKind};
 
-use tonic::metadata::MetadataMap;
-
 use super::utils::*;
 use crate::{
     api::aruna::api::storage::services::v1::{

@@ -23,18 +23,31 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
-        // let result = Authz::authorize(
-        //     self.database.clone(),
-        //     request.metadata(),
-        //     Context {
-        //         user_right: UserRights::WRITE,
-        //         resource_type: Resources::PROJECT,
-        //         uid: todo!(), // TODO: request.project
-        //     },
-        // );
+        let project_result = uuid::Uuid::parse_str(&request.get_ref().project_id);
+
+        let project_id = match project_result {
+            Ok(pid) => pid,
+            Err(_) => return Err(tonic::Status::not_found("project_id not found")),
+        };
+
+        let auth = Authz::authorize(
+            self.database.clone(),
+            &request.metadata(),
+            Context {
+                user_right: UserRights::WRITE,
+                resource_type: Resources::PROJECT,
+                uid: project_id,
+            },
+        );
+
+        let token_info = match auth {
+            Ok(token) => token,
+            Err(_) => return Err(tonic::Status::permission_denied("permission denied")),
+        };
 
         todo!()
     }
+
     /// GetCollection queries a specific Collection by ID
     /// The result can be one_of:
     /// CollectionOverview -> default

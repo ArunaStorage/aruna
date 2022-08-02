@@ -7,33 +7,34 @@ use tonic::metadata::MetadataMap;
 
 use crate::database::{
     connection::Database,
-    models::enums::{Resources, UserRights},
+    models::{
+        auth::ApiToken,
+        enums::{Resources, UserRights},
+    },
 };
 
 pub struct Authz {}
 
 pub struct Context {
-    user_right: UserRights,
-    resource_type: Resources,
-    uid: uuid::Uuid,
+    pub user_right: UserRights,
+    pub resource_type: Resources,
+    pub uid: uuid::Uuid,
 }
 
 impl Authz {
-    pub fn new() -> Self {
-        Authz {}
-    }
-
     pub fn authorize(
         db: Arc<Database>,
         metadata: &MetadataMap,
-        context: Context,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let creator = uuid::Uuid::parse_str(
+        _context: Context,
+    ) -> Result<ApiToken, Box<dyn std::error::Error>> {
+        let token_id = uuid::Uuid::parse_str(
             metadata
                 .get("UserId")
                 .ok_or(Error::new(ErrorKind::Other, "oh no!"))?
                 .to_str()?,
         )?;
+
+        let _token = db.get_api_token(token_id);
 
         todo!()
     }

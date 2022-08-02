@@ -46,7 +46,7 @@ diesel::table! {
         expires_at -> Nullable<Date>,
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
-        user_right -> UserRights,
+        user_right -> Nullable<UserRights>,
     }
 }
 
