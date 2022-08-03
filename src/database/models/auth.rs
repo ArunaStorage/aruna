@@ -32,6 +32,7 @@ pub struct Project {
     pub id: uuid::Uuid,
     pub name: String,
     pub description: String,
+    pub flag: i64,
     pub created_at: Option<chrono::NaiveDate>,
     pub created_by: uuid::Uuid,
 }

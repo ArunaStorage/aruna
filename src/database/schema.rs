@@ -255,6 +255,7 @@ diesel::table! {
         id -> Uuid,
         name -> Text,
         description -> Text,
+        flag -> Int8,
         created_at -> Date,
         created_by -> Uuid,
     }

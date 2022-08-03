@@ -46,6 +46,7 @@ CREATE TABLE projects (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    flag INT NOT NULL DEFAULT 0,
     created_at DATE NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
     FOREIGN KEY (created_by) REFERENCES users(id)

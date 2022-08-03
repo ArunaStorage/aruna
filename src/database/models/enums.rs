@@ -59,7 +59,7 @@ pub enum UserRights {
     ADMIN,
 }
 
-#[derive(Debug, DbEnum)]
+#[derive(Debug, DbEnum, PartialEq)]
 #[DieselTypePath = "sql_types::Resources"]
 pub enum Resources {
     PROJECT,
