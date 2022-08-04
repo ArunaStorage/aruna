@@ -28,7 +28,7 @@ impl Database {
             name: request.name,
             description: request.description,
             created_by: creator,
-            created_at: None,
+            created_at: todo!(),
             version_id: None,
             dataclass: None,
             project_id: uuid::Uuid::parse_str(&request.project_id)?,

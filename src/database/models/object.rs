@@ -18,7 +18,7 @@ pub struct Object {
     pub shared_revision_id: uuid::Uuid,
     pub revision_number: i64,
     pub filename: String,
-    pub created_at: Option<chrono::NaiveDate>,
+    pub created_at: chrono::NaiveDate,
     pub created_by: uuid::Uuid,
     pub content_len: i64,
     pub object_status: ObjectStatus,

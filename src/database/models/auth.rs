@@ -37,7 +37,8 @@ pub struct Project {
     pub created_by: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
+#[diesel(table_name=user_permissions)]
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]
 pub struct UserPermission {

@@ -36,7 +36,8 @@ impl CollectionService for CollectionServiceImpl {
             Context {
                 user_right: UserRights::WRITE,
                 resource_type: Resources::PROJECT,
-                uid: project_id,
+                resource_id: project_id,
+                admin: false,
             },
         );
 

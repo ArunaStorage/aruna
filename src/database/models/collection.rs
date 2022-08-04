@@ -21,7 +21,7 @@ pub struct Collection {
     pub shared_version_id: uuid::Uuid,
     pub name: String,
     pub description: String,
-    pub created_at: Option<chrono::NaiveDate>,
+    pub created_at: chrono::NaiveDate,
     pub created_by: uuid::Uuid,
     pub version_id: Option<uuid::Uuid>,
     pub dataclass: Option<Dataclass>,

@@ -7,10 +7,7 @@ use tonic::metadata::MetadataMap;
 
 use crate::database::{
     connection::Database,
-    models::{
-        auth::{ApiToken, UserPermission},
-        enums::{Resources, UserRights},
-    },
+    models::enums::{Resources, UserRights},
 };
 
 pub struct Authz {}
@@ -19,6 +16,7 @@ pub struct Context {
     pub user_right: UserRights,
     pub resource_type: Resources,
     pub resource_id: uuid::Uuid,
+    pub admin: bool,
 }
 
 impl Authz {
@@ -26,45 +24,26 @@ impl Authz {
         db: Arc<Database>,
         metadata: &MetadataMap,
         context: Context,
-    ) -> Result<ApiToken, Box<dyn std::error::Error>> {
+    ) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
         let token = metadata
             .get("Bearer")
             .ok_or(Error::new(ErrorKind::Other, "Token not found"))?
             .to_str()?;
 
-        let (token, permissions) = db.get_user_permissions_from_token(token.to_string())?;
-
-        Authz::validate(&token, &context, &permissions)?;
-        todo!()
-    }
-
-    /// This method validates the "requested" context against the permissions returned by the db
-    pub fn validate(
-        token: &ApiToken,
-        context: &Context,
-        perms: &Option<Vec<UserPermission>>,
-    ) -> Result<(), Error> {
-        // If perm is none -> The token must be project or collection scoped
-
-        match context.resource_type {
-            Resources::COLLECTION => (),
-            Resources::PROJECT => (),
-            _ => (),
-        }
-
-        todo!()
-    }
-
-    pub fn check<T: std::cmp::PartialEq, U: std::cmp::PartialEq>(
-        context_uuid: T,
-        token_uuid: T,
-        context_resource: U,
-        token_resource: U,
-    ) -> Option<()> {
-        if context_resource == token_resource && context_uuid == token_uuid {
-            return Some(());
-        }
-
-        None
+        let user_uid = match context.resource_type {
+            Resources::COLLECTION => {
+                db.get_user_right_from_token(token, Some(context.resource_id), None, context.admin)?
+            }
+            Resources::PROJECT => {
+                db.get_user_right_from_token(token, None, Some(context.resource_id), context.admin)?
+            }
+            _ => {
+                return Err(Box::new(Error::new(
+                    ErrorKind::Other,
+                    "Forbidden resource type",
+                )))
+            }
+        };
+        return Ok(user_uid);
     }
 }
