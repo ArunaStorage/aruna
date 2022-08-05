@@ -19,6 +19,7 @@ impl CollectionServiceImpl {
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
+    /// Create_new_collection request cretes a new collection based on user request
     async fn create_new_collection(
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
@@ -41,8 +42,8 @@ impl CollectionService for CollectionServiceImpl {
             },
         );
 
-        let token_info = match auth {
-            Ok(token) => token,
+        let creator_id = match auth {
+            Ok(creator_id) => creator_id,
             Err(_) => return Err(tonic::Status::permission_denied("permission denied")),
         };
 

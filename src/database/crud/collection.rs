@@ -1,5 +1,8 @@
 use std::io::{Error, ErrorKind};
 
+use chrono::Local;
+use diesel::dsl::now;
+
 use super::utils::*;
 use crate::{
     api::aruna::api::storage::services::v1::{
@@ -20,7 +23,7 @@ impl Database {
 
         let shared_version_uuid = uuid::Uuid::new_v4();
 
-        let key_values = _to_collection_key_values(request.labels, request.hooks, collection_uuid);
+        let key_values = to_collection_key_values(request.labels, request.hooks, collection_uuid);
 
         let db_collection = models::collection::Collection {
             id: collection_uuid,
@@ -28,7 +31,7 @@ impl Database {
             name: request.name,
             description: request.description,
             created_by: creator,
-            created_at: todo!(),
+            created_at: Local::now(),
             version_id: None,
             dataclass: None,
             project_id: uuid::Uuid::parse_str(&request.project_id)?,

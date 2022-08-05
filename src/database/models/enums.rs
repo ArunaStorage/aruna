@@ -40,7 +40,7 @@ pub enum SourceType {
 #[DieselTypePath = "sql_types::KeyValueType"]
 pub enum KeyValueType {
     LABEL,
-    URL,
+    HOOK,
 }
 
 #[derive(Debug, DbEnum, Clone, Copy)]

@@ -42,8 +42,8 @@ diesel::table! {
         id -> Uuid,
         creator_user_id -> Uuid,
         token -> Text,
-        created_at -> Date,
-        expires_at -> Nullable<Date>,
+        created_at -> Timestamp,
+        expires_at -> Nullable<Timestamp>,
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
         user_right -> Nullable<UserRights>,
@@ -100,7 +100,7 @@ diesel::table! {
         shared_version_id -> Uuid,
         name -> Text,
         description -> Text,
-        created_at -> Date,
+        created_at -> Timestamp,
         created_by -> Uuid,
         version_id -> Nullable<Uuid>,
         dataclass -> Nullable<Dataclass>,
@@ -201,7 +201,7 @@ diesel::table! {
         revision_number -> Int8,
         name -> Nullable<Text>,
         description -> Nullable<Text>,
-        created_at -> Date,
+        created_at -> Timestamp,
         created_by -> Uuid,
     }
 }
@@ -240,7 +240,7 @@ diesel::table! {
         shared_revision_id -> Uuid,
         revision_number -> Int8,
         filename -> Text,
-        created_at -> Date,
+        created_at -> Timestamp,
         created_by -> Uuid,
         content_len -> Int8,
         object_status -> ObjectStatus,
@@ -256,7 +256,7 @@ diesel::table! {
         name -> Text,
         description -> Text,
         flag -> Int8,
-        created_at -> Date,
+        created_at -> Timestamp,
         created_by -> Uuid,
     }
 }
