@@ -29,21 +29,21 @@ impl Authz {
             .get("Bearer")
             .ok_or(Error::new(ErrorKind::Other, "Token not found"))?
             .to_str()?;
-
-        let user_uid = match context.resource_type {
-            Resources::COLLECTION => {
-                db.get_user_right_from_token(token, Some(context.resource_id), None, context.admin)?
-            }
-            Resources::PROJECT => {
-                db.get_user_right_from_token(token, None, Some(context.resource_id), context.admin)?
-            }
-            _ => {
-                return Err(Box::new(Error::new(
-                    ErrorKind::Other,
-                    "Forbidden resource type",
-                )))
-            }
-        };
-        return Ok(user_uid);
+        todo!();
+        // let user_uid = match context.resource_type {
+        //     Resources::COLLECTION => {
+        //         db.get_user_right_from_token(token, Some(context.resource_id), None, context.admin)?
+        //     }
+        //     Resources::PROJECT => {
+        //         db.get_user_right_from_token(token, None, Some(context.resource_id), context.admin)?
+        //     }
+        //     _ => {
+        //         return Err(Box::new(Error::new(
+        //             ErrorKind::Other,
+        //             "Forbidden resource type",
+        //         )))
+        //     }
+        // };
+        // return Ok(user_uid);
     }
 }
