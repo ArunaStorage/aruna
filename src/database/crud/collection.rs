@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind};
 
 use chrono::Local;
-use diesel::dsl::now;
+use diesel::{insert_into, prelude::*};
 
 use super::utils::*;
 use crate::{
@@ -17,8 +17,10 @@ impl Database {
         request: CreateNewCollectionRequest,
         creator: uuid::Uuid,
     ) -> Result<CreateNewCollectionResponse, Box<dyn std::error::Error>> {
-        // Dynamic dispatch to return any error type, ok for now but should be changed to custom error types
-        // Create a new uuid for collection insert
+        use crate::database::schema::collection_key_value::dsl::*;
+        use crate::database::schema::collections::dsl::*;
+        use diesel::result::Error;
+
         let collection_uuid = uuid::Uuid::new_v4();
 
         let shared_version_uuid = uuid::Uuid::new_v4();
@@ -31,26 +33,34 @@ impl Database {
             name: request.name,
             description: request.description,
             created_by: creator,
-            created_at: Local::now(),
+            created_at: Local::now().naive_local(),
             version_id: None,
             dataclass: None,
             project_id: uuid::Uuid::parse_str(&request.project_id)?,
         };
 
-        Err(Box::new(Error::new(ErrorKind::Other, "oh no!")))
-        // self.pg_connection
-        //     .get()
-        //     .unwrap()
-        //     .transaction::<_, Error, _>(|conn| {
-        //         db_labels.insert_into(labels).execute(conn)?;
-        //         db_collection.insert_into(collections).execute(conn)?;
-        //         db_collection_labels
-        //             .insert_into(collection_labels)
-        //             .execute(conn)?;
-        //         Ok(())
-        //     })
-        //     .unwrap();
+        let request_result = self
+            .pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                // Get the API token, if this errors -> no corresponding database token object could be found
+                insert_into(collection_key_value)
+                    .values(key_values)
+                    .execute(conn)?;
 
-        // return collection_uuid;
+                insert_into(collections)
+                    .values(db_collection)
+                    .execute(conn)?;
+                Ok(())
+            });
+
+        match request_result {
+            Ok(_) => {
+                return Ok(CreateNewCollectionResponse {
+                    id: collection_uuid.to_string(),
+                })
+            }
+            Err(e) => return Err(Box::new(e)),
+        }
     }
 }
