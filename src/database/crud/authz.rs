@@ -40,16 +40,16 @@ impl Database {
     /// - Collection        (coll)
     ///
     ///
-    /// 0.  req_ctx == admi
+    /// 1.  req_ctx == admi
     ///     -> check if token is personal and user is part of an admin project and return
     ///        no additional permission checks are necessary because global admins have no specific user_permissions (for now)
-    /// 1.  req_ctx == coll && api_token == coll
+    /// 2.  req_ctx == coll && api_token == coll
     ///     -> check if both uuid are the same and check if the api_token permission is greater or equal the
     ///        requested permission
-    /// 2.  req_ctx == coll && api_token == proj
+    /// 3.  req_ctx == coll && api_token == proj
     ///     -> check if context_collection is in project and and check if the api_token permission is greater or
     ///        equal the requested permission
-    /// 3.  req_ctx == proj && api_token == proj
+    /// 4.  req_ctx == proj && api_token == proj
     ///     -> check if context_project equals the apitoken project and the api_token permission is greater or  
     ///        equal the requested permission
     ///
@@ -58,11 +58,10 @@ impl Database {
     /// These cases all require the api_token to be "scoped" to a specific context. The next cases occur when
     /// the token is a personal token of a specific user.
     ///
-    /// 4   req_ctx == proj && api_token == pers
-    ///     -> check if the user has a user_permission for this specific project and if this permission is >= the req_ctx permission
     /// 5.  req_ctx == coll && api_token == pers
     ///     -> check for associated project and validate if the user has enough permissions
-
+    /// 6.  req_ctx == proj && api_token == pers
+    ///     -> check if the user has a user_permission for this specific project and if this permission is >= the req_ctx permission
     pub fn get_user_right_from_token(
         &self,
         ctx_token: &str,
@@ -78,19 +77,19 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<(Option<Context>, uuid::Uuid), Error, _>(|conn| {
-                // Get the API token
+                // Get the API token, if this errors -> no corresponding database token object could be found
                 let api_token = api_tokens
                     .filter(token.eq(ctx_token))
                     .first::<ApiToken>(conn)?;
 
-                // Case 4:
+                // Case 1:
                 // This is checked first because all other checks can be omitted if this succeeds
                 // Check if Token is "personal" and if the request is admin scoped
                 // Check if the user has admin permissions and return
 
                 if api_token.collection_id.is_none()
                     && api_token.project_id.is_none()
-                    && requested_ctx.admin
+                    && req_ctx.admin
                 {
                     let admin_user_perm = sql_query(
                         "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
@@ -105,6 +104,8 @@ impl Database {
                     .get_result::<UserPermission>(conn)
                     .optional()?;
 
+                    // If an associated admin_user_perm is found, this can return a new context
+                    // for the admin scope
                     if admin_user_perm.is_some() {
                         return Ok((
                             Some(Context {
@@ -119,28 +120,30 @@ impl Database {
                 }
 
                 // If the requested context / scope is of type COLLECTION
-                if requested_ctx.resource_type == Resources::COLLECTION {
-                    // Case 1:
+                if req_ctx.resource_type == Resources::COLLECTION {
+                    // Case 2:
                     // If api_token.collection_id == context_collection_id
                     // And user_right != None && api_token.collection_id != None && context_collection_id != None
                     // This will return Some(Context) otherwise this will return None
                     if api_token.collection_id.is_some() {
                         let collection_ctx = option_uuid_helper(
                             api_token.collection_id,
-                            Some(requested_ctx.resource_id),
+                            Some(req_ctx.resource_id),
                             Resources::COLLECTION,
+                            req_ctx.user_right,
                             api_token.user_right,
                         );
 
                         // If apitoken.collection_id == context_collection_id
                         // We can return early here -> The ApiToken is "scoped" to this specific collection
+                        // in case the response is None -> just continue
                         match collection_ctx {
                             Some(_) => return Ok((collection_ctx, api_token.creator_user_id)),
                             _ => (),
                         }
                     }
 
-                    // Case 2.1:
+                    // Case 3:
                     // When the request is a collection_id that does not directly match
                     // apitoken.collection_id or apitoken.project_id but api_token is project scoped
                     // It might be possible that the collection is part of the "scoped" project
@@ -150,7 +153,7 @@ impl Database {
                         let is_collection_in_project = collections
                             .filter(
                                 crate::database::schema::collections::dsl::id
-                                    .eq(requested_ctx.resource_id),
+                                    .eq(req_ctx.resource_id),
                             )
                             .filter(
                                 crate::database::schema::collections::dsl::project_id
@@ -161,9 +164,10 @@ impl Database {
                             .optional()?;
 
                         let col_in_proj_context = option_uuid_helper(
-                            Some(requested_ctx.resource_id),
+                            Some(req_ctx.resource_id),
                             is_collection_in_project,
                             Resources::COLLECTION,
+                            req_ctx.user_right,
                             api_token.user_right,
                         );
 
@@ -172,18 +176,58 @@ impl Database {
                             _ => (),
                         }
                     }
+
+                    // Case 5:
+                    // This is the case when the request is Collection scoped but the ApiToken is "personal"
+                    // -> no collection_id or project_id is specified
+                    // in this case it needs to be checked if the user_permission for the collections project exists
+                    if api_token.collection_id.is_none() && api_token.project_id.is_none() {
+                        // SELECT * from userpermissions INNER JOIN collections on project_id;
+                        let user_permission_option: Option<UserPermission> =
+                            user_permissions
+                                .inner_join(collections.on(
+                                    crate::database::schema::collections::dsl::project_id.eq(
+                                        crate::database::schema::user_permissions::dsl::project_id,
+                                    ),
+                                ))
+                                .filter(
+                                    crate::database::schema::collections::dsl::id
+                                        .eq(req_ctx.resource_id),
+                                )
+                                .select(UserPermission::as_select())
+                                .first::<UserPermission>(conn)
+                                .optional()?;
+
+                        if user_permission_option.is_some() {
+                            let col_in_proj_ctx2 = option_uuid_helper(
+                                Some(req_ctx.resource_id),
+                                Some(req_ctx.resource_id),
+                                Resources::COLLECTION,
+                                req_ctx.user_right,
+                                Some(user_permission_option.unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
+                            );
+
+                            match col_in_proj_ctx2 {
+                                Some(_) => {
+                                    return Ok((col_in_proj_ctx2, api_token.creator_user_id))
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
                 }
 
-                if requested_ctx.resource_type == Resources::PROJECT {
-                    // Case 2:
+                if req_ctx.resource_type == Resources::PROJECT {
+                    // Case 4:
                     // If api_token.project_id == context_project_id
                     // And user_right != None && api_token.project_id != None && context_project_id != None
                     // This will return Some(Context) otherwise this will return None
                     if api_token.project_id.is_some() {
                         let project_ctx = option_uuid_helper(
                             api_token.project_id,
-                            Some(requested_ctx.resource_id),
+                            Some(req_ctx.resource_id),
                             Resources::PROJECT,
+                            req_ctx.user_right,
                             api_token.user_right,
                         );
 
@@ -194,63 +238,32 @@ impl Database {
                             _ => (),
                         }
                     }
-                }
 
-                // Case 3.1:
-                // If context is user_scoped check if the user has the correct project permissions
-                // This checks for the permissions in the user_permissions table which already contains a project_id
-                if context_project_id.is_some() {
-                    let project_valid = user_permissions
-                        .filter(user_id.eq(api_token.creator_user_id))
-                        .filter(
-                            crate::database::schema::user_permissions::dsl::project_id
-                                .eq(context_project_id.unwrap_or_default()),
-                        )
-                        .first::<UserPermission>(conn)
-                        .optional()?;
-                    if project_valid.is_some() {
-                        let col_in_proj_ctx = option_uuid_helper(
-                            context_project_id,
-                            Some(project_valid.as_ref().unwrap().project_id), // This unwrap is ok safe because project_valid.is_some()
-                            Resources::PROJECT,
-                            Some(project_valid.as_ref().unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
-                        );
+                    // Case 6:
+                    // If context is user_scoped check if the user has the correct project permissions
+                    // This checks for the permissions in the user_permissions table which already contains a project_id
+                    if api_token.project_id.is_none() && api_token.collection_id.is_none() {
+                        let user_permissions_option = user_permissions
+                            .filter(user_id.eq(api_token.creator_user_id))
+                            .filter(
+                                crate::database::schema::user_permissions::dsl::project_id
+                                    .eq(req_ctx.resource_id),
+                            )
+                            .first::<UserPermission>(conn)
+                            .optional()?;
+                        if user_permissions_option.is_some() {
+                            let col_in_proj_ctx = option_uuid_helper(
+                                Some(user_permissions_option.unwrap().project_id), // This unwrap is ok safe because project_valid.is_some()
+                                Some(req_ctx.resource_id),
+                                Resources::PROJECT,
+                                req_ctx.user_right,
+                                Some(user_permissions_option.unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
+                            );
 
-                        match col_in_proj_ctx {
-                            Some(_) => return Ok((col_in_proj_ctx, api_token.creator_user_id)),
-                            _ => (),
-                        }
-                    }
-                }
-
-                // Case 3.2
-                // If the request is collection scoped and the token is a personal user_token
-                // it needs to be checked if the user has permissions in the collection associated project
-                if context_collection_id.is_some() {
-                    let collection_valid: Option<UserPermission> = user_permissions
-                        .inner_join(
-                            collections.on(crate::database::schema::collections::dsl::project_id
-                                .eq(crate::database::schema::user_permissions::dsl::project_id)),
-                        )
-                        .filter(
-                            crate::database::schema::collections::dsl::id
-                                .eq(context_collection_id.unwrap_or_default()),
-                        )
-                        .select(UserPermission::as_select())
-                        .first::<UserPermission>(conn)
-                        .optional()?;
-
-                    if collection_valid.is_some() {
-                        let col_in_proj_ctx2 = option_uuid_helper(
-                            context_collection_id,
-                            context_collection_id,
-                            Resources::COLLECTION,
-                            Some(collection_valid.unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
-                        );
-
-                        match col_in_proj_ctx2 {
-                            Some(_) => return Ok((col_in_proj_ctx2, api_token.creator_user_id)),
-                            _ => (),
+                            match col_in_proj_ctx {
+                                Some(_) => return Ok((col_in_proj_ctx, api_token.creator_user_id)),
+                                _ => (),
+                            }
                         }
                     }
                 }
@@ -265,22 +278,43 @@ impl Database {
     }
 }
 
+/// This function is a helper method to automatically bubble up options for ids and userrights
+/// and to compare if the users actual rights are sufficient for the request
+///
+/// ## Arguments
+///
+/// - id1: Optional uuid -> Uuid of the requested ressource
+/// - id2: Optional uuid -> Uuid of the resource from the db response
+/// - res_type: Resources -> The Type of the resource needed to build the result context
+/// - req_user_right -> The requested right
+/// - actual_user_right -> The actual right returned by the DB
+///
+/// ## Results
+///
+/// This will return an Option<Context> if the request succeeds
+/// otherwise this will return None indicating a None variant for the inputs
+/// or a failed check.
+///  
 fn option_uuid_helper(
     id1: Option<uuid::Uuid>,
     id2: Option<uuid::Uuid>,
     res_type: Resources,
-    user_right: Option<UserRights>,
+    req_user_right: UserRights,
+    actual_user_right: Option<UserRights>,
 ) -> Option<Context> {
     let id1_value = id1?;
     let id2_value = id2?;
 
-    if id1_value == id2_value {
+    // If ids are the same and the actual_user_rights are gr/eq the requested rights
+    // Return a context
+    if id1_value == id2_value && req_user_right <= actual_user_right? {
         return Some(Context {
-            user_right: user_right?,
+            user_right: actual_user_right?,
             resource_type: res_type,
             resource_id: id1_value,
             admin: false,
         });
     }
+    // Otherwise return None
     None
 }
