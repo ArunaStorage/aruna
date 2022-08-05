@@ -10,7 +10,7 @@ pub struct ObjectGroup {
     pub revision_number: i64,
     pub name: Option<String>,
     pub description: Option<String>,
-    pub created_at: chrono::NaiveDate,
+    pub created_at: chrono::NaiveDateTime,
     pub created_by: uuid::Uuid,
 }
 

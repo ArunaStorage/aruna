@@ -33,7 +33,7 @@ pub struct Project {
     pub name: String,
     pub description: String,
     pub flag: i64,
-    pub created_at: Option<chrono::NaiveDate>,
+    pub created_at: Option<chrono::NaiveDateTime>,
     pub created_by: uuid::Uuid,
 }
 
@@ -62,8 +62,8 @@ pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,
     pub token: String,
-    pub created_at: chrono::NaiveDate,
-    pub expires_at: Option<chrono::NaiveDate>,
+    pub created_at: chrono::NaiveDateTime,
+    pub expires_at: Option<chrono::NaiveDateTime>,
     pub project_id: Option<uuid::Uuid>,
     pub collection_id: Option<uuid::Uuid>,
     pub user_right: Option<UserRights>,
