@@ -12,6 +12,8 @@ use crate::database::{
 
 pub struct Authz {}
 
+/// This struct represents a request "Context" it is used to specify the
+/// accessed resource_type and id as well as the needed permissions
 pub struct Context {
     pub user_right: UserRights,
     pub resource_type: Resources,
@@ -19,7 +21,26 @@ pub struct Context {
     pub admin: bool,
 }
 
+/// Implementations for the Authz struct contain methods to create and check
+/// authorizations for the database
 impl Authz {
+    /// The `authorize` method is used to check if the supplied user token has enough permissions
+    /// to fullfill the gRPC request the `db.get_checked_user_id_from_token()` method will check if the token and its
+    /// associated permissions permissions are sufficient enough to execute the request
+    ///
+    /// ## Arguments
+    ///
+    /// - Arc of Database
+    /// - Metadata of the request containing a token
+    /// - Context that specifies which ressource is accessed and which permissions are requested
+    ///
+    /// ## Return
+    ///
+    /// This returns an Result<UUID> or an Error
+    /// If it returns an Error the authorization failed otherwise
+    /// the uuid is the user_id of the user that owns the token
+    /// this user_id will for example be used to specify the "created_by" field in the database
+    ///   
     pub fn authorize(
         db: Arc<Database>,
         metadata: &MetadataMap,
@@ -29,21 +50,7 @@ impl Authz {
             .get("Bearer")
             .ok_or(Error::new(ErrorKind::Other, "Token not found"))?
             .to_str()?;
-        todo!();
-        // let user_uid = match context.resource_type {
-        //     Resources::COLLECTION => {
-        //         db.get_user_right_from_token(token, Some(context.resource_id), None, context.admin)?
-        //     }
-        //     Resources::PROJECT => {
-        //         db.get_user_right_from_token(token, None, Some(context.resource_id), context.admin)?
-        //     }
-        //     _ => {
-        //         return Err(Box::new(Error::new(
-        //             ErrorKind::Other,
-        //             "Forbidden resource type",
-        //         )))
-        //     }
-        // };
-        // return Ok(user_uid);
+
+        db.get_checked_user_id_from_token(token, context)
     }
 }

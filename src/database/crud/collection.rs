@@ -20,7 +20,7 @@ impl Database {
 
         let shared_version_uuid = uuid::Uuid::new_v4();
 
-        let key_values = to_collection_key_values(request.labels, request.hooks, collection_uuid);
+        let key_values = _to_collection_key_values(request.labels, request.hooks, collection_uuid);
 
         let db_collection = models::collection::Collection {
             id: collection_uuid,

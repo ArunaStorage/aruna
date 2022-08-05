@@ -62,7 +62,7 @@ impl Database {
     ///     -> check for associated project and validate if the user has enough permissions
     /// 6.  req_ctx == proj && api_token == pers
     ///     -> check if the user has a user_permission for this specific project and if this permission is >= the req_ctx permission
-    pub fn get_user_right_from_token(
+    pub fn get_checked_user_id_from_token(
         &self,
         ctx_token: &str,
         req_ctx: Context,

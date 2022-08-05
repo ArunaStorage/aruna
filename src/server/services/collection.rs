@@ -35,8 +35,8 @@ impl CollectionService for CollectionServiceImpl {
             &request.metadata(),
             Context {
                 user_right: UserRights::WRITE,
-                resource_type: Resources::PROJECT,
-                resource_id: project_id,
+                resource_type: Resources::PROJECT, // Creating a new collection needs project level permissions
+                resource_id: project_id, // This is the project uuid in which this collection should be created
                 admin: false,
             },
         );
