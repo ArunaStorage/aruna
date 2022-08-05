@@ -27,7 +27,7 @@ impl Database {
     ///
     /// ## Behaviour
     ///
-    /// These cases descripe what happens in all different variants of the following cases.
+    /// The following section describes what happens in all different variants of the following cases.
     ///
     /// The ApiToken (api_token) can have three different "scopes":
     /// - Project           (proj)
@@ -39,6 +39,7 @@ impl Database {
     /// - Project           (proj)
     /// - Collection        (coll)
     ///
+    /// Yielding the following possible combinations:
     ///
     /// 1.  req_ctx == admi
     ///     -> check if token is personal and user is part of an admin project and return
@@ -53,7 +54,7 @@ impl Database {
     ///     -> check if context_project equals the apitoken project and the api_token permission is greater or  
     ///        equal the requested permission
     ///
-    /// (req_ctx == coll && api_token == proj does not exist because the req_ctx must always be greater than the api_token)
+    /// (req_ctx == coll && api_token == proj does not exist because the req_ctx must always be greater than the api_token scope)
     ///
     /// These cases all require the api_token to be "scoped" to a specific context. The next cases occur when
     /// the token is a personal token of a specific user.
@@ -62,6 +63,7 @@ impl Database {
     ///     -> check for associated project and validate if the user has enough permissions
     /// 6.  req_ctx == proj && api_token == pers
     ///     -> check if the user has a user_permission for this specific project and if this permission is >= the req_ctx permission
+    ///
     pub fn get_checked_user_id_from_token(
         &self,
         ctx_token: &str,
