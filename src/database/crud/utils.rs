@@ -1,7 +1,8 @@
 use uuid::Uuid;
 
+use crate::api::aruna::api::storage::models::v1::KeyValue;
+
 use crate::database::models::collection::CollectionKeyValue;
-use crate::{api::aruna::api::storage::models::v1::KeyValue, database::models};
 use crate::database::models::enums::KeyValueType;
 use crate::database::models::object::ObjectKeyValue;
 
@@ -11,23 +12,23 @@ use crate::database::models::object::ObjectKeyValue;
 pub fn to_collection_key_values(
     labels: Vec<KeyValue>,
     hooks: Vec<KeyValue>,
-    collection_uuid: uuid::Uuid,
+    collection_uuid: Uuid,
 ) -> Vec<CollectionKeyValue> {
     labels
         .iter()
         .map(|keyvalue| CollectionKeyValue {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             collection_id: collection_uuid,
             key: keyvalue.key.clone(),
             value: keyvalue.value.clone(),
-            key_value_type: models::enums::KeyValueType::LABEL,
+            key_value_type: KeyValueType::LABEL,
         })
         .chain(hooks.iter().map(|keyvalue| CollectionKeyValue {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             collection_id: collection_uuid,
             key: keyvalue.key.clone(),
             value: keyvalue.value.clone(),
-            key_value_type: models::enums::KeyValueType::HOOK,
+            key_value_type: KeyValueType::HOOK,
         }))
         .collect::<Vec<_>>()
 }
@@ -48,14 +49,14 @@ pub fn to_collection_key_values(
 pub fn to_object_key_values(
     labels: Vec<KeyValue>,
     hooks: Vec<KeyValue>,
-    uuid: Uuid,
+    object_uuid: Uuid,
 ) -> Vec<ObjectKeyValue> {
     let mut db_key_value: Vec<ObjectKeyValue> = Vec::new();
 
     for label in labels {
         db_key_value.push(ObjectKeyValue {
             id: Uuid::new_v4(),
-            object_id: uuid,
+            object_id: object_uuid,
             key: label.key,
             value: label.value,
             key_value_type: KeyValueType::LABEL
@@ -65,7 +66,7 @@ pub fn to_object_key_values(
     for hook in hooks {
         db_key_value.push(ObjectKeyValue {
             id: Uuid::new_v4(),
-            object_id: uuid,
+            object_id: object_uuid,
             key: hook.key,
             value: hook.value,
             key_value_type: KeyValueType::HOOK
