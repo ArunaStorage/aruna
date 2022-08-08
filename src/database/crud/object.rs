@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use chrono::Local;
-use diesel::{Connection, Insertable, RunQueryDsl};
+use diesel::{Connection, RunQueryDsl};
 use diesel::result::Error as diesel_error;
 
 use crate::api::aruna::api::storage::internal::v1::Location;
@@ -53,11 +53,11 @@ impl Database {
     ///
     pub fn create_object(
         &self,
-        request: InitializeNewObjectRequest,
-        creator: uuid::Uuid,
-    ) -> Result<(InitializeNewObjectResponse, Location), Box<dyn std::error::Error>> {
+        request: &InitializeNewObjectRequest,
+        creator: &uuid::Uuid,
+    ) -> Result<(InitializeNewObjectResponse, Location), Box<dyn std::error::Error + Send + Sync>> {
 
-        let staging_object = request.object.ok_or(
+        let staging_object = request.object.clone().ok_or(
             Error::new(ErrorKind::InvalidData, "StageObject cannot be None in request."))?;
 
         // Define source object
@@ -85,7 +85,7 @@ impl Database {
             revision_number: 0,
             filename: staging_object.filename.clone(),
             created_at: Local::now().naive_local(),
-            created_by: creator,
+            created_by: creator.clone(),
             content_len: 0,
             object_status: ObjectStatus::INITIALIZING,
             dataclass: Dataclass::PRIVATE,

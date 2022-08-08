@@ -39,7 +39,64 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<InitializeNewObjectRequest>
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
-        todo!()
+
+        // Check if user is authorized to create objects in this collection
+        let collection_result = uuid::Uuid::parse_str(&request.get_ref().collection_id);
+
+        let collection_id = match collection_result {
+            Ok(cid) => cid,
+            Err(_) => return Err(Status::not_found("Collection id not found.")),
+        };
+
+        let auth = Authz::authorize(
+            self.database.clone(),
+            &request.metadata(),
+            Context {
+                user_right: UserRights::APPEND, // User needs at least append permission to create an object
+                resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
+                resource_id: collection_id, // This is the collection uuid in which this object should be created
+                admin: false,
+            },
+        );
+
+        let creator_id = match auth {
+            Ok(creator_id) => creator_id,
+            Err(_) => return Err(Status::permission_denied("Permission denied.")),
+        };
+
+        // Create mutable data proxy object
+        let mut data_proxy_mut = self.data_proxy.clone();
+
+        // Extract request body
+        let inner_request = request.into_inner(); // Consumes the gRPC request
+
+        // Try to create object in database with all its assets
+        let db_result = self.database.create_object(&inner_request, &creator_id);
+
+        return match db_result {
+            Err(_) => {
+                Err(Status::new(Code::Internal, "Failed to create object in database."))
+            },
+            Ok((mut response, location)) => {
+
+                let proxy_response = data_proxy_mut.init_presigned_upload(InitPresignedUploadRequest {
+                    location: Some(location),
+                    multipart: inner_request.multipart.clone(),
+                }).await;
+
+                match proxy_response {
+                    Ok(proxy_response) => {
+                        //staging_id = uuid!(response.into_inner().upload_id);
+                        response.staging_id = proxy_response.into_inner().upload_id; // Consumes gRPC response
+
+                        return Ok(Response::new(response));
+                    }
+                    Err(_) => {
+                        Err(Status::new(Code::Unavailable, "Could not retrieve upload id from data proxy server."))
+                    }
+                }
+            }
+        };
     }
 
     async fn get_upload_url(
@@ -123,5 +180,14 @@ impl ObjectService for ObjectServiceImpl {
         &self, _request: Request<CreateDownloadLinksStreamRequest>
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_init_new_object() {
+
     }
 }
