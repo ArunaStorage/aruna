@@ -68,7 +68,7 @@ impl Database {
         &self,
         ctx_token: &str,
         req_ctx: Context,
-    ) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    ) -> Result<uuid::Uuid, Box<dyn std::error::Error + Send + Sync>> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
         //use crate::database::schema::projects::dsl::*;

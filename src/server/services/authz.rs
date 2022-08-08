@@ -45,7 +45,7 @@ impl Authz {
         db: Arc<Database>,
         metadata: &MetadataMap,
         context: Context,
-    ) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    ) -> Result<uuid::Uuid, Box<dyn std::error::Error + Send + Sync>> {
         let token = metadata
             .get("Bearer")
             .ok_or(Error::new(ErrorKind::Other, "Token not found"))?
