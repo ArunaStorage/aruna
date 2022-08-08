@@ -148,7 +148,7 @@ CREATE TABLE object_locations (
     endpoint_id UUID NOT NULL REFERENCES endpoints(id),
     -- Referencing the internal ID NOT the object_id 
     object_id UUID NOT NULL,
-    is_primary BOOL DEFAULT TRUE,
+    is_primary BOOL NOT NULL DEFAULT TRUE,
     -- TRUE if TRUE otherwise NULL
     UNIQUE (object_id, is_primary),
     FOREIGN KEY (object_id) REFERENCES objects(id)

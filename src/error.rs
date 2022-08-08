@@ -4,6 +4,7 @@ use diesel::r2d2::Error as DieselR2d2Error;
 use r2d2::Error as R2d2Error;
 use std::error::Error as StdError;
 use std::fmt::Display;
+use tokio::task::JoinError as AsyncJoinError;
 use tonic::metadata::errors::ToStrError as TonicToStrError;
 use uuid::Error as UuidError;
 
@@ -17,8 +18,9 @@ pub enum ArunaError {
     DieselError(DieselError),                 // All errors that occur in Diesel
     ConnectionError(ConnectionError),         // All errors that occur in internal Connections
     TypeConversionError(TypeConversionError), // All type conversion errors
-    GrpcNotFoundError(GrpcNotFoundError),     // All missing grpc fields errors
-    PERMISSIONDENIED,                         // Token with invalid permissions
+    GrpcNotFoundError(GrpcNotFoundError),
+    AsyncJoinError(AsyncJoinError), // All missing grpc fields errors
+    PERMISSIONDENIED,               // Token with invalid permissions
 }
 
 impl Display for ArunaError {
@@ -29,6 +31,9 @@ impl Display for ArunaError {
             ArunaError::TypeConversionError(t_con_error) => write!(f, "{}", t_con_error),
             ArunaError::GrpcNotFoundError(grpc_not_found_error) => {
                 write!(f, "{}", grpc_not_found_error)
+            }
+            ArunaError::AsyncJoinError(async_join_error) => {
+                write!(f, "{}", async_join_error)
             }
             ArunaError::PERMISSIONDENIED => write!(f, "Permission denied"),
         }
@@ -67,6 +72,12 @@ impl From<TonicToStrError> for ArunaError {
     }
 }
 
+impl From<AsyncJoinError> for ArunaError {
+    fn from(aerror: AsyncJoinError) -> Self {
+        ArunaError::AsyncJoinError(aerror)
+    }
+}
+
 //------------------ Impl to_tonic_status --------------------------------
 
 impl From<ArunaError> for tonic::Status {
@@ -81,6 +92,7 @@ impl From<ArunaError> for tonic::Status {
             ArunaError::GrpcNotFoundError(missing) => {
                 tonic::Status::invalid_argument(missing.to_string())
             }
+            ArunaError::AsyncJoinError(e) => tonic::Status::internal(e.to_string()),
             ArunaError::PERMISSIONDENIED => tonic::Status::permission_denied("Permission denied"),
         }
     }

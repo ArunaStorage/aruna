@@ -36,7 +36,7 @@ pub enum SourceType {
     DOI,
 }
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq)]
 #[DieselTypePath = "sql_types::KeyValueType"]
 pub enum KeyValueType {
     LABEL,

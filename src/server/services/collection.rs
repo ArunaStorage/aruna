@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use tokio::task;
+use tonic::Response;
+
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
@@ -41,7 +44,15 @@ impl CollectionService for CollectionServiceImpl {
             },
         )?;
 
-        todo!()
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || {
+                db.create_new_collection(request.get_ref().to_owned(), creator_id)
+            })
+            .await
+            .map_err(|join_error| ArunaError::from(join_error))??,
+        ))
     }
 
     /// GetCollection queries a specific Collection by ID
