@@ -59,7 +59,7 @@ pub fn to_object_key_values(
             object_id: object_uuid,
             key: label.key,
             value: label.value,
-            key_value_type: KeyValueType::LABEL
+            key_value_type: KeyValueType::LABEL,
         });
     }
 
@@ -69,7 +69,7 @@ pub fn to_object_key_values(
             object_id: object_uuid,
             key: hook.key,
             value: hook.value,
-            key_value_type: KeyValueType::HOOK
+            key_value_type: KeyValueType::HOOK,
         });
     }
 
@@ -78,9 +78,9 @@ pub fn to_object_key_values(
 
 #[cfg(test)]
 mod tests {
-    use std::any::type_name;
     use crate::api::aruna::api::storage::models::v1::KeyValue;
     use crate::database::crud::utils::to_object_key_values;
+    use std::any::type_name;
 
     #[test]
     fn test_convert_object_key_value() {
@@ -111,9 +111,11 @@ mod tests {
         assert_eq!(4, db_pairs.len());
         assert_eq!("Key_01", db_pairs.get(0).unwrap().key);
 
-
         for pair in db_pairs {
-            assert_eq!("aruna_server::database::models::object::ObjectKeyValue", type_of(pair));
+            assert_eq!(
+                "aruna_server::database::models::object::ObjectKeyValue",
+                type_of(pair)
+            );
         }
     }
 

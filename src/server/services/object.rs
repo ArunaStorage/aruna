@@ -1,17 +1,17 @@
 use std::sync::Arc;
-use tonic::{Code, Request, Response, Status};
 use tonic::transport::Channel;
+use tonic::{Code, Request, Response, Status};
 
-use crate::api::aruna::api::storage::services::v1::*;
-use crate::api::aruna::api::storage::services::v1::object_service_server::ObjectService;
 use crate::api::aruna::api::storage::internal::v1::{
-    internal_proxy_service_client::InternalProxyServiceClient,
-    InitPresignedUploadRequest
+    internal_proxy_service_client::InternalProxyServiceClient, InitPresignedUploadRequest,
 };
+use crate::api::aruna::api::storage::services::v1::object_service_server::ObjectService;
+use crate::api::aruna::api::storage::services::v1::*;
 
 use crate::database::connection::Database;
 use crate::database::models::enums::{Resources, UserRights};
 
+use crate::error::ArunaError;
 use crate::server::services::authz::{Authz, Context};
 
 ///
@@ -22,10 +22,13 @@ pub struct ObjectServiceImpl {
 
 ///
 impl ObjectServiceImpl {
-    pub async fn new(database: Arc<Database>, data_proxy: InternalProxyServiceClient<Channel>) -> Self {
+    pub async fn new(
+        database: Arc<Database>,
+        data_proxy: InternalProxyServiceClient<Channel>,
+    ) -> Self {
         let collection_service = ObjectServiceImpl {
             database,
-            data_proxy
+            data_proxy,
         };
 
         return collection_service;
@@ -37,18 +40,13 @@ impl ObjectServiceImpl {
 impl ObjectService for ObjectServiceImpl {
     async fn initialize_new_object(
         &self,
-        request: Request<InitializeNewObjectRequest>
+        request: Request<InitializeNewObjectRequest>,
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
-
         // Check if user is authorized to create objects in this collection
-        let collection_result = uuid::Uuid::parse_str(&request.get_ref().collection_id);
+        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+            .map_err(|e| ArunaError::from(e))?;
 
-        let collection_id = match collection_result {
-            Ok(cid) => cid,
-            Err(_) => return Err(Status::not_found("Collection id not found.")),
-        };
-
-        let auth = Authz::authorize(
+        let creator_id = Authz::authorize(
             self.database.clone(),
             &request.metadata(),
             Context {
@@ -57,12 +55,7 @@ impl ObjectService for ObjectServiceImpl {
                 resource_id: collection_id, // This is the collection uuid in which this object should be created
                 admin: false,
             },
-        );
-
-        let creator_id = match auth {
-            Ok(creator_id) => creator_id,
-            Err(_) => return Err(Status::permission_denied("Permission denied.")),
-        };
+        )?;
 
         // Create mutable data proxy object
         let mut data_proxy_mut = self.data_proxy.clone();
@@ -74,15 +67,17 @@ impl ObjectService for ObjectServiceImpl {
         let db_result = self.database.create_object(&inner_request, &creator_id);
 
         return match db_result {
-            Err(_) => {
-                Err(Status::new(Code::Internal, "Failed to create object in database."))
-            },
+            Err(_) => Err(Status::new(
+                Code::Internal,
+                "Failed to create object in database.",
+            )),
             Ok((mut response, location)) => {
-
-                let proxy_response = data_proxy_mut.init_presigned_upload(InitPresignedUploadRequest {
-                    location: Some(location),
-                    multipart: inner_request.multipart.clone(),
-                }).await;
+                let proxy_response = data_proxy_mut
+                    .init_presigned_upload(InitPresignedUploadRequest {
+                        location: Some(location),
+                        multipart: inner_request.multipart.clone(),
+                    })
+                    .await;
 
                 match proxy_response {
                     Ok(proxy_response) => {
@@ -91,9 +86,10 @@ impl ObjectService for ObjectServiceImpl {
 
                         return Ok(Response::new(response));
                     }
-                    Err(_) => {
-                        Err(Status::new(Code::Unavailable, "Could not retrieve upload id from data proxy server."))
-                    }
+                    Err(_) => Err(Status::new(
+                        Code::Unavailable,
+                        "Could not retrieve upload id from data proxy server.",
+                    )),
                 }
             }
         };
@@ -101,83 +97,85 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_upload_url(
         &self,
-        _request: Request<GetUploadUrlRequest>
+        _request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
         todo!()
     }
 
     async fn finish_object_staging(
-        &self, _request: Request<FinishObjectStagingRequest>
+        &self,
+        _request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>, Status> {
         todo!()
     }
 
     async fn update_object(
         &self,
-        _request: Request<UpdateObjectRequest>
+        _request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>, Status> {
         todo!()
     }
 
     async fn borrow_object(
         &self,
-        _request: Request<BorrowObjectRequest>
+        _request: Request<BorrowObjectRequest>,
     ) -> Result<Response<BorrowObjectResponse>, Status> {
         todo!()
     }
 
     async fn clone_object(
         &self,
-        _request: Request<CloneObjectRequest>
+        _request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>, Status> {
         todo!()
     }
 
     async fn delete_object(
         &self,
-        _request: Request<DeleteObjectRequest>
+        _request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         todo!()
     }
 
     async fn get_object_by_id(
         &self,
-        _request: Request<GetObjectByIdRequest>
+        _request: Request<GetObjectByIdRequest>,
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
         todo!()
     }
 
     async fn get_objects(
         &self,
-        _request: Request<GetObjectsRequest>
+        _request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>, Status> {
         todo!()
     }
 
     async fn get_object_history_by_id(
         &self,
-        _request: Request<GetObjectHistoryByIdRequest>
+        _request: Request<GetObjectHistoryByIdRequest>,
     ) -> Result<Response<GetObjectHistoryByIdResponse>, Status> {
         todo!()
     }
 
     async fn get_download_url(
         &self,
-        _request: Request<GetDownloadUrlRequest>
+        _request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>, Status> {
         todo!()
     }
 
     async fn get_download_links_batch(
         &self,
-        _request: Request<GetDownloadLinksBatchRequest>
+        _request: Request<GetDownloadLinksBatchRequest>,
     ) -> Result<Response<GetDownloadLinksBatchResponse>, Status> {
         todo!()
     }
 
     type CreateDownloadLinksStreamStream = tonic::Streaming<CreateDownloadLinksStreamResponse>;
     async fn create_download_links_stream(
-        &self, _request: Request<CreateDownloadLinksStreamRequest>
+        &self,
+        _request: Request<CreateDownloadLinksStreamRequest>,
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
         todo!()
     }
@@ -187,7 +185,5 @@ impl ObjectService for ObjectServiceImpl {
 mod tests {
 
     #[test]
-    fn test_init_new_object() {
-
-    }
+    fn test_init_new_object() {}
 }

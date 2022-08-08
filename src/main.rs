@@ -4,6 +4,7 @@ extern crate diesel;
 
 mod api;
 mod database;
+mod error;
 mod server;
 
 #[tokio::main]

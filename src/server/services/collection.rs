@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
-use crate::api::aruna::api::storage::services::v1::collection_service_server::CollectionService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
+use crate::{
+    api::aruna::api::storage::services::v1::collection_service_server::CollectionService,
+    error::ArunaError,
+};
 
 use super::authz::{Authz, Context};
 
@@ -24,14 +27,10 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
-        let project_result = uuid::Uuid::parse_str(&request.get_ref().project_id);
+        let project_id = uuid::Uuid::parse_str(&request.get_ref().project_id)
+            .map_err(|e| ArunaError::from(e))?;
 
-        let project_id = match project_result {
-            Ok(pid) => pid,
-            Err(_) => return Err(tonic::Status::not_found("project_id not found")),
-        };
-
-        let auth = Authz::authorize(
+        let creator_id = Authz::authorize(
             self.database.clone(),
             &request.metadata(),
             Context {
@@ -40,12 +39,7 @@ impl CollectionService for CollectionServiceImpl {
                 resource_id: project_id, // This is the project uuid in which this collection should be created
                 admin: false,
             },
-        );
-
-        let creator_id = match auth {
-            Ok(creator_id) => creator_id,
-            Err(_) => return Err(tonic::Status::permission_denied("permission denied")),
-        };
+        )?;
 
         todo!()
     }

@@ -1,15 +1,8 @@
-use std::io::ErrorKind;
-
-use crate::{
-    database::{
-        connection::Database,
-        models::{
-            auth::{ApiToken, UserPermission},
-            enums::{Resources, UserRights},
-        },
-    },
-    server::services::authz::Context,
-};
+use crate::database::connection::Database;
+use crate::database::models::auth::{ApiToken, UserPermission};
+use crate::database::models::enums::{Resources, UserRights};
+use crate::error::ArunaError;
+use crate::server::services::authz::Context;
 use diesel::{prelude::*, sql_query, sql_types::Uuid};
 
 impl Database {
@@ -68,17 +61,17 @@ impl Database {
         &self,
         ctx_token: &str,
         req_ctx: Context,
-    ) -> Result<uuid::Uuid, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<uuid::Uuid, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
         //use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
-        use diesel::result::Error;
+        use diesel::result::Error as dError;
 
         let creator_uid =
             self.pg_connection
                 .get()?
-                .transaction::<Option<uuid::Uuid>, Error, _>(|conn| {
+                .transaction::<Option<uuid::Uuid>, dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
                         .filter(token.eq(ctx_token))
@@ -264,12 +257,7 @@ impl Database {
 
         match creator_uid {
             Some(uid) => return Ok(uid),
-            None => {
-                return Err(Box::new(std::io::Error::new(
-                    ErrorKind::Other,
-                    "Unauthorized",
-                )))
-            }
+            None => return Err(ArunaError::PERMISSIONDENIED),
         }
     }
 }

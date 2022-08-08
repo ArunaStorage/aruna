@@ -1,22 +1,20 @@
-use std::io::{Error, ErrorKind};
-
-use chrono::Local;
-use diesel::{insert_into, prelude::*};
-
 use super::utils::*;
-use crate::{
-    api::aruna::api::storage::services::v1::{
-        CreateNewCollectionRequest, CreateNewCollectionResponse,
-    },
-    database::{connection::Database, models},
+use crate::api::aruna::api::storage::services::v1::{
+    CreateNewCollectionRequest, CreateNewCollectionResponse,
 };
+use crate::database::connection::Database;
+use crate::database::models;
+use crate::error::ArunaError;
+use chrono::Local;
+use diesel::insert_into;
+use diesel::prelude::*;
 
 impl Database {
     pub fn create_new_collection(
         &self,
         request: CreateNewCollectionRequest,
         creator: uuid::Uuid,
-    ) -> Result<CreateNewCollectionResponse, Box<dyn std::error::Error>> {
+    ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
         use diesel::result::Error;
@@ -39,8 +37,7 @@ impl Database {
             project_id: uuid::Uuid::parse_str(&request.project_id)?,
         };
 
-        let request_result = self
-            .pg_connection
+        self.pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
                 // Get the API token, if this errors -> no corresponding database token object could be found
@@ -52,15 +49,10 @@ impl Database {
                     .values(db_collection)
                     .execute(conn)?;
                 Ok(())
-            });
+            })?;
 
-        match request_result {
-            Ok(_) => {
-                return Ok(CreateNewCollectionResponse {
-                    id: collection_uuid.to_string(),
-                })
-            }
-            Err(e) => return Err(Box::new(e)),
-        }
+        return Ok(CreateNewCollectionResponse {
+            id: collection_uuid.to_string(),
+        });
     }
 }

@@ -1,18 +1,16 @@
-use std::io::{Error, ErrorKind};
 use chrono::Local;
-use diesel::{Connection, RunQueryDsl};
 use diesel::result::Error as diesel_error;
+use diesel::{Connection, RunQueryDsl};
+use std::io::{Error, ErrorKind};
 
 use crate::api::aruna::api::storage::internal::v1::Location;
 use crate::api::aruna::api::storage::services::v1::{
-    BorrowObjectRequest, BorrowObjectResponse,
-    CloneObjectRequest, CloneObjectResponse,
-    DeleteObjectRequest, DeleteObjectResponse,
-    GetObjectByIdRequest, GetObjectByIdResponse,
-    GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse,
-    GetObjectsRequest, GetObjectsResponse,
-    InitializeNewObjectRequest, InitializeNewObjectResponse,
-    UpdateObjectRequest, UpdateObjectResponse};
+    BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
+    DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest, GetObjectByIdResponse,
+    GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse, GetObjectsRequest,
+    GetObjectsResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
+    UpdateObjectRequest, UpdateObjectResponse,
+};
 
 use crate::database::connection::Database;
 use crate::database::crud::utils::to_object_key_values;
@@ -20,15 +18,10 @@ use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, EndpointType, ObjectStatus, SourceType};
 use crate::database::models::object::{Endpoint, Hash, HashType, Object, ObjectLocation, Source};
 use crate::database::schema::{
-    sources::dsl::*,
-    endpoints::dsl::*,
-    object_locations::dsl::*,
-    objects::dsl::*,
-    hash_types::dsl::*,
-    hashes::dsl::*,
-    object_key_value::dsl::*,
-    collection_objects::dsl::*,
+    collection_objects::dsl::*, endpoints::dsl::*, hash_types::dsl::*, hashes::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
+use crate::error::{ArunaError, GrpcNotFoundError};
 
 /// Implementing CRUD+ database operations for Objects
 impl Database {
@@ -55,10 +48,8 @@ impl Database {
         &self,
         request: &InitializeNewObjectRequest,
         creator: &uuid::Uuid,
-    ) -> Result<(InitializeNewObjectResponse, Location), Box<dyn std::error::Error + Send + Sync>> {
-
-        let staging_object = request.object.clone().ok_or(
-            Error::new(ErrorKind::InvalidData, "StageObject cannot be None in request."))?;
+    ) -> Result<(InitializeNewObjectResponse, Location), ArunaError> {
+        let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
         // Define source object
         let source = Source {
@@ -99,7 +90,7 @@ impl Database {
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
             object_id: object.id.clone(),
             is_specification: false, //Note: Cannot derive from request so default is false
-            writeable: false //Note: Cannot derive from request so default is false
+            writeable: false,        //Note: Cannot derive from request so default is false
         };
 
         // Define the initial object location
@@ -138,29 +129,42 @@ impl Database {
             .get()?
             .transaction::<_, diesel_error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
-                diesel::insert_into(endpoints).values(&endpoint).execute(conn)?;
+                diesel::insert_into(endpoints)
+                    .values(&endpoint)
+                    .execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
-                diesel::insert_into(hash_types).values(&default_hash_type).execute(conn)?;
-                diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
-                diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
-                diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
+                diesel::insert_into(object_locations)
+                    .values(&object_location)
+                    .execute(conn)?;
+                diesel::insert_into(hash_types)
+                    .values(&default_hash_type)
+                    .execute(conn)?;
+                diesel::insert_into(hashes)
+                    .values(&empty_hash)
+                    .execute(conn)?;
+                diesel::insert_into(object_key_value)
+                    .values(&key_value_pairs)
+                    .execute(conn)?;
+                diesel::insert_into(collection_objects)
+                    .values(&collection_object)
+                    .execute(conn)?;
 
                 Ok(())
             })?;
 
         // If transaction was successful return response and object location for data proxy as tuple
-        return Ok(
-            (InitializeNewObjectResponse {
+        return Ok((
+            InitializeNewObjectResponse {
                 id: object.id.to_string(),
                 staging_id: "".to_string(),
                 collection_id: request.collection_id.clone(),
-            }, Location {
+            },
+            Location {
                 r#type: 0,
                 bucket: object_location.bucket,
                 path: object_location.path,
-            })
-        );
+            },
+        ));
     }
 
     pub fn get_object(

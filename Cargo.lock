@@ -19,6 +19,7 @@ dependencies = [
  "http",
  "prost",
  "prost-types",
+ "r2d2",
  "tokio",
  "tonic",
  "tonic-build",

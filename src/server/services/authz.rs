@@ -1,14 +1,9 @@
-use std::{
-    io::{Error, ErrorKind},
-    sync::Arc,
-};
-
+use crate::database::connection::Database;
+use crate::database::models::enums::{Resources, UserRights};
+use crate::error::ArunaError;
+use crate::error::GrpcNotFoundError;
+use std::sync::Arc;
 use tonic::metadata::MetadataMap;
-
-use crate::database::{
-    connection::Database,
-    models::enums::{Resources, UserRights},
-};
 
 pub struct Authz {}
 
@@ -45,10 +40,12 @@ impl Authz {
         db: Arc<Database>,
         metadata: &MetadataMap,
         context: Context,
-    ) -> Result<uuid::Uuid, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<uuid::Uuid, ArunaError> {
         let token = metadata
             .get("Bearer")
-            .ok_or(Error::new(ErrorKind::Other, "Token not found"))?
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
             .to_str()?;
 
         db.get_checked_user_id_from_token(token, context)
