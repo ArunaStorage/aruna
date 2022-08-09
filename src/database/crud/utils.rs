@@ -109,7 +109,15 @@ mod tests {
         let db_pairs = to_object_key_values(labels, hooks, uuid::Uuid::default());
 
         assert_eq!(4, db_pairs.len());
+
         assert_eq!("Key_01", db_pairs.get(0).unwrap().key);
+        assert_eq!("Value_01", db_pairs.get(0).unwrap().value);
+        assert_eq!("Key_02", db_pairs.get(1).unwrap().key);
+        assert_eq!("Value_02", db_pairs.get(1).unwrap().value);
+        assert_eq!("AnalyzeMe", db_pairs.get(2).unwrap().key);
+        assert_eq!("https://worker08.computational.bio.uni-giessen.de/workflow", db_pairs.get(2).unwrap().value);
+        assert_eq!("ValidateMe", db_pairs.get(3).unwrap().key);
+        assert_eq!("<url-to-validation-server>", db_pairs.get(3).unwrap().value);
 
         for pair in db_pairs {
             assert_eq!(
