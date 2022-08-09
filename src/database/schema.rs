@@ -226,7 +226,7 @@ diesel::table! {
         path -> Text,
         endpoint_id -> Uuid,
         object_id -> Uuid,
-        is_primary -> Nullable<Bool>,
+        is_primary -> Bool,
     }
 }
 
