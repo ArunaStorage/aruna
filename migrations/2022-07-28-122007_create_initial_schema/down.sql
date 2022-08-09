@@ -1,3 +1,6 @@
+/* ----- VIEWS ----------------------------------------------------- */
+DROP MATERIALIZED VIEW collection_stats;
+DROP MATERIALIZED VIEW object_group_stats;
 /* ----- Notification Service -------------------------------------- */
 DROP TABLE notification_stream_groups;
 /* ----- Authorization --------------------------------------------- */

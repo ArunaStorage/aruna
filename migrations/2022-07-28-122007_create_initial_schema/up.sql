@@ -258,3 +258,24 @@ CREATE TABLE notification_stream_groups (
     resource_type RESOURCES NOT NULL,
     notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
 );
+/* ----- Materialized Views --------------------------------------- */
+-- Materialized view for the collections table
+CREATE MATERIALIZED VIEW collection_stats AS
+SELECT col.id AS id,
+    COUNT(obj.id) AS object_count,
+    SUM(obj.content_len) AS size,
+    now() AS last_updated
+FROM collections AS col
+    JOIN collection_objects AS cobj ON col.id = cobj.collection_id
+    JOIN objects AS obj ON cobj.object_id = obj.id
+GROUP BY col.id;
+-- Materialized view for the object_groups table
+CREATE MATERIALIZED VIEW object_group_stats AS
+SELECT objgrp.id AS id,
+    COUNT(obj.id) AS object_count,
+    SUM(obj.content_len) AS size,
+    now() AS last_updated
+FROM object_groups AS objgrp
+    JOIN object_group_objects AS objgrpobj ON objgrp.id = objgrpobj.object_group_id
+    JOIN objects AS obj ON objgrpobj.object_id = obj.id
+GROUP BY objgrp.id;
