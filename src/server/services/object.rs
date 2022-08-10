@@ -1,9 +1,31 @@
 use std::sync::Arc;
+use tokio::task;
 use tonic::transport::Channel;
-use tonic::{Code, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
-use crate::api::aruna::api::storage::internal::v1::{
-    internal_proxy_service_client::InternalProxyServiceClient, InitPresignedUploadRequest,
+
+use crate::api::aruna::api::storage::{
+    internal::v1::{
+        internal_proxy_service_client::InternalProxyServiceClient,
+        InitPresignedUploadRequest, Location, CreatePresignedDownloadRequest, Range
+    },
+    models::v1::object_location::Location::S3Location,
+    services::v1::{
+        object_service_server::ObjectService,
+        BorrowObjectRequest, BorrowObjectResponse,
+        CloneObjectRequest, CloneObjectResponse,
+        CreateDownloadLinksStreamRequest, CreateDownloadLinksStreamResponse,
+        DeleteObjectRequest, DeleteObjectResponse,
+        FinishObjectStagingRequest, FinishObjectStagingResponse,
+        GetDownloadLinksBatchRequest, GetDownloadLinksBatchResponse,
+        GetDownloadUrlRequest, GetDownloadUrlResponse,
+        GetObjectByIdRequest, GetObjectByIdResponse,
+        GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse,
+        GetObjectsRequest, GetObjectsResponse,
+        GetUploadUrlRequest, GetUploadUrlResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse,
+        UpdateObjectRequest, UpdateObjectResponse
+    },
 };
 use crate::api::aruna::api::storage::services::v1::object_service_server::ObjectService;
 use crate::api::aruna::api::storage::services::v1::*;
@@ -63,36 +85,28 @@ impl ObjectService for ObjectServiceImpl {
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        // Try to create object in database with all its assets
-        let db_result = self.database.create_object(&inner_request, &creator_id);
-
-        return match db_result {
-            Err(_) => Err(Status::new(
-                Code::Internal,
-                "Failed to create object in database.",
-            )),
-            Ok((mut response, location)) => {
-                let proxy_response = data_proxy_mut
-                    .init_presigned_upload(InitPresignedUploadRequest {
-                        location: Some(location),
-                        multipart: inner_request.multipart.clone(),
-                    })
-                    .await;
-
-                match proxy_response {
-                    Ok(proxy_response) => {
-                        //staging_id = uuid!(response.into_inner().upload_id);
-                        response.staging_id = proxy_response.into_inner().upload_id; // Consumes gRPC response
-
-                        return Ok(Response::new(response));
-                    }
-                    Err(_) => Err(Status::new(
-                        Code::Unavailable,
-                        "Could not retrieve upload id from data proxy server.",
-                    )),
-                }
-            }
+        // Generate upload_id for object through data proxy
+        let location = Location {
+            r#type: S3Location as i32,
+            bucket: uuid::Uuid::new_v4().to_string(),
+            path: uuid::Uuid::new_v4().to_string()
         };
+
+        let upload_id = data_proxy_mut.init_presigned_upload(
+            InitPresignedUploadRequest {
+                location: Some(location.clone()),
+                multipart: inner_request.multipart.clone(),
+            }).await?.into_inner().upload_id;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.create_object(&inner_request, &creator_id, &location, upload_id)
+        }).await
+          .map_err(|join_error| ArunaError::from(join_error))??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 
     async fn get_upload_url(
