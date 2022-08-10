@@ -1,5 +1,6 @@
 use crate::database::schema::*;
 use diesel_derive_enum::*;
+use tonic::{Code, Status};
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
@@ -31,9 +32,17 @@ pub enum Dataclass {
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::SourceType"]
 pub enum SourceType {
-    S3,
     URL,
-    DOI,
+    DOI
+}
+impl SourceType {
+    pub fn from_i32(value: i32) -> Result<SourceType, Status> {
+        match value {
+            1 => Ok(SourceType::URL),
+            2 => Ok(SourceType::DOI),
+            _ => Err(Status::new(Code::InvalidArgument, "unknown source type"))
+        }
+    }
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq)]
