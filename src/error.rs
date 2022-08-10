@@ -6,6 +6,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use tokio::task::JoinError as AsyncJoinError;
 use tonic::metadata::errors::ToStrError as TonicToStrError;
+use tonic::Status as GrpcError;
 use uuid::Error as UuidError;
 
 use diesel::result::Error as DieselError;
@@ -19,8 +20,9 @@ pub enum ArunaError {
     ConnectionError(ConnectionError),         // All errors that occur in internal Connections
     TypeConversionError(TypeConversionError), // All type conversion errors
     GrpcNotFoundError(GrpcNotFoundError),
-    AsyncJoinError(AsyncJoinError), // All missing grpc fields errors
-    PERMISSIONDENIED,               // Token with invalid permissions
+    DataProxyError(GrpcError),                // All data proxy errors
+    AsyncJoinError(AsyncJoinError),           // All missing grpc fields errors
+    PERMISSIONDENIED,                         // Token with invalid permissions
 }
 
 impl Display for ArunaError {
@@ -29,12 +31,9 @@ impl Display for ArunaError {
             ArunaError::DieselError(diesel_error) => write!(f, "{}", diesel_error),
             ArunaError::ConnectionError(con_error) => write!(f, "{}", con_error),
             ArunaError::TypeConversionError(t_con_error) => write!(f, "{}", t_con_error),
-            ArunaError::GrpcNotFoundError(grpc_not_found_error) => {
-                write!(f, "{}", grpc_not_found_error)
-            }
-            ArunaError::AsyncJoinError(async_join_error) => {
-                write!(f, "{}", async_join_error)
-            }
+            ArunaError::GrpcNotFoundError(grpc_not_found_error) => write!(f, "{}", grpc_not_found_error),
+            ArunaError::DataProxyError(data_proxy_error) => write!(f, "{}", data_proxy_error),
+            ArunaError::AsyncJoinError(async_join_error) => write!(f, "{}", async_join_error),
             ArunaError::PERMISSIONDENIED => write!(f, "Permission denied"),
         }
     }
@@ -72,6 +71,12 @@ impl From<TonicToStrError> for ArunaError {
     }
 }
 
+impl From<GrpcError> for ArunaError {
+    fn from(data_proxy_error: GrpcError) -> Self {
+        ArunaError::DataProxyError(data_proxy_error)
+    }
+}
+
 impl From<AsyncJoinError> for ArunaError {
     fn from(aerror: AsyncJoinError) -> Self {
         ArunaError::AsyncJoinError(aerror)
@@ -85,6 +90,7 @@ impl From<ArunaError> for tonic::Status {
         match aerror {
             ArunaError::ConnectionError(_) => tonic::Status::internal("internal server error"),
             ArunaError::DieselError(_) => tonic::Status::internal("internal server error"),
+            ArunaError::DataProxyError(_) => tonic::Status::internal("internal data proxy error"),
             ArunaError::TypeConversionError(e) => tonic::Status::invalid_argument(e.to_string()),
             ArunaError::GrpcNotFoundError(e) if e == GrpcNotFoundError::METADATATOKEN => {
                 tonic::Status::unauthenticated(e.to_string())
