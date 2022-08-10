@@ -10,6 +10,7 @@ use tonic::Status as GrpcError;
 use uuid::Error as UuidError;
 
 use diesel::result::Error as DieselError;
+use prost_types::TimestampError;
 
 /// The main ArunaError, all Results for Aruna should return this error
 /// For this it implements `From` for all other errortypes that may occur in
@@ -22,6 +23,7 @@ pub enum ArunaError {
     GrpcNotFoundError(GrpcNotFoundError),
     DataProxyError(GrpcError),                // All data proxy errors
     AsyncJoinError(AsyncJoinError),           // All missing grpc fields errors
+    TimestampError(TimestampError),           // All Errors from crude conversions to prost_types::TimestampError
     PERMISSIONDENIED,                         // Token with invalid permissions
 }
 
@@ -34,6 +36,7 @@ impl Display for ArunaError {
             ArunaError::GrpcNotFoundError(grpc_not_found_error) => write!(f, "{}", grpc_not_found_error),
             ArunaError::DataProxyError(data_proxy_error) => write!(f, "{}", data_proxy_error),
             ArunaError::AsyncJoinError(async_join_error) => write!(f, "{}", async_join_error),
+            ArunaError::TimestampError(timestamp_error) => write!(f, "{}", timestamp_error),
             ArunaError::PERMISSIONDENIED => write!(f, "Permission denied"),
         }
     }
@@ -83,6 +86,12 @@ impl From<AsyncJoinError> for ArunaError {
     }
 }
 
+impl From<TimestampError> for ArunaError {
+    fn from(timestamp_error: TimestampError) -> Self {
+        ArunaError::TimestampError(timestamp_error)
+    }
+}
+
 //------------------ Impl to_tonic_status --------------------------------
 
 impl From<ArunaError> for tonic::Status {
@@ -91,6 +100,7 @@ impl From<ArunaError> for tonic::Status {
             ArunaError::ConnectionError(_) => tonic::Status::internal("internal server error"),
             ArunaError::DieselError(_) => tonic::Status::internal("internal server error"),
             ArunaError::DataProxyError(_) => tonic::Status::internal("internal data proxy error"),
+            ArunaError::TimestampError(e) => tonic::Status::internal("internal server error"),
             ArunaError::TypeConversionError(e) => tonic::Status::invalid_argument(e.to_string()),
             ArunaError::GrpcNotFoundError(e) if e == GrpcNotFoundError::METADATATOKEN => {
                 tonic::Status::unauthenticated(e.to_string())
