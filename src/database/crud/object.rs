@@ -1,7 +1,4 @@
-use chrono::Local;
-use diesel::result::Error as diesel_error;
-use diesel::{Connection, RunQueryDsl};
-use std::io::{Error, ErrorKind};
+use chrono::{Datelike, Local, Timelike};
 
 use diesel::prelude::*;
 use diesel::result::Error;
@@ -184,9 +181,135 @@ impl Database {
 
     pub fn get_object(
         &self,
-        request: GetObjectByIdRequest,
-    ) -> Result<GetObjectByIdResponse, Box<dyn std::error::Error>> {
-        todo!()
+        request: &GetObjectByIdRequest,
+    ) -> Result<(ProtoObject, ProtoLocation), ArunaError> {
+
+        // Check if id in request has valid format
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+
+        // Struct to temporarily hold the database objects
+        struct ObjectDto {
+            object: Object,
+            hash_type: HashType,
+            hash: Hash,
+            source: Option<Source>,
+            location: ObjectLocation,
+            latest: bool
+        }
+
+        // Read object from database
+        let object_dto = self.pg_connection
+            .get()?
+            .transaction::<ObjectDto, Error, _>(|conn| {
+                //Note: Get Object (with labels and hooks --> None?)
+                let object: Object = objects
+                    //.select(max(database::schema::objects::revision_number))
+                    .filter(database::schema::objects::id.eq(object_uuid))
+                    //.filter(database::schema::objects::revision_number.eq(request.revision))  //ToDo: Exact revision or
+                    //.order(database::schema::objects::revision_number.desc())                 //ToDo: Latest
+                    .first::<Object>(conn)?;
+
+                let object_hash: Hash = Hash::belonging_to(&object)
+                    .first::<Hash>(conn)?;
+
+                let hash_type: HashType = hash_types
+                    .filter(database::schema::hash_types::id.eq(object_hash.id))
+                    .first::<HashType>(conn)?;
+
+                //Note: Only read primary location of object?
+                let location: ObjectLocation = ObjectLocation::belonging_to(&object)
+                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .first::<ObjectLocation>(conn)?;
+
+                let source: Option<Source> = match object.source_id {
+                    None => None,
+                    Some(src_id) =>
+                        Some(sources
+                            .filter(database::schema::sources::id.eq(src_id))
+                            .first::<Source>(conn)?)
+                };
+
+                //Ok((object, source, location))
+                Ok(ObjectDto {
+                    object,
+                    hash_type,
+                    hash: object_hash,
+                    source,
+                    location,
+                    latest: false //ToDo: Check if object is latest revision
+                })
+            })?;
+
+        //ToDo: - Transform to proto source (if available)
+        //      - Create proto origin
+        //      - Create proto hash + hash type
+        //      - Transform to proto object
+        //      - Return response with object but without url
+        let proto_source = match object_dto.source {
+            None => None,
+            Some(source) => Some(
+                ProtoSource {
+                    identifier: source.link,
+                    source_type: source.source_type as i32
+                }
+            )
+        };
+
+        // If object id == origin id --> original object
+        //Note: OriginType only stored implicitly
+        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
+            None => None,
+            Some(origin_uuid) => Some(
+                ProtoOrigin {
+                    id: origin_uuid.to_string(),
+                    r#type: match object_dto.object.id == origin_uuid {
+                        true => 1,
+                        false => 2
+                    }
+                }
+            )
+        };
+
+        // Horrible NaiveDatetime to Timestamp cast ...
+        let timestamp = Timestamp::date_time(
+            object_dto.object.created_at.year() as i64,
+            object_dto.object.created_at.month() as u8,
+            object_dto.object.created_at.day() as u8,
+            object_dto.object.created_at.hour() as u8,
+            object_dto.object.created_at.minute() as u8,
+            object_dto.object.created_at.second() as u8
+        )?;
+
+        //ToDo: HashType is enum in gRPC but string in database...
+        let proto_hash = ProtoHash {
+            alg: 0, //Note: Yeah... the fuck is this mapping?
+            hash: object_dto.hash.hash
+        };
+
+        let proto_object = ProtoObject {
+            id: object_dto.object.id.to_string(),
+            filename: object_dto.object.filename,
+            labels: vec![], //Todo: Individual request, pagination or brainless full list?
+            hooks: vec![],  //Todo: Individual request, pagination or brainless full list?
+            created: Some(timestamp),
+            content_len: object_dto.object.content_len,
+            status: object_dto.object.object_status as i32,
+            origin: proto_origin, //ToDo: OriginType only implicit?
+            data_class: object_dto.object.dataclass as i32,
+            hash: Some(proto_hash),
+            rev_number: object_dto.object.revision_number,
+            source: proto_source,
+            latest: object_dto.latest,
+            auto_update: false //Note: ?
+        };
+
+        let proto_location = ProtoLocation {
+            r#type: 0, //ToDo: The fuck is this mapping?
+            bucket: object_dto.location.bucket,
+            path: object_dto.location.path
+        };
+
+        return Ok((proto_object, proto_location));
     }
 
     pub fn get_object_history(
