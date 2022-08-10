@@ -114,7 +114,7 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id.clone(),
-            hash_type: default_hash_type.id,
+            hash_type_id: default_hash_type.id,
         };
 
         // Convert the object's labels and hooks to their database representation

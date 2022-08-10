@@ -164,7 +164,7 @@ CREATE TABLE hashes (
     id UUID PRIMARY KEY,
     hash TEXT NOT NULL,
     object_id UUID NOT NULL,
-    hash_type UUID NOT NULL REFERENCES hash_types(id),
+    hash_type_id UUID NOT NULL REFERENCES hash_types(id),
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 -- Table with the key-value pairs associated with specific objects
