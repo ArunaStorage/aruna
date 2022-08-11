@@ -48,14 +48,14 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
+                insert_into(collections)
+                    .values(db_collection)
+                    .execute(conn)?;
                 // Get the API token, if this errors -> no corresponding database token object could be found
                 insert_into(collection_key_value)
                     .values(key_values)
                     .execute(conn)?;
 
-                insert_into(collections)
-                    .values(db_collection)
-                    .execute(conn)?;
                 Ok(())
             })?;
 

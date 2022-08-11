@@ -4,6 +4,7 @@ use tonic::{Code, Status};
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum ObjectStatus {
     INITIALIZING,
     AVAILABLE,
@@ -13,6 +14,7 @@ pub enum ObjectStatus {
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::EndpointType"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum EndpointType {
     INITIALIZING,
     AVAILABLE,
@@ -22,6 +24,7 @@ pub enum EndpointType {
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::Dataclass"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum Dataclass {
     PUBLIC,
     PRIVATE,
@@ -31,22 +34,24 @@ pub enum Dataclass {
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::SourceType"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum SourceType {
     URL,
-    DOI
+    DOI,
 }
 impl SourceType {
     pub fn from_i32(value: i32) -> Result<SourceType, Status> {
         match value {
             1 => Ok(SourceType::URL),
             2 => Ok(SourceType::DOI),
-            _ => Err(Status::new(Code::InvalidArgument, "unknown source type"))
+            _ => Err(Status::new(Code::InvalidArgument, "unknown source type")),
         }
     }
 }
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::HashType"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum HashType {
     MD5,
     SHA1,
@@ -58,6 +63,7 @@ pub enum HashType {
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq)]
 #[DieselTypePath = "sql_types::KeyValueType"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum KeyValueType {
     LABEL,
     HOOK,
@@ -65,12 +71,14 @@ pub enum KeyValueType {
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::IdentityProviderType"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum IdentityProviderType {
     OIDC,
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[DieselTypePath = "sql_types::UserRights"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum UserRights {
     READ,
     APPEND,
@@ -81,6 +89,7 @@ pub enum UserRights {
 
 #[derive(Debug, DbEnum, PartialEq, Clone, Copy)]
 #[DieselTypePath = "sql_types::Resources"]
+#[DbValueStyle = "UPPERCASE"]
 pub enum Resources {
     PROJECT,
     COLLECTION,
