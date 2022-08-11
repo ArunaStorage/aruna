@@ -24,10 +24,10 @@ pub fn load_sql() {
 #[serial(db)]
 fn init_db() {
     // Only run docker commands if the test is run locally
-    match env::var("GITHUB_ACTIONS") {
-        Ok(_) => (),
-        Err(_) => up_database(),
-    };
-
+    // match env::var("GITHUB_ACTIONS") {
+    //     Ok(_) => (),
+    //     Err(_) => up_database(),
+    // };
+    up_database();
     load_sql();
 }
