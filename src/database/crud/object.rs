@@ -8,7 +8,10 @@ use prost_types::Timestamp;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::Location as ProtoLocation,
+    internal::v1::{
+        Location as ProtoLocation,
+        LocationType
+    },
     models::v1::{
         Hash as ProtoHash,
         Object as ProtoObject,
@@ -296,7 +299,7 @@ impl Database {
         };
 
         let proto_location = ProtoLocation {
-            r#type: 0, //ToDo: The fuck is this mapping?
+            r#type: LocationType::S3 as i32,  //ToDo: How to get LocationType? Currently static S3
             bucket: object_dto.location.bucket,
             path: object_dto.location.path
         };
