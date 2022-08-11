@@ -29,3 +29,10 @@ $Runtime run -d \
 -v "$(pwd)/tests/sources/:/cockroach/data/" \
 cockroachdb/cockroach:v22.1.5 start-single-node \
 --insecure \
+
+
+until [ "`$Runtime inspect -f {{.State.Running}} roach`"=="true" ]; do
+    sleep 0.1;
+done;
+# Give the container some time to be available
+sleep 2;

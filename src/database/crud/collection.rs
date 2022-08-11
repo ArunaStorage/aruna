@@ -184,7 +184,7 @@ fn build_collection_response_enum(
                             .map_err(|_| diesel::result::Error::BrokenTransaction)?,
                     ),
                     stats: todo!(),
-                        is_public: todo!(),
+                    is_public: todo!(),
                     version: todo!(),
                 },
             ))
