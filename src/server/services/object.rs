@@ -27,7 +27,8 @@ use crate::api::aruna::api::storage::{
         UpdateObjectRequest, UpdateObjectResponse
     },
 };
-use crate::api::aruna::api::storage::services::v1::ObjectWithUrl;
+use crate::api::aruna::api::storage::internal::v1::CreatePresignedUploadUrlRequest;
+use crate::api::aruna::api::storage::services::v1::{ObjectWithUrl, Url};
 
 use crate::database::connection::Database;
 use crate::database::models::enums::{Resources, UserRights};
@@ -110,9 +111,44 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_upload_url(
         &self,
-        _request: Request<GetUploadUrlRequest>,
+        request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
-        todo!()
+        // Check if user is authorized to upload object data in this collection
+        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+            .map_err(|e| ArunaError::from(e))?;
+
+        let creator_id = Authz::authorize(
+            self.database.clone(),
+            &request.metadata(),
+            Context {
+                user_right: UserRights::APPEND, // User needs at least append permission to create an object
+                resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
+                resource_id: collection_id, // This is the collection uuid in which this object should be created
+                admin: false,
+            },
+        )?;
+
+        // Extract request body
+        let inner_request = request.into_inner(); // Consumes the gRPC request
+
+        // Get primary object location
+        let object_id = uuid::Uuid::parse_str(&inner_request.id).map_err(|e| ArunaError::from(e))?;
+        let location = self.database.get_primary_object_location(&object_id,)?;
+
+        // Get upload url through data proxy
+        let mut data_proxy_mut = self.data_proxy.clone();
+        let upload_url = data_proxy_mut.create_presigned_upload_url(
+            CreatePresignedUploadUrlRequest {
+                location: Some(location),
+                upload_id: inner_request.staging_id //Note: Can be moved, only used here
+            }
+        ).await?.into_inner().url;
+
+        return Ok(Response::new(
+            GetUploadUrlResponse {
+                url: Some(Url { url: upload_url})
+            }
+        ))
     }
 
     async fn finish_object_staging(

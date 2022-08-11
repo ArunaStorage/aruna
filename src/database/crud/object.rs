@@ -307,6 +307,50 @@ impl Database {
         return Ok((proto_object, proto_location));
     }
 
+    /// ToDo: Rust Doc
+    pub fn get_primary_object_location(
+        &self,
+        object_uuid: &uuid::Uuid,
+    ) -> Result<ProtoLocation, ArunaError> {
+        let location = self.pg_connection
+            .get()?
+            .transaction::<ProtoLocation, Error, _>(|conn| {
+
+                let location: ObjectLocation = object_locations
+                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .first::<ObjectLocation>(conn)?;
+
+                Ok(ProtoLocation {
+                    r#type: LocationType::S3 as i32,  //ToDo: How to get LocationType?
+                    bucket: location.bucket,
+                    path: location.path
+                })
+            })?;
+
+        return Ok(location)
+    }
+
+    /// ToDo: Rust Doc
+    pub fn get_object_locations(
+        &self,
+        object_uuid: &uuid::Uuid,
+    ) -> Result<Vec<ObjectLocation>, ArunaError> {
+        let locations = self.pg_connection
+            .get()?
+            .transaction::<Vec<ObjectLocation>, Error, _>(|conn| {
+
+                let locations: Vec<ObjectLocation> = object_locations
+                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .load::<ObjectLocation>(conn)?;
+
+                Ok(locations)
+            })?;
+
+        return Ok(locations)
+    }
+
     pub fn get_object_history(
         &self,
         request: GetObjectHistoryByIdRequest,
