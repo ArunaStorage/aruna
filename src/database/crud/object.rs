@@ -1,8 +1,11 @@
 use chrono::{Datelike, Local, Timelike};
 
+use diesel::dsl::max;
 use diesel::prelude::*;
 use diesel::result::Error;
 use prost_types::Timestamp;
+
+use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
     internal::v1::Location as ProtoLocation,
@@ -39,7 +42,6 @@ use crate::database::schema::{
     objects::dsl::*,
     sources::dsl::*,
 };
-use crate::error::{ArunaError, GrpcNotFoundError};
 
 /// Implementing CRUD+ database operations for Objects
 impl Database {
@@ -194,10 +196,7 @@ impl Database {
             .transaction::<ObjectDto, Error, _>(|conn| {
                 //Note: Get Object (with labels and hooks --> None?)
                 let object: Object = objects
-                    //.select(max(database::schema::objects::revision_number))
                     .filter(database::schema::objects::id.eq(object_uuid))
-                    //.filter(database::schema::objects::revision_number.eq(request.revision))  //ToDo: Exact revision or
-                    //.order(database::schema::objects::revision_number.desc())                 //ToDo: Latest
                     .first::<Object>(conn)?;
 
                 let object_hash: Hash = Hash::belonging_to(&object)
@@ -208,7 +207,7 @@ impl Database {
                     .filter(database::schema::object_locations::is_primary.eq(true))
                     .first::<ObjectLocation>(conn)?;
 
-                let source: Option<Source> = match object.source_id {
+                let source: Option<Source> = match &object.source_id {
                     None => None,
                     Some(src_id) =>
                         Some(sources
@@ -216,13 +215,21 @@ impl Database {
                             .first::<Source>(conn)?)
                 };
 
-                //Ok((object, source, location))
+                let latest_object_revision: Option<i64>  = objects
+                    .select(max(database::schema::objects::revision_number))
+                    .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+                    .first::<Option<i64>>(conn)?;
+                let latest = match latest_object_revision {
+                    None => false,
+                    Some(revision) => revision == object.revision_number
+                };
+
                 Ok(ObjectDto {
                     object,
                     hash: object_hash,
                     source,
                     location,
-                    latest: false //ToDo: Check if object is latest revision
+                    latest
                 })
             })?;
 
