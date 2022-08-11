@@ -10,6 +10,10 @@ pub mod sql_types {
     pub struct EndpointType;
 
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "hash_type"))]
+    pub struct HashType;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "identity_provider_type"))]
     pub struct IdentityProviderType;
 
@@ -132,18 +136,14 @@ diesel::table! {
 }
 
 diesel::table! {
-    hash_types (id) {
-        id -> Uuid,
-        name -> Varchar,
-    }
-}
+    use diesel::sql_types::*;
+    use super::sql_types::HashType;
 
-diesel::table! {
     hashes (id) {
         id -> Uuid,
         hash -> Text,
         object_id -> Uuid,
-        hash_type_id -> Uuid,
+        hash_type -> HashType,
     }
 }
 
@@ -333,7 +333,6 @@ diesel::joinable!(collections -> projects (project_id));
 diesel::joinable!(collections -> users (created_by));
 diesel::joinable!(external_user_ids -> identity_providers (idp_id));
 diesel::joinable!(external_user_ids -> users (user_id));
-diesel::joinable!(hashes -> hash_types (hash_type_id));
 diesel::joinable!(hashes -> objects (object_id));
 diesel::joinable!(object_group_key_value -> object_groups (object_group_id));
 diesel::joinable!(object_group_objects -> object_groups (object_group_id));
@@ -358,7 +357,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     collections,
     endpoints,
     external_user_ids,
-    hash_types,
     hashes,
     identity_providers,
     notification_stream_groups,

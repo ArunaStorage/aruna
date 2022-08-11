@@ -28,12 +28,11 @@ use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::to_object_key_values;
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{Dataclass, EndpointType, ObjectStatus, SourceType};
-use crate::database::models::object::{Endpoint, Hash, HashType, Object, ObjectLocation, Source};
+use crate::database::models::enums::{Dataclass, EndpointType, HashType, ObjectStatus, SourceType};
+use crate::database::models::object::{Endpoint, Hash, Object, ObjectLocation, Source};
 use crate::database::schema::{
     collection_objects::dsl::*,
     endpoints::dsl::*,
-    hash_types::dsl::*,
     hashes::dsl::*,
     object_key_value::dsl::*,
     object_locations::dsl::*,
@@ -133,18 +132,12 @@ impl Database {
             is_primary: false,
         };
 
-        // Define the default hash type
-        let default_hash_type = HashType {
-            id: uuid::Uuid::new_v4(),
-            name: "MD5".to_string(), //Note: MD5 is just default.
-        };
-
         // Define the hash placeholder for the object
         let empty_hash = Hash {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id.clone(),
-            hash_type_id: default_hash_type.id,
+            hash_type: HashType::MD5, //Note: Default. Will be updated later
         };
 
         // Convert the object's labels and hooks to their database representation
@@ -162,7 +155,6 @@ impl Database {
                 diesel::insert_into(endpoints).values(&endpoint).execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
                 diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
-                diesel::insert_into(hash_types).values(&default_hash_type).execute(conn)?;
                 diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
                 diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
                 diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
@@ -190,7 +182,6 @@ impl Database {
         // Struct to temporarily hold the database objects
         struct ObjectDto {
             object: Object,
-            hash_type: HashType,
             hash: Hash,
             source: Option<Source>,
             location: ObjectLocation,
@@ -212,10 +203,6 @@ impl Database {
                 let object_hash: Hash = Hash::belonging_to(&object)
                     .first::<Hash>(conn)?;
 
-                let hash_type: HashType = hash_types
-                    .filter(database::schema::hash_types::id.eq(object_hash.id))
-                    .first::<HashType>(conn)?;
-
                 //Note: Only read primary location of object?
                 let location: ObjectLocation = ObjectLocation::belonging_to(&object)
                     .filter(database::schema::object_locations::is_primary.eq(true))
@@ -232,7 +219,6 @@ impl Database {
                 //Ok((object, source, location))
                 Ok(ObjectDto {
                     object,
-                    hash_type,
                     hash: object_hash,
                     source,
                     location,
@@ -280,9 +266,8 @@ impl Database {
             object_dto.object.created_at.second() as u8
         )?;
 
-        //ToDo: HashType is enum in gRPC but string in database...
         let proto_hash = ProtoHash {
-            alg: 0, //Note: Yeah... the fuck is this mapping?
+            alg: object_dto.hash.hash_type as i32,
             hash: object_dto.hash.hash
         };
 

@@ -45,6 +45,17 @@ impl SourceType {
     }
 }
 
+#[derive(Debug, DbEnum, Clone, Copy)]
+#[DieselTypePath = "sql_types::HashType"]
+pub enum HashType {
+    MD5,
+    SHA1,
+    SHA256,
+    SHA512,
+    MURMUR3A32,
+    XXHASH32,
+}
+
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq)]
 #[DieselTypePath = "sql_types::KeyValueType"]
 pub enum KeyValueType {

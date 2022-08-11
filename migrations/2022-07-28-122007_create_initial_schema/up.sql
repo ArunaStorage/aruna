@@ -1,23 +1,15 @@
 /* ----- Type ENUMs ------------------------------------------------ */
 -- All ENUM types have to be created before their usage in a table
-CREATE TYPE OBJECT_STATUS AS ENUM (
-    'INITIALIZING',
-    'AVAILABLE',
-    'UNAVAILABLE',
-    'ERROR'
-);
+CREATE TYPE OBJECT_STATUS AS ENUM ('INITIALIZING', 'AVAILABLE', 'UNAVAILABLE', 'ERROR');
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
 CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
 CREATE TYPE IDENTITY_PROVIDER_TYPE AS ENUM ('OIDC');
 CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
-CREATE TYPE RESOURCES AS ENUM (
-    'PROJECT',
-    'COLLECTION',
-    'OBJECT',
-    'OBJECT_GROUP'
-);
+CREATE TYPE RESOURCES AS ENUM ('PROJECT', 'COLLECTION', 'OBJECT', 'OBJECT_GROUP');
+CREATE TYPE HASH_TYPE AS ENUM ('MD5', 'SHA1', 'SHA256', 'SHA512', 'MURMUR3A32', 'XXHASH32');
+
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
 CREATE TABLE identity_providers (
@@ -153,18 +145,12 @@ CREATE TABLE object_locations (
     UNIQUE (object_id, is_primary),
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
--- Table with hash type name definitions
-CREATE TABLE hash_types (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    UNIQUE (name)
-);
 -- Table with hash checksums associated with specific objects
 CREATE TABLE hashes (
     id UUID PRIMARY KEY,
     hash TEXT NOT NULL,
     object_id UUID NOT NULL,
-    hash_type_id UUID NOT NULL REFERENCES hash_types(id),
+    hash_type HASH_TYPE NOT NULL,
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 -- Table with the key-value pairs associated with specific objects

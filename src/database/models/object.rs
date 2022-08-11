@@ -49,21 +49,14 @@ pub struct ObjectLocation {
     pub is_primary: bool,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-pub struct HashType {
-    pub id: uuid::Uuid,
-    pub name: String,
-}
-
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Object))]
-#[diesel(belongs_to(HashType))]
 #[diesel(table_name = hashes)]
 pub struct Hash {
     pub id: uuid::Uuid,
     pub hash: String,
     pub object_id: uuid::Uuid,
-    pub hash_type_id: uuid::Uuid,
+    pub hash_type: HashType,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
