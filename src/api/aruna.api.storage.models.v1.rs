@@ -1,150 +1,3 @@
-///  A Project is a list of collections with associated users
-///  This is used to manage access to multiple collections at the same time
-///  Each Collection can only be in one Project at a time
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Project {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="3")]
-    pub user_permissions: ::prost::alloc::vec::Vec<ProjectPermission>,
-    #[prost(string, repeated, tag="4")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, tag="5")]
-    pub description: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ProjectOverview {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub description: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="4")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, repeated, tag="5")]
-    pub user_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Token {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub name: ::prost::alloc::string::String,
-    ///  The actual token, this will be redacted on every get request
-    #[prost(string, tag="3")]
-    pub token: ::prost::alloc::string::String,
-    #[prost(enumeration="TokenType", tag="4")]
-    pub token_type: i32,
-    #[prost(message, optional, tag="5")]
-    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, optional, tag="6")]
-    pub expires_on: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(string, repeated, tag="7")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(enumeration="Permission", tag="8")]
-    pub permission: i32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ProjectPermission {
-    #[prost(string, tag="1")]
-    pub user_id: ::prost::alloc::string::String,
-    #[prost(enumeration="Permission", tag="2")]
-    pub permission: i32,
-    #[prost(message, repeated, tag="3")]
-    pub tokens: ::prost::alloc::vec::Vec<Token>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Authorization {
-    #[prost(enumeration="Permission", tag="1")]
-    pub permission: i32,
-    #[prost(enumeration="PermType", tag="2")]
-    pub perm_type: i32,
-    ///  Can be userid, tokenid or anonymous id depending on perm_type
-    #[prost(string, tag="3")]
-    pub client_id: ::prost::alloc::string::String,
-    ///  Userid of the user who created the authorization
-    #[prost(string, tag="4")]
-    pub created_by: ::prost::alloc::string::String,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Permission {
-    Unspecified = 0,
-    ///  No permissions granted, used for users that are in the project but have no default permissions
-    None = 1,
-    ///  Read only
-    Read = 2,
-    ///  Append objects to the collection cannot modify existing objects
-    Append = 3,
-    ///  Can Read/Append/Modify objects in the collection that owns the object / Create new collections
-    Modify = 4,
-    ///  Can modify the collections itself and permanently delete owned objects / move ownership of objects
-    Admin = 5,
-}
-impl Permission {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Permission::Unspecified => "PERMISSION_UNSPECIFIED",
-            Permission::None => "PERMISSION_NONE",
-            Permission::Read => "PERMISSION_READ",
-            Permission::Append => "PERMISSION_APPEND",
-            Permission::Modify => "PERMISSION_MODIFY",
-            Permission::Admin => "PERMISSION_ADMIN",
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PermType {
-    Unspecified = 0,
-    ///  Regular OAuth users
-    User = 1,
-    ///  Anonymous users without an OAuth token
-    Anonymous = 2,
-    ///  Access token on behalf of a user
-    Token = 3,
-}
-impl PermType {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            PermType::Unspecified => "PERM_TYPE_UNSPECIFIED",
-            PermType::User => "PERM_TYPE_USER",
-            PermType::Anonymous => "PERM_TYPE_ANONYMOUS",
-            PermType::Token => "PERM_TYPE_TOKEN",
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum TokenType {
-    Unspecified = 0,
-    Personal = 1,
-    Scoped = 2,
-}
-impl TokenType {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            TokenType::Unspecified => "TOKEN_TYPE_UNSPECIFIED",
-            TokenType::Personal => "TOKEN_TYPE_PERSONAL",
-            TokenType::Scoped => "TOKEN_TYPE_SCOPED",
-        }
-    }
-}
 ///  A key value pair for hooks and labels
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyValue {
@@ -160,18 +13,6 @@ pub struct LabelOntology {
     ///  Defaults to empty string if not specified
     #[prost(string, repeated, tag="1")]
     pub required_label_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-///  This is a message to uniquely identify specific Objects
-///  IDs by itself are not unique
-///  Only the combination of ID and revision number is unique
-///  A revision number of -1 corresponds to a "latest" tag
-///  This will automatically update itself
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RevId {
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(int64, tag="2")]
-    pub revision: i64,
 }
 ///  S3 location(s) for an object
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -418,11 +259,11 @@ pub struct ObjectGroupWithId {
     #[prost(message, repeated, tag="7")]
     pub hooks: ::prost::alloc::vec::Vec<KeyValue>,
     ///  Must be in collection objects
-    #[prost(message, repeated, tag="8")]
-    pub object_ids: ::prost::alloc::vec::Vec<RevId>,
+    #[prost(string, repeated, tag="8")]
+    pub object_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     ///  Must be in collection objects
-    #[prost(message, repeated, tag="9")]
-    pub meta_object_ids: ::prost::alloc::vec::Vec<RevId>,
+    #[prost(string, repeated, tag="9")]
+    pub meta_object_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(message, optional, tag="10")]
     pub stats: ::core::option::Option<ObjectGroupStats>,
     #[prost(int64, tag="11")]
@@ -469,8 +310,6 @@ pub struct Collection {
     pub specifications: ::prost::alloc::vec::Vec<Object>,
     #[prost(message, repeated, tag="10")]
     pub object_groups: ::prost::alloc::vec::Vec<ObjectGroup>,
-    #[prost(message, repeated, tag="11")]
-    pub authorization: ::prost::alloc::vec::Vec<Authorization>,
     #[prost(message, optional, tag="14")]
     pub stats: ::core::option::Option<CollectionStats>,
     #[prost(bool, tag="15")]
@@ -513,8 +352,6 @@ pub struct CollectionOverview {
     pub label_ontology: ::core::option::Option<LabelOntology>,
     #[prost(message, optional, tag="7")]
     pub created: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, repeated, tag="11")]
-    pub authorization: ::prost::alloc::vec::Vec<Authorization>,
     #[prost(message, optional, tag="14")]
     pub stats: ::core::option::Option<CollectionStats>,
     #[prost(bool, tag="15")]
@@ -557,14 +394,12 @@ pub struct CollectionWithId {
     pub label_ontology: ::core::option::Option<LabelOntology>,
     #[prost(message, optional, tag="7")]
     pub created: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, repeated, tag="8")]
-    pub objects: ::prost::alloc::vec::Vec<RevId>,
-    #[prost(message, repeated, tag="9")]
-    pub specifications: ::prost::alloc::vec::Vec<RevId>,
-    #[prost(message, repeated, tag="10")]
-    pub object_groups: ::prost::alloc::vec::Vec<RevId>,
-    #[prost(message, repeated, tag="11")]
-    pub authorization: ::prost::alloc::vec::Vec<Authorization>,
+    #[prost(string, repeated, tag="8")]
+    pub objects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="9")]
+    pub specifications: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="10")]
+    pub object_groups: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(message, optional, tag="14")]
     pub stats: ::core::option::Option<CollectionStats>,
     #[prost(bool, tag="15")]
@@ -811,6 +646,153 @@ impl OutputFormat {
             OutputFormat::Overview => "OUTPUT_FORMAT_OVERVIEW",
             OutputFormat::WithIds => "OUTPUT_FORMAT_WITH_IDS",
             OutputFormat::Full => "OUTPUT_FORMAT_FULL",
+        }
+    }
+}
+///  A Project is a list of collections with associated users
+///  This is used to manage access to multiple collections at the same time
+///  Each Collection can only be in one Project at a time
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Project {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="3")]
+    pub user_permissions: ::prost::alloc::vec::Vec<ProjectPermission>,
+    #[prost(string, repeated, tag="4")]
+    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="5")]
+    pub description: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectOverview {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="4")]
+    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="5")]
+    pub user_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Token {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    ///  The actual token, this will be redacted on every get request
+    #[prost(string, tag="3")]
+    pub token: ::prost::alloc::string::String,
+    #[prost(enumeration="TokenType", tag="4")]
+    pub token_type: i32,
+    #[prost(message, optional, tag="5")]
+    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag="6")]
+    pub expires_on: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(string, repeated, tag="7")]
+    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(enumeration="Permission", tag="8")]
+    pub permission: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectPermission {
+    #[prost(string, tag="1")]
+    pub user_id: ::prost::alloc::string::String,
+    #[prost(enumeration="Permission", tag="2")]
+    pub permission: i32,
+    #[prost(message, repeated, tag="3")]
+    pub tokens: ::prost::alloc::vec::Vec<Token>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Authorization {
+    #[prost(enumeration="Permission", tag="1")]
+    pub permission: i32,
+    #[prost(enumeration="PermType", tag="2")]
+    pub perm_type: i32,
+    ///  Can be userid, tokenid or anonymous id depending on perm_type
+    #[prost(string, tag="3")]
+    pub client_id: ::prost::alloc::string::String,
+    ///  Userid of the user who created the authorization
+    #[prost(string, tag="4")]
+    pub created_by: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Permission {
+    Unspecified = 0,
+    ///  No permissions granted, used for users that are in the project but have no default permissions
+    None = 1,
+    ///  Read only
+    Read = 2,
+    ///  Append objects to the collection cannot modify existing objects
+    Append = 3,
+    ///  Can Read/Append/Modify objects in the collection that owns the object / Create new collections
+    Modify = 4,
+    ///  Can modify the collections itself and permanently delete owned objects / move ownership of objects
+    Admin = 5,
+}
+impl Permission {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Permission::Unspecified => "PERMISSION_UNSPECIFIED",
+            Permission::None => "PERMISSION_NONE",
+            Permission::Read => "PERMISSION_READ",
+            Permission::Append => "PERMISSION_APPEND",
+            Permission::Modify => "PERMISSION_MODIFY",
+            Permission::Admin => "PERMISSION_ADMIN",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PermType {
+    Unspecified = 0,
+    ///  Regular OAuth users
+    User = 1,
+    ///  Anonymous users without an OAuth token
+    Anonymous = 2,
+    ///  Access token on behalf of a user
+    Token = 3,
+}
+impl PermType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            PermType::Unspecified => "PERM_TYPE_UNSPECIFIED",
+            PermType::User => "PERM_TYPE_USER",
+            PermType::Anonymous => "PERM_TYPE_ANONYMOUS",
+            PermType::Token => "PERM_TYPE_TOKEN",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TokenType {
+    Unspecified = 0,
+    Personal = 1,
+    Scoped = 2,
+}
+impl TokenType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            TokenType::Unspecified => "TOKEN_TYPE_UNSPECIFIED",
+            TokenType::Personal => "TOKEN_TYPE_PERSONAL",
+            TokenType::Scoped => "TOKEN_TYPE_SCOPED",
         }
     }
 }

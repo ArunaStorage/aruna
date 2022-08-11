@@ -1,3 +1,4 @@
+use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
 use crate::api::aruna::api::storage::models::v1::KeyValue;
@@ -79,6 +80,32 @@ pub fn from_collection_key_values(
                 value: elem.value,
             })
             .collect::<Vec<KeyValue>>(),
+    )
+}
+
+/// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
+/// This converts types with the `as` keyword. It should be safe
+/// because hours, minutes etc. should never exceed the u8 bounds.
+///
+/// ## Arguments
+///
+/// * `ndt` : chrono::NaiveDateTime
+///
+/// ## Returns
+///
+/// * `Result<prost_types::Timestamp, prost_types::TimestampError>`
+///
+
+pub fn naivedatetime_to_prost_time(
+    ndt: chrono::NaiveDateTime,
+) -> Result<prost_types::Timestamp, prost_types::TimestampError> {
+    prost_types::Timestamp::date_time(
+        ndt.date().year().into(),
+        ndt.date().month() as u8,
+        ndt.date().day() as u8,
+        ndt.time().hour() as u8,
+        ndt.time().minute() as u8,
+        ndt.time().second() as u8,
     )
 }
 
@@ -247,7 +274,10 @@ mod tests {
         assert_eq!("Key_02", db_pairs.get(1).unwrap().key);
         assert_eq!("Value_02", db_pairs.get(1).unwrap().value);
         assert_eq!("AnalyzeMe", db_pairs.get(2).unwrap().key);
-        assert_eq!("https://worker08.computational.bio.uni-giessen.de/workflow", db_pairs.get(2).unwrap().value);
+        assert_eq!(
+            "https://worker08.computational.bio.uni-giessen.de/workflow",
+            db_pairs.get(2).unwrap().value
+        );
         assert_eq!("ValidateMe", db_pairs.get(3).unwrap().key);
         assert_eq!("<url-to-validation-server>", db_pairs.get(3).unwrap().value);
 
