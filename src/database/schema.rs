@@ -143,7 +143,7 @@ diesel::table! {
         id -> Uuid,
         hash -> Text,
         object_id -> Uuid,
-        hash_type -> Uuid,
+        hash_type_id -> Uuid,
     }
 }
 
@@ -333,7 +333,7 @@ diesel::joinable!(collections -> projects (project_id));
 diesel::joinable!(collections -> users (created_by));
 diesel::joinable!(external_user_ids -> identity_providers (idp_id));
 diesel::joinable!(external_user_ids -> users (user_id));
-diesel::joinable!(hashes -> hash_types (hash_type));
+diesel::joinable!(hashes -> hash_types (hash_type_id));
 diesel::joinable!(hashes -> objects (object_id));
 diesel::joinable!(object_group_key_value -> object_groups (object_group_id));
 diesel::joinable!(object_group_objects -> object_groups (object_group_id));

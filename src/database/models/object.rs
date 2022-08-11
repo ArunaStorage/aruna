@@ -37,7 +37,7 @@ pub struct Endpoint {
     pub is_public: bool,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Endpoint))]
 #[diesel(belongs_to(Object))]
 pub struct ObjectLocation {
@@ -55,7 +55,7 @@ pub struct HashType {
     pub name: String,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Object))]
 #[diesel(belongs_to(HashType))]
 #[diesel(table_name = hashes)]
@@ -63,7 +63,7 @@ pub struct Hash {
     pub id: uuid::Uuid,
     pub hash: String,
     pub object_id: uuid::Uuid,
-    pub hash_type: uuid::Uuid,
+    pub hash_type_id: uuid::Uuid,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]

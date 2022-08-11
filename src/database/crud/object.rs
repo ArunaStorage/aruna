@@ -1,25 +1,44 @@
-use chrono::Local;
-use diesel::result::Error as diesel_error;
-use diesel::{Connection, RunQueryDsl};
-use std::io::{Error, ErrorKind};
+use chrono::{Datelike, Local, Timelike};
 
-use crate::api::aruna::api::storage::internal::v1::Location;
-use crate::api::aruna::api::storage::services::v1::{
-    BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
-    DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest, GetObjectByIdResponse,
-    GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse, GetObjectsRequest,
-    GetObjectsResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
-    UpdateObjectRequest, UpdateObjectResponse,
+use diesel::prelude::*;
+use diesel::result::Error;
+use prost_types::Timestamp;
+
+use crate::api::aruna::api::storage::{
+    internal::v1::Location as ProtoLocation,
+    models::v1::{
+        Hash as ProtoHash,
+        Object as ProtoObject,
+        Origin as ProtoOrigin,
+        Source as ProtoSource,
+    },
+    services::v1::{
+        BorrowObjectRequest, BorrowObjectResponse,
+        CloneObjectRequest, CloneObjectResponse,
+        DeleteObjectRequest, DeleteObjectResponse,
+        GetObjectByIdRequest,
+        GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse,
+        GetObjectsRequest, GetObjectsResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse,
+        UpdateObjectRequest, UpdateObjectResponse
+    }
 };
 
+use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::to_object_key_values;
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, EndpointType, ObjectStatus, SourceType};
 use crate::database::models::object::{Endpoint, Hash, HashType, Object, ObjectLocation, Source};
 use crate::database::schema::{
-    collection_objects::dsl::*, endpoints::dsl::*, hash_types::dsl::*, hashes::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_objects::dsl::*,
+    endpoints::dsl::*,
+    hash_types::dsl::*,
+    hashes::dsl::*,
+    object_key_value::dsl::*,
+    object_locations::dsl::*,
+    objects::dsl::*,
+    sources::dsl::*,
 };
 use crate::error::{ArunaError, GrpcNotFoundError};
 
@@ -48,14 +67,22 @@ impl Database {
         &self,
         request: &InitializeNewObjectRequest,
         creator: &uuid::Uuid,
-    ) -> Result<(InitializeNewObjectResponse, Location), ArunaError> {
+        location: &ProtoLocation,
+        upload_id: String
+    ) -> Result<InitializeNewObjectResponse, ArunaError> {
+
+        // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
-        // Define source object
-        let source = Source {
-            id: uuid::Uuid::new_v4(),
-            link: "".to_string(),
-            source_type: SourceType::S3, //Note: Cannot derive from request so default is S3
+        //Define source object from updated request; None if empty
+        let source: Option<Source> = match &request.source {
+            Some(source) =>
+                Some(Source {
+                    id: uuid::Uuid::new_v4(),
+                    link: source.identifier.clone(),
+                    source_type: SourceType::from_i32(source.source_type)?
+                }),
+            _ => None,
         };
 
         // Define endpoint object
@@ -80,7 +107,10 @@ impl Database {
             content_len: 0,
             object_status: ObjectStatus::INITIALIZING,
             dataclass: Dataclass::PRIVATE,
-            source_id: Some(source.id),
+            source_id: match &source {
+                Some(src) => Some(src.id),
+                _ => None
+            },
             origin_id: Some(object_uuid),
         };
 
@@ -89,15 +119,15 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
             object_id: object.id.clone(),
-            is_specification: false, //Note: Cannot derive from request so default is false
-            writeable: false,        //Note: Cannot derive from request so default is false
+            is_specification: false, //Note: Default is false;
+            writeable: true //Note: Original object is always writeable for owner
         };
 
         // Define the initial object location
         let object_location = ObjectLocation {
             id: uuid::Uuid::new_v4(),
-            bucket: uuid::Uuid::new_v4().to_string(),
-            path: uuid::Uuid::new_v4().to_string(),
+            bucket: location.bucket.clone(),
+            path: location.path.clone(),
             endpoint_id: endpoint.id.clone(),
             object_id: object.id.clone(),
             is_primary: false,
@@ -114,7 +144,7 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id.clone(),
-            hash_type: default_hash_type.id,
+            hash_type_id: default_hash_type.id,
         };
 
         // Convert the object's labels and hooks to their database representation
@@ -127,51 +157,159 @@ impl Database {
         // Insert all defined objects into the database
         self.pg_connection
             .get()?
-            .transaction::<_, diesel_error, _>(|conn| {
+            .transaction::<_, Error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
-                diesel::insert_into(endpoints)
-                    .values(&endpoint)
-                    .execute(conn)?;
+                diesel::insert_into(endpoints).values(&endpoint).execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations)
-                    .values(&object_location)
-                    .execute(conn)?;
-                diesel::insert_into(hash_types)
-                    .values(&default_hash_type)
-                    .execute(conn)?;
-                diesel::insert_into(hashes)
-                    .values(&empty_hash)
-                    .execute(conn)?;
-                diesel::insert_into(object_key_value)
-                    .values(&key_value_pairs)
-                    .execute(conn)?;
-                diesel::insert_into(collection_objects)
-                    .values(&collection_object)
-                    .execute(conn)?;
+                diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
+                diesel::insert_into(hash_types).values(&default_hash_type).execute(conn)?;
+                diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
+                diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
+                diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
 
                 Ok(())
             })?;
 
-        // If transaction was successful return response and object location for data proxy as tuple
-        return Ok((
+        // Return already complete gRPC response
+        return Ok(
             InitializeNewObjectResponse {
                 id: object.id.to_string(),
-                staging_id: "".to_string(),
+                staging_id: upload_id.to_string(),
                 collection_id: request.collection_id.clone(),
-            },
-            Location {
-                r#type: 0,
-                bucket: object_location.bucket,
-                path: object_location.path,
-            },
-        ));
+            });
     }
 
     pub fn get_object(
         &self,
-        request: GetObjectByIdRequest,
-    ) -> Result<GetObjectByIdResponse, Box<dyn std::error::Error>> {
-        todo!()
+        request: &GetObjectByIdRequest,
+    ) -> Result<(ProtoObject, ProtoLocation), ArunaError> {
+
+        // Check if id in request has valid format
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+
+        // Struct to temporarily hold the database objects
+        struct ObjectDto {
+            object: Object,
+            hash_type: HashType,
+            hash: Hash,
+            source: Option<Source>,
+            location: ObjectLocation,
+            latest: bool
+        }
+
+        // Read object from database
+        let object_dto = self.pg_connection
+            .get()?
+            .transaction::<ObjectDto, Error, _>(|conn| {
+                //Note: Get Object (with labels and hooks --> None?)
+                let object: Object = objects
+                    //.select(max(database::schema::objects::revision_number))
+                    .filter(database::schema::objects::id.eq(object_uuid))
+                    //.filter(database::schema::objects::revision_number.eq(request.revision))  //ToDo: Exact revision or
+                    //.order(database::schema::objects::revision_number.desc())                 //ToDo: Latest
+                    .first::<Object>(conn)?;
+
+                let object_hash: Hash = Hash::belonging_to(&object)
+                    .first::<Hash>(conn)?;
+
+                let hash_type: HashType = hash_types
+                    .filter(database::schema::hash_types::id.eq(object_hash.id))
+                    .first::<HashType>(conn)?;
+
+                //Note: Only read primary location of object?
+                let location: ObjectLocation = ObjectLocation::belonging_to(&object)
+                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .first::<ObjectLocation>(conn)?;
+
+                let source: Option<Source> = match object.source_id {
+                    None => None,
+                    Some(src_id) =>
+                        Some(sources
+                            .filter(database::schema::sources::id.eq(src_id))
+                            .first::<Source>(conn)?)
+                };
+
+                //Ok((object, source, location))
+                Ok(ObjectDto {
+                    object,
+                    hash_type,
+                    hash: object_hash,
+                    source,
+                    location,
+                    latest: false //ToDo: Check if object is latest revision
+                })
+            })?;
+
+        //ToDo: - Transform to proto source (if available)
+        //      - Create proto origin
+        //      - Create proto hash + hash type
+        //      - Transform to proto object
+        //      - Return response with object but without url
+        let proto_source = match object_dto.source {
+            None => None,
+            Some(source) => Some(
+                ProtoSource {
+                    identifier: source.link,
+                    source_type: source.source_type as i32
+                }
+            )
+        };
+
+        // If object id == origin id --> original object
+        //Note: OriginType only stored implicitly
+        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
+            None => None,
+            Some(origin_uuid) => Some(
+                ProtoOrigin {
+                    id: origin_uuid.to_string(),
+                    r#type: match object_dto.object.id == origin_uuid {
+                        true => 1,
+                        false => 2
+                    }
+                }
+            )
+        };
+
+        // Horrible NaiveDatetime to Timestamp cast ...
+        let timestamp = Timestamp::date_time(
+            object_dto.object.created_at.year() as i64,
+            object_dto.object.created_at.month() as u8,
+            object_dto.object.created_at.day() as u8,
+            object_dto.object.created_at.hour() as u8,
+            object_dto.object.created_at.minute() as u8,
+            object_dto.object.created_at.second() as u8
+        )?;
+
+        //ToDo: HashType is enum in gRPC but string in database...
+        let proto_hash = ProtoHash {
+            alg: 0, //Note: Yeah... the fuck is this mapping?
+            hash: object_dto.hash.hash
+        };
+
+        let proto_object = ProtoObject {
+            id: object_dto.object.id.to_string(),
+            filename: object_dto.object.filename,
+            labels: vec![], //Todo: Individual request, pagination or brainless full list?
+            hooks: vec![],  //Todo: Individual request, pagination or brainless full list?
+            created: Some(timestamp),
+            content_len: object_dto.object.content_len,
+            status: object_dto.object.object_status as i32,
+            origin: proto_origin, //ToDo: OriginType only implicit?
+            data_class: object_dto.object.dataclass as i32,
+            hash: Some(proto_hash),
+            rev_number: object_dto.object.revision_number,
+            source: proto_source,
+            latest: object_dto.latest,
+            auto_update: false //Note: ?
+        };
+
+        let proto_location = ProtoLocation {
+            r#type: 0, //ToDo: The fuck is this mapping?
+            bucket: object_dto.location.bucket,
+            path: object_dto.location.path
+        };
+
+        return Ok((proto_object, proto_location));
     }
 
     pub fn get_object_history(
