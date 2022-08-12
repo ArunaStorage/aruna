@@ -1,11 +1,28 @@
 use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, UserPermission};
+use crate::database::models::auth::{ApiToken, PubKey, UserPermission};
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::ArunaError;
 use crate::server::services::authz::Context;
 use diesel::{prelude::*, sql_query, sql_types::Uuid};
 
 impl Database {
+    /// Method to query all public keys from the Database
+    ///
+    /// ## Arguments
+    ///
+    /// ## Result
+    ///
+    /// * `Vec<PubKey>` - Vector with public keys
+    ///
+    pub fn get_pub_keys(&self) -> Result<Vec<PubKey>, ArunaError> {
+        use crate::database::schema::pub_keys::dsl::*;
+        use diesel::result::Error as dError;
+        Ok(self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<PubKey>, dError, _>(|conn| pub_keys.load::<PubKey>(conn))?)
+    }
+
     /// This method checks if the user has the correct permissions
     /// It will only return an uuid if the permissions are granted
     ///
@@ -42,7 +59,7 @@ impl Database {
     ///        requested permission
     /// 3.  req_ctx == coll && api_token == proj
     ///     -> check if context_collection is in project and and check if the api_token permission is greater or
-    ///        equal the requested permission
+    ///        equal the requested permissio;n
     /// 4.  req_ctx == proj && api_token == proj
     ///     -> check if context_project equals the apitoken project and the api_token permission is greater or  
     ///        equal the requested permission
@@ -59,7 +76,7 @@ impl Database {
     ///
     pub fn get_checked_user_id_from_token(
         &self,
-        ctx_token: &str,
+        ctx_token: uuid::Uuid,
         req_ctx: Context,
     ) -> Result<uuid::Uuid, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
@@ -74,7 +91,7 @@ impl Database {
                 .transaction::<Option<uuid::Uuid>, dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
-                        .filter(token.eq(ctx_token))
+                        .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
                         .first::<ApiToken>(conn)?;
 
                     // Case 1:

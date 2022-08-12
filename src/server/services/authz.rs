@@ -1,11 +1,46 @@
 use crate::database::connection::Database;
+use crate::database::models::auth::PubKey;
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::ArunaError;
 use crate::error::GrpcNotFoundError;
+use jsonwebtoken::{
+    decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
 
-pub struct Authz {}
+/// This is the main struct for the Authz handling
+///
+/// It is okay if the `pub_keys` field does not always contain all of the most recent pubkeys
+/// if a user uses an unknown pubkey an automated refresh will be triggered.
+/// "Old" or invalidated pubkeys should not get any results when the token is checked against the database
+/// because they should get deleted if the corresponding pubkey is delete
+///
+/// ## Fields:
+///
+/// pub_keys: HashMap<i64, DecodingKey> -> Contains all existing pubkeys
+/// db: Arc<Database> -> Database access
+///
+pub struct Authz {
+    pub_keys: Arc<RwLock<HashMap<i64, DecodingKey>>>,
+    db: Arc<Database>,
+}
+
+/// This contains claims for ArunaTokens
+/// containing two fields
+///
+/// - tid: UUID from the specific token
+/// - exp: When this token expires (by default very large number)
+///
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    tid: String,
+    exp: usize,
+}
 
 /// This struct represents a request "Context" it is used to specify the
 /// accessed resource_type and id as well as the needed permissions
@@ -19,6 +54,65 @@ pub struct Context {
 /// Implementations for the Authz struct contain methods to create and check
 /// authorizations for the database
 impl Authz {
+    /// Create new Authz object, this should only be initialized once in the beginning.
+    /// This will pre-populate Authz::pub_keys with DecodingKeys for all existing pubkeys
+    ///
+    /// ## Arguments
+    ///
+    /// * db `Arc<Database>` an atomic reference to the database used to query existing pubkeys
+    ///
+    /// ## Result
+    ///
+    /// * `Authz` an instance of this struct.
+    ///
+    pub async fn new(db: Arc<Database>) -> Authz {
+        let keys = db.get_pub_keys().unwrap();
+
+        let result = Authz::convert_pubkey_to_decoding_key(keys).await.unwrap();
+
+        Authz {
+            pub_keys: Arc::new(RwLock::new(result)),
+            db,
+        }
+    }
+    /// Converts a Database pubkey to the correct HashMap for the Authz struct.
+    ///
+    /// ## Arguments
+    ///
+    /// * pubkey `Vec<PubKey>` Vector with database pubkey objects. At least 1 pubkey must be present in the database.
+    ///
+    /// ## Result
+    ///
+    /// * `Result<HashMap<i64, DecodingKey>, ArunaError>` Resulting Hashmap with key = pubkey serial and values = decoding key to validate JWT tokens
+    ///
+    async fn convert_pubkey_to_decoding_key(
+        pubkey: Vec<PubKey>,
+    ) -> Result<HashMap<i64, DecodingKey>, ArunaError> {
+        let converted = pubkey
+            .into_iter()
+            .map(
+                |pubkey| match DecodingKey::from_ed_pem(pubkey.pubkey.as_bytes()) {
+                    Ok(e) => Ok((pubkey.id, e)),
+                    Err(_) => Err(ArunaError::PERMISSIONDENIED),
+                },
+            )
+            .collect::<Result<HashMap<_, _>, _>>();
+
+        Ok(converted?)
+    }
+    /// Renews the internal pubkey struct. It is okay if this happens infrequently.
+    /// Apitokens should be deleted when a corresponding pub / privkey gets deleted.
+    ///
+    /// ## Result
+    ///
+    /// * Result<_, ArunaError> Only an error is returned
+    ///
+    async fn renew_pubkeys(&self) -> Result<(), ArunaError> {
+        let mut pub_keys = self.pub_keys.write().await.deref();
+        pub_keys = &mut Authz::convert_pubkey_to_decoding_key(self.db.get_pub_keys()?).await?;
+        Ok(())
+    }
+
     /// The `authorize` method is used to check if the supplied user token has enough permissions
     /// to fullfill the gRPC request the `db.get_checked_user_id_from_token()` method will check if the token and its
     /// associated permissions permissions are sufficient enough to execute the request
@@ -36,18 +130,56 @@ impl Authz {
     /// the uuid is the user_id of the user that owns the token
     /// this user_id will for example be used to specify the "created_by" field in the database
     ///   
-    pub fn authorize(
-        db: Arc<Database>,
+    pub async fn authorize(
+        &self,
         metadata: &MetadataMap,
         context: Context,
     ) -> Result<uuid::Uuid, ArunaError> {
-        let token = metadata
+        let token = self.validate_and_query_token(metadata).await?;
+        self.db.get_checked_user_id_from_token(token, context)
+    }
+
+    pub async fn validate_and_query_token(
+        &self,
+        metadata: &MetadataMap,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        let hashmap = self.pub_keys.clone();
+        let token_string = metadata
             .get("Bearer")
             .ok_or(ArunaError::GrpcNotFoundError(
                 GrpcNotFoundError::METADATATOKEN,
             ))?
             .to_str()?;
 
-        db.get_checked_user_id_from_token(token, context)
+        let header = decode_header(token_string)?;
+
+        let kid = header.kid.ok_or(ArunaError::PERMISSIONDENIED)?;
+
+        let index = kid
+            .parse::<i64>()
+            .map_err(|_| ArunaError::PERMISSIONDENIED)?;
+        let guard = hashmap.read().await;
+
+        let dec_map = guard.clone();
+        drop(guard);
+        let option_key = dec_map.get(&index).clone();
+
+        if option_key.is_none() {
+            self.renew_pubkeys().await;
+        }
+
+        let guard = hashmap.read().await;
+
+        let key = if option_key.is_some() {
+            Ok(option_key.unwrap())
+        } else {
+            guard
+                .get(&index)
+                .ok_or_else(|| ArunaError::PERMISSIONDENIED)
+        }?;
+
+        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))?;
+
+        Ok(uuid::Uuid::parse_str(token_data.claims.tid.as_str())?)
     }
 }

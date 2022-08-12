@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use super::utils::*;
 use crate::api::aruna::api::storage::models::v1::{
     Collection, CollectionOverview, CollectionWithId, KeyValue, LabelOntology,

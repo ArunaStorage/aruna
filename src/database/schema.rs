@@ -45,7 +45,7 @@ diesel::table! {
     api_tokens (id) {
         id -> Uuid,
         creator_user_id -> Uuid,
-        token -> Text,
+        pub_key -> Int8,
         created_at -> Timestamp,
         expires_at -> Nullable<Timestamp>,
         project_id -> Nullable<Uuid>,
@@ -262,6 +262,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    pub_keys (id) {
+        id -> Int8,
+        pubkey -> Text,
+    }
+}
+
+diesel::table! {
     required_labels (id) {
         id -> Uuid,
         collection_id -> Uuid,
@@ -300,13 +307,12 @@ diesel::table! {
     }
 }
 
-
 diesel::table! {
     collection_stats (id) {
         id -> Uuid,
         object_count -> Int8,
         size -> Int8,
-        last_updated -> Timestamp, 
+        last_updated -> Timestamp,
     }
 }
 
@@ -315,13 +321,13 @@ diesel::table! {
         id -> Uuid,
         object_count -> Int8,
         size -> Int8,
-        last_updated -> Timestamp, 
+        last_updated -> Timestamp,
     }
 }
 
-
 diesel::joinable!(api_tokens -> collections (collection_id));
 diesel::joinable!(api_tokens -> projects (project_id));
+diesel::joinable!(api_tokens -> pub_keys (pub_key));
 diesel::joinable!(api_tokens -> users (creator_user_id));
 diesel::joinable!(collection_key_value -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> collections (collection_id));
@@ -367,6 +373,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     object_locations,
     objects,
     projects,
+    pub_keys,
     required_labels,
     sources,
     user_permissions,

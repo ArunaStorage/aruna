@@ -58,13 +58,20 @@ pub struct UserPermission {
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]
 #[diesel(belongs_to(Collection))]
+#[diesel(belongs_to(PubKey))]
 pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,
-    pub token: String,
+    pub pub_key: i64,
     pub created_at: chrono::NaiveDateTime,
     pub expires_at: Option<chrono::NaiveDateTime>,
     pub project_id: Option<uuid::Uuid>,
     pub collection_id: Option<uuid::Uuid>,
     pub user_right: Option<UserRights>,
+}
+
+#[derive(Queryable, Insertable, Identifiable, Debug)]
+pub struct PubKey {
+    pub id: i64,
+    pub pubkey: String,
 }

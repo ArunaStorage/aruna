@@ -15,11 +15,15 @@ use super::authz::{Authz, Context};
 
 pub struct CollectionServiceImpl {
     database: Arc<Database>,
+    authz: Arc<Authz>,
 }
 
 impl CollectionServiceImpl {
-    pub async fn new(db: Arc<Database>) -> Self {
-        CollectionServiceImpl { database: db }
+    pub async fn new(db: Arc<Database>, authz: Arc<Authz>) -> Self {
+        CollectionServiceImpl {
+            database: db,
+            authz,
+        }
     }
 }
 
@@ -33,16 +37,18 @@ impl CollectionService for CollectionServiceImpl {
         let project_id = uuid::Uuid::parse_str(&request.get_ref().project_id)
             .map_err(|e| ArunaError::from(e))?;
 
-        let creator_id = Authz::authorize(
-            self.database.clone(),
-            &request.metadata(),
-            Context {
-                user_right: UserRights::WRITE,
-                resource_type: Resources::PROJECT, // Creating a new collection needs project level permissions
-                resource_id: project_id, // This is the project uuid in which this collection should be created
-                admin: false,
-            },
-        )?;
+        let creator_id = self
+            .authz
+            .authorize(
+                &request.metadata(),
+                Context {
+                    user_right: UserRights::WRITE,
+                    resource_type: Resources::PROJECT, // Creating a new collection needs project level permissions
+                    resource_id: project_id, // This is the project uuid in which this collection should be created
+                    admin: false,
+                },
+            )
+            .await?;
 
         let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server

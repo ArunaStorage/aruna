@@ -1,15 +1,31 @@
 /* ----- Type ENUMs ------------------------------------------------ */
 -- All ENUM types have to be created before their usage in a table
-CREATE TYPE OBJECT_STATUS AS ENUM ('INITIALIZING', 'AVAILABLE', 'UNAVAILABLE', 'ERROR');
+CREATE TYPE OBJECT_STATUS AS ENUM (
+    'INITIALIZING',
+    'AVAILABLE',
+    'UNAVAILABLE',
+    'ERROR'
+);
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
 CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
 CREATE TYPE IDENTITY_PROVIDER_TYPE AS ENUM ('OIDC');
 CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
-CREATE TYPE RESOURCES AS ENUM ('PROJECT', 'COLLECTION', 'OBJECT', 'OBJECT_GROUP');
-CREATE TYPE HASH_TYPE AS ENUM ('MD5', 'SHA1', 'SHA256', 'SHA512', 'MURMUR3A32', 'XXHASH32');
-
+CREATE TYPE RESOURCES AS ENUM (
+    'PROJECT',
+    'COLLECTION',
+    'OBJECT',
+    'OBJECT_GROUP'
+);
+CREATE TYPE HASH_TYPE AS ENUM (
+    'MD5',
+    'SHA1',
+    'SHA256',
+    'SHA512',
+    'MURMUR3A32',
+    'XXHASH32'
+);
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
 CREATE TABLE identity_providers (
@@ -219,12 +235,18 @@ CREATE TABLE object_group_objects (
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (object_group_id) REFERENCES object_groups(id)
 );
+-- Table for available pubkeys
+CREATE TABLE pub_keys (
+    -- This is a serial to make jwt tokens smaller
+    id SERIAL PRIMARY KEY,
+    pubkey TEXT NOT NULL
+);
 /* ----- Authorization --------------------------------------------- */
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection
 CREATE TABLE api_tokens (
     id UUID PRIMARY KEY,
     creator_user_id UUID NOT NULL,
-    token TEXT NOT NULL,
+    pub_key SERIAL NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP,
     project_id UUID,
@@ -233,6 +255,7 @@ CREATE TABLE api_tokens (
     user_right USER_RIGHTS,
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (pub_key) REFERENCES pub_keys(id),
     FOREIGN KEY (creator_user_id) REFERENCES users(id)
 );
 /* ----- Notification Service -------------------------------------- */

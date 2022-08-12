@@ -33,6 +33,7 @@ DROP TABLE projects;
 DROP TABLE external_user_ids;
 DROP TABLE users;
 DROP TABLE identity_providers;
+DROP TABLE pub_keys;
 /* ----- Type ENUMs ------------------------------------------------ */
 DROP TYPE OBJECT_STATUS;
 DROP TYPE ENDPOINT_TYPE;
