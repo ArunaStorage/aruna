@@ -57,9 +57,9 @@ impl Database {
                 Ok(())
             })?;
 
-        return Ok(CreateNewCollectionResponse {
+        Ok(CreateNewCollectionResponse {
             id: collection_uuid.to_string(),
-        });
+        })
     }
 
     fn get_collection_by_id(
@@ -74,7 +74,7 @@ impl Database {
 
         let collection_id = uuid::Uuid::parse_str(&request.id)?;
 
-        let collection = self
+        let _collection = self
             .pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
@@ -92,15 +92,15 @@ impl Database {
                     .filter(rlbl::collection_id.eq(collection_id))
                     .load::<models::collection::RequiredLabel>(conn)
                     .optional()?;
-                let retformat = match request.format {
+                let _retformat = match request.format {
                     0 | 1 => {
-                        let test = "";
+                        let _test = "";
                         GetCollectionResponseEnum::CollectionOverview(CollectionOverview {
                             id: collection_info.id.to_string(),
                             name: collection_info.name,
                             description: collection_info.description,
-                            labels: labels,
-                            hooks: hooks,
+                            labels,
+                            hooks,
                             label_ontology: req_labels_to_label_ontology(label_ontology),
                             created: todo!(),
                             stats: todo!(),
@@ -151,12 +151,9 @@ impl Database {
 /* ----------------- Section for collection specific helper functions ------------------- */
 
 fn req_labels_to_label_ontology(input: Option<Vec<RequiredLabel>>) -> Option<LabelOntology> {
-    match input {
-        Some(vec) => Some(LabelOntology {
+    input.map(|vec| LabelOntology {
             required_label_keys: vec.into_iter().map(|elem| elem.label_key).collect(),
-        }),
-        None => None,
-    }
+        })
 }
 
 fn build_collection_response_enum(
@@ -168,15 +165,15 @@ fn build_collection_response_enum(
 ) -> Result<GetCollectionResponseEnum, diesel::result::Error> {
     match format {
         0 | 1 => {
-            let test = "";
+            let _test = "";
             Ok(GetCollectionResponseEnum::CollectionOverview(
                 CollectionOverview {
                     id: collection_info.id.to_string(),
                     name: collection_info.name,
                     description: collection_info.description,
-                    labels: labels,
-                    hooks: hooks,
-                    label_ontology: label_ontology,
+                    labels,
+                    hooks,
+                    label_ontology,
                     created: Some(
                         naivedatetime_to_prost_time(collection_info.created_at)
                             .map_err(|_| diesel::result::Error::BrokenTransaction)?,
@@ -219,6 +216,6 @@ fn build_collection_response_enum(
             is_public: todo!(),
             version: todo!(),
         })),
-        _ => return Err(diesel::result::Error::NotFound),
+        _ => Err(diesel::result::Error::NotFound),
     }
 }

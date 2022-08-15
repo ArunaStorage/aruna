@@ -273,8 +273,8 @@ impl Database {
                 })?;
 
         match creator_uid {
-            Some(uid) => return Ok(uid),
-            None => return Err(ArunaError::PERMISSIONDENIED),
+            Some(uid) => Ok(uid),
+            None => Err(ArunaError::PERMISSIONDENIED),
         }
     }
 }

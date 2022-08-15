@@ -4,7 +4,7 @@ use crate::database::models::enums::{Resources, UserRights};
 use crate::error::ArunaError;
 use crate::error::GrpcNotFoundError;
 use jsonwebtoken::{
-    decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
+    decode, decode_header, Algorithm, DecodingKey, Validation,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -88,7 +88,9 @@ impl Authz {
     async fn convert_pubkey_to_decoding_key(
         pubkey: Vec<PubKey>,
     ) -> Result<HashMap<i64, DecodingKey>, ArunaError> {
-        let converted = pubkey
+        
+
+        pubkey
             .into_iter()
             .map(
                 |pubkey| match DecodingKey::from_ed_pem(pubkey.pubkey.as_bytes()) {
@@ -96,9 +98,7 @@ impl Authz {
                     Err(_) => Err(ArunaError::PERMISSIONDENIED),
                 },
             )
-            .collect::<Result<HashMap<_, _>, _>>();
-
-        Ok(converted?)
+            .collect::<Result<HashMap<_, _>, _>>()
     }
     /// Renews the internal pubkey struct. It is okay if this happens infrequently.
     /// Apitokens should be deleted when a corresponding pub / privkey gets deleted.
@@ -162,7 +162,7 @@ impl Authz {
 
         let dec_map = guard.clone();
         drop(guard);
-        let option_key = dec_map.get(&index).clone();
+        let option_key = dec_map.get(&index);
 
         if option_key.is_none() {
             self.renew_pubkeys().await;
@@ -175,10 +175,10 @@ impl Authz {
         } else {
             guard
                 .get(&index)
-                .ok_or_else(|| ArunaError::PERMISSIONDENIED)
+                .ok_or(ArunaError::PERMISSIONDENIED)
         }?;
 
-        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))?;
+        let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
 
         Ok(uuid::Uuid::parse_str(token_data.claims.tid.as_str())?)
     }

@@ -44,13 +44,13 @@ impl ObjectServiceImpl {
         authz: Arc<Authz>,
         data_proxy: InternalProxyServiceClient<Channel>,
     ) -> Self {
-        let collection_service = ObjectServiceImpl {
+        
+
+        ObjectServiceImpl {
             database,
             authz,
             data_proxy,
-        };
-
-        return collection_service;
+        }
     }
 }
 
@@ -63,12 +63,12 @@ impl ObjectService for ObjectServiceImpl {
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
         // Check if user is authorized to create objects in this collection
         let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(|e| ArunaError::from(e))?;
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .authorize(
-                &request.metadata(),
+                request.metadata(),
                 Context {
                     user_right: UserRights::APPEND, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
@@ -94,7 +94,7 @@ impl ObjectService for ObjectServiceImpl {
         let upload_id = data_proxy_mut
             .init_presigned_upload(InitPresignedUploadRequest {
                 location: Some(location.clone()),
-                multipart: inner_request.multipart.clone(),
+                multipart: inner_request.multipart,
             })
             .await?
             .into_inner()
@@ -106,7 +106,7 @@ impl ObjectService for ObjectServiceImpl {
             database_clone.create_object(&inner_request, &creator_id, &location, upload_id)
         })
         .await
-        .map_err(|join_error| ArunaError::from(join_error))??;
+        .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -118,12 +118,12 @@ impl ObjectService for ObjectServiceImpl {
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
         // Check if user is authorized to upload object data in this collection
         let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(|e| ArunaError::from(e))?;
+            .map_err(ArunaError::from)?;
 
-        let creator_id = self
+        let _creator_id = self
             .authz
             .authorize(
-                &request.metadata(),
+                request.metadata(),
                 Context {
                     user_right: UserRights::APPEND, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
@@ -138,7 +138,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Get primary object location
         let object_id =
-            uuid::Uuid::parse_str(&inner_request.id).map_err(|e| ArunaError::from(e))?;
+            uuid::Uuid::parse_str(&inner_request.id).map_err(ArunaError::from)?;
         let location = self.database.get_primary_object_location(&object_id)?;
 
         // Get upload url through data proxy
@@ -198,12 +198,12 @@ impl ObjectService for ObjectServiceImpl {
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
         // Check if user is authorized to create objects in this collection
         let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(|e| ArunaError::from(e))?;
+            .map_err(ArunaError::from)?;
 
-        let creator_id = self
+        let _creator_id = self
             .authz
             .authorize(
-                &request.metadata(),
+                request.metadata(),
                 Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
@@ -225,7 +225,7 @@ impl ObjectService for ObjectServiceImpl {
         let (proto_object, proto_location) =
             task::spawn_blocking(move || database_clone.get_object(&request_clone))
                 .await
-                .map_err(|join_error| ArunaError::from(join_error))??;
+                .map_err(ArunaError::from)??;
 
         //Note: Only request url from data proxy if request.with_url == true
         let response = match &inner_request.with_url {
@@ -234,7 +234,7 @@ impl ObjectService for ObjectServiceImpl {
                     location: Some(proto_location),
                     range: Some(Range {
                         start: 0,
-                        end: proto_object.content_len.clone(),
+                        end: proto_object.content_len,
                     }),
                 };
 

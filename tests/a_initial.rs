@@ -1,5 +1,5 @@
 use serial_test::serial;
-use std::env;
+
 use std::process::Command;
 
 pub fn up_database() {

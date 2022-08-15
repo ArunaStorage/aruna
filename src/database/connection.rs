@@ -19,11 +19,11 @@ pub struct Database {
 impl Database {
     pub fn new() -> Self {
         let connection = Database::establish_connection();
-        let database = Database {
-            pg_connection: connection,
-        };
+        
 
-        return database;
+        Database {
+            pg_connection: connection,
+        }
     }
 
     fn establish_connection() -> Pool<ConnectionManager<PgConnection>> {
@@ -31,11 +31,11 @@ impl Database {
 
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let manager = ConnectionManager::<PgConnection>::new(&database_url);
-        let pool = r2d2::Pool::builder()
-            .build(manager)
-            .expect("Failed to create database connection pool");
+        
 
-        return pool;
+        r2d2::Pool::builder()
+            .build(manager)
+            .expect("Failed to create database connection pool")
     }
 }
 

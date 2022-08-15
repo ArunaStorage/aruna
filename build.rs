@@ -12,7 +12,7 @@ fn main() {
         let rel_path = format!(
             "{}{}",
             "protos/aruna/api/storage/services/v1/",
-            dir.file_name().to_str().unwrap().to_string()
+            dir.file_name().to_str().unwrap()
         );
         protos.push(rel_path);
     }
@@ -24,7 +24,7 @@ fn main() {
         let rel_path = format!(
             "{}{}",
             "protos/aruna/api/notification/services/v1/",
-            dir.file_name().to_str().unwrap().to_string()
+            dir.file_name().to_str().unwrap()
         );
         protos.push(rel_path);
     }
@@ -36,7 +36,7 @@ fn main() {
         let rel_path = format!(
             "{}{}",
             "protos/aruna/api/internal/v1/",
-            dir.file_name().to_str().unwrap().to_string()
+            dir.file_name().to_str().unwrap()
         );
         protos.push(rel_path);
     }

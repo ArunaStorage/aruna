@@ -107,14 +107,11 @@ impl Database {
             revision_number: 0,
             filename: staging_object.filename.clone(),
             created_at: Local::now().naive_local(),
-            created_by: creator.clone(),
+            created_by: *creator,
             content_len: 0,
             object_status: ObjectStatus::INITIALIZING,
             dataclass: Dataclass::PRIVATE,
-            source_id: match &source {
-                Some(src) => Some(src.id),
-                _ => None
-            },
+            source_id: source.as_ref().map(|src| src.id),
             origin_id: Some(object_uuid),
         };
 
@@ -122,7 +119,7 @@ impl Database {
         let collection_object = CollectionObject {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
-            object_id: object.id.clone(),
+            object_id: object.id,
             is_specification: false, //Note: Default is false;
             writeable: true //Note: Original object is always writeable for owner
         };
@@ -132,8 +129,8 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             bucket: location.bucket.clone(),
             path: location.path.clone(),
-            endpoint_id: endpoint.id.clone(),
-            object_id: object.id.clone(),
+            endpoint_id: endpoint.id,
+            object_id: object.id,
             is_primary: false,
         };
 
@@ -141,14 +138,14 @@ impl Database {
         let empty_hash = Hash {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
-            object_id: object.id.clone(),
+            object_id: object.id,
             hash_type: HashType::MD5, //Note: Default. Will be updated later
         };
 
         // Convert the object's labels and hooks to their database representation
         let key_value_pairs = to_object_key_values(
             staging_object.labels.clone(),
-            staging_object.hooks.clone(),
+            staging_object.hooks,
             object_uuid,
         );
 
@@ -168,12 +165,12 @@ impl Database {
             })?;
 
         // Return already complete gRPC response
-        return Ok(
+        Ok(
             InitializeNewObjectResponse {
                 id: object.id.to_string(),
-                staging_id: upload_id.to_string(),
+                staging_id: upload_id,
                 collection_id: request.collection_id.clone(),
-            });
+            })
     }
 
     pub fn get_object(
@@ -304,7 +301,7 @@ impl Database {
             path: object_dto.location.path
         };
 
-        return Ok((proto_object, proto_location));
+        Ok((proto_object, proto_location))
     }
 
     /// ToDo: Rust Doc
@@ -328,7 +325,7 @@ impl Database {
                 })
             })?;
 
-        return Ok(location)
+        Ok(location)
     }
 
     /// ToDo: Rust Doc
@@ -348,47 +345,47 @@ impl Database {
                 Ok(locations)
             })?;
 
-        return Ok(locations)
+        Ok(locations)
     }
 
     pub fn get_object_history(
         &self,
-        request: GetObjectHistoryByIdRequest,
+        _request: GetObjectHistoryByIdRequest,
     ) -> Result<GetObjectHistoryByIdResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
     pub fn get_objects(
         &self,
-        request: GetObjectsRequest,
+        _request: GetObjectsRequest,
     ) -> Result<GetObjectsResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
     pub fn update_object(
         &self,
-        request: UpdateObjectRequest,
+        _request: UpdateObjectRequest,
     ) -> Result<UpdateObjectResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
     pub fn borrow_object(
         &self,
-        request: BorrowObjectRequest,
+        _request: BorrowObjectRequest,
     ) -> Result<BorrowObjectResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
     pub fn clone_object(
         &self,
-        request: CloneObjectRequest,
+        _request: CloneObjectRequest,
     ) -> Result<CloneObjectResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
     pub fn delete_object(
         &self,
-        request: DeleteObjectRequest,
+        _request: DeleteObjectRequest,
     ) -> Result<DeleteObjectResponse, Box<dyn std::error::Error>> {
         todo!()
     }

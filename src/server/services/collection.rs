@@ -35,12 +35,12 @@ impl CollectionService for CollectionServiceImpl {
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
         let project_id = uuid::Uuid::parse_str(&request.get_ref().project_id)
-            .map_err(|e| ArunaError::from(e))?;
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .authorize(
-                &request.metadata(),
+                request.metadata(),
                 Context {
                     user_right: UserRights::WRITE,
                     resource_type: Resources::PROJECT, // Creating a new collection needs project level permissions
@@ -57,7 +57,7 @@ impl CollectionService for CollectionServiceImpl {
                 db.create_new_collection(request.get_ref().to_owned(), creator_id)
             })
             .await
-            .map_err(|join_error| ArunaError::from(join_error))??,
+            .map_err(ArunaError::from)??,
         ))
     }
 
@@ -69,7 +69,7 @@ impl CollectionService for CollectionServiceImpl {
     /// This can be modified with the optional OutputFormat parameter
     async fn get_collection_by_id(
         &self,
-        request: tonic::Request<GetCollectionByIdRequest>,
+        _request: tonic::Request<GetCollectionByIdRequest>,
     ) -> Result<tonic::Response<GetCollectionByIdResponse>, tonic::Status> {
         todo!()
     }
@@ -77,7 +77,7 @@ impl CollectionService for CollectionServiceImpl {
     /// This returns by default a paginated result with 20 entries.
     async fn get_collections(
         &self,
-        request: tonic::Request<GetCollectionsRequest>,
+        _request: tonic::Request<GetCollectionsRequest>,
     ) -> Result<tonic::Response<GetCollectionsResponse>, tonic::Status> {
         todo!()
     }
@@ -88,7 +88,7 @@ impl CollectionService for CollectionServiceImpl {
     /// similar to the PinCollectionVersion request
     async fn update_collection(
         &self,
-        request: tonic::Request<UpdateCollectionRequest>,
+        _request: tonic::Request<UpdateCollectionRequest>,
     ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
         todo! {}
     }
@@ -98,7 +98,7 @@ impl CollectionService for CollectionServiceImpl {
     /// Pinned collections can not be updated in place
     async fn pin_collection_version(
         &self,
-        request: tonic::Request<PinCollectionVersionRequest>,
+        _request: tonic::Request<PinCollectionVersionRequest>,
     ) -> Result<tonic::Response<PinCollectionVersionResponse>, tonic::Status> {
         todo!()
     }
@@ -108,7 +108,7 @@ impl CollectionService for CollectionServiceImpl {
     /// This should be avoided
     async fn delete_collection(
         &self,
-        request: tonic::Request<DeleteCollectionRequest>,
+        _request: tonic::Request<DeleteCollectionRequest>,
     ) -> Result<tonic::Response<DeleteCollectionResponse>, tonic::Status> {
         todo!()
     }

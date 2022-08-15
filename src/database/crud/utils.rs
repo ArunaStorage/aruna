@@ -149,7 +149,7 @@ pub fn to_object_key_values(
         });
     }
 
-    return db_key_value;
+    db_key_value
 }
 
 #[cfg(test)]
@@ -233,11 +233,11 @@ mod tests {
         assert_eq!(2, label_result.len());
         assert_eq!(2, hooks_result.len());
         for x in label_result {
-            assert!(x.key == "label".to_string())
+            assert!(x.key == *"label")
         }
 
         for x in hooks_result {
-            assert!(x.key == "hook".to_string())
+            assert!(x.key == *"hook")
         }
     }
 
