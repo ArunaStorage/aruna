@@ -3175,6 +3175,84 @@ pub mod collection_service_server {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ExpiresAt {
+    #[prost(message, optional, tag="1")]
+    pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RegisterUserRequest {
+    #[prost(string, tag="1")]
+    pub display_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RegisterUserResponse {
+    #[prost(string, tag="1")]
+    pub user_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateApiTokenRequest {
+    ///  Empty if token_type is personal, otherwise the id of the collection or
+    ///  project to create the token for
+    #[prost(string, tag="1")]
+    pub project_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub collection_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub expires_at: ::core::option::Option<ExpiresAt>,
+    #[prost(enumeration="super::super::models::v1::Permission", tag="4")]
+    pub permission: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateApiTokenResponse {
+    #[prost(message, optional, tag="1")]
+    pub token: ::core::option::Option<super::super::models::v1::Token>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetApiTokenRequest {
+    ///  The token id
+    #[prost(string, tag="1")]
+    pub token_id: ::prost::alloc::string::String,
+    ///  or the user_defined name
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetApiTokenResponse {
+    ///  List of API tokens
+    #[prost(message, optional, tag="1")]
+    pub token: ::core::option::Option<super::super::models::v1::Token>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetApiTokensRequest {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetApiTokensResponse {
+    ///  List of API tokens with redacted actual token
+    #[prost(message, repeated, tag="1")]
+    pub token: ::prost::alloc::vec::Vec<super::super::models::v1::Token>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteApiTokenRequest {
+    ///  The token_id
+    #[prost(string, tag="1")]
+    pub token_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteApiTokenResponse {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteApiTokensRequest {
+    ///  This request invalidates all tokens of a specific user
+    ///  usually the user_id is specified via the provided oidc or aruna token
+    ///  This user_id can be used by admins to invalidate all tokens of a specific
+    ///  user
+    #[prost(string, tag="1")]
+    pub user_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteApiTokensResponse {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateProjectRequest {
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
@@ -3196,26 +3274,6 @@ pub struct AddUserToProjectRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddUserToProjectResponse {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateApiTokenRequest {
-    ///  The id of the project to create the token for
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub user_id: ::prost::alloc::string::String,
-    #[prost(enumeration="super::super::models::v1::TokenType", tag="3")]
-    pub token_type: i32,
-    ///  Empty if token_type is personal, otherwise the id of the collection to create the token for
-    #[prost(string, repeated, tag="4")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(enumeration="super::super::models::v1::Permission", tag="5")]
-    pub permission: i32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateApiTokenResponse {
-    #[prost(message, optional, tag="1")]
-    pub token: ::core::option::Option<super::super::models::v1::Token>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProjectCollectionsRequest {
@@ -3255,35 +3313,6 @@ pub struct GetProjectRequest {
 pub struct GetProjectResponse {
     #[prost(message, optional, tag="1")]
     pub project: ::core::option::Option<super::super::models::v1::ProjectOverview>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetApiTokensRequest {
-    ///  The id of the project to get the API tokens for
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub user_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="3")]
-    pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetApiTokensResponse {
-    ///  List of API tokens with redacted actual token
-    #[prost(message, repeated, tag="1")]
-    pub token: ::prost::alloc::vec::Vec<super::super::models::v1::Token>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteApiTokenRequest {
-    ///  The id of the project to delete the API token for
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub user_id: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub token_id: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteApiTokenResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DestroyProjectRequest {
@@ -3363,12 +3392,10 @@ pub mod auth_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        /// This creates a new authorization group.option
-        /// All users and collections are bundled in a authorization group.
-        pub async fn create_project(
+        pub async fn register_user(
             &mut self,
-            request: impl tonic::IntoRequest<super::CreateProjectRequest>,
-        ) -> Result<tonic::Response<super::CreateProjectResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::RegisterUserRequest>,
+        ) -> Result<tonic::Response<super::RegisterUserResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -3380,31 +3407,11 @@ pub mod auth_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.AuthService/CreateProject",
+                "/aruna.api.storage.services.v1.AuthService/RegisterUser",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        ///AddUserToProject Adds a new user to a given project by its id
-        pub async fn add_user_to_project(
-            &mut self,
-            request: impl tonic::IntoRequest<super::AddUserToProjectRequest>,
-        ) -> Result<tonic::Response<super::AddUserToProjectResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.AuthService/AddUserToProject",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
-        ///CreateAPIToken Creates an API token to authenticate
+        /// CreateAPIToken Creates an API token to authenticate
         pub async fn create_api_token(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateApiTokenRequest>,
@@ -3424,14 +3431,11 @@ pub mod auth_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        ///GetProjectCollections Returns all collections that belong to a certain project
-        pub async fn get_project_collections(
+        /// Returns one API token by id
+        pub async fn get_api_token(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetProjectCollectionsRequest>,
-        ) -> Result<
-            tonic::Response<super::GetProjectCollectionsResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::GetApiTokenRequest>,
+        ) -> Result<tonic::Response<super::GetApiTokenResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -3443,47 +3447,7 @@ pub mod auth_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.AuthService/GetProjectCollections",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
-        ///GetUserCollections Returns all collections that a specified user has access to
-        pub async fn get_user_collections(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetUserCollectionsRequest>,
-        ) -> Result<tonic::Response<super::GetUserCollectionsResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.AuthService/GetUserCollections",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
-        ///GetProject Returns the specified project
-        pub async fn get_project(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetProjectRequest>,
-        ) -> Result<tonic::Response<super::GetProjectResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.AuthService/GetProject",
+                "/aruna.api.storage.services.v1.AuthService/GetAPIToken",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -3507,7 +3471,7 @@ pub mod auth_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        ///DeleteAPITokenRequest Deletes the specified API Token
+        /// DeleteAPITokenRequest Deletes the specified API Token
         pub async fn delete_api_token(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteApiTokenRequest>,
@@ -3527,8 +3491,135 @@ pub mod auth_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// DeleteAPITokenRequest Deletes the specified API Token
+        pub async fn delete_api_tokens(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteApiTokensRequest>,
+        ) -> Result<tonic::Response<super::DeleteApiTokensResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/DeleteAPITokens",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// This creates a new authorization group.option
+        /// All users and collections are bundled in a authorization group.
+        pub async fn create_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateProjectRequest>,
+        ) -> Result<tonic::Response<super::CreateProjectResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/CreateProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// AddUserToProject Adds a new user to a given project by its id
+        pub async fn add_user_to_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AddUserToProjectRequest>,
+        ) -> Result<tonic::Response<super::AddUserToProjectResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/AddUserToProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// GetProjectCollections Returns all collections that belong to a certain
+        /// project
+        pub async fn get_project_collections(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetProjectCollectionsRequest>,
+        ) -> Result<
+            tonic::Response<super::GetProjectCollectionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/GetProjectCollections",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// GetUserCollections Returns all collections that a specified user has access
+        /// to
+        pub async fn get_user_collections(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetUserCollectionsRequest>,
+        ) -> Result<tonic::Response<super::GetUserCollectionsResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/GetUserCollections",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// GetProject Returns the specified project
+        pub async fn get_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetProjectRequest>,
+        ) -> Result<tonic::Response<super::GetProjectResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.AuthService/GetProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         /// This will destroy the project and all its associated data.
-        /// including users, collections, and API tokens and all data associated with them.
+        /// including users, collections, and API tokens and all data associated with
+        /// them.
         pub async fn destroy_project(
             &mut self,
             request: impl tonic::IntoRequest<super::DestroyProjectRequest>,
@@ -3557,23 +3648,48 @@ pub mod auth_service_server {
     ///Generated trait containing gRPC methods that should be implemented for use with AuthServiceServer.
     #[async_trait]
     pub trait AuthService: Send + Sync + 'static {
+        async fn register_user(
+            &self,
+            request: tonic::Request<super::RegisterUserRequest>,
+        ) -> Result<tonic::Response<super::RegisterUserResponse>, tonic::Status>;
+        /// CreateAPIToken Creates an API token to authenticate
+        async fn create_api_token(
+            &self,
+            request: tonic::Request<super::CreateApiTokenRequest>,
+        ) -> Result<tonic::Response<super::CreateApiTokenResponse>, tonic::Status>;
+        /// Returns one API token by id
+        async fn get_api_token(
+            &self,
+            request: tonic::Request<super::GetApiTokenRequest>,
+        ) -> Result<tonic::Response<super::GetApiTokenResponse>, tonic::Status>;
+        /// Returns all API token for a specific user
+        async fn get_api_tokens(
+            &self,
+            request: tonic::Request<super::GetApiTokensRequest>,
+        ) -> Result<tonic::Response<super::GetApiTokensResponse>, tonic::Status>;
+        /// DeleteAPITokenRequest Deletes the specified API Token
+        async fn delete_api_token(
+            &self,
+            request: tonic::Request<super::DeleteApiTokenRequest>,
+        ) -> Result<tonic::Response<super::DeleteApiTokenResponse>, tonic::Status>;
+        /// DeleteAPITokenRequest Deletes the specified API Token
+        async fn delete_api_tokens(
+            &self,
+            request: tonic::Request<super::DeleteApiTokensRequest>,
+        ) -> Result<tonic::Response<super::DeleteApiTokensResponse>, tonic::Status>;
         /// This creates a new authorization group.option
         /// All users and collections are bundled in a authorization group.
         async fn create_project(
             &self,
             request: tonic::Request<super::CreateProjectRequest>,
         ) -> Result<tonic::Response<super::CreateProjectResponse>, tonic::Status>;
-        ///AddUserToProject Adds a new user to a given project by its id
+        /// AddUserToProject Adds a new user to a given project by its id
         async fn add_user_to_project(
             &self,
             request: tonic::Request<super::AddUserToProjectRequest>,
         ) -> Result<tonic::Response<super::AddUserToProjectResponse>, tonic::Status>;
-        ///CreateAPIToken Creates an API token to authenticate
-        async fn create_api_token(
-            &self,
-            request: tonic::Request<super::CreateApiTokenRequest>,
-        ) -> Result<tonic::Response<super::CreateApiTokenResponse>, tonic::Status>;
-        ///GetProjectCollections Returns all collections that belong to a certain project
+        /// GetProjectCollections Returns all collections that belong to a certain
+        /// project
         async fn get_project_collections(
             &self,
             request: tonic::Request<super::GetProjectCollectionsRequest>,
@@ -3581,28 +3697,20 @@ pub mod auth_service_server {
             tonic::Response<super::GetProjectCollectionsResponse>,
             tonic::Status,
         >;
-        ///GetUserCollections Returns all collections that a specified user has access to
+        /// GetUserCollections Returns all collections that a specified user has access
+        /// to
         async fn get_user_collections(
             &self,
             request: tonic::Request<super::GetUserCollectionsRequest>,
         ) -> Result<tonic::Response<super::GetUserCollectionsResponse>, tonic::Status>;
-        ///GetProject Returns the specified project
+        /// GetProject Returns the specified project
         async fn get_project(
             &self,
             request: tonic::Request<super::GetProjectRequest>,
         ) -> Result<tonic::Response<super::GetProjectResponse>, tonic::Status>;
-        /// Returns all API token for a specific user
-        async fn get_api_tokens(
-            &self,
-            request: tonic::Request<super::GetApiTokensRequest>,
-        ) -> Result<tonic::Response<super::GetApiTokensResponse>, tonic::Status>;
-        ///DeleteAPITokenRequest Deletes the specified API Token
-        async fn delete_api_token(
-            &self,
-            request: tonic::Request<super::DeleteApiTokenRequest>,
-        ) -> Result<tonic::Response<super::DeleteApiTokenResponse>, tonic::Status>;
         /// This will destroy the project and all its associated data.
-        /// including users, collections, and API tokens and all data associated with them.
+        /// including users, collections, and API tokens and all data associated with
+        /// them.
         async fn destroy_project(
             &self,
             request: tonic::Request<super::DestroyProjectRequest>,
@@ -3667,6 +3775,246 @@ pub mod auth_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
+                "/aruna.api.storage.services.v1.AuthService/RegisterUser" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterUserSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::RegisterUserRequest>
+                    for RegisterUserSvc<T> {
+                        type Response = super::RegisterUserResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterUserRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).register_user(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RegisterUserSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.AuthService/CreateAPIToken" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateAPITokenSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::CreateApiTokenRequest>
+                    for CreateAPITokenSvc<T> {
+                        type Response = super::CreateApiTokenResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateApiTokenRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).create_api_token(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateAPITokenSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.AuthService/GetAPIToken" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAPITokenSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::GetApiTokenRequest>
+                    for GetAPITokenSvc<T> {
+                        type Response = super::GetApiTokenResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetApiTokenRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).get_api_token(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetAPITokenSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.AuthService/GetAPITokens" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAPITokensSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::GetApiTokensRequest>
+                    for GetAPITokensSvc<T> {
+                        type Response = super::GetApiTokensResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetApiTokensRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).get_api_tokens(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetAPITokensSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.AuthService/DeleteAPIToken" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteAPITokenSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::DeleteApiTokenRequest>
+                    for DeleteAPITokenSvc<T> {
+                        type Response = super::DeleteApiTokenResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteApiTokenRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).delete_api_token(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteAPITokenSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.AuthService/DeleteAPITokens" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteAPITokensSvc<T: AuthService>(pub Arc<T>);
+                    impl<
+                        T: AuthService,
+                    > tonic::server::UnaryService<super::DeleteApiTokensRequest>
+                    for DeleteAPITokensSvc<T> {
+                        type Response = super::DeleteApiTokensResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteApiTokensRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).delete_api_tokens(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteAPITokensSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/aruna.api.storage.services.v1.AuthService/CreateProject" => {
                     #[allow(non_camel_case_types)]
                     struct CreateProjectSvc<T: AuthService>(pub Arc<T>);
@@ -3736,46 +4084,6 @@ pub mod auth_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AddUserToProjectSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/aruna.api.storage.services.v1.AuthService/CreateAPIToken" => {
-                    #[allow(non_camel_case_types)]
-                    struct CreateAPITokenSvc<T: AuthService>(pub Arc<T>);
-                    impl<
-                        T: AuthService,
-                    > tonic::server::UnaryService<super::CreateApiTokenRequest>
-                    for CreateAPITokenSvc<T> {
-                        type Response = super::CreateApiTokenResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CreateApiTokenRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).create_api_token(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = CreateAPITokenSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -3894,86 +4202,6 @@ pub mod auth_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetProjectSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/aruna.api.storage.services.v1.AuthService/GetAPITokens" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAPITokensSvc<T: AuthService>(pub Arc<T>);
-                    impl<
-                        T: AuthService,
-                    > tonic::server::UnaryService<super::GetApiTokensRequest>
-                    for GetAPITokensSvc<T> {
-                        type Response = super::GetApiTokensResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetApiTokensRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).get_api_tokens(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetAPITokensSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/aruna.api.storage.services.v1.AuthService/DeleteAPIToken" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteAPITokenSvc<T: AuthService>(pub Arc<T>);
-                    impl<
-                        T: AuthService,
-                    > tonic::server::UnaryService<super::DeleteApiTokenRequest>
-                    for DeleteAPITokenSvc<T> {
-                        type Response = super::DeleteApiTokenResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteApiTokenRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).delete_api_token(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = DeleteAPITokenSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

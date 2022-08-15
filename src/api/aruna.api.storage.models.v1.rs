@@ -684,18 +684,17 @@ pub struct Token {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
-    ///  The actual token, this will be redacted on every get request
-    #[prost(string, tag="3")]
-    pub token: ::prost::alloc::string::String,
     #[prost(enumeration="TokenType", tag="4")]
     pub token_type: i32,
     #[prost(message, optional, tag="5")]
     pub created_at: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(message, optional, tag="6")]
-    pub expires_on: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(string, repeated, tag="7")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(enumeration="Permission", tag="8")]
+    pub expires_at: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(string, tag="7")]
+    pub collection_id: ::prost::alloc::string::String,
+    #[prost(string, tag="8")]
+    pub project_id: ::prost::alloc::string::String,
+    #[prost(enumeration="Permission", tag="9")]
     pub permission: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -724,15 +723,19 @@ pub struct Authorization {
 #[repr(i32)]
 pub enum Permission {
     Unspecified = 0,
-    ///  No permissions granted, used for users that are in the project but have no default permissions
+    ///  No permissions granted, used for users that are in the
     None = 1,
+    ///  project but have no default permissions
+    ///
     ///  Read only
     Read = 2,
     ///  Append objects to the collection cannot modify existing objects
     Append = 3,
-    ///  Can Read/Append/Modify objects in the collection that owns the object / Create new collections
+    ///  Can Read/Append/Modify objects in the collection
     Modify = 4,
-    ///  Can modify the collections itself and permanently delete owned objects / move ownership of objects
+    ///  that owns the object / Create new collections
+    ///
+    ///  Can modify the collections itself and permanently
     Admin = 5,
 }
 impl Permission {
