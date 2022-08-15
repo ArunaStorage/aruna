@@ -44,8 +44,6 @@ impl ObjectServiceImpl {
         authz: Arc<Authz>,
         data_proxy: InternalProxyServiceClient<Channel>,
     ) -> Self {
-        
-
         ObjectServiceImpl {
             database,
             authz,
@@ -62,8 +60,8 @@ impl ObjectService for ObjectServiceImpl {
         request: Request<InitializeNewObjectRequest>,
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -74,6 +72,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
+                    oidc_context: false,
                 },
             )
             .await?;
@@ -117,8 +116,8 @@ impl ObjectService for ObjectServiceImpl {
         request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
         // Check if user is authorized to upload object data in this collection
-        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let _creator_id = self
             .authz
@@ -129,6 +128,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
+                    oidc_context: false,
                 },
             )
             .await?;
@@ -137,8 +137,7 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         // Get primary object location
-        let object_id =
-            uuid::Uuid::parse_str(&inner_request.id).map_err(ArunaError::from)?;
+        let object_id = uuid::Uuid::parse_str(&inner_request.id).map_err(ArunaError::from)?;
         let location = self.database.get_primary_object_location(&object_id)?;
 
         // Get upload url through data proxy
@@ -197,8 +196,8 @@ impl ObjectService for ObjectServiceImpl {
         request: Request<GetObjectByIdRequest>,
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let _creator_id = self
             .authz
@@ -209,6 +208,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
+                    oidc_context: false,
                 },
             )
             .await?;

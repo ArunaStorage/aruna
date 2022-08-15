@@ -302,6 +302,7 @@ diesel::table! {
 diesel::table! {
     users (id) {
         id -> Uuid,
+        external_id -> Text,
         display_name -> Text,
         active -> Bool,
     }

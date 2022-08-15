@@ -28,6 +28,7 @@ CREATE TYPE HASH_TYPE AS ENUM (
 );
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
+-- Currently not used
 CREATE TABLE identity_providers (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
@@ -36,10 +37,12 @@ CREATE TABLE identity_providers (
 -- Table with users imported from some aai
 CREATE TABLE users (
     id UUID PRIMARY KEY,
+    external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
 );
 -- Join table to map users to multiple identity providers
+-- Currently not used
 CREATE TABLE external_user_ids (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,

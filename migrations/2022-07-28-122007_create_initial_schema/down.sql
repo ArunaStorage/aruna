@@ -15,7 +15,6 @@ DROP TABLE object_groups;
 /* ----- Objects --------------------------------------------------- */
 DROP TABLE object_key_value;
 DROP TABLE hashes;
-DROP TABLE hash_types;
 DROP TABLE object_locations;
 DROP TABLE endpoints;
 DROP TABLE objects;
@@ -43,3 +42,4 @@ DROP TYPE KEY_VALUE_TYPE;
 DROP TYPE IDENTITY_PROVIDER_TYPE;
 DROP TYPE USER_RIGHTS;
 DROP TYPE RESOURCES;
+DROP TYPE HASH_TYPE;

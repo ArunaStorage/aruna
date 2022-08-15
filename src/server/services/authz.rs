@@ -3,11 +3,11 @@ use crate::database::models::auth::PubKey;
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::ArunaError;
 use crate::error::GrpcNotFoundError;
-use jsonwebtoken::{
-    decode, decode_header, Algorithm, DecodingKey, Validation,
-};
+use dotenv::dotenv;
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -28,6 +28,7 @@ use tonic::metadata::MetadataMap;
 pub struct Authz {
     pub_keys: Arc<RwLock<HashMap<i64, DecodingKey>>>,
     db: Arc<Database>,
+    oidc_realminfo: String,
 }
 
 /// This contains claims for ArunaTokens
@@ -38,7 +39,7 @@ pub struct Authz {
 ///
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
-    tid: String,
+    sub: String,
     exp: usize,
 }
 
@@ -49,6 +50,9 @@ pub struct Context {
     pub resource_type: Resources,
     pub resource_id: uuid::Uuid,
     pub admin: bool,
+    // Some requests can be authorized using only oidc tokens
+    // If oidc_context is true and the token is an oidc token this request will succeed
+    pub oidc_context: bool,
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -66,13 +70,17 @@ impl Authz {
     /// * `Authz` an instance of this struct.
     ///
     pub async fn new(db: Arc<Database>) -> Authz {
+        dotenv().ok();
         let keys = db.get_pub_keys().unwrap();
 
         let result = Authz::convert_pubkey_to_decoding_key(keys).await.unwrap();
 
+        let realminfo = env::var("OAUTH_REALMINFO").expect("OAUTH_REALMINFO must be set");
+
         Authz {
             pub_keys: Arc::new(RwLock::new(result)),
             db,
+            oidc_realminfo: realminfo,
         }
     }
     /// Converts a Database pubkey to the correct HashMap for the Authz struct.
@@ -88,8 +96,6 @@ impl Authz {
     async fn convert_pubkey_to_decoding_key(
         pubkey: Vec<PubKey>,
     ) -> Result<HashMap<i64, DecodingKey>, ArunaError> {
-        
-
         pubkey
             .into_iter()
             .map(
@@ -108,8 +114,8 @@ impl Authz {
     /// * Result<_, ArunaError> Only an error is returned
     ///
     async fn renew_pubkeys(&self) -> Result<(), ArunaError> {
-        let mut pub_keys = self.pub_keys.write().await.deref();
-        pub_keys = &mut Authz::convert_pubkey_to_decoding_key(self.db.get_pub_keys()?).await?;
+        let mut _pub_keys = self.pub_keys.write().await.deref();
+        _pub_keys = &mut Authz::convert_pubkey_to_decoding_key(self.db.get_pub_keys()?).await?;
         Ok(())
     }
 
@@ -143,7 +149,6 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
     ) -> Result<uuid::Uuid, ArunaError> {
-        let hashmap = self.pub_keys.clone();
         let token_string = metadata
             .get("Bearer")
             .ok_or(ArunaError::GrpcNotFoundError(
@@ -155,6 +160,24 @@ impl Authz {
 
         let kid = header.kid.ok_or(ArunaError::PERMISSIONDENIED)?;
 
+        if header.alg != Algorithm::EdDSA {
+            // Process as keycloak token
+            let pem_token = self.get_token_realminfo().await?;
+
+            // Validate key
+
+            let token_data = decode::<Claims>(
+                token_string,
+                &DecodingKey::from_rsa_pem(pem_token.as_bytes())?,
+                &Validation::new(header.alg),
+            )?;
+
+            let subject = token_data.claims.sub;
+        }
+
+        // --------------- This section only applies if the token is an "aruna" token -------------------------
+
+        let hashmap = self.pub_keys.clone();
         let index = kid
             .parse::<i64>()
             .map_err(|_| ArunaError::PERMISSIONDENIED)?;
@@ -165,7 +188,7 @@ impl Authz {
         let option_key = dec_map.get(&index);
 
         if option_key.is_none() {
-            self.renew_pubkeys().await;
+            self.renew_pubkeys().await?;
         }
 
         let guard = hashmap.read().await;
@@ -173,13 +196,25 @@ impl Authz {
         let key = if option_key.is_some() {
             Ok(option_key.unwrap())
         } else {
-            guard
-                .get(&index)
-                .ok_or(ArunaError::PERMISSIONDENIED)
+            guard.get(&index).ok_or(ArunaError::PERMISSIONDENIED)
         }?;
 
         let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
 
-        Ok(uuid::Uuid::parse_str(token_data.claims.tid.as_str())?)
+        Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
+    }
+
+    async fn get_token_realminfo(&self) -> Result<String, ArunaError> {
+        let resp = reqwest::get(&self.oidc_realminfo)
+            .await?
+            .json::<HashMap<String, String>>()
+            .await?;
+
+        let pub_key = resp.get("public_key").ok_or(ArunaError::OIDCERROR)?;
+
+        Ok(format!(
+            "{}{}{}",
+            "-----BEGIN RSA PUBLIC KEY-----\n", pub_key, "\n-----END RSA PUBLIC KEY-----"
+        ))
     }
 }

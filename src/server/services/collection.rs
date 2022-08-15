@@ -34,8 +34,8 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
-        let project_id = uuid::Uuid::parse_str(&request.get_ref().project_id)
-            .map_err(ArunaError::from)?;
+        let project_id =
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -43,9 +43,10 @@ impl CollectionService for CollectionServiceImpl {
                 request.metadata(),
                 Context {
                     user_right: UserRights::WRITE,
-                    resource_type: Resources::PROJECT, // Creating a new collection needs project level permissions
-                    resource_id: project_id, // This is the project uuid in which this collection should be created
+                    resource_type: Resources::PROJECT,
+                    resource_id: project_id,
                     admin: false,
+                    oidc_context: false,
                 },
             )
             .await?;

@@ -3,6 +3,7 @@
 use diesel::r2d2::Error as DieselR2d2Error;
 use jsonwebtoken::errors::Error as jwterror;
 use r2d2::Error as R2d2Error;
+use reqwest::Error as Rqwerror;
 use std::error::Error as StdError;
 use std::fmt::Display;
 use tokio::task::JoinError as AsyncJoinError;
@@ -25,7 +26,8 @@ pub enum ArunaError {
     DataProxyError(GrpcError),      // All data proxy errors
     AsyncJoinError(AsyncJoinError), // All missing grpc fields errors
     TimestampError(TimestampError), // All Errors from crude conversions to prost_types::TimestampError
-    PERMISSIONDENIED,               // Token with invalid permissions
+    PERMISSIONDENIED,
+    OIDCERROR, // Token with invalid permissions
 }
 
 impl Display for ArunaError {
@@ -41,6 +43,7 @@ impl Display for ArunaError {
             ArunaError::AsyncJoinError(async_join_error) => write!(f, "{}", async_join_error),
             ArunaError::TimestampError(timestamp_error) => write!(f, "{}", timestamp_error),
             ArunaError::PERMISSIONDENIED => write!(f, "Permission denied"),
+            ArunaError::OIDCERROR => write!(f, "Oidc requests failed"),
         }
     }
 }
@@ -95,6 +98,18 @@ impl From<TimestampError> for ArunaError {
     }
 }
 
+impl From<jwterror> for ArunaError {
+    fn from(_: jwterror) -> Self {
+        ArunaError::TypeConversionError(TypeConversionError::JWT)
+    }
+}
+
+impl From<Rqwerror> for ArunaError {
+    fn from(_: Rqwerror) -> Self {
+        ArunaError::OIDCERROR
+    }
+}
+
 //------------------ Impl to_tonic_status --------------------------------
 
 impl From<ArunaError> for tonic::Status {
@@ -113,6 +128,7 @@ impl From<ArunaError> for tonic::Status {
             }
             ArunaError::AsyncJoinError(e) => tonic::Status::internal(e.to_string()),
             ArunaError::PERMISSIONDENIED => tonic::Status::permission_denied("Permission denied"),
+            ArunaError::OIDCERROR => tonic::Status::internal("Oidc request failed"),
         }
     }
 }
@@ -134,12 +150,6 @@ impl From<ConnectionError> for ArunaError {
 impl From<TypeConversionError> for ArunaError {
     fn from(tc_error: TypeConversionError) -> Self {
         ArunaError::TypeConversionError(tc_error)
-    }
-}
-
-impl From<jwterror> for ArunaError {
-    fn from(_: jwterror) -> Self {
-        ArunaError::TypeConversionError(TypeConversionError::JWT)
     }
 }
 

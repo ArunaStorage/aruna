@@ -314,6 +314,7 @@ fn option_uuid_helper(
             resource_type: res_type,
             resource_id: id1_value,
             admin: false,
+            oidc_context: false,
         });
     }
     // Otherwise return None
