@@ -1,7 +1,7 @@
 use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, PubKey, UserPermission};
+use crate::database::models::auth::{ApiToken, PubKey, User, UserPermission};
 use crate::database::models::enums::{Resources, UserRights};
-use crate::error::ArunaError;
+use crate::error::{ArunaError, AuthorizationError};
 use crate::server::services::authz::Context;
 use diesel::{prelude::*, sql_query, sql_types::Uuid};
 
@@ -274,7 +274,29 @@ impl Database {
 
         match creator_uid {
             Some(uid) => Ok(uid),
-            None => Err(ArunaError::PERMISSIONDENIED),
+            None => Err(ArunaError::AuthorizationError(
+                AuthorizationError::PERMISSIONDENIED,
+            )),
+        }
+    }
+
+    pub fn get_oidc_user(&self, oidc_id: String) -> Result<Option<uuid::Uuid>, ArunaError> {
+        use crate::database::schema::users::dsl::*;
+        use diesel::result::Error;
+
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                users
+                    .filter(external_id.eq(oidc_id))
+                    .first::<User>(conn)
+                    .optional()
+            })?;
+
+        match result {
+            Some(u) => Ok(Some(u.id)),
+            None => Ok(None),
         }
     }
 }

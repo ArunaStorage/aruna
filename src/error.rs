@@ -26,8 +26,7 @@ pub enum ArunaError {
     DataProxyError(GrpcError),      // All data proxy errors
     AsyncJoinError(AsyncJoinError), // All missing grpc fields errors
     TimestampError(TimestampError), // All Errors from crude conversions to prost_types::TimestampError
-    PERMISSIONDENIED,
-    OIDCERROR, // Token with invalid permissions
+    AuthorizationError(AuthorizationError),
 }
 
 impl Display for ArunaError {
@@ -42,8 +41,7 @@ impl Display for ArunaError {
             ArunaError::DataProxyError(data_proxy_error) => write!(f, "{}", data_proxy_error),
             ArunaError::AsyncJoinError(async_join_error) => write!(f, "{}", async_join_error),
             ArunaError::TimestampError(timestamp_error) => write!(f, "{}", timestamp_error),
-            ArunaError::PERMISSIONDENIED => write!(f, "Permission denied"),
-            ArunaError::OIDCERROR => write!(f, "Oidc requests failed"),
+            ArunaError::AuthorizationError(auth_error) => write!(f, "{}", auth_error),
         }
     }
 }
@@ -106,7 +104,7 @@ impl From<jwterror> for ArunaError {
 
 impl From<Rqwerror> for ArunaError {
     fn from(_: Rqwerror) -> Self {
-        ArunaError::OIDCERROR
+        ArunaError::AuthorizationError(AuthorizationError::AUTHFLOWERROR)
     }
 }
 
@@ -127,8 +125,15 @@ impl From<ArunaError> for tonic::Status {
                 tonic::Status::invalid_argument(missing.to_string())
             }
             ArunaError::AsyncJoinError(e) => tonic::Status::internal(e.to_string()),
-            ArunaError::PERMISSIONDENIED => tonic::Status::permission_denied("Permission denied"),
-            ArunaError::OIDCERROR => tonic::Status::internal("Oidc request failed"),
+
+            ArunaError::AuthorizationError(a)
+                if a == AuthorizationError::UNAUTHORIZED
+                    || a == AuthorizationError::UNREGISTERED =>
+            {
+                tonic::Status::unauthenticated(a.to_string())
+            }
+
+            ArunaError::AuthorizationError(a) => tonic::Status::permission_denied(a.to_string()),
         }
     }
 }
@@ -150,6 +155,12 @@ impl From<ConnectionError> for ArunaError {
 impl From<TypeConversionError> for ArunaError {
     fn from(tc_error: TypeConversionError) -> Self {
         ArunaError::TypeConversionError(tc_error)
+    }
+}
+
+impl From<AuthorizationError> for ArunaError {
+    fn from(auth_error: AuthorizationError) -> Self {
+        ArunaError::AuthorizationError(auth_error)
     }
 }
 
@@ -214,6 +225,27 @@ impl Display for GrpcNotFoundError {
             }
             GrpcNotFoundError::COLLECTIONID => write!(f, "Missing CollectionId in Request"),
             GrpcNotFoundError::STAGEOBJ => write!(f, "Missing StageObject in Request"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AuthorizationError {
+    UNAUTHORIZED,
+    PERMISSIONDENIED,
+    UNREGISTERED,
+    AUTHFLOWERROR,
+}
+
+impl Display for AuthorizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthorizationError::UNAUTHORIZED => {
+                write!(f, "Missing or malformed authorization token")
+            }
+            AuthorizationError::PERMISSIONDENIED => write!(f, "Permission denied"),
+            AuthorizationError::UNREGISTERED => write!(f, "Not registered, please register first!"),
+            AuthorizationError::AUTHFLOWERROR => write!(f, "Error during auth flow"),
         }
     }
 }

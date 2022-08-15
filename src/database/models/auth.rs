@@ -13,6 +13,7 @@ pub struct IdentityProvider {
 pub struct User {
     pub id: uuid::Uuid,
     pub display_name: String,
+    pub external_id: String,
     pub active: bool,
 }
 

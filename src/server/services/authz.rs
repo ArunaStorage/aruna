@@ -1,8 +1,8 @@
 use crate::database::connection::Database;
 use crate::database::models::auth::PubKey;
 use crate::database::models::enums::{Resources, UserRights};
-use crate::error::ArunaError;
 use crate::error::GrpcNotFoundError;
+use crate::error::{ArunaError, AuthorizationError};
 use dotenv::dotenv;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,9 @@ impl Authz {
             .map(
                 |pubkey| match DecodingKey::from_ed_pem(pubkey.pubkey.as_bytes()) {
                     Ok(e) => Ok((pubkey.id, e)),
-                    Err(_) => Err(ArunaError::PERMISSIONDENIED),
+                    Err(_) => Err(ArunaError::AuthorizationError(
+                        AuthorizationError::PERMISSIONDENIED,
+                    )),
                 },
             )
             .collect::<Result<HashMap<_, _>, _>>()
@@ -158,7 +160,7 @@ impl Authz {
 
         let header = decode_header(token_string)?;
 
-        let kid = header.kid.ok_or(ArunaError::PERMISSIONDENIED)?;
+        let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
         if header.alg != Algorithm::EdDSA {
             // Process as keycloak token
@@ -173,6 +175,15 @@ impl Authz {
             )?;
 
             let subject = token_data.claims.sub;
+
+            match self.db.get_oidc_user(subject)? {
+                Some(u) => return Ok(u),
+                None => {
+                    return Err(ArunaError::AuthorizationError(
+                        AuthorizationError::UNREGISTERED,
+                    ))
+                }
+            }
         }
 
         // --------------- This section only applies if the token is an "aruna" token -------------------------
@@ -180,7 +191,7 @@ impl Authz {
         let hashmap = self.pub_keys.clone();
         let index = kid
             .parse::<i64>()
-            .map_err(|_| ArunaError::PERMISSIONDENIED)?;
+            .map_err(|_| AuthorizationError::PERMISSIONDENIED)?;
         let guard = hashmap.read().await;
 
         let dec_map = guard.clone();
@@ -196,7 +207,9 @@ impl Authz {
         let key = if option_key.is_some() {
             Ok(option_key.unwrap())
         } else {
-            guard.get(&index).ok_or(ArunaError::PERMISSIONDENIED)
+            guard
+                .get(&index)
+                .ok_or(AuthorizationError::PERMISSIONDENIED)
         }?;
 
         let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
@@ -210,7 +223,9 @@ impl Authz {
             .json::<HashMap<String, String>>()
             .await?;
 
-        let pub_key = resp.get("public_key").ok_or(ArunaError::OIDCERROR)?;
+        let pub_key = resp
+            .get("public_key")
+            .ok_or(AuthorizationError::AUTHFLOWERROR)?;
 
         Ok(format!(
             "{}{}{}",
