@@ -1,7 +1,10 @@
-use super::authz::Authz;
+use tonic::Response;
+
+use super::authz::{Authz, Context};
 use crate::api::aruna::api::storage::services::v1::auth_service_server::AuthService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
+use crate::database::models::enums::{Resources, UserRights};
 use std::sync::Arc;
 
 pub struct AuthServiceImpl {
@@ -23,9 +26,13 @@ impl AuthService for AuthServiceImpl {
     /// RegisterUser registers a new user from OIDC
     async fn register_user(
         &self,
-        _request: tonic::Request<RegisterUserRequest>,
+        request: tonic::Request<RegisterUserRequest>,
     ) -> Result<tonic::Response<RegisterUserResponse>, tonic::Status> {
-        todo!()
+        let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
+        Ok(Response::new(
+            self.database
+                .register_user(request.into_inner(), subject_id)?,
+        ))
     }
     /// CreateAPIToken Creates an API token to authenticate
     async fn create_api_token(

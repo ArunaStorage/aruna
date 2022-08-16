@@ -163,18 +163,7 @@ impl Authz {
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
         if header.alg != Algorithm::EdDSA {
-            // Process as keycloak token
-            let pem_token = self.get_token_realminfo().await?;
-
-            // Validate key
-
-            let token_data = decode::<Claims>(
-                token_string,
-                &DecodingKey::from_rsa_pem(pem_token.as_bytes())?,
-                &Validation::new(header.alg),
-            )?;
-
-            let subject = token_data.claims.sub;
+            let subject = self.validate_oidc_only(metadata).await?;
 
             match self.db.get_oidc_user(subject)? {
                 Some(u) => return Ok(u),
@@ -215,6 +204,31 @@ impl Authz {
         let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
 
         Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
+    }
+
+    pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {
+        let token_string = metadata
+            .get("Bearer")
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
+            .to_str()?;
+
+        let header = decode_header(token_string)?;
+
+        // Process as keycloak token
+        let pem_token = self.get_token_realminfo().await?;
+
+        // Validate key
+
+        let token_data = decode::<Claims>(
+            token_string,
+            &DecodingKey::from_rsa_pem(pem_token.as_bytes())?,
+            &Validation::new(header.alg),
+        )?;
+
+        let subject = token_data.claims.sub;
+        Ok(subject)
     }
 
     async fn get_token_realminfo(&self) -> Result<String, ArunaError> {
