@@ -81,6 +81,7 @@ diesel::table! {
         id -> Uuid,
         collection_id -> Uuid,
         object_id -> Uuid,
+        auto_update -> Bool,
         is_specification -> Bool,
         writeable -> Bool,
     }

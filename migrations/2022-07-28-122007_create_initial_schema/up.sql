@@ -212,6 +212,7 @@ CREATE TABLE collection_objects (
     id UUID PRIMARY KEY,
     collection_id UUID NOT NULL,
     object_id UUID NOT NULL,
+    auto_update BOOL NOT NULL DEFAULT FALSE,
     is_specification BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (object_id) REFERENCES objects(id),
