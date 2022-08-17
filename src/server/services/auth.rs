@@ -81,16 +81,51 @@ impl AuthService for AuthServiceImpl {
     /// Returns one API token by id
     async fn get_api_token(
         &self,
-        _request: tonic::Request<GetApiTokenRequest>,
+        request: tonic::Request<GetApiTokenRequest>,
     ) -> Result<tonic::Response<GetApiTokenResponse>, tonic::Status> {
-        todo!()
+        let user_id = self
+            .authz
+            .authorize(
+                request.metadata(),
+                Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::PROJECT,
+                    resource_id: uuid::Uuid::default(),
+                    admin: false,
+                    personal: true,
+                    oidc_context: false,
+                },
+            )
+            .await?;
+
+        Ok(Response::new(
+            self.database.get_api_token(request.into_inner(), user_id)?,
+        ))
     }
     /// Returns all API token for a specific user
     async fn get_api_tokens(
         &self,
-        _request: tonic::Request<GetApiTokensRequest>,
+        request: tonic::Request<GetApiTokensRequest>,
     ) -> Result<tonic::Response<GetApiTokensResponse>, tonic::Status> {
-        todo!()
+        let user_id = self
+            .authz
+            .authorize(
+                request.metadata(),
+                Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::PROJECT,
+                    resource_id: uuid::Uuid::default(),
+                    admin: false,
+                    personal: true,
+                    oidc_context: false,
+                },
+            )
+            .await?;
+
+        Ok(Response::new(
+            self.database
+                .get_api_tokens(request.into_inner(), user_id)?,
+        ))
     }
     /// DeleteAPITokenRequest Deletes the specified API Token
     async fn delete_api_token(
