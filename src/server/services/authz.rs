@@ -4,12 +4,13 @@ use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
 use dotenv::dotenv;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, EncodingKey, Validation};
+use openssl::pkey::PKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
+use std::env::{self, VarError};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
 
@@ -24,9 +25,11 @@ use tonic::metadata::MetadataMap;
 ///
 /// pub_keys: HashMap<i64, DecodingKey> -> Contains all existing pubkeys
 /// db: Arc<Database> -> Database access
+/// oidc_realminfo: String -> The URL to query the oidc pubkey
 ///
 pub struct Authz {
     pub_keys: Arc<RwLock<HashMap<i64, DecodingKey>>>,
+    signing_key: Arc<Mutex<(i64, EncodingKey)>>,
     db: Arc<Database>,
     oidc_realminfo: String,
 }
@@ -52,6 +55,8 @@ pub struct Context {
     pub admin: bool,
     // Some requests can be authorized using only oidc tokens
     // If oidc_context is true and the token is an oidc token this request will succeed
+    // All other fields will be ignored, this should only be used for
+    // register and the creation / deletion of private access tokens
     pub oidc_context: bool,
 }
 
@@ -71,16 +76,59 @@ impl Authz {
     ///
     pub async fn new(db: Arc<Database>) -> Authz {
         dotenv().ok();
-        let keys = db.get_pub_keys().unwrap();
-
-        let result = Authz::convert_pubkey_to_decoding_key(keys).await.unwrap();
-
+        // Get the realinfo from config, this is used to query the pubkey from oidc
         let realminfo = env::var("OAUTH_REALMINFO").expect("OAUTH_REALMINFO must be set");
+        // Query the required signing key environment variable
+        let signing_key_result = env::var("SIGNING_KEY");
+        // Check if the signing key is set, if yes continue with this key
+        // otherwise generate a new ed25519 private key
+        // This requires openssl on the system
+        let signing_key = match signing_key_result {
+            Ok(key) => key.as_bytes().to_vec(),
+            Err(err) => {
+                if err == VarError::NotPresent {
+                    let privatekey =
+                        PKey::generate_ed25519().expect("Unable to generate new signing key");
+                    privatekey
+                        .private_key_to_pem_pkcs8()
+                        .expect("Unable to convert signing key to pem")
+                } else {
+                    panic!("Unable to parse SIGNING KEY: {}", err)
+                }
+            }
+        };
 
+        // Parse the returned Vec<u8> (private) signing key to pem format
+        let priv_key_ossl =
+            PKey::private_key_from_pem(&signing_key).expect("Unable to parse private key to pem");
+        // Create an associated pubkey for this private key
+        let pubkey = priv_key_ossl
+            .public_key_to_pem()
+            .expect("Cant convert pkey to pem");
+        // Convert the pubkey to string
+        let pub_key_string = String::from_utf8_lossy(&pubkey).to_string();
+        // Query the database for this pubkey, either return the queried id or add this pubkey as new key to the database
+        let serial = db
+            .get_or_add_pub_key(pub_key_string)
+            .expect("Error in get or add signing key");
+
+        // Query databse for all existing pubkeys
+        let keys = db.get_pub_keys().expect("Unable to query signing pubkeys");
+        // Store them in a local hashmap cache
+        let result = Authz::convert_pubkey_to_decoding_key(keys)
+            .await
+            .expect("Error in decoding pubkeys");
+
+        // return the Authz struct
         Authz {
             pub_keys: Arc::new(RwLock::new(result)),
             db,
             oidc_realminfo: realminfo,
+            signing_key: Arc::new(Mutex::new((
+                serial,
+                EncodingKey::from_ed_pem(&signing_key)
+                    .expect("Unable to create EncodingKey from pem"),
+            ))),
         }
     }
     /// Converts a Database pubkey to the correct HashMap for the Authz struct.
@@ -246,4 +294,6 @@ impl Authz {
             "-----BEGIN RSA PUBLIC KEY-----\n", pub_key, "\n-----END RSA PUBLIC KEY-----"
         ))
     }
+
+    async fn sign_new_token(&self) -> Result<uuid::Uuid, ArunaError> {}
 }

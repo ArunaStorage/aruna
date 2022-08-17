@@ -27,6 +27,7 @@ pub enum ArunaError {
     AsyncJoinError(AsyncJoinError), // All missing grpc fields errors
     TimestampError(TimestampError), // All Errors from crude conversions to prost_types::TimestampError
     AuthorizationError(AuthorizationError),
+    InvalidRequest(String),
 }
 
 impl Display for ArunaError {
@@ -42,6 +43,7 @@ impl Display for ArunaError {
             ArunaError::AsyncJoinError(async_join_error) => write!(f, "{}", async_join_error),
             ArunaError::TimestampError(timestamp_error) => write!(f, "{}", timestamp_error),
             ArunaError::AuthorizationError(auth_error) => write!(f, "{}", auth_error),
+            ArunaError::InvalidRequest(invalid_req_err) => write!(f, "{}", invalid_req_err),
         }
     }
 }
@@ -134,6 +136,9 @@ impl From<ArunaError> for tonic::Status {
             }
 
             ArunaError::AuthorizationError(a) => tonic::Status::permission_denied(a.to_string()),
+            ArunaError::InvalidRequest(invalid_error_message) => {
+                tonic::Status::invalid_argument(invalid_error_message)
+            }
         }
     }
 }

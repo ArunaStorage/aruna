@@ -71,8 +71,15 @@ pub struct ApiToken {
     pub user_right: Option<UserRights>,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Identifiable, Debug)]
 pub struct PubKey {
     pub id: i64,
+    pub pubkey: String,
+}
+
+#[derive(Insertable, Identifiable, Debug)]
+#[diesel(table_name = pub_keys)]
+pub struct PubKeyInsert {
+    pub id: Option<i64>,
     pub pubkey: String,
 }

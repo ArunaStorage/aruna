@@ -1,8 +1,9 @@
 use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, PubKey, User, UserPermission};
+use crate::database::models::auth::{ApiToken, PubKey, PubKeyInsert, User, UserPermission};
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::{ArunaError, AuthorizationError};
 use crate::server::services::authz::Context;
+use diesel::insert_into;
 use diesel::{prelude::*, sql_query, sql_types::Uuid};
 
 impl Database {
@@ -21,6 +22,43 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<PubKey>, dError, _>(|conn| pub_keys.load::<PubKey>(conn))?)
+    }
+    /// Method to query a specific pubkey and add it to the database if it not exists
+    ///
+    /// ## Arguments
+    ///
+    /// - pubkey String
+    ///
+    /// ## Result
+    ///
+    /// * `Result<i64, ArunaError>` -> Returns the queried or inserted serial number
+    ///
+    pub fn get_or_add_pub_key(&self, pub_key: String) -> Result<i64, ArunaError> {
+        use crate::database::schema::pub_keys::dsl::*;
+        use diesel::result::Error as dError;
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<i64, dError, _>(|conn| {
+                let pkey = pub_keys
+                    .filter(pubkey.eq(pub_key.clone()))
+                    .first::<PubKey>(conn)
+                    .optional()?;
+                if pkey.is_none() {
+                    let new_pkey = PubKeyInsert {
+                        pubkey: pub_key,
+                        id: None,
+                    };
+
+                    Ok(insert_into(pub_keys)
+                        .values(&new_pkey)
+                        .returning(id)
+                        .get_result::<i64>(conn)?)
+                } else {
+                    Ok(pkey.unwrap().id)
+                }
+            })?;
+        Ok(result)
     }
 
     /// This method checks if the user has the correct permissions

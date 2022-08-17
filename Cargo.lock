@@ -18,6 +18,7 @@ dependencies = [
  "dotenv",
  "http",
  "jsonwebtoken",
+ "openssl",
  "prost",
  "prost-types",
  "r2d2",

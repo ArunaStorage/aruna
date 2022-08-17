@@ -1,11 +1,14 @@
-use crate::api::aruna::api::storage::services::v1::{RegisterUserRequest, RegisterUserResponse};
-use crate::database::connection::{Database};
-use crate::database::models::auth::{User};
+use crate::api::aruna::api::storage::services::v1::{
+    CreateApiTokenRequest, RegisterUserRequest, RegisterUserResponse,
+};
+use crate::database::connection::Database;
+use crate::database::models::auth::{ApiToken, User};
 
-use crate::error::{ArunaError};
+use crate::error::ArunaError;
 
+use chrono::{Local, NaiveDateTime};
 use diesel::insert_into;
-use diesel::{prelude::*};
+use diesel::prelude::*;
 
 impl Database {
     /// Registers a new (unregistered) user by its oidc `external_id`
@@ -51,5 +54,67 @@ impl Database {
         Ok(RegisterUserResponse {
             user_id: user_id.to_string(),
         })
+    }
+
+    pub fn create_api_token(
+        &self,
+        request: CreateApiTokenRequest,
+        user_id: uuid::Uuid,
+        pubkey_id: i64,
+    ) -> Result<(uuid::Uuid, Option<NaiveDateTime>), ArunaError> {
+        let new_uid = uuid::Uuid::new_v4();
+
+        //let expiry_time = request.expires_at.unwrap().timestamp.unwrap().seconds;
+
+        let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
+
+
+        if parsed_collection_id.is_some() || parsed_project_id.is_some() {
+            // Only allow one of both to be 
+            if parsed_collection_id.is_some() != parsed_project_id.is_some() {
+
+            }else{
+                return Err(ArunaError::AuthorizationError(AuthorizationError::));
+            }
+            
+        }
+
+        let new_token = ApiToken {
+            id: new_uid,
+            creator_user_id: user_id,
+            pub_key: pubkey_id,
+            created_at: Local::now().naive_local(),
+            expires_at: todo!(),
+            project_id: parsed_project_id,
+            collection_id: parsed_collection_id,
+            user_right: todo!(),
+        };
+
+        todo!()
+
+        // use crate::database::schema::users::dsl::*;
+        // use diesel::result::Error;
+
+        // let db_user = User {
+        //     id: uuid::Uuid::new_v4(),
+        //     display_name: request.display_name,
+        //     external_id: ext_id,
+        //     active: false,
+        // };
+
+        // let user_id = self
+        //     .pg_connection
+        //     .get()?
+        //     .transaction::<uuid::Uuid, Error, _>(|conn| {
+        //         insert_into(users)
+        //             .values(&db_user)
+        //             .returning(id)
+        //             .get_result(conn)
+        //     })?;
+
+        // Ok(RegisterUserResponse {
+        //     user_id: user_id.to_string(),
+        // })
     }
 }

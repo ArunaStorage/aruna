@@ -23,6 +23,7 @@ jsonwebtoken = "8.1.1"
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 reqwest = {version = "0.11.11", features = ["json"] }
+openssl = "0.10.41"
 
 [build-dependencies]
 tonic-build = "0.8.0"
