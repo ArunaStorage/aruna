@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::api::aruna::api::storage::models::v1::KeyValue;
 
 use crate::database::models::collection::CollectionKeyValue;
-use crate::database::models::enums::KeyValueType;
+use crate::database::models::enums::{KeyValueType, UserRights};
 use crate::database::models::object::ObjectKeyValue;
 
 /// This is a helper function that converts two
@@ -152,11 +152,61 @@ pub fn to_object_key_values(
     db_key_value
 }
 
+/// This helper function maps gRPC permissions to
+/// associated DB user_rights, it is mainly used in the creation of new api_tokens
+///
+/// ## Arguments
+///
+/// * `perm` Permission - gRPC permission
+///
+/// ## Returns
+///
+/// * `Option<UserRights>` - Optional user_rights
+//
+pub fn map_permissions(
+    perm: crate::api::aruna::api::storage::models::v1::Permission,
+) -> Option<UserRights> {
+    match perm {
+        crate::api::aruna::api::storage::models::v1::Permission::Unspecified => None,
+        crate::api::aruna::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
+        crate::api::aruna::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
+        crate::api::aruna::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
+        crate::api::aruna::api::storage::models::v1::Permission::Admin => Some(UserRights::ADMIN),
+        crate::api::aruna::api::storage::models::v1::Permission::None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::aruna::api::storage::models::v1::KeyValue;
+    use crate::api::aruna::api::storage::models::v1::Permission;
     use std::any::type_name;
+
+    #[test]
+    fn test_map_permissions() {
+        for (index, perm) in vec![
+            Permission::Unspecified,
+            Permission::Read,
+            Permission::Append,
+            Permission::Modify,
+            Permission::Admin,
+            Permission::None,
+        ]
+        .iter()
+        .enumerate()
+        {
+            match index {
+                0 => assert_eq!(map_permissions(*perm), None),
+                1 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
+                2 => assert_eq!(map_permissions(*perm), Some(UserRights::APPEND)),
+                3 => assert_eq!(map_permissions(*perm), Some(UserRights::WRITE)),
+                4 => assert_eq!(map_permissions(*perm), Some(UserRights::ADMIN)),
+                5 => assert_eq!(map_permissions(*perm), None),
+                _ => panic!("map permissions test index out of bound"),
+            }
+        }
+    }
 
     #[test]
     fn test_convert_to_collection_key_value() {

@@ -82,8 +82,9 @@ impl Database {
     /// - Collection        (coll)
     /// - Personal          (pers)
     ///
-    /// The Requested Context (req_ctx) can also have three different scopes:
+    /// The Requested Context (req_ctx) can also have four different scopes:
     /// - Admin             (admi)
+    /// - Personal          (pers)
     /// - Project           (proj)
     /// - Collection        (coll)
     ///
@@ -92,13 +93,15 @@ impl Database {
     /// 1.  req_ctx == admi
     ///     -> check if token is personal and user is part of an admin project and return
     ///        no additional permission checks are necessary because global admins have no specific user_permissions (for now)
-    /// 2.  req_ctx == coll && api_token == coll
+    /// 2.  req_ctx == perso
+    ///     -> check if token is personal and return user_id
+    /// 3.  req_ctx == coll && api_token == coll
     ///     -> check if both uuid are the same and check if the api_token permission is greater or equal the
     ///        requested permission
-    /// 3.  req_ctx == coll && api_token == proj
+    /// 4.  req_ctx == coll && api_token == proj
     ///     -> check if context_collection is in project and and check if the api_token permission is greater or
     ///        equal the requested permissio;n
-    /// 4.  req_ctx == proj && api_token == proj
+    /// 5.  req_ctx == proj && api_token == proj
     ///     -> check if context_project equals the apitoken project and the api_token permission is greater or  
     ///        equal the requested permission
     ///
@@ -107,9 +110,9 @@ impl Database {
     /// These cases all require the api_token to be "scoped" to a specific context. The next cases occur when
     /// the token is a personal token of a specific user.
     ///
-    /// 5.  req_ctx == coll && api_token == pers
+    /// 6.  req_ctx == coll && api_token == pers
     ///     -> check for associated project and validate if the user has enough permissions
-    /// 6.  req_ctx == proj && api_token == pers
+    /// 7.  req_ctx == proj && api_token == pers
     ///     -> check if the user has a user_permission for this specific project and if this permission is >= the req_ctx permission
     ///
     pub fn get_checked_user_id_from_token(
@@ -161,9 +164,21 @@ impl Database {
                         }
                     }
 
+                    // Case 2:
+                    // The request is a "personal" scope
+                    // This can immediately return the user_id if the token is also personal scoped
+                    // Mostly used to modify tokens
+                    if req_ctx.personal {
+                        if api_token.project_id.is_none() && api_token.collection_id.is_none() {
+                            return Ok(Some(api_token.creator_user_id));
+                        } else {
+                            return Err(dError::NotFound);
+                        }
+                    }
+
                     // If the requested context / scope is of type COLLECTION
                     if req_ctx.resource_type == Resources::COLLECTION {
-                        // Case 2:
+                        // Case 3:
                         // If api_token.collection_id == context_collection_id
                         // And user_right != None && api_token.collection_id != None && context_collection_id != None
                         // This will return Some(Context) otherwise this will return None
@@ -185,7 +200,7 @@ impl Database {
                             }
                         }
 
-                        // Case 3:
+                        // Case 4:
                         // When the request is a collection_id that does not directly match
                         // apitoken.collection_id or apitoken.project_id but api_token is project scoped
                         // It might be possible that the collection is part of the "scoped" project
@@ -219,7 +234,7 @@ impl Database {
                             }
                         }
 
-                        // Case 5:
+                        // Case 6:
                         // This is the case when the request is Collection scoped but the ApiToken is "personal"
                         // -> no collection_id or project_id is specified
                         // in this case it needs to be checked if the user_permission for the collections project exists
@@ -257,7 +272,7 @@ impl Database {
                     }
 
                     if req_ctx.resource_type == Resources::PROJECT {
-                        // Case 4:
+                        // Case 5:
                         // If api_token.project_id == context_project_id
                         // And user_right != None && api_token.project_id != None && context_project_id != None
                         // This will return Some(Context) otherwise this will return None
@@ -278,7 +293,7 @@ impl Database {
                             }
                         }
 
-                        // Case 6:
+                        // Case 7:
                         // If context is user_scoped check if the user has the correct project permissions
                         // This checks for the permissions in the user_permissions table which already contains a project_id
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
@@ -375,6 +390,7 @@ fn option_uuid_helper(
             resource_id: id1_value,
             admin: false,
             oidc_context: false,
+            personal: false,
         });
     }
     // Otherwise return None

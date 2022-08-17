@@ -73,6 +73,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
                     oidc_context: false,
+                    personal: false,
                 },
             )
             .await?;
@@ -129,6 +130,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
                     oidc_context: false,
+                    personal: false,
                 },
             )
             .await?;
@@ -209,6 +211,7 @@ impl ObjectService for ObjectServiceImpl {
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
                     admin: false,
                     oidc_context: false,
+                    personal: false,
                 },
             )
             .await?;

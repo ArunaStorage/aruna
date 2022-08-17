@@ -46,6 +46,7 @@ impl CollectionService for CollectionServiceImpl {
                     resource_type: Resources::PROJECT,
                     resource_id: project_id,
                     admin: false,
+                    personal: false,
                     oidc_context: false,
                 },
             )

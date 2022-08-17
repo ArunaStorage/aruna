@@ -4,7 +4,9 @@ use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
 use dotenv::dotenv;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{
+    decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
+};
 use openssl::pkey::PKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -52,11 +54,18 @@ pub struct Context {
     pub user_right: UserRights,
     pub resource_type: Resources,
     pub resource_id: uuid::Uuid,
+    // These requests need admin rights
+    // For this the user needs to be part of a projects with the admin flag 1
     pub admin: bool,
+
+    // Some requests can only be authorized for personal access
+    // for example querying or modifying personal tokens
+    pub personal: bool,
+
     // Some requests can be authorized using only oidc tokens
     // If oidc_context is true and the token is an oidc token this request will succeed
     // All other fields will be ignored, this should only be used for
-    // register and the creation / deletion of private access tokens
+    // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
 }
 
@@ -295,5 +304,30 @@ impl Authz {
         ))
     }
 
-    async fn sign_new_token(&self) -> Result<uuid::Uuid, ArunaError> {}
+    async fn sign_new_token(
+        &self,
+        token_id: i64,
+        expires_at: Option<chrono::NaiveDateTime>,
+    ) -> Result<String, ArunaError> {
+        // Gets the signing key / mutex -> if this returns a poison error this should also panic
+        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+        let signing_key = self.signing_key.lock().unwrap();
+
+        let claim = Claims {
+            sub: format!("{}", token_id),
+            exp: if expires_at.is_none() {
+                10000000000
+            } else {
+                expires_at.unwrap().timestamp() as usize
+            },
+        };
+
+        let header = Header {
+            kid: Some(format!("{}", signing_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        Ok(encode(&header, &claim, &signing_key.1)?)
+    }
 }

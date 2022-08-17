@@ -1,9 +1,11 @@
+use super::utils::*;
 use crate::api::aruna::api::storage::services::v1::{
     CreateApiTokenRequest, RegisterUserRequest, RegisterUserResponse,
 };
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, User};
 
+use crate::database::models::enums::UserRights;
 use crate::error::ArunaError;
 
 use chrono::{Local, NaiveDateTime};
@@ -68,16 +70,15 @@ impl Database {
 
         let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
-
-
+        let user_right: Option<UserRights> = map_permissions(request.permission());
         if parsed_collection_id.is_some() || parsed_project_id.is_some() {
-            // Only allow one of both to be 
-            if parsed_collection_id.is_some() != parsed_project_id.is_some() {
-
-            }else{
-                return Err(ArunaError::AuthorizationError(AuthorizationError::));
+            // Only allow one of both to be set
+            if parsed_collection_id.is_some() == parsed_project_id.is_some() {
+                return Err(ArunaError::InvalidRequest(
+                    "Cannot set collection_id and project_id at once both should be exclusive"
+                        .to_owned(),
+                ));
             }
-            
         }
 
         let new_token = ApiToken {
@@ -88,7 +89,7 @@ impl Database {
             expires_at: todo!(),
             project_id: parsed_project_id,
             collection_id: parsed_collection_id,
-            user_right: todo!(),
+            user_right: user_right,
         };
 
         todo!()
