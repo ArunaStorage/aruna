@@ -109,6 +109,24 @@ pub fn naivedatetime_to_prost_time(
     )
 }
 
+/// Generic option to Option<String>
+/// This function converts an Option of generic type to an Option of type String
+///
+/// ## Arguments
+///
+/// * `generic_option` an Option of a generic Type T, this Type must be ToString,
+///
+/// ## Returns
+///
+/// * `Option<String>` Associated option as String
+///
+pub fn option_to_string<T>(generic_option: Option<T>) -> Option<String>
+where
+    T: ToString,
+{
+    generic_option.map(|t| t.to_string())
+}
+
 /// Converts key-value pairs from their gRPC representation to the database model.
 /// This function does not check if the pair for the specific object already exists in the database.
 ///
@@ -176,12 +194,81 @@ pub fn map_permissions(
     }
 }
 
+/// This helper function maps associated DB user_rights to gRPC permissions
+/// this is the reverse of `map_permissions`
+///
+/// ## Arguments
+///
+/// * `Option<UserRights>` - Optional user_rights
+///
+/// ## Returns
+///
+/// * i32 associated gRPC enum number
+//
+pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
+    //
+    //  Unspecified = 0,
+    //  No permissions granted, used for users that are in the
+    //  None = 1,
+    //  project but have no default permissions
+    //
+    //  Read only
+    //  Read = 2,
+    //  Append objects to the collection cannot modify existing objects
+    //  Append = 3,
+    //  Can Read/Append/Modify objects in the collection
+    //  Modify = 4,
+    //  that owns the object / Create new collections
+    //
+    //  Can modify the collections itself and permanently
+    //  Admin = 5
+    //
+    match right {
+        Some(t) => match t {
+            UserRights::READ => 2,
+            UserRights::APPEND => 3,
+            UserRights::MODIFY => 4,
+            UserRights::WRITE => 4,
+            UserRights::ADMIN => 5,
+        },
+        None => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::aruna::api::storage::models::v1::KeyValue;
     use crate::api::aruna::api::storage::models::v1::Permission;
     use std::any::type_name;
+
+    #[test]
+    fn test_option_to_string() {
+        let test_id = uuid::Uuid::new_v4();
+
+        let as_option = Some(test_id);
+
+        let result = option_to_string(as_option);
+
+        assert_eq!(as_option.is_some(), result.is_some());
+        assert_eq!(test_id.to_string(), result.unwrap())
+    }
+
+    #[test]
+    fn test_map_permissions_rev() {
+        let tests = vec![
+            (None, 0),
+            (Some(UserRights::READ), 2),
+            (Some(UserRights::APPEND), 3),
+            (Some(UserRights::MODIFY), 4),
+            (Some(UserRights::WRITE), 4),
+            (Some(UserRights::ADMIN), 5),
+        ];
+
+        for (opt, expected) in tests {
+            assert_eq!(map_permissions_rev(opt), expected)
+        }
+    }
 
     #[test]
     fn test_map_permissions() {

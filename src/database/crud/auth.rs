@@ -1,5 +1,5 @@
 use super::utils::*;
-use crate::api::aruna::api::storage::models::v1::Token;
+use crate::api::aruna::api::storage::models::v1::{Token, TokenType};
 use crate::api::aruna::api::storage::services::v1::{
     CreateApiTokenRequest, CreateApiTokenResponse, RegisterUserRequest, RegisterUserResponse,
 };
@@ -9,7 +9,7 @@ use crate::database::models::auth::{ApiToken, User};
 use crate::database::models::enums::UserRights;
 use crate::error::ArunaError;
 
-use chrono::{Local, NaiveDateTime};
+use chrono::{Local};
 use diesel::insert_into;
 use diesel::prelude::*;
 
@@ -69,17 +69,16 @@ impl Database {
 
         let expiry_time = request.expires_at.clone();
         let exp_time = match expiry_time {
-            Some(t) => match t.timestamp {
-                Some(t) => Some(chrono::NaiveDateTime::from_timestamp(t.seconds, 0)),
-                None => None,
-            },
+            Some(t) => t.timestamp.map(|t| chrono::NaiveDateTime::from_timestamp(t.seconds, 0)),
             None => None,
         };
 
         let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
         let user_right_db: Option<UserRights> = map_permissions(request.permission());
+        let mut token_type = TokenType::Personal;
         if parsed_collection_id.is_some() || parsed_project_id.is_some() {
+            token_type = TokenType::Scoped;
             // Only allow one of both to be set
             if parsed_collection_id.is_some() == parsed_project_id.is_some() {
                 return Err(ArunaError::InvalidRequest(
@@ -92,6 +91,7 @@ impl Database {
         let new_token = ApiToken {
             id: new_uid,
             creator_user_id: user_id,
+            name: Some(request.name),
             pub_key: pubkey_id,
             created_at: Local::now().naive_local(),
             expires_at: exp_time,
@@ -110,16 +110,21 @@ impl Database {
                 insert_into(api_tokens).values(&new_token).get_result(conn)
             })?;
 
+        let expires_at_time = match api_token.expires_at {
+            Some(time) => Some(naivedatetime_to_prost_time(time)?),
+            None => None,
+        };
+
         Ok(CreateApiTokenResponse {
             token: Some(Token {
                 id: api_token.id.to_string(),
-                name: todo!(),
-                token_type: todo!(),
-                created_at: todo!(),
-                expires_at: todo!(),
-                collection_id: todo!(),
-                project_id: todo!(),
-                permission: todo!(),
+                name: api_token.name.unwrap_or_default(),
+                token_type: token_type as i32,
+                created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
+                expires_at: expires_at_time,
+                collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
+                project_id: option_to_string(api_token.project_id).unwrap_or_default(),
+                permission: map_permissions_rev(api_token.user_right),
             }),
         })
     }
