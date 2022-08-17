@@ -1,6 +1,7 @@
 use tonic::Response;
 
 use super::authz::{Authz, Context};
+use crate::api::aruna::api::storage::models::v1::Token;
 use crate::api::aruna::api::storage::services::v1::auth_service_server::AuthService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
@@ -37,9 +38,23 @@ impl AuthService for AuthServiceImpl {
     /// CreateAPIToken Creates an API token to authenticate
     async fn create_api_token(
         &self,
-        _request: tonic::Request<CreateApiTokenRequest>,
+        request: tonic::Request<CreateApiTokenRequest>,
     ) -> Result<tonic::Response<CreateApiTokenResponse>, tonic::Status> {
-        todo!()
+        if Authz::is_oidc_from_metadata(request.metadata()).await? {
+            let user_subject = self.authz.validate_oidc_only(request.metadata()).await?;
+
+            //     let result = self.database.create_api_token(
+            //         request,
+            //         user_subject,
+            //         self.authz.get_decoding_serial().await,
+            //     );
+
+            //     Ok(Response::new(CreateApiTokenResponse {
+            //         token: Some(Token{ id: todo!(), name: todo!(), token_type: todo!(), created_at: todo!(), expires_at: todo!(), collection_id: todo!(), project_id: todo!(), permission: todo!() }),
+            //     }))
+            // } else {
+        }
+        todo!();
     }
     /// Returns one API token by id
     async fn get_api_token(

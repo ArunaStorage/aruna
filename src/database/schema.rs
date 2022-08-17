@@ -46,6 +46,7 @@ diesel::table! {
         id -> Uuid,
         creator_user_id -> Uuid,
         pub_key -> Int8,
+        name -> Nullable<Text>,
         created_at -> Timestamp,
         expires_at -> Nullable<Timestamp>,
         project_id -> Nullable<Uuid>,

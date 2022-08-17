@@ -1,6 +1,7 @@
 use super::utils::*;
+use crate::api::aruna::api::storage::models::v1::Token;
 use crate::api::aruna::api::storage::services::v1::{
-    CreateApiTokenRequest, RegisterUserRequest, RegisterUserResponse,
+    CreateApiTokenRequest, CreateApiTokenResponse, RegisterUserRequest, RegisterUserResponse,
 };
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, User};
@@ -63,14 +64,21 @@ impl Database {
         request: CreateApiTokenRequest,
         user_id: uuid::Uuid,
         pubkey_id: i64,
-    ) -> Result<(uuid::Uuid, Option<NaiveDateTime>), ArunaError> {
+    ) -> Result<CreateApiTokenResponse, ArunaError> {
         let new_uid = uuid::Uuid::new_v4();
 
-        //let expiry_time = request.expires_at.unwrap().timestamp.unwrap().seconds;
+        let expiry_time = request.expires_at.clone();
+        let exp_time = match expiry_time {
+            Some(t) => match t.timestamp {
+                Some(t) => Some(chrono::NaiveDateTime::from_timestamp(t.seconds, 0)),
+                None => None,
+            },
+            None => None,
+        };
 
         let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
-        let user_right: Option<UserRights> = map_permissions(request.permission());
+        let user_right_db: Option<UserRights> = map_permissions(request.permission());
         if parsed_collection_id.is_some() || parsed_project_id.is_some() {
             // Only allow one of both to be set
             if parsed_collection_id.is_some() == parsed_project_id.is_some() {
@@ -86,36 +94,33 @@ impl Database {
             creator_user_id: user_id,
             pub_key: pubkey_id,
             created_at: Local::now().naive_local(),
-            expires_at: todo!(),
+            expires_at: exp_time,
             project_id: parsed_project_id,
             collection_id: parsed_collection_id,
-            user_right: user_right,
+            user_right: user_right_db,
         };
 
-        todo!()
+        use crate::database::schema::api_tokens::dsl::*;
+        use diesel::result::Error;
 
-        // use crate::database::schema::users::dsl::*;
-        // use diesel::result::Error;
+        let api_token = self
+            .pg_connection
+            .get()?
+            .transaction::<ApiToken, Error, _>(|conn| {
+                insert_into(api_tokens).values(&new_token).get_result(conn)
+            })?;
 
-        // let db_user = User {
-        //     id: uuid::Uuid::new_v4(),
-        //     display_name: request.display_name,
-        //     external_id: ext_id,
-        //     active: false,
-        // };
-
-        // let user_id = self
-        //     .pg_connection
-        //     .get()?
-        //     .transaction::<uuid::Uuid, Error, _>(|conn| {
-        //         insert_into(users)
-        //             .values(&db_user)
-        //             .returning(id)
-        //             .get_result(conn)
-        //     })?;
-
-        // Ok(RegisterUserResponse {
-        //     user_id: user_id.to_string(),
-        // })
+        Ok(CreateApiTokenResponse {
+            token: Some(Token {
+                id: api_token.id.to_string(),
+                name: todo!(),
+                token_type: todo!(),
+                created_at: todo!(),
+                expires_at: todo!(),
+                collection_id: todo!(),
+                project_id: todo!(),
+                permission: todo!(),
+            }),
+        })
     }
 }

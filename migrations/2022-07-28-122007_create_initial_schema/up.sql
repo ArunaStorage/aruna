@@ -251,6 +251,7 @@ CREATE TABLE api_tokens (
     id UUID PRIMARY KEY,
     creator_user_id UUID NOT NULL,
     pub_key SERIAL NOT NULL,
+    name TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP,
     project_id UUID,

@@ -3197,9 +3197,11 @@ pub struct CreateApiTokenRequest {
     pub project_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="3")]
+    #[prost(string, tag="3")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="4")]
     pub expires_at: ::core::option::Option<ExpiresAt>,
-    #[prost(enumeration="super::super::models::v1::Permission", tag="4")]
+    #[prost(enumeration="super::super::models::v1::Permission", tag="5")]
     pub permission: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -31,7 +31,7 @@ use tonic::metadata::MetadataMap;
 ///
 pub struct Authz {
     pub_keys: Arc<RwLock<HashMap<i64, DecodingKey>>>,
-    signing_key: Arc<Mutex<(i64, EncodingKey)>>,
+    signing_key: Arc<Mutex<(i64, EncodingKey, DecodingKey)>>,
     db: Arc<Database>,
     oidc_realminfo: String,
 }
@@ -128,6 +128,11 @@ impl Authz {
             .await
             .expect("Error in decoding pubkeys");
 
+        let decoding_key = result
+            .get(&serial)
+            .expect("Current decoding key not found")
+            .clone();
+
         // return the Authz struct
         Authz {
             pub_keys: Arc::new(RwLock::new(result)),
@@ -137,6 +142,7 @@ impl Authz {
                 serial,
                 EncodingKey::from_ed_pem(&signing_key)
                     .expect("Unable to create EncodingKey from pem"),
+                decoding_key,
             ))),
         }
     }
@@ -219,7 +225,7 @@ impl Authz {
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
-        if header.alg != Algorithm::EdDSA {
+        if Authz::is_oidc_from_metadata(metadata).await? {
             let subject = self.validate_oidc_only(metadata).await?;
 
             match self.db.get_oidc_user(subject)? {
@@ -304,6 +310,16 @@ impl Authz {
         ))
     }
 
+    pub async fn get_decoding_key(&self) -> DecodingKey {
+        // This unwrap is ok, poison errors should crash the whole application
+        self.signing_key.lock().unwrap().2.clone()
+    }
+
+    pub async fn get_decoding_serial(&self) -> i64 {
+        // This unwrap is ok, poison errors should crash the whole application
+        self.signing_key.lock().unwrap().0
+    }
+
     async fn sign_new_token(
         &self,
         token_id: i64,
@@ -329,5 +345,26 @@ impl Authz {
         };
 
         Ok(encode(&header, &claim, &signing_key.1)?)
+    }
+
+    /// This gets the TokenType from a gRPC metadata
+    ///
+    /// Oidc token -> "true"
+    /// Or Aruna token -> "false"
+    ///
+    pub async fn is_oidc_from_metadata(metadata: &MetadataMap) -> Result<bool, ArunaError> {
+        let token_string = metadata
+            .get("Bearer")
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
+            .to_str()?;
+
+        let header = decode_header(token_string)?;
+
+        if header.alg != Algorithm::EdDSA {
+            return Ok(true);
+        }
+        Ok(false)
     }
 }

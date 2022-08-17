@@ -64,6 +64,7 @@ pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,
     pub pub_key: i64,
+    pub name: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub expires_at: Option<chrono::NaiveDateTime>,
     pub project_id: Option<uuid::Uuid>,
