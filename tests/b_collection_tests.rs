@@ -24,16 +24,11 @@ fn test() {
             key: "test_key".to_owned(),
             value: "test_value".to_owned(),
         }],
-        authorization: vec![Authorization {
-            permission: 4,
-            perm_type: 1,
-            client_id: "".to_owned(),
-            created_by: "".to_owned(),
-        }],
+        dataclass: 1,
     };
 
     let result = db.create_new_collection(request, creator).unwrap();
-    let id = uuid::Uuid::from_str(&result.id).unwrap();
+    let id = uuid::Uuid::from_str(&result.collection_id).unwrap();
 
     assert!(!id.is_nil())
 }
