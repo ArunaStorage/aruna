@@ -199,6 +199,7 @@ pub enum TypeConversionError {
     UUID,
     TONICMETADATATOSTR,
     JWT,
+    STRTOENDPOINTTYPE
 }
 
 impl Display for TypeConversionError {
@@ -209,6 +210,7 @@ impl Display for TypeConversionError {
                 write!(f, "Typeconversion for gRPC metadata 'to_str' failed")
             }
             TypeConversionError::JWT => write!(f, "Typeconversion for JWT failed",),
+            TypeConversionError::STRTOENDPOINTTYPE => write!(f, "Typeconversion for EndpointType failed",)
         }
     }
 }

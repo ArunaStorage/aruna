@@ -4,28 +4,26 @@ use tonic::transport::Channel;
 use tonic::{Request, Response, Status};
 
 use crate::api::aruna::api::storage::internal::v1::CreatePresignedUploadUrlRequest;
-use crate::api::aruna::api::storage::services::v1::{ObjectWithUrl, Url};
+use crate::api::aruna::api::storage::services::v1::{AddLabelToObjectRequest, AddLabelToObjectResponse, GetLatestObjectRevisionRequest, GetLatestObjectRevisionResponse, GetObjectEndpointsRequest, GetObjectEndpointsResponse, GetObjectRevisionsRequest, GetObjectRevisionsResponse, ObjectWithUrl, SetHooksOfObjectRequest, SetHooksOfObjectResponse, Url};
 use crate::api::aruna::api::storage::{
     internal::v1::{
         internal_proxy_service_client::InternalProxyServiceClient, CreatePresignedDownloadRequest,
         InitPresignedUploadRequest, Location, Range,
     },
-    models::v1::object_location::Location::S3Location,
     services::v1::{
         object_service_server::ObjectService, BorrowObjectRequest, BorrowObjectResponse,
         CloneObjectRequest, CloneObjectResponse, CreateDownloadLinksStreamRequest,
         CreateDownloadLinksStreamResponse, DeleteObjectRequest, DeleteObjectResponse,
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetDownloadLinksBatchRequest,
         GetDownloadLinksBatchResponse, GetDownloadUrlRequest, GetDownloadUrlResponse,
-        GetObjectByIdRequest, GetObjectByIdResponse, GetObjectHistoryByIdRequest,
-        GetObjectHistoryByIdResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
+        GetObjectByIdRequest, GetObjectByIdResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
         GetUploadUrlResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
         UpdateObjectRequest, UpdateObjectResponse,
     },
 };
 
 use crate::database::connection::Database;
-use crate::database::models::enums::{Resources, UserRights};
+use crate::database::models::enums::{EndpointType, Resources, UserRights};
 
 use crate::error::ArunaError;
 use crate::server::services::authz::{Authz, Context};
@@ -86,7 +84,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Generate upload_id for object through data proxy
         let location = Location {
-            r#type: S3Location as i32,
+            r#type: EndpointType::S3 as i32,
             bucket: uuid::Uuid::new_v4().to_string(),
             path: uuid::Uuid::new_v4().to_string(),
         };
@@ -139,7 +137,7 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         // Get primary object location
-        let object_id = uuid::Uuid::parse_str(&inner_request.id).map_err(ArunaError::from)?;
+        let object_id = uuid::Uuid::parse_str(&inner_request.object_id).map_err(ArunaError::from)?;
         let location = self.database.get_primary_object_location(&object_id)?;
 
         // Get upload url through data proxy
@@ -147,7 +145,7 @@ impl ObjectService for ObjectServiceImpl {
         let upload_url = data_proxy_mut
             .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
                 location: Some(location),
-                upload_id: inner_request.staging_id, //Note: Can be moved, only used here
+                upload_id: inner_request.upload_id, //Note: Can be moved, only used here
             })
             .await?
             .into_inner()
@@ -270,13 +268,6 @@ impl ObjectService for ObjectServiceImpl {
         todo!()
     }
 
-    async fn get_object_history_by_id(
-        &self,
-        _request: Request<GetObjectHistoryByIdRequest>,
-    ) -> Result<Response<GetObjectHistoryByIdResponse>, Status> {
-        todo!()
-    }
-
     async fn get_download_url(
         &self,
         _request: Request<GetDownloadUrlRequest>,
@@ -296,6 +287,26 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         _request: Request<CreateDownloadLinksStreamRequest>,
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
+        todo!()
+    }
+
+    async fn get_object_revisions(&self, request: Request<GetObjectRevisionsRequest>) -> Result<Response<GetObjectRevisionsResponse>, Status> {
+        todo!()
+    }
+
+    async fn get_latest_object_revision(&self, request: Request<GetLatestObjectRevisionRequest>) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
+        todo!()
+    }
+
+    async fn get_object_endpoints(&self, request: Request<GetObjectEndpointsRequest>) -> Result<Response<GetObjectEndpointsResponse>, Status> {
+        todo!()
+    }
+
+    async fn add_label_to_object(&self, request: Request<AddLabelToObjectRequest>) -> Result<Response<AddLabelToObjectResponse>, Status> {
+        todo!()
+    }
+
+    async fn set_hooks_of_object(&self, request: Request<SetHooksOfObjectRequest>) -> Result<Response<SetHooksOfObjectResponse>, Status> {
         todo!()
     }
 }

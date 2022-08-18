@@ -15,8 +15,9 @@ use crate::api::aruna::api::storage::{
     services::v1::{
         BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
         DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest,
-        GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse, GetObjectsRequest,
-        GetObjectsResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
+        GetObjectsRequest, GetObjectsResponse,
+        GetObjectRevisionsRequest, GetObjectRevisionsResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse,
         UpdateObjectRequest, UpdateObjectResponse,
     },
 };
@@ -25,10 +26,10 @@ use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::to_object_key_values;
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{Dataclass, EndpointType, HashType, ObjectStatus, SourceType};
-use crate::database::models::object::{Endpoint, Hash, Object, ObjectLocation, Source};
+use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
+use crate::database::models::object::{Hash, Object, ObjectLocation, Source};
 use crate::database::schema::{
-    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
+    collection_objects::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
     object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
 
@@ -74,15 +75,10 @@ impl Database {
         };
 
         // Define endpoint object
-        let endpoint = Endpoint {
-            id: uuid::Uuid::new_v4(),
-            endpoint_type: EndpointType::INITIALIZING,
-            name: "".to_string(),
-            proxy_hostname: "".to_string(),
-            internal_hostname: "".to_string(),
-            documentation_path: None,
-            is_public: false,
-        };
+        let endpoint_uuid = match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
+            Ok(ep_id) => Ok(ep_id),
+            Err(_) => Err(ArunaError::InvalidRequest("Default endpoint not yet implemented.".to_string()))
+        }?;
 
         // Define object in database representation
         let object_uuid = uuid::Uuid::new_v4();
@@ -114,7 +110,7 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             bucket: location.bucket.clone(),
             path: location.path.clone(),
-            endpoint_id: endpoint.id,
+            endpoint_id: endpoint_uuid,
             object_id: object.id,
             is_primary: false,
         };
@@ -139,9 +135,6 @@ impl Database {
             .get()?
             .transaction::<_, Error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
-                diesel::insert_into(endpoints)
-                    .values(&endpoint)
-                    .execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
                 diesel::insert_into(object_locations)
                     .values(&object_location)
@@ -161,8 +154,8 @@ impl Database {
 
         // Return already complete gRPC response
         Ok(InitializeNewObjectResponse {
-            id: object.id.to_string(),
-            staging_id: upload_id,
+            object_id: object.id.to_string(),
+            upload_id,
             collection_id: request.collection_id.clone(),
         })
     }
@@ -341,10 +334,10 @@ impl Database {
         Ok(locations)
     }
 
-    pub fn get_object_history(
+    pub fn get_object_revisions(
         &self,
-        _request: GetObjectHistoryByIdRequest,
-    ) -> Result<GetObjectHistoryByIdResponse, Box<dyn std::error::Error>> {
+        _request: GetObjectRevisionsRequest,
+    ) -> Result<GetObjectRevisionsResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 
