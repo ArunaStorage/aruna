@@ -32,6 +32,7 @@ pub struct Endpoint {
     pub id: uuid::Uuid,
     pub endpoint_type: EndpointType,
     pub proxy_hostname: String,
+    pub name: String,
     pub internal_hostname: String,
     pub documentation_path: Option<String>,
     pub is_public: bool,

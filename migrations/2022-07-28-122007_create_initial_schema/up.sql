@@ -146,6 +146,7 @@ CREATE INDEX objects_id_idx ON objects (shared_revision_id, revision_number);
 CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
     endpoint_type ENDPOINT_TYPE NOT NULL,
+    name TEXT NOT NULL,
     proxy_hostname VARCHAR(255) NOT NULL,
     internal_hostname VARCHAR(255) NOT NULL,
     documentation_path TEXT DEFAULT NULL,

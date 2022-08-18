@@ -121,6 +121,7 @@ diesel::table! {
     endpoints (id) {
         id -> Uuid,
         endpoint_type -> EndpointType,
+        name -> Text,
         proxy_hostname -> Varchar,
         internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,

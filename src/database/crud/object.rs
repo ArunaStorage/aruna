@@ -8,26 +8,17 @@ use prost_types::Timestamp;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::{
-        Location as ProtoLocation,
-        LocationType
-    },
+    internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
-        Hash as ProtoHash,
-        Object as ProtoObject,
-        Origin as ProtoOrigin,
-        Source as ProtoSource,
+        Hash as ProtoHash, Object as ProtoObject, Origin as ProtoOrigin, Source as ProtoSource,
     },
     services::v1::{
-        BorrowObjectRequest, BorrowObjectResponse,
-        CloneObjectRequest, CloneObjectResponse,
-        DeleteObjectRequest, DeleteObjectResponse,
-        GetObjectByIdRequest,
-        GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse,
-        GetObjectsRequest, GetObjectsResponse,
-        InitializeNewObjectRequest, InitializeNewObjectResponse,
-        UpdateObjectRequest, UpdateObjectResponse
-    }
+        BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
+        DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest,
+        GetObjectHistoryByIdRequest, GetObjectHistoryByIdResponse, GetObjectsRequest,
+        GetObjectsResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
+        UpdateObjectRequest, UpdateObjectResponse,
+    },
 };
 
 use crate::database;
@@ -37,13 +28,8 @@ use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, EndpointType, HashType, ObjectStatus, SourceType};
 use crate::database::models::object::{Endpoint, Hash, Object, ObjectLocation, Source};
 use crate::database::schema::{
-    collection_objects::dsl::*,
-    endpoints::dsl::*,
-    hashes::dsl::*,
-    object_key_value::dsl::*,
-    object_locations::dsl::*,
-    objects::dsl::*,
-    sources::dsl::*,
+    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
+    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
 
 /// Implementing CRUD+ database operations for Objects
@@ -72,20 +58,18 @@ impl Database {
         request: &InitializeNewObjectRequest,
         creator: &uuid::Uuid,
         location: &ProtoLocation,
-        upload_id: String
+        upload_id: String,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
-
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
         //Define source object from updated request; None if empty
         let source: Option<Source> = match &request.source {
-            Some(source) =>
-                Some(Source {
-                    id: uuid::Uuid::new_v4(),
-                    link: source.identifier.clone(),
-                    source_type: SourceType::from_i32(source.source_type)?
-                }),
+            Some(source) => Some(Source {
+                id: uuid::Uuid::new_v4(),
+                link: source.identifier.clone(),
+                source_type: SourceType::from_i32(source.source_type)?,
+            }),
             _ => None,
         };
 
@@ -93,6 +77,7 @@ impl Database {
         let endpoint = Endpoint {
             id: uuid::Uuid::new_v4(),
             endpoint_type: EndpointType::INITIALIZING,
+            name: "".to_string(),
             proxy_hostname: "".to_string(),
             internal_hostname: "".to_string(),
             documentation_path: None,
@@ -121,7 +106,7 @@ impl Database {
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
             object_id: object.id,
             is_specification: false, //Note: Default is false;
-            writeable: true //Note: Original object is always writeable for owner
+            writeable: true,         //Note: Original object is always writeable for owner
         };
 
         // Define the initial object location
@@ -154,30 +139,38 @@ impl Database {
             .get()?
             .transaction::<_, Error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
-                diesel::insert_into(endpoints).values(&endpoint).execute(conn)?;
+                diesel::insert_into(endpoints)
+                    .values(&endpoint)
+                    .execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
-                diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
-                diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
-                diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
+                diesel::insert_into(object_locations)
+                    .values(&object_location)
+                    .execute(conn)?;
+                diesel::insert_into(hashes)
+                    .values(&empty_hash)
+                    .execute(conn)?;
+                diesel::insert_into(object_key_value)
+                    .values(&key_value_pairs)
+                    .execute(conn)?;
+                diesel::insert_into(collection_objects)
+                    .values(&collection_object)
+                    .execute(conn)?;
 
                 Ok(())
             })?;
 
         // Return already complete gRPC response
-        Ok(
-            InitializeNewObjectResponse {
-                id: object.id.to_string(),
-                staging_id: upload_id,
-                collection_id: request.collection_id.clone(),
-            })
+        Ok(InitializeNewObjectResponse {
+            id: object.id.to_string(),
+            staging_id: upload_id,
+            collection_id: request.collection_id.clone(),
+        })
     }
 
     pub fn get_object(
         &self,
         request: &GetObjectByIdRequest,
     ) -> Result<(ProtoObject, ProtoLocation), ArunaError> {
-
         // Check if id in request has valid format
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
 
@@ -187,11 +180,12 @@ impl Database {
             hash: Hash,
             source: Option<Source>,
             location: ObjectLocation,
-            latest: bool
+            latest: bool,
         }
 
         // Read object from database
-        let object_dto = self.pg_connection
+        let object_dto = self
+            .pg_connection
             .get()?
             .transaction::<ObjectDto, Error, _>(|conn| {
                 //Note: Get Object (with labels and hooks --> None?)
@@ -199,8 +193,7 @@ impl Database {
                     .filter(database::schema::objects::id.eq(object_uuid))
                     .first::<Object>(conn)?;
 
-                let object_hash: Hash = Hash::belonging_to(&object)
-                    .first::<Hash>(conn)?;
+                let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
 
                 //Note: Only read primary location of object?
                 let location: ObjectLocation = ObjectLocation::belonging_to(&object)
@@ -209,19 +202,23 @@ impl Database {
 
                 let source: Option<Source> = match &object.source_id {
                     None => None,
-                    Some(src_id) =>
-                        Some(sources
+                    Some(src_id) => Some(
+                        sources
                             .filter(database::schema::sources::id.eq(src_id))
-                            .first::<Source>(conn)?)
+                            .first::<Source>(conn)?,
+                    ),
                 };
 
-                let latest_object_revision: Option<i64>  = objects
+                let latest_object_revision: Option<i64> = objects
                     .select(max(database::schema::objects::revision_number))
-                    .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+                    .filter(
+                        database::schema::objects::shared_revision_id
+                            .eq(&object.shared_revision_id),
+                    )
                     .first::<Option<i64>>(conn)?;
                 let latest = match latest_object_revision {
                     None => false,
-                    Some(revision) => revision == object.revision_number
+                    Some(revision) => revision == object.revision_number,
                 };
 
                 Ok(ObjectDto {
@@ -229,7 +226,7 @@ impl Database {
                     hash: object_hash,
                     source,
                     location,
-                    latest
+                    latest,
                 })
             })?;
 
@@ -240,27 +237,23 @@ impl Database {
         //      - Return response with object but without url
         let proto_source = match object_dto.source {
             None => None,
-            Some(source) => Some(
-                ProtoSource {
-                    identifier: source.link,
-                    source_type: source.source_type as i32
-                }
-            )
+            Some(source) => Some(ProtoSource {
+                identifier: source.link,
+                source_type: source.source_type as i32,
+            }),
         };
 
         // If object id == origin id --> original object
         //Note: OriginType only stored implicitly
         let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
             None => None,
-            Some(origin_uuid) => Some(
-                ProtoOrigin {
-                    id: origin_uuid.to_string(),
-                    r#type: match object_dto.object.id == origin_uuid {
-                        true => 1,
-                        false => 2
-                    }
-                }
-            )
+            Some(origin_uuid) => Some(ProtoOrigin {
+                id: origin_uuid.to_string(),
+                r#type: match object_dto.object.id == origin_uuid {
+                    true => 1,
+                    false => 2,
+                },
+            }),
         };
 
         // Horrible NaiveDatetime to Timestamp cast ...
@@ -270,12 +263,12 @@ impl Database {
             object_dto.object.created_at.day() as u8,
             object_dto.object.created_at.hour() as u8,
             object_dto.object.created_at.minute() as u8,
-            object_dto.object.created_at.second() as u8
+            object_dto.object.created_at.second() as u8,
         )?;
 
         let proto_hash = ProtoHash {
             alg: object_dto.hash.hash_type as i32,
-            hash: object_dto.hash.hash
+            hash: object_dto.hash.hash,
         };
 
         let proto_object = ProtoObject {
@@ -292,13 +285,13 @@ impl Database {
             rev_number: object_dto.object.revision_number,
             source: proto_source,
             latest: object_dto.latest,
-            auto_update: false //Note: ?
+            auto_update: false, //Note: ?
         };
 
         let proto_location = ProtoLocation {
-            r#type: LocationType::S3 as i32,  //ToDo: How to get LocationType? Currently static S3
+            r#type: LocationType::S3 as i32, //ToDo: How to get LocationType? Currently static S3
             bucket: object_dto.location.bucket,
-            path: object_dto.location.path
+            path: object_dto.location.path,
         };
 
         Ok((proto_object, proto_location))
@@ -309,19 +302,19 @@ impl Database {
         &self,
         object_uuid: &uuid::Uuid,
     ) -> Result<ProtoLocation, ArunaError> {
-        let location = self.pg_connection
+        let location = self
+            .pg_connection
             .get()?
             .transaction::<ProtoLocation, Error, _>(|conn| {
-
                 let location: ObjectLocation = object_locations
                     .filter(database::schema::object_locations::object_id.eq(&object_uuid))
                     .filter(database::schema::object_locations::is_primary.eq(true))
                     .first::<ObjectLocation>(conn)?;
 
                 Ok(ProtoLocation {
-                    r#type: LocationType::S3 as i32,  //ToDo: How to get LocationType?
+                    r#type: LocationType::S3 as i32, //ToDo: How to get LocationType?
                     bucket: location.bucket,
-                    path: location.path
+                    path: location.path,
                 })
             })?;
 
@@ -333,10 +326,10 @@ impl Database {
         &self,
         object_uuid: &uuid::Uuid,
     ) -> Result<Vec<ObjectLocation>, ArunaError> {
-        let locations = self.pg_connection
+        let locations = self
+            .pg_connection
             .get()?
             .transaction::<Vec<ObjectLocation>, Error, _>(|conn| {
-
                 let locations: Vec<ObjectLocation> = object_locations
                     .filter(database::schema::object_locations::object_id.eq(&object_uuid))
                     .filter(database::schema::object_locations::is_primary.eq(true))
