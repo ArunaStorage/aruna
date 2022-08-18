@@ -14,46 +14,6 @@ pub struct LabelOntology {
     #[prost(string, repeated, tag="1")]
     pub required_label_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-///  S3 location(s) for an object
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Location {
-    ///  default location
-    #[prost(message, optional, tag="1")]
-    pub default: ::core::option::Option<ObjectLocation>,
-    ///  list of locations
-    #[prost(message, repeated, tag="2")]
-    pub locations: ::prost::alloc::vec::Vec<ObjectLocation>,
-}
-///  A location in S3
-///  This can be either a location_id as a description e.g. "giessen" or a
-///  specific S3 location
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ObjectLocation {
-    #[prost(oneof="object_location::Location", tags="1, 2")]
-    pub location: ::core::option::Option<object_location::Location>,
-}
-/// Nested message and enum types in `ObjectLocation`.
-pub mod object_location {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Location {
-        #[prost(string, tag="1")]
-        LocationId(::prost::alloc::string::String),
-        #[prost(message, tag="2")]
-        S3Location(super::S3Location),
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct S3Location {
-    ///  Bucket in S3
-    #[prost(string, tag="1")]
-    pub bucket: ::prost::alloc::string::String,
-    ///  Key in S3
-    #[prost(string, tag="2")]
-    pub key: ::prost::alloc::string::String,
-    ///  Object storage endpoint
-    #[prost(string, tag="3")]
-    pub url: ::prost::alloc::string::String,
-}
 ///  Stats for a set of objects
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Stats {
@@ -118,6 +78,23 @@ pub struct Source {
     ///  Either URL oder DOI
     #[prost(enumeration="SourceType", tag="2")]
     pub source_type: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Endpoint {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(enumeration="EndpointType", tag="2")]
+    pub ep_type: i32,
+    #[prost(string, tag="3")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub proxy_hostname: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub internal_hostname: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub documentation_path: ::prost::alloc::string::String,
+    #[prost(bool, tag="7")]
+    pub is_public: bool,
 }
 //  RULES for Objects:
 //  1.  Each object is "owned" by one/or more collections
@@ -542,6 +519,26 @@ impl SourceType {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EndpointType {
+    Unspecified = 0,
+    S3 = 1,
+    File = 2,
+}
+impl EndpointType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            EndpointType::Unspecified => "ENDPOINT_TYPE_UNSPECIFIED",
+            EndpointType::S3 => "ENDPOINT_TYPE_S3",
+            EndpointType::File => "ENDPOINT_TYPE_FILE",
+        }
+    }
+}
 ///  This file contains parameters for queries that return a list of resources.
 ///  The results are paginated.
 ///  The page request specifies the page size and last_id.
@@ -570,8 +567,8 @@ pub struct ResourceIdList {
     #[prost(string, repeated, tag="1")]
     pub ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-///  This is a combined query for either a list of resource IDs or filtered by Label
-///  Can be expanded in the future to allow for more complex queries
+///  This is a combined query for either a list of resource IDs or filtered by
+///  Label Can be expanded in the future to allow for more complex queries
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LabelOrIdQuery {
     #[prost(oneof="label_or_id_query::Query", tags="1, 2")]
@@ -617,38 +614,6 @@ impl LabelQueryType {
         }
     }
 }
-///  OutputFormat is an enum for GET queries that specifies how the Response should be structured
-///  This is necessary because Collections and ObjectGroups can contain large number of objects
-///  The default behaviour is "OVERVIEW" this will only return statistics about the collection or objectgroup 
-///  but no specific IDs or additional information
-///  the "WITH_IDS" tag returns only lists of RevIDs
-///  If "FULL" is specified the complete recursive list of objects with all labels and meta-information will be returned
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum OutputFormat {
-    ///  Unspecified enum will default to overview
-    Unspecified = 0,
-    ///  Only give an overview of the resources
-    Overview = 1,
-    ///  Return only a list of RevIDs
-    WithIds = 2,
-    ///  Return the full list of resources -> This may have slow performance
-    Full = 3,
-}
-impl OutputFormat {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            OutputFormat::Unspecified => "OUTPUT_FORMAT_UNSPECIFIED",
-            OutputFormat::Overview => "OUTPUT_FORMAT_OVERVIEW",
-            OutputFormat::WithIds => "OUTPUT_FORMAT_WITH_IDS",
-            OutputFormat::Full => "OUTPUT_FORMAT_FULL",
-        }
-    }
-}
 ///  A Project is a list of collections with associated users
 ///  This is used to manage access to multiple collections at the same time
 ///  Each Collection can only be in one Project at a time
@@ -677,6 +642,21 @@ pub struct ProjectOverview {
     pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag="5")]
     pub user_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct User {
+    ///  Internal Aruna UserID
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    ///  Oidc subject ID
+    #[prost(string, tag="2")]
+    pub external_id: ::prost::alloc::string::String,
+    ///  (optional) User display_name
+    #[prost(string, tag="3")]
+    pub display_name: ::prost::alloc::string::String,
+    ///  Is the user activated
+    #[prost(bool, tag="4")]
+    pub active: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Token {

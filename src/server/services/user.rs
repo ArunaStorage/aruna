@@ -2,21 +2,21 @@ use tonic::Response;
 
 use super::authz::{Authz, Context};
 
-use crate::api::aruna::api::storage::services::v1::auth_service_server::AuthService;
+use crate::api::aruna::api::storage::services::v1::user_service_server::UserService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::{Resources, UserRights};
 
 use std::sync::Arc;
 
-pub struct AuthServiceImpl {
+pub struct UserServiceImpl {
     database: Arc<Database>,
     authz: Arc<Authz>,
 }
 
-impl AuthServiceImpl {
+impl UserServiceImpl {
     pub async fn new(db: Arc<Database>, authz: Arc<Authz>) -> Self {
-        AuthServiceImpl {
+        UserServiceImpl {
             database: db,
             authz,
         }
@@ -24,7 +24,7 @@ impl AuthServiceImpl {
 }
 
 #[tonic::async_trait]
-impl AuthService for AuthServiceImpl {
+impl UserService for UserServiceImpl {
     /// RegisterUser registers a new user from OIDC
     async fn register_user(
         &self,
@@ -130,62 +130,37 @@ impl AuthService for AuthServiceImpl {
     /// DeleteAPITokenRequest Deletes the specified API Token
     async fn delete_api_token(
         &self,
-        _request: tonic::Request<DeleteApiTokenRequest>,
+        request: tonic::Request<DeleteApiTokenRequest>,
     ) -> Result<tonic::Response<DeleteApiTokenResponse>, tonic::Status> {
         todo!()
     }
     /// DeleteAPITokenRequest Deletes the specified API Token
     async fn delete_api_tokens(
         &self,
-        _request: tonic::Request<DeleteApiTokensRequest>,
+        request: tonic::Request<DeleteApiTokensRequest>,
     ) -> Result<tonic::Response<DeleteApiTokensResponse>, tonic::Status> {
         todo!()
     }
-    /// This creates a new authorization group.option
-    /// All users and collections are bundled in a authorization group.
-    async fn create_project(
+    /// UserWhoAmI is a request that returns the user information of the current
+    /// user
+    async fn user_who_am_i(
         &self,
-        _request: tonic::Request<CreateProjectRequest>,
-    ) -> Result<tonic::Response<CreateProjectResponse>, tonic::Status> {
+        request: tonic::Request<UserWhoAmIRequest>,
+    ) -> Result<tonic::Response<UserWhoAmIResponse>, tonic::Status> {
         todo!()
     }
-    /// AddUserToProject Adds a new user to a given project by its id
-    async fn add_user_to_project(
+    /// UserWhoAmI is a request that returns the user information of the current
+    /// user
+    async fn update_user_display_name(
         &self,
-        _request: tonic::Request<AddUserToProjectRequest>,
-    ) -> Result<tonic::Response<AddUserToProjectResponse>, tonic::Status> {
+        request: tonic::Request<UpdateUserDisplayNameRequest>,
+    ) -> Result<tonic::Response<UpdateUserDisplayNameResponse>, tonic::Status> {
         todo!()
     }
-    /// GetProjectCollections Returns all collections that belong to a certain
-    /// project
-    async fn get_project_collections(
+    async fn get_user_projects(
         &self,
-        _request: tonic::Request<GetProjectCollectionsRequest>,
-    ) -> Result<tonic::Response<GetProjectCollectionsResponse>, tonic::Status> {
-        todo!()
-    }
-    /// GetUserCollections Returns all collections that a specified user has access
-    /// to
-    async fn get_user_collections(
-        &self,
-        _request: tonic::Request<GetUserCollectionsRequest>,
-    ) -> Result<tonic::Response<GetUserCollectionsResponse>, tonic::Status> {
-        todo!()
-    }
-    /// GetProject Returns the specified project
-    async fn get_project(
-        &self,
-        _request: tonic::Request<GetProjectRequest>,
-    ) -> Result<tonic::Response<GetProjectResponse>, tonic::Status> {
-        todo!()
-    }
-    /// This will destroy the project and all its associated data.
-    /// including users, collections, and API tokens and all data associated with
-    /// them.
-    async fn destroy_project(
-        &self,
-        _request: tonic::Request<DestroyProjectRequest>,
-    ) -> Result<tonic::Response<DestroyProjectResponse>, tonic::Status> {
+        request: tonic::Request<GetUserProjectsRequest>,
+    ) -> Result<tonic::Response<GetUserProjectsResponse>, tonic::Status> {
         todo!()
     }
 }

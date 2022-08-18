@@ -1,9 +1,6 @@
 use super::utils::*;
-use crate::api::aruna::api::storage::models::v1::{
-    Collection, CollectionOverview, CollectionWithId, KeyValue, LabelOntology,
-};
+use crate::api::aruna::api::storage::models::v1::LabelOntology;
 use crate::api::aruna::api::storage::services::v1::{
-    get_collection_by_id_response::Collection as GetCollectionResponseEnum,
     CreateNewCollectionRequest, CreateNewCollectionResponse, GetCollectionByIdRequest,
     GetCollectionByIdResponse,
 };
@@ -58,7 +55,7 @@ impl Database {
             })?;
 
         Ok(CreateNewCollectionResponse {
-            id: collection_uuid.to_string(),
+            collection_id: collection_uuid.to_string(),
         })
     }
 
@@ -72,7 +69,7 @@ impl Database {
         use diesel::prelude::*;
         use diesel::result::Error;
 
-        let collection_id = uuid::Uuid::parse_str(&request.id)?;
+        let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         let _collection = self
             .pg_connection
@@ -92,54 +89,6 @@ impl Database {
                     .filter(rlbl::collection_id.eq(collection_id))
                     .load::<models::collection::RequiredLabel>(conn)
                     .optional()?;
-                let _retformat = match request.format {
-                    0 | 1 => {
-                        let _test = "";
-                        GetCollectionResponseEnum::CollectionOverview(CollectionOverview {
-                            id: collection_info.id.to_string(),
-                            name: collection_info.name,
-                            description: collection_info.description,
-                            labels,
-                            hooks,
-                            label_ontology: req_labels_to_label_ontology(label_ontology),
-                            created: todo!(),
-                            stats: todo!(),
-                            is_public: todo!(),
-                            version: todo!(),
-                        })
-                    }
-                    2 => GetCollectionResponseEnum::CollectionWithId(CollectionWithId {
-                        id: todo!(),
-                        name: todo!(),
-                        description: todo!(),
-                        labels: todo!(),
-                        hooks: todo!(),
-                        label_ontology: todo!(),
-                        created: todo!(),
-                        objects: todo!(),
-                        specifications: todo!(),
-                        object_groups: todo!(),
-                        stats: todo!(),
-                        is_public: todo!(),
-                        version: todo!(),
-                    }),
-                    3 => GetCollectionResponseEnum::CollectionFull(Collection {
-                        id: todo!(),
-                        name: todo!(),
-                        description: todo!(),
-                        labels: todo!(),
-                        hooks: todo!(),
-                        label_ontology: todo!(),
-                        created: todo!(),
-                        objects: todo!(),
-                        specifications: todo!(),
-                        object_groups: todo!(),
-                        stats: todo!(),
-                        is_public: todo!(),
-                        version: todo!(),
-                    }),
-                    _ => return Err(Error::NotFound), // This should never occur
-                };
                 todo!()
                 // Ok(collection_info)
             })?;
@@ -152,70 +101,6 @@ impl Database {
 
 fn req_labels_to_label_ontology(input: Option<Vec<RequiredLabel>>) -> Option<LabelOntology> {
     input.map(|vec| LabelOntology {
-            required_label_keys: vec.into_iter().map(|elem| elem.label_key).collect(),
-        })
-}
-
-fn build_collection_response_enum(
-    format: i64,
-    collection_info: crate::database::models::collection::Collection,
-    labels: Vec<KeyValue>,
-    hooks: Vec<KeyValue>,
-    label_ontology: Option<LabelOntology>,
-) -> Result<GetCollectionResponseEnum, diesel::result::Error> {
-    match format {
-        0 | 1 => {
-            let _test = "";
-            Ok(GetCollectionResponseEnum::CollectionOverview(
-                CollectionOverview {
-                    id: collection_info.id.to_string(),
-                    name: collection_info.name,
-                    description: collection_info.description,
-                    labels,
-                    hooks,
-                    label_ontology,
-                    created: Some(
-                        naivedatetime_to_prost_time(collection_info.created_at)
-                            .map_err(|_| diesel::result::Error::BrokenTransaction)?,
-                    ),
-                    stats: todo!(),
-                    is_public: todo!(),
-                    version: todo!(),
-                },
-            ))
-        }
-        2 => Ok(GetCollectionResponseEnum::CollectionWithId(
-            CollectionWithId {
-                id: todo!(),
-                name: todo!(),
-                description: todo!(),
-                labels: todo!(),
-                hooks: todo!(),
-                label_ontology: todo!(),
-                created: todo!(),
-                objects: todo!(),
-                specifications: todo!(),
-                object_groups: todo!(),
-                stats: todo!(),
-                is_public: todo!(),
-                version: todo!(),
-            },
-        )),
-        3 => Ok(GetCollectionResponseEnum::CollectionFull(Collection {
-            id: todo!(),
-            name: todo!(),
-            description: todo!(),
-            labels: todo!(),
-            hooks: todo!(),
-            label_ontology: todo!(),
-            created: todo!(),
-            objects: todo!(),
-            specifications: todo!(),
-            object_groups: todo!(),
-            stats: todo!(),
-            is_public: todo!(),
-            version: todo!(),
-        })),
-        _ => Err(diesel::result::Error::NotFound),
-    }
+        required_label_keys: vec.into_iter().map(|elem| elem.label_key).collect(),
+    })
 }
