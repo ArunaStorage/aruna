@@ -3,6 +3,7 @@ use crate::database::models::auth::PubKey;
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
+use chrono::prelude::*;
 use dotenv::dotenv;
 use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
@@ -190,7 +191,6 @@ impl Authz {
     ///
     /// ## Arguments
     ///
-    /// - Arc of Database
     /// - Metadata of the request containing a token
     /// - Context that specifies which ressource is accessed and which permissions are requested
     ///
@@ -208,6 +208,43 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         let token = self.validate_and_query_token(metadata).await?;
         self.db.get_checked_user_id_from_token(token, context)
+    }
+
+    /// This is a wrapper that runs the authorize function with a `personal` context
+    /// a convenience function if this request is `personal` scoped
+    pub async fn personal_authorize(
+        &self,
+        metadata: &MetadataMap,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        self.authorize(
+            metadata,
+            Context {
+                user_right: UserRights::READ,
+                resource_type: Resources::PROJECT,
+                resource_id: uuid::Uuid::default(),
+                admin: false,
+                personal: true,
+                oidc_context: false,
+            },
+        )
+        .await
+    }
+
+    /// This is a wrapper that runs the authorize function with an `admin` context
+    /// a convenience function if this request is `admin` scoped
+    pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<uuid::Uuid, ArunaError> {
+        self.authorize(
+            metadata,
+            Context {
+                user_right: UserRights::READ,
+                resource_type: Resources::PROJECT,
+                resource_id: uuid::Uuid::default(),
+                admin: true,
+                personal: false,
+                oidc_context: false,
+            },
+        )
+        .await
     }
 
     pub async fn validate_and_query_token(
@@ -320,21 +357,22 @@ impl Authz {
         self.signing_key.lock().unwrap().0
     }
 
-    async fn sign_new_token(
+    pub async fn sign_new_token(
         &self,
-        token_id: i64,
-        expires_at: Option<chrono::NaiveDateTime>,
+        token_id: String,
+        expires_at: Option<prost_types::Timestamp>,
     ) -> Result<String, ArunaError> {
         // Gets the signing key / mutex -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
         let signing_key = self.signing_key.lock().unwrap();
 
         let claim = Claims {
-            sub: format!("{}", token_id),
+            sub: token_id,
             exp: if expires_at.is_none() {
-                10000000000
+                // Add 10 years to token lifetime
+                Utc::now().second() as usize + 315360000
             } else {
-                expires_at.unwrap().timestamp() as usize
+                expires_at.unwrap().seconds as usize
             },
         };
 

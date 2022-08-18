@@ -3912,8 +3912,14 @@ pub struct CreateApiTokenRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateApiTokenResponse {
+    ///  This contains only the token description
     #[prost(message, optional, tag="1")]
     pub token: ::core::option::Option<super::super::models::v1::Token>,
+    ///  This is the actual secret token
+    ///  Attention, this can not be recreated and needs to be stored securely
+    ///  New tokens will always contain a new secret
+    #[prost(string, tag="2")]
+    pub token_secret: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetApiTokenRequest {
@@ -3984,9 +3990,18 @@ pub struct GetUserProjectsRequest {
     pub user_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UserProject {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetUserProjectsResponse {
     #[prost(message, repeated, tag="1")]
-    pub projects: ::prost::alloc::vec::Vec<super::super::models::v1::ProjectOverview>,
+    pub projects: ::prost::alloc::vec::Vec<UserProject>,
 }
 /// Generated client implementations.
 pub mod user_service_client {

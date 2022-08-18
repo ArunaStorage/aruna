@@ -290,23 +290,23 @@ impl ObjectService for ObjectServiceImpl {
         todo!()
     }
 
-    async fn get_object_revisions(&self, request: Request<GetObjectRevisionsRequest>) -> Result<Response<GetObjectRevisionsResponse>, Status> {
+    async fn get_object_revisions(&self, _request: Request<GetObjectRevisionsRequest>) -> Result<Response<GetObjectRevisionsResponse>, Status> {
         todo!()
     }
 
-    async fn get_latest_object_revision(&self, request: Request<GetLatestObjectRevisionRequest>) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
+    async fn get_latest_object_revision(&self, _request: Request<GetLatestObjectRevisionRequest>) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
         todo!()
     }
 
-    async fn get_object_endpoints(&self, request: Request<GetObjectEndpointsRequest>) -> Result<Response<GetObjectEndpointsResponse>, Status> {
+    async fn get_object_endpoints(&self, _request: Request<GetObjectEndpointsRequest>) -> Result<Response<GetObjectEndpointsResponse>, Status> {
         todo!()
     }
 
-    async fn add_label_to_object(&self, request: Request<AddLabelToObjectRequest>) -> Result<Response<AddLabelToObjectResponse>, Status> {
+    async fn add_label_to_object(&self, _request: Request<AddLabelToObjectRequest>) -> Result<Response<AddLabelToObjectResponse>, Status> {
         todo!()
     }
 
-    async fn set_hooks_of_object(&self, request: Request<SetHooksOfObjectRequest>) -> Result<Response<SetHooksOfObjectResponse>, Status> {
+    async fn set_hooks_of_object(&self, _request: Request<SetHooksOfObjectRequest>) -> Result<Response<SetHooksOfObjectResponse>, Status> {
         todo!()
     }
 }

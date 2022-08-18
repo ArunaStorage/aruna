@@ -1,4 +1,4 @@
-use aruna_server::api::aruna::api::storage::models::v1::{Authorization, KeyValue};
+use aruna_server::api::aruna::api::storage::models::v1::KeyValue;
 use aruna_server::api::aruna::api::storage::services::v1::*;
 use aruna_server::database;
 use serial_test::serial;

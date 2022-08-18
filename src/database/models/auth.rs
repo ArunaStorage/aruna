@@ -27,14 +27,15 @@ pub struct ExternalUserId {
     pub idp_id: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug)]
 #[diesel(belongs_to(User))]
+#[diesel(table_name=projects)]
 pub struct Project {
     pub id: uuid::Uuid,
     pub name: String,
     pub description: String,
     pub flag: i64,
-    pub created_at: Option<chrono::NaiveDateTime>,
+    pub created_at: chrono::NaiveDateTime,
     pub created_by: uuid::Uuid,
 }
 

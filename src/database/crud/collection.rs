@@ -75,7 +75,7 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
-                let collection_info = col::collections
+                let _collection_info = col::collections
                     .filter(col::id.eq(collection_id))
                     .first::<models::collection::Collection>(conn)?;
 
@@ -83,9 +83,9 @@ impl Database {
                     .filter(ckv::collection_id.eq(collection_id))
                     .load::<models::collection::CollectionKeyValue>(conn)?;
 
-                let (labels, hooks) = from_collection_key_values(collection_key_values);
+                let (_labels, _hooks) = from_collection_key_values(collection_key_values);
 
-                let label_ontology = rlbl::required_labels
+                let _label_ontology = rlbl::required_labels
                     .filter(rlbl::collection_id.eq(collection_id))
                     .load::<models::collection::RequiredLabel>(conn)
                     .optional()?;
