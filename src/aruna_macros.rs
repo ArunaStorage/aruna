@@ -2,12 +2,12 @@
 ///
 /// ## Behaviour:
 ///
-/// By default this macro contains the following fields:
+/// By default this macro expands to a struct that contains the following fields:
 ///
-/// database: Arc<Database>,
-/// authz: Arc<Authz>,
+/// - database: Arc<Database>,
+/// - authz: Arc<Authz>,
 ///
-/// It also includes a list of additional fields that can be specified.
+/// It also includes an (optional) list of n additional fields that can be specified with its type.
 ///
 /// ## Usage:
 ///
