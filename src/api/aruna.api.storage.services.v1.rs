@@ -92,20 +92,11 @@ pub struct CompletedParts {
     pub part: i64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ObjectRevision {
-    ///  ObjectId
-    #[prost(string, tag="1")]
-    pub object_id: ::prost::alloc::string::String,
-    ///  (optional) revision number, will be latest if not set.
-    #[prost(int64, tag="2")]
-    pub revision: i64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDownloadUrlRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="2")]
-    pub object: ::core::option::Option<ObjectRevision>,
+    #[prost(string, tag="2")]
+    pub object: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDownloadUrlResponse {
@@ -118,8 +109,8 @@ pub struct GetDownloadLinksBatchRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
     ///  ObjectIds
-    #[prost(message, repeated, tag="2")]
-    pub objects: ::prost::alloc::vec::Vec<ObjectRevision>,
+    #[prost(string, repeated, tag="2")]
+    pub objects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDownloadLinksBatchResponse {
@@ -132,8 +123,8 @@ pub struct CreateDownloadLinksStreamRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
     ///  ObjectIds
-    #[prost(message, repeated, tag="2")]
-    pub objects: ::prost::alloc::vec::Vec<ObjectRevision>,
+    #[prost(string, repeated, tag="2")]
+    pub objects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateDownloadLinksStreamResponse {

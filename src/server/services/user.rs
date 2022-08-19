@@ -8,6 +8,7 @@
 //! - Delete api_tokens
 //! - Get personal user_information
 //! - Get all projects a user is member of
+//!
 use super::authz::Authz;
 use crate::api::aruna::api::storage::services::v1::user_service_server::UserService;
 use crate::api::aruna::api::storage::services::v1::*;
