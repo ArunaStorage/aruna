@@ -247,6 +247,50 @@ impl Authz {
         .await
     }
 
+    /// This is a wrapper that runs the authorize function with an `collection` context
+    /// a convenience function if this request is `collection` scoped
+    pub async fn collection_authorize(
+        &self,
+        metadata: &MetadataMap,
+        collection_id: uuid::Uuid,
+        user_right: UserRights,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        self.authorize(
+            metadata,
+            Context {
+                user_right,
+                resource_type: Resources::COLLECTION,
+                resource_id: collection_id,
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            },
+        )
+        .await
+    }
+
+    /// This is a wrapper that runs the authorize function with an `project` context
+    /// a convenience function if this request is `project` scoped
+    pub async fn project_authorize(
+        &self,
+        metadata: &MetadataMap,
+        project_id: uuid::Uuid,
+        user_right: UserRights,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        self.authorize(
+            metadata,
+            Context {
+                user_right,
+                resource_type: Resources::PROJECT,
+                resource_id: project_id,
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            },
+        )
+        .await
+    }
+
     pub async fn validate_and_query_token(
         &self,
         metadata: &MetadataMap,
