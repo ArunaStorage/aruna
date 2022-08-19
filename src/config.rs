@@ -38,9 +38,7 @@ pub struct DefaultEndpoint {
 ///
 impl ArunaServerConfig {
     pub fn new() -> Self {
-        //let config_content = ArunaServerConfig::read_config_file().expect("Reading config file failed");
-        //let config = ArunaServerConfig::parse_config_content(config_content).expect("Parsing config file failed");
-        let config = ArunaServerConfig::test().expect("Reading/Parsing config file failed");
+        let config = ArunaServerConfig::load_config_file().expect("Reading/Parsing config file failed");
         let env_config = ArunaServerConfig::load_config_env().expect("Loading config env vars failed");
 
         ArunaServerConfig {
@@ -49,44 +47,28 @@ impl ArunaServerConfig {
         }
     }
 
-    /// This method tries to read the ArunaServer config file.
+    /// This method tries to read the ArunaServer config file and parse its content.
     ///
     /// ## Returns:
     ///
-    /// * `std::io::Result<String>` - The String contains the complete configuration file content
+    /// * `Result<Config, ArunaError>` - The Config contains all the parameter values from the config file
     ///
     /// ## Behaviour:
     ///
-    /// Tries to read the ArunaServer configuration file.
+    /// Tries to read the ArunaServer configuration file and then parse its content.
     ///
-    /// This function will return an error if path does not already exist.
+    /// This function will return an error if path of the configuration file does not already exist.
     /// Other errors may also be returned according to OpenOptions::open. It will also return
     /// an error if it encounters while reading an error of a kind other
     /// than io::ErrorKind::Interrupted, or if the contents of the file are not valid UTF-8.
     ///
-    fn read_config_file() -> std::io::Result<String> {
-        // Read config file
-        fs::read_to_string("./config.toml")
-    }
-
-    /// This method tries to parse the ArunaServer config file.
+    /// It will also return an error if the deserialization of the content into the Config struct fails.
     ///
-    /// ## Returns:
-    ///
-    /// * `Result<Config, ArunaError>` - The config object contains all parameters loaded from the config file
-    ///
-    /// ## Behaviour:
-    ///
-    /// Tries to read the ArunaServer configuration file.
-    fn parse_config_content(content: String) -> Result<Config, Error> {
-        // Parse config file content
-        toml::from_str(content.as_str())
-    }
-
-    fn test() -> Result<Config, ArunaError> {
-        // Read
+    fn load_config_file() -> Result<Config, ArunaError> {
+        // Read config file content
         let content = fs::read_to_string("./config.toml").map_err(|_| TypeConversionError::PARSECONFIG)?;
 
+        //Parse config file content
         toml::from_str(content.as_str()).map_err(|_| ArunaError::TypeConversionError(TypeConversionError::PARSECONFIG))
     }
 
