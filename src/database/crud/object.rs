@@ -13,6 +13,7 @@ use crate::api::aruna::api::storage::{
         LocationType
     },
     models::v1::{
+        KeyValue,
         Hash as ProtoHash,
         Object as ProtoObject,
         Origin as ProtoOrigin,
@@ -32,10 +33,10 @@ use crate::api::aruna::api::storage::{
 
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::utils::{naivedatetime_to_prost_time, to_object_key_values};
+use crate::database::crud::utils::{from_object_key_values, naivedatetime_to_prost_time, to_object_key_values};
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
-use crate::database::models::object::{Endpoint, Hash, Object, ObjectLocation, Source};
+use crate::database::models::object::{Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source};
 use crate::database::schema::{
     collection_objects::dsl::*,
     endpoints::dsl::*,
@@ -52,7 +53,7 @@ impl Database {
     /// * Source
     /// * Object incl. join table entry
     /// * ObjectLocation
-    /// * Hash
+    /// * Hash (empty)
     /// * ObjectKeyValue(s)
     ///
     /// ## Arguments
@@ -167,7 +168,7 @@ impl Database {
         })
     }
 
-    /// Returns the object and its primary location from the database.
+    /// Returns the object from the database in its gRPC format.
     ///
     /// ## Arguments
     ///
@@ -175,25 +176,26 @@ impl Database {
     ///
     /// ## Returns
     ///
-    /// This function returns a
-    /// `Result<(aruna_server::api::aruna::api::storage::models::v1::Object,
-    /// aruna_server::api::aruna::api::storage::internal::v1::Location), ArunaError>`. The location
-    /// can be used to additionally send requests to the data proxy.
+    /// * `Result<aruna_server::api::aruna::api::storage::models::v1::Object, ArunaError>` -
+    /// All of the Objects fields are filled as long as the database contains the corresponding values.
     ///
     pub fn get_object(
         &self,
         request: &GetObjectByIdRequest,
-    ) -> Result<(ProtoObject, ProtoLocation), ArunaError> {
+    ) -> Result<ProtoObject, ArunaError> {
         // Check if id in request has valid format
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Struct to temporarily hold the database objects
         struct ObjectDto {
             object: Object,
+            labels: Vec<KeyValue>,
+            hooks: Vec<KeyValue>,
             hash: Hash,
             source: Option<Source>,
-            location: ObjectLocation,
             latest: bool,
+            update: bool,
         }
 
         // Read object from database
@@ -201,17 +203,16 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<ObjectDto, Error, _>(|conn| {
-                //Note: Get Object (with labels and hooks --> None?)
                 let object: Object = objects
-                    .filter(database::schema::objects::id.eq(object_uuid))
+                    .filter(database::schema::objects::id.eq(&object_uuid))
                     .first::<Object>(conn)?;
 
-                let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+                let object_key_values = ObjectKeyValue::belonging_to(&object)
+                    .load::<ObjectKeyValue>(conn)?;
+                let (labels, hooks) = from_object_key_values(object_key_values);
 
-                //Note: Only read primary location of object?
-                let location: ObjectLocation = ObjectLocation::belonging_to(&object)
-                    .filter(database::schema::object_locations::is_primary.eq(true))
-                    .first::<ObjectLocation>(conn)?;
+                let object_hash: Hash = Hash::belonging_to(&object)
+                    .first::<Hash>(conn)?;
 
                 let source: Option<Source> = match &object.source_id {
                     None => None,
@@ -222,32 +223,33 @@ impl Database {
                     ),
                 };
 
+                let update: bool = CollectionObject::belonging_to(&object)
+                    .select(database::schema::collection_objects::auto_update)
+                    .filter(database::schema::collection_objects::collection_id.eq(&collection_uuid))
+                    .first::<bool>(conn)?;
+
                 let latest_object_revision: Option<i64> = objects
                     .select(max(database::schema::objects::revision_number))
-                    .filter(
-                        database::schema::objects::shared_revision_id
-                            .eq(&object.shared_revision_id),
-                    )
+                    .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
                     .first::<Option<i64>>(conn)?;
+
                 let latest = match latest_object_revision {
-                    None => false,
-                    Some(revision) => revision == object.revision_number,
-                };
+                    None => Err(Error::NotFound), // false,
+                    Some(revision) => Ok(revision == object.revision_number),
+                }?;
 
                 Ok(ObjectDto {
                     object,
+                    labels,
+                    hooks,
                     hash: object_hash,
                     source,
-                    location,
                     latest,
+                    update,
                 })
             })?;
 
-        //ToDo: - Transform to proto source (if available)
-        //      - Create proto origin
-        //      - Create proto hash + hash type
-        //      - Transform to proto object
-        //      - Return response with object but without url
+        // Transform db Source to proto Source
         let proto_source = match object_dto.source {
             None => None,
             Some(source) => Some(ProtoSource {
@@ -256,7 +258,7 @@ impl Database {
             }),
         };
 
-        // If object id == origin id --> original object
+        // If object id == origin id --> original uploaded object
         //Note: OriginType only stored implicitly
         let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
             None => None,
@@ -269,37 +271,34 @@ impl Database {
             }),
         };
 
+        // Transform NaiveDateTime to Timestamp
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
+        // Transform db Hash to proto Hash
         let proto_hash = ProtoHash {
             alg: object_dto.hash.hash_type as i32,
             hash: object_dto.hash.hash,
         };
 
+        // Construct proto Object
         let proto_object = ProtoObject {
             id: object_dto.object.id.to_string(),
             filename: object_dto.object.filename,
-            labels: vec![], //Todo: Individual request, pagination or brainless full list?
-            hooks: vec![],  //Todo: Individual request, pagination or brainless full list?
+            labels: object_dto.labels,
+            hooks: object_dto.hooks,
             created: Some(timestamp),
             content_len: object_dto.object.content_len,
             status: object_dto.object.object_status as i32,
-            origin: proto_origin, //ToDo: OriginType only implicit?
+            origin: proto_origin,
             data_class: object_dto.object.dataclass as i32,
             hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,
             source: proto_source,
             latest: object_dto.latest,
-            auto_update: false, //Note: ?
+            auto_update: object_dto.update,
         };
 
-        let proto_location = ProtoLocation {
-            r#type: LocationType::S3 as i32, //ToDo: How to get LocationType? Currently static S3
-            bucket: object_dto.location.bucket,
-            path: object_dto.location.path,
-        };
-
-        Ok((proto_object, proto_location))
+        Ok(proto_object)
     }
 
     ///ToDo: Rust Doc
