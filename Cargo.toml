@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 chrono = "0.4.19"
-diesel = {version = "2.0.0-rc.0", features = ["postgres", "uuid", "r2d2", "chrono"]}
+diesel = {version = "2.0.0-rc.1", features = ["postgres", "uuid", "r2d2", "chrono"]}
 diesel-derive-enum = { version = "2.0.0-rc.0", features = ["postgres"] }
 dotenv = "0.15.0"
 http = "0.2.8"
