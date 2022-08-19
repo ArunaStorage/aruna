@@ -170,6 +170,44 @@ pub fn to_object_key_values(
     db_key_value
 }
 
+/// This is the reverse of `to_object_key_values`
+/// It converts a vector of database `ObjectKeyValue`s to
+/// two vectors of gRPC KeyValue types, one for labels, one for hooks.
+///
+/// ## Arguments
+///
+/// * `object_key_values` - A vector containing database CollectionKeyValues
+///
+/// ## Returns
+///
+/// * `Vec<KeyValue>` - A vector containing the label key-value pairs
+/// * `Vec<KeyValue>` - A vector containing the hook key-value pairs
+///
+pub fn from_object_key_values(
+    object_key_values: Vec<ObjectKeyValue>,
+) -> (Vec<KeyValue>, Vec<KeyValue>) {
+    let (labels, hooks): (Vec<ObjectKeyValue>, Vec<ObjectKeyValue>) = object_key_values
+        .into_iter()
+        .partition(|elem| elem.key_value_type == KeyValueType::LABEL);
+
+    (
+        labels
+            .into_iter()
+            .map(|elem| KeyValue {
+                key: elem.key,
+                value: elem.value,
+            })
+            .collect::<Vec<KeyValue>>(),
+        hooks
+            .into_iter()
+            .map(|elem| KeyValue {
+                key: elem.key,
+                value: elem.value,
+            })
+            .collect::<Vec<KeyValue>>(),
+    )
+}
+
 /// This helper function maps gRPC permissions to
 /// associated DB user_rights, it is mainly used in the creation of new api_tokens
 ///
@@ -426,6 +464,53 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_convert_from_object_key_value() {
+        let object_key_values: Vec<ObjectKeyValue> = vec![
+            ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: uuid::Uuid::new_v4(),
+                key: "label".to_string(),
+                value: "bar1".to_string(),
+                key_value_type: KeyValueType::LABEL,
+            },
+            ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: uuid::Uuid::new_v4(),
+                key: "label".to_string(),
+                value: "bar1".to_string(),
+                key_value_type: KeyValueType::LABEL,
+            },
+            ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: uuid::Uuid::new_v4(),
+                key: "hook".to_string(),
+                value: "bar1".to_string(),
+                key_value_type: KeyValueType::HOOK,
+            },
+            ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: uuid::Uuid::new_v4(),
+                key: "hook".to_string(),
+                value: "bar1".to_string(),
+                key_value_type: KeyValueType::HOOK,
+            },
+        ];
+
+        let (labels, hooks) = from_object_key_values(object_key_values);
+
+        assert_eq!(2, labels.len());
+        assert_eq!(2, hooks.len());
+        for x in labels {
+            assert!(x.key == *"label")
+        }
+
+        for x in hooks {
+            assert!(x.key == *"hook")
+        }
+    }
+
+    /// Helper method to return the fully qualified type name of an object
     fn type_of<T>(_: T) -> &'static str {
         type_name::<T>()
     }
