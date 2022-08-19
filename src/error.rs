@@ -199,18 +199,18 @@ pub enum TypeConversionError {
     UUID,
     TONICMETADATATOSTR,
     JWT,
-    STRTOENDPOINTTYPE
+    STRTOENDPOINTTYPE,
+    PARSECONFIG
 }
 
 impl Display for TypeConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeConversionError::UUID => write!(f, "Typeconversion for UUID failed",),
-            TypeConversionError::TONICMETADATATOSTR => {
-                write!(f, "Typeconversion for gRPC metadata 'to_str' failed")
-            }
+            TypeConversionError::TONICMETADATATOSTR => write!(f, "Typeconversion for gRPC metadata 'to_str' failed"),
             TypeConversionError::JWT => write!(f, "Typeconversion for JWT failed",),
-            TypeConversionError::STRTOENDPOINTTYPE => write!(f, "Typeconversion for EndpointType failed",)
+            TypeConversionError::STRTOENDPOINTTYPE => write!(f, "Typeconversion for EndpointType failed",),
+            TypeConversionError::PARSECONFIG => write!(f, "Typeconversion for config failed",)
         }
     }
 }

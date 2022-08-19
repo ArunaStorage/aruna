@@ -3,6 +3,7 @@ use crate::database::schema::*;
 use diesel_derive_enum::*;
 use tonic::{Code, Status};
 use crate::error::{ArunaError, TypeConversionError};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
@@ -14,7 +15,7 @@ pub enum ObjectStatus {
     ERROR,
 }
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize)]
 #[DieselTypePath = "sql_types::EndpointType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum EndpointType {

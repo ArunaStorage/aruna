@@ -1,5 +1,4 @@
-use std::env;
-
+//use std::env;
 //use diesel::associations::HasTable;
 //use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager, Pool};
@@ -17,20 +16,19 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new() -> Self {
-        let connection = Database::establish_connection();
-        
+    pub fn new(database_url: &String) -> Self {
+        let connection = Database::establish_connection(database_url);
 
         Database {
             pg_connection: connection,
         }
     }
 
-    fn establish_connection() -> Pool<ConnectionManager<PgConnection>> {
+    fn establish_connection(database_url: &String) -> Pool<ConnectionManager<PgConnection>> {
         dotenv().ok();
 
-        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let manager = ConnectionManager::<PgConnection>::new(&database_url);
+        //let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let manager = ConnectionManager::<PgConnection>::new(database_url);
         
 
         r2d2::Pool::builder()

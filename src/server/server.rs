@@ -1,4 +1,3 @@
-use std::env;
 use std::sync::Arc;
 
 use tonic::transport::Server;
@@ -12,6 +11,8 @@ use crate::{
     api::aruna::api::storage::services::v1::collection_service_server::CollectionServiceServer,
     database::connection::Database,
 };
+use crate::config::ArunaServerConfig;
+
 
 use super::services::collection::CollectionServiceImpl;
 use super::services::object::ObjectServiceImpl;
@@ -20,10 +21,11 @@ pub struct ServiceServer {}
 
 impl ServiceServer {
     pub async fn run(&self) {
-        // ToDo: Implement config handling from YAML config file
+        // Read config relative to binary
+        let config = ArunaServerConfig::new();
 
         // Connects to database
-        let db = Database::new();
+        let db = Database::new(&config.config.database_url);
         let db_ref = Arc::new(db);
 
         // Connects to data proxy
