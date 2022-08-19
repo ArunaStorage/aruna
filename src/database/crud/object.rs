@@ -8,39 +8,50 @@ use prost_types::Timestamp;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::{Location as ProtoLocation, LocationType},
+    internal::v1::{
+        Location as ProtoLocation,
+        LocationType
+    },
     models::v1::{
-        Hash as ProtoHash, Object as ProtoObject, Origin as ProtoOrigin, Source as ProtoSource,
+        Hash as ProtoHash,
+        Object as ProtoObject,
+        Origin as ProtoOrigin,
+        Source as ProtoSource,
     },
     services::v1::{
-        BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
-        DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest,
+        BorrowObjectRequest, BorrowObjectResponse,
+        CloneObjectRequest, CloneObjectResponse,
+        DeleteObjectRequest, DeleteObjectResponse,
+        GetObjectByIdRequest,
         GetObjectsRequest, GetObjectsResponse,
         GetObjectRevisionsRequest, GetObjectRevisionsResponse,
         InitializeNewObjectRequest, InitializeNewObjectResponse,
-        UpdateObjectRequest, UpdateObjectResponse,
-    },
+        UpdateObjectRequest, UpdateObjectResponse
+    }
 };
 
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::utils::to_object_key_values;
+use crate::database::crud::utils::{naivedatetime_to_prost_time, to_object_key_values};
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
-use crate::database::models::object::{Hash, Object, ObjectLocation, Source};
+use crate::database::models::object::{Endpoint, Hash, Object, ObjectLocation, Source};
 use crate::database::schema::{
-    collection_objects::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_objects::dsl::*,
+    endpoints::dsl::*,
+    hashes::dsl::*,
+    object_key_value::dsl::*,
+    object_locations::dsl::*,
+    objects::dsl::*,
+    sources::dsl::*,
 };
 
 /// Implementing CRUD+ database operations for Objects
 impl Database {
     /// Creates the following records in the database to initialize a new object:
     /// * Source
-    /// * Endpoint
     /// * Object incl. join table entry
     /// * ObjectLocation
-    /// * HashType
     /// * Hash
     /// * ObjectKeyValue(s)
     ///
@@ -50,9 +61,12 @@ impl Database {
     ///
     /// ## Returns
     ///
-    /// This function returns a `Result<(Response<InitializeNewObjectResponse>, Location)`.
-    /// The `InitializeNewObjectResponse` is incomplete and missing the staging/upload id of the created object
-    /// which in our case should be requested from the data proxy server with the Location object.
+    /// * `Result<(InitializeNewObjectResponse, ArunaError>`
+    ///
+    /// The InitializeNewObjectResponse contains:
+    ///   * The object id - Immutable und unique id the object can be identified with
+    ///   * The upload id - Can be used to upload data associated to the object
+    ///   * The collection id the object belongs to
     ///
     pub fn create_object(
         &self,
@@ -60,6 +74,7 @@ impl Database {
         creator: &uuid::Uuid,
         location: &ProtoLocation,
         upload_id: String,
+        default_endpoint: uuid::Uuid
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
@@ -74,11 +89,11 @@ impl Database {
             _ => None,
         };
 
-        // Define endpoint object
+        // Check if preferred endpoint is specified
         let endpoint_uuid = match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
-            Ok(ep_id) => Ok(ep_id),
-            Err(_) => Err(ArunaError::InvalidRequest("Default endpoint not yet implemented.".to_string()))
-        }?;
+            Ok(ep_id) => ep_id,
+            Err(_) => default_endpoint
+        };
 
         // Define object in database representation
         let object_uuid = uuid::Uuid::new_v4();
@@ -125,7 +140,7 @@ impl Database {
 
         // Convert the object's labels and hooks to their database representation
         let key_value_pairs = to_object_key_values(
-            staging_object.labels.clone(),
+            staging_object.labels,
             staging_object.hooks,
             object_uuid,
         );
@@ -136,18 +151,10 @@ impl Database {
             .transaction::<_, Error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations)
-                    .values(&object_location)
-                    .execute(conn)?;
-                diesel::insert_into(hashes)
-                    .values(&empty_hash)
-                    .execute(conn)?;
-                diesel::insert_into(object_key_value)
-                    .values(&key_value_pairs)
-                    .execute(conn)?;
-                diesel::insert_into(collection_objects)
-                    .values(&collection_object)
-                    .execute(conn)?;
+                diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
+                diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
+                diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
+                diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
 
                 Ok(())
             })?;
@@ -160,6 +167,19 @@ impl Database {
         })
     }
 
+    /// Returns the object and its primary location from the database.
+    ///
+    /// ## Arguments
+    ///
+    /// * `request` - A gRPC request containing the needed information to get the specific object
+    ///
+    /// ## Returns
+    ///
+    /// This function returns a
+    /// `Result<(aruna_server::api::aruna::api::storage::models::v1::Object,
+    /// aruna_server::api::aruna::api::storage::internal::v1::Location), ArunaError>`. The location
+    /// can be used to additionally send requests to the data proxy.
+    ///
     pub fn get_object(
         &self,
         request: &GetObjectByIdRequest,
@@ -249,15 +269,7 @@ impl Database {
             }),
         };
 
-        // Horrible NaiveDatetime to Timestamp cast ...
-        let timestamp = Timestamp::date_time(
-            object_dto.object.created_at.year() as i64,
-            object_dto.object.created_at.month() as u8,
-            object_dto.object.created_at.day() as u8,
-            object_dto.object.created_at.hour() as u8,
-            object_dto.object.created_at.minute() as u8,
-            object_dto.object.created_at.second() as u8,
-        )?;
+        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
         let proto_hash = ProtoHash {
             alg: object_dto.hash.hash_type as i32,
@@ -290,7 +302,27 @@ impl Database {
         Ok((proto_object, proto_location))
     }
 
-    /// ToDo: Rust Doc
+    ///ToDo: Rust Doc
+    pub fn get_object_by_id(
+        &self,
+        object_uuid: &uuid::Uuid,
+    ) -> Result<Object, ArunaError> {
+
+        // Read object from database
+        let db_object = self.pg_connection
+            .get()?
+            .transaction::<Object, Error, _>(|conn| {
+                let object = objects
+                    .filter(database::schema::objects::id.eq(object_uuid))
+                    .first::<Object>(conn)?;
+
+                Ok(object)
+            })?;
+
+        Ok(db_object)
+    }
+
+    ///ToDo: Rust Doc
     pub fn get_primary_object_location(
         &self,
         object_uuid: &uuid::Uuid,
@@ -314,6 +346,30 @@ impl Database {
         Ok(location)
     }
 
+    ///ToDo: Rust Doc
+    pub fn get_primary_object_location_with_endpoint(
+        &self,
+        object_uuid: &uuid::Uuid,
+    ) -> Result<(ObjectLocation, Endpoint), ArunaError> {
+        let location = self.pg_connection
+            .get()?
+            .transaction::<(ObjectLocation, Endpoint), Error, _>(|conn| {
+
+                let location: ObjectLocation = object_locations
+                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .first::<ObjectLocation>(conn)?;
+
+                let endpoint: Endpoint = endpoints
+                    .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                    .first::<Endpoint>(conn)?;
+
+                Ok((location, endpoint))
+            })?;
+
+        Ok(location)
+    }
+
     /// ToDo: Rust Doc
     pub fn get_object_locations(
         &self,
@@ -332,6 +388,32 @@ impl Database {
             })?;
 
         Ok(locations)
+    }
+
+    ///ToDo: Rust Doc
+    pub fn get_location_endpoint(
+        &self,
+        location: &ObjectLocation,
+    ) -> Result<Vec<(ObjectLocation, Endpoint)>, ArunaError> {
+        todo!()
+    }
+
+    ///ToDo: Rust Doc
+    pub fn get_endpoint(
+        &self,
+        endpoint_uuid: &uuid::Uuid,
+    ) -> Result<Endpoint, ArunaError> {
+        let endpoint = self.pg_connection
+            .get()?
+            .transaction::<Endpoint, Error, _>(|conn| {
+                let endpoint: Endpoint = endpoints
+                    .filter(database::schema::endpoints::id.eq(&endpoint_uuid))
+                    .first::<Endpoint>(conn)?;
+
+                Ok(endpoint)
+            })?;
+
+        Ok(endpoint)
     }
 
     pub fn get_object_revisions(

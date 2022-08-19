@@ -27,7 +27,7 @@ pub struct Object {
     pub origin_id: Option<uuid::Uuid>,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Insertable, Identifiable, Clone, Debug)]
 pub struct Endpoint {
     pub id: uuid::Uuid,
     pub endpoint_type: EndpointType,
