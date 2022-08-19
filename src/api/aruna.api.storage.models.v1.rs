@@ -683,21 +683,6 @@ pub struct ProjectPermission {
     pub user_id: ::prost::alloc::string::String,
     #[prost(enumeration="Permission", tag="2")]
     pub permission: i32,
-    #[prost(message, repeated, tag="3")]
-    pub tokens: ::prost::alloc::vec::Vec<Token>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Authorization {
-    #[prost(enumeration="Permission", tag="1")]
-    pub permission: i32,
-    #[prost(enumeration="PermType", tag="2")]
-    pub perm_type: i32,
-    ///  Can be userid, tokenid or anonymous id depending on perm_type
-    #[prost(string, tag="3")]
-    pub client_id: ::prost::alloc::string::String,
-    ///  Userid of the user who created the authorization
-    #[prost(string, tag="4")]
-    pub created_by: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
