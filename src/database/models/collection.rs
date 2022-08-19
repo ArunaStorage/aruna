@@ -1,10 +1,12 @@
+use super::auth::*;
 use super::enums::*;
+use super::object::*;
+use super::object_group::*;
 use crate::database::schema::*;
 use uuid;
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = collection_version)]
-#[diesel(belongs_to(Collection))]
 pub struct CollectionVersion {
     pub id: uuid::Uuid,
     pub major: i64,
@@ -12,9 +14,9 @@ pub struct CollectionVersion {
     pub patch: i64,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(User))]
-#[diesel(belongs_to(CollectionVersion))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User, foreign_key = created_by))]
+#[diesel(belongs_to(CollectionVersion, foreign_key = version_id))]
 #[diesel(belongs_to(Project))]
 pub struct Collection {
     pub id: uuid::Uuid,
@@ -28,7 +30,7 @@ pub struct Collection {
     pub project_id: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = collection_key_value)]
 #[diesel(belongs_to(Collection))]
 pub struct CollectionKeyValue {
@@ -39,7 +41,7 @@ pub struct CollectionKeyValue {
     pub key_value_type: KeyValueType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Collection))]
 pub struct RequiredLabel {
     pub id: uuid::Uuid,
@@ -47,7 +49,7 @@ pub struct RequiredLabel {
     pub label_key: String,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]
 pub struct CollectionObject {
@@ -58,7 +60,7 @@ pub struct CollectionObject {
     pub writeable: bool,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct CollectionObjectGroup {

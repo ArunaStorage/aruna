@@ -1,3 +1,4 @@
+use super::auth::*;
 use super::enums::*;
 use crate::database::schema::*;
 use uuid;
@@ -9,10 +10,10 @@ pub struct Source {
     pub source_type: SourceType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(User))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(belongs_to(Source))]
-#[diesel(belongs_to(Object))]
+#[diesel(belongs_to(Object, foreign_key = origin_id))]
 pub struct Object {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,
@@ -60,7 +61,7 @@ pub struct Hash {
     pub hash_type: HashType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = object_key_value)]
 #[diesel(belongs_to(Object))]
 pub struct ObjectKeyValue {

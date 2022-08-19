@@ -1,6 +1,8 @@
-use super::enums::*;
-use crate::database::schema::*;
 use uuid;
+use super::collection::*;
+use super::enums::*;
+
+use crate::database::schema::*;
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 pub struct IdentityProvider {
@@ -17,8 +19,8 @@ pub struct User {
     pub active: bool,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(IdentityProvider))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(IdentityProvider, foreign_key = idp_id))]
 #[diesel(belongs_to(User))]
 pub struct ExternalUserId {
     pub id: uuid::Uuid,
@@ -27,8 +29,8 @@ pub struct ExternalUserId {
     pub idp_id: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug)]
-#[diesel(belongs_to(User))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug)]
+#[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name=projects)]
 pub struct Project {
     pub id: uuid::Uuid,
@@ -39,7 +41,7 @@ pub struct Project {
     pub created_by: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
 #[diesel(table_name=user_permissions)]
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]
@@ -56,11 +58,11 @@ pub struct UserPermission {
 /// Scoped   -> project_id || collection_id != None
 ///          -> ApiToken.user_right
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(User))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User, foreign_key = creator_user_id))]
 #[diesel(belongs_to(Project))]
 #[diesel(belongs_to(Collection))]
-#[diesel(belongs_to(PubKey))]
+#[diesel(belongs_to(PubKey, foreign_key = pub_key))]
 pub struct ApiToken {
     pub id: uuid::Uuid,
     pub creator_user_id: uuid::Uuid,

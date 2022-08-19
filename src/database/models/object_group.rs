@@ -1,9 +1,11 @@
+use super::auth::*;
 use super::enums::*;
+use super::object::*;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
-#[diesel(belongs_to(User))]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(User, foreign_key = created_by))]
 pub struct ObjectGroup {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,
@@ -14,7 +16,7 @@ pub struct ObjectGroup {
     pub created_by: uuid::Uuid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = object_group_key_value)]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct ObjectGroupKeyValue {
@@ -25,7 +27,7 @@ pub struct ObjectGroupKeyValue {
     pub key_value_type: KeyValueType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(belongs_to(ObjectGroup))]
 #[diesel(belongs_to(Object))]
 pub struct ObjectGroupObject {
