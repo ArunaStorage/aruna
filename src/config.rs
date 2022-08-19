@@ -3,7 +3,7 @@ use std::env::VarError;
 use crate::database::models::enums::EndpointType;
 
 use serde::Deserialize;
-use toml::de::Error;
+
 use tonic::codegen::Body;
 use crate::error::{ArunaError, TypeConversionError};
 

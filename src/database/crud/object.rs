@@ -1,9 +1,9 @@
-use chrono::{Datelike, Local, Timelike};
+use chrono::{Local};
 
 use diesel::dsl::max;
 use diesel::prelude::*;
 use diesel::result::Error;
-use prost_types::Timestamp;
+
 
 use crate::error::{ArunaError, GrpcNotFoundError};
 
@@ -393,7 +393,7 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn get_location_endpoint(
         &self,
-        location: &ObjectLocation,
+        _location: &ObjectLocation,
     ) -> Result<Vec<(ObjectLocation, Endpoint)>, ArunaError> {
         todo!()
     }

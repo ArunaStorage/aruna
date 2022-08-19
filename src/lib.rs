@@ -2,7 +2,9 @@
 extern crate diesel;
 
 pub mod api;
+pub mod config;
 pub mod database;
 pub mod error;
 pub mod server;
-pub mod config;
+#[macro_use]
+pub mod aruna_macros;

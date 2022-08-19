@@ -17,23 +17,8 @@ use crate::error::ArunaError;
 use std::sync::Arc;
 use tonic::Response;
 
-/// UserService struct
-pub struct UserServiceImpl {
-    database: Arc<Database>,
-    authz: Arc<Authz>,
-}
-
-/// All general methods for the UserService
-/// Currently only new()
-impl UserServiceImpl {
-    /// Create a new UserServiceImpl that can be registered in the gRPC Server
-    pub async fn new(db: Arc<Database>, authz: Arc<Authz>) -> Self {
-        UserServiceImpl {
-            database: db,
-            authz,
-        }
-    }
-}
+// This automatically creates the UserServiceImpl struct and ::new methods
+crate::impl_grpc_server!(UserServiceImpl);
 
 /// Trait created by tonic based on gRPC service definitions from .proto files
 /// .proto files defined in ArunaAPI repo

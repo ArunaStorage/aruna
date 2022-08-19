@@ -8,7 +8,7 @@ use std::str::FromStr;
 #[ignore]
 #[serial(db)]
 fn test() {
-    let db = database::connection::Database::new();
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 

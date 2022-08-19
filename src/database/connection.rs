@@ -16,7 +16,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(database_url: &String) -> Self {
+    pub fn new(database_url: &str) -> Self {
         let connection = Database::establish_connection(database_url);
 
         Database {
@@ -24,12 +24,11 @@ impl Database {
         }
     }
 
-    fn establish_connection(database_url: &String) -> Pool<ConnectionManager<PgConnection>> {
+    fn establish_connection(database_url: &str) -> Pool<ConnectionManager<PgConnection>> {
         dotenv().ok();
 
         //let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let manager = ConnectionManager::<PgConnection>::new(database_url);
-        
 
         r2d2::Pool::builder()
             .build(manager)

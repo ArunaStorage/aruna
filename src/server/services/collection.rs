@@ -13,19 +13,8 @@ use crate::{
 
 use super::authz::{Authz, Context};
 
-pub struct CollectionServiceImpl {
-    database: Arc<Database>,
-    authz: Arc<Authz>,
-}
-
-impl CollectionServiceImpl {
-    pub async fn new(db: Arc<Database>, authz: Arc<Authz>) -> Self {
-        CollectionServiceImpl {
-            database: db,
-            authz,
-        }
-    }
-}
+// This macro automatically creates the Impl struct with all associated fields
+crate::impl_grpc_server!(CollectionServiceImpl);
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
