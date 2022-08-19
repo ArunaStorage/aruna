@@ -7,19 +7,4 @@ use std::sync::Arc;
 use tonic::Response;
 
 /// UserService struct
-pub struct ProjectServiceImpl {
-    database: Arc<Database>,
-    authz: Arc<Authz>,
-}
-
-/// All general methods for the UserService
-/// Currently only new()
-impl ProjectServiceImpl {
-    /// Create a new UserServiceImpl that can be registered in the gRPC Server
-    pub async fn new(db: Arc<Database>, authz: Arc<Authz>) -> Self {
-        ProjectServiceImpl {
-            database: db,
-            authz,
-        }
-    }
-}
+crate::impl_grpc_server!(ProjectServiceImpl);
