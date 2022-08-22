@@ -30,7 +30,7 @@ impl CollectionService for CollectionServiceImpl {
             .authz
             .authorize(
                 request.metadata(),
-                Context {
+                &Context {
                     user_right: UserRights::WRITE,
                     resource_type: Resources::PROJECT,
                     resource_id: project_id,

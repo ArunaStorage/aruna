@@ -87,7 +87,7 @@ impl UserService for UserServiceImpl {
             // Create a new token and delete the old one if the secret gets lost
             let token_secret = self
                 .authz
-                .sign_new_token(token_descr.id.clone(), token_descr.expires_at.clone())
+                .sign_new_token(&token_descr.id, token_descr.expires_at.clone())
                 .await?;
 
             // Convert to gRPC response and return
@@ -111,7 +111,7 @@ impl UserService for UserServiceImpl {
             // Create a new token and delete the old one if the secret gets lost
             let token_secret = self
                 .authz
-                .sign_new_token(token_descr.id.clone(), token_descr.expires_at.clone())
+                .sign_new_token(&token_descr.id, token_descr.expires_at.clone())
                 .await?;
 
             // Parse to gRPC response and return it

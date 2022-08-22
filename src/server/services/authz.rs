@@ -204,10 +204,10 @@ impl Authz {
     pub async fn authorize(
         &self,
         metadata: &MetadataMap,
-        context: Context,
+        context: &Context,
     ) -> Result<uuid::Uuid, ArunaError> {
         let token = self.validate_and_query_token(metadata).await?;
-        self.db.get_checked_user_id_from_token(token, context)
+        self.db.get_checked_user_id_from_token(&token, context)
     }
 
     /// This is a wrapper that runs the authorize function with a `personal` context
@@ -218,7 +218,7 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            Context {
+            &Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
                 resource_id: uuid::Uuid::default(),
@@ -235,7 +235,7 @@ impl Authz {
     pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            Context {
+            &Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
                 resource_id: uuid::Uuid::default(),
@@ -257,7 +257,7 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            Context {
+            &Context {
                 user_right,
                 resource_type: Resources::COLLECTION,
                 resource_id: collection_id,
@@ -279,7 +279,7 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            Context {
+            &Context {
                 user_right,
                 resource_type: Resources::PROJECT,
                 resource_id: project_id,
@@ -309,7 +309,7 @@ impl Authz {
         if Authz::is_oidc_from_metadata(metadata).await? {
             let subject = self.validate_oidc_only(metadata).await?;
 
-            match self.db.get_oidc_user(subject)? {
+            match self.db.get_oidc_user(&subject)? {
                 Some(u) => return Ok(u),
                 None => {
                     return Err(ArunaError::AuthorizationError(
@@ -403,7 +403,7 @@ impl Authz {
 
     pub async fn sign_new_token(
         &self,
-        token_id: String,
+        token_id: &str,
         expires_at: Option<prost_types::Timestamp>,
     ) -> Result<String, ArunaError> {
         // Gets the signing key / mutex -> if this returns a poison error this should also panic
@@ -411,7 +411,7 @@ impl Authz {
         let signing_key = self.signing_key.lock().unwrap();
 
         let claim = Claims {
-            sub: token_id,
+            sub: token_id.to_string(),
             exp: if expires_at.is_none() {
                 // Add 10 years to token lifetime
                 Utc::now().second() as usize + 315360000

@@ -117,8 +117,8 @@ impl Database {
     ///
     pub fn get_checked_user_id_from_token(
         &self,
-        ctx_token: uuid::Uuid,
-        req_ctx: Context,
+        ctx_token: &uuid::Uuid,
+        req_ctx: &Context,
     ) -> Result<uuid::Uuid, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
@@ -333,7 +333,7 @@ impl Database {
         }
     }
 
-    pub fn get_oidc_user(&self, oidc_id: String) -> Result<Option<uuid::Uuid>, ArunaError> {
+    pub fn get_oidc_user(&self, oidc_id: &str) -> Result<Option<uuid::Uuid>, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error;
 

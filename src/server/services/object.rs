@@ -4,10 +4,8 @@ use tonic::transport::Channel;
 use tonic::{Code, Request, Response, Status};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::*,
-    internal::v1::internal_proxy_service_client::InternalProxyServiceClient,
-    services::v1::*,
-    services::v1::object_service_server::ObjectService
+    internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
+    services::v1::object_service_server::ObjectService, services::v1::*,
 };
 
 use crate::database::connection::Database;
@@ -169,7 +167,7 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .authorize(
                 request.metadata(),
-                Context {
+                &Context {
                     user_right: UserRights::APPEND, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
@@ -233,7 +231,7 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .authorize(
                 request.metadata(),
-                Context {
+                &Context {
                     user_right: UserRights::APPEND, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
@@ -322,16 +320,17 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetObjectByIdRequest>,
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
-
         // Check if user is authorized to create objects in this collection
-        let collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        let object_uuid = uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+        let collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let object_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
         let _creator_id = self
             .authz
             .authorize(
                 request.metadata(),
-                Context {
+                &Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_uuid, // This is the collection uuid in which this object should be created
@@ -349,14 +348,15 @@ impl ObjectService for ObjectServiceImpl {
         let database_clone = self.database.clone();
         let request_clone = inner_request.clone();
         let proto_object = task::spawn_blocking(move || database_clone.get_object(&request_clone))
-                .await
-                .map_err(ArunaError::from)??;
+            .await
+            .map_err(ArunaError::from)??;
 
         //Note: Only request url from data proxy if request.with_url == true
         let response = match &inner_request.with_url {
             true => {
                 // Establish connection to data proxy endpoint
-                let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_uuid).await?;
+                let (mut data_proxy, location) =
+                    self.try_connect_object_endpoint(&object_uuid).await?;
 
                 let data_proxy_request = CreatePresignedDownloadRequest {
                     location: Some(location),
@@ -443,7 +443,7 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .authorize(
                 request.metadata(),
-                Context {
+                &Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
                     resource_id: collection_id, // This is the collection uuid in which this object should be created
