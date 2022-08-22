@@ -6,6 +6,7 @@ use uuid;
 pub struct CollectionStat {
     pub id: uuid::Uuid,
     pub object_count: i64,
+    pub object_group_count: i64,
     pub size: i64,
     pub last_updated: chrono::NaiveDateTime,
 }

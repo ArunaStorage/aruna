@@ -44,7 +44,9 @@ impl Database {
                     .filter(pubkey.eq(pub_key.clone()))
                     .first::<PubKey>(conn)
                     .optional()?;
-                if pkey.is_none() {
+                if let Some(pkey_noption) = pkey {
+                    Ok(pkey_noption.id)
+                } else {
                     let new_pkey = PubKeyInsert {
                         pubkey: pub_key,
                         id: None,
@@ -54,8 +56,6 @@ impl Database {
                         .values(&new_pkey)
                         .returning(id)
                         .get_result::<i64>(conn)?)
-                } else {
-                    Ok(pkey.unwrap().id)
                 }
             })?;
         Ok(result)
@@ -194,9 +194,8 @@ impl Database {
                             // If apitoken.collection_id == context_collection_id
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
                             // in case the response is None -> just continue
-                            match collection_ctx {
-                                Some(_) => return Ok(Some(api_token.creator_user_id)),
-                                _ => (),
+                            if collection_ctx.is_some() {
+                                return Ok(Some(api_token.creator_user_id));
                             }
                         }
 
@@ -228,9 +227,8 @@ impl Database {
                                 api_token.user_right,
                             );
 
-                            match col_in_proj_context {
-                                Some(_) => return Ok(Some(api_token.creator_user_id)),
-                                _ => (),
+                            if col_in_proj_context.is_some() {
+                                return Ok(Some(api_token.creator_user_id));
                             }
                         }
 
@@ -254,18 +252,17 @@ impl Database {
                                 .first::<UserPermission>(conn)
                                 .optional()?;
 
-                            if user_permission_option.is_some() {
+                            if let Some(user_perm) = user_permission_option {
                                 let col_in_proj_ctx2 = option_uuid_helper(
                                     Some(req_ctx.resource_id),
                                     Some(req_ctx.resource_id),
                                     Resources::COLLECTION,
                                     req_ctx.user_right,
-                                    Some(user_permission_option.unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
+                                    Some(user_perm.user_right), // This unwrap is ok safe because project_valid.is_some()
                                 );
 
-                                match col_in_proj_ctx2 {
-                                    Some(_) => return Ok(Some(api_token.creator_user_id)),
-                                    _ => (),
+                                if col_in_proj_ctx2.is_some() {
+                                    return Ok(Some(api_token.creator_user_id));
                                 }
                             }
                         }
@@ -287,9 +284,8 @@ impl Database {
 
                             // If apitoken.collection_id == context_collection_id
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
-                            match project_ctx {
-                                Some(_) => return Ok(Some(api_token.creator_user_id)),
-                                _ => (),
+                            if project_ctx.is_some() {
+                                return Ok(Some(api_token.creator_user_id));
                             }
                         }
 
@@ -314,9 +310,8 @@ impl Database {
                                     Some(user_permissions_option.as_ref().unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
                                 );
 
-                                match col_in_proj_ctx {
-                                    Some(_) => return Ok(Some(api_token.creator_user_id)),
-                                    _ => (),
+                                if col_in_proj_ctx.is_some() {
+                                    return Ok(Some(api_token.creator_user_id));
                                 }
                             }
                         }

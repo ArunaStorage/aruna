@@ -30,7 +30,7 @@ pub struct Collection {
     pub project_id: uuid::Uuid,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(table_name = collection_key_value)]
 #[diesel(belongs_to(Collection))]
 pub struct CollectionKeyValue {

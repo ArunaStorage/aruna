@@ -279,10 +279,12 @@ CREATE MATERIALIZED VIEW collection_stats AS
 SELECT col.id AS id,
     COUNT(obj.id) AS object_count,
     SUM(obj.content_len) AS size,
+    COUNT(cobj.id) AS object_group_count,
     now() AS last_updated
 FROM collections AS col
     JOIN collection_objects AS cobj ON col.id = cobj.collection_id
     JOIN objects AS obj ON cobj.object_id = obj.id
+    JOIN collection_object_groups AS cobjgrp ON col.id = objgrp.collection_id
 GROUP BY col.id;
 -- Materialized view for the object_groups table
 CREATE MATERIALIZED VIEW object_group_stats AS

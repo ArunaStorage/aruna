@@ -1,9 +1,9 @@
-use std::str::FromStr;
 use crate::database::schema::*;
-use diesel_derive_enum::*;
-use tonic::{Code, Status};
 use crate::error::{ArunaError, TypeConversionError};
+use diesel_derive_enum::*;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use tonic::{Code, Status};
 
 #[derive(Debug, DbEnum, Clone, Copy)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
@@ -29,12 +29,14 @@ impl FromStr for EndpointType {
         match input {
             "S3" => Ok(EndpointType::S3),
             "File" => Ok(EndpointType::File),
-            _ => Err(ArunaError::TypeConversionError(TypeConversionError::STRTOENDPOINTTYPE))
+            _ => Err(ArunaError::TypeConversionError(
+                TypeConversionError::STRTOENDPOINTTYPE,
+            )),
         }
     }
 }
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, PartialOrd)]
 #[DieselTypePath = "sql_types::Dataclass"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Dataclass {

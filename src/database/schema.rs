@@ -315,6 +315,7 @@ diesel::table! {
     collection_stats (id) {
         id -> Uuid,
         object_count -> Int8,
+        object_group_count -> Int8,
         size -> Int8,
         last_updated -> Timestamp,
     }
