@@ -56,6 +56,7 @@ pub struct CollectionObject {
     pub id: uuid::Uuid,
     pub collection_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
+    pub auto_update: bool,
     pub is_specification: bool,
     pub writeable: bool,
 }

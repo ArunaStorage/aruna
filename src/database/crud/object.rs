@@ -117,8 +117,9 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
             object_id: object.id,
-            is_specification: false, //Note: Default is false;
-            writeable: true,         //Note: Original object is always writeable for owner
+            auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+            is_specification: request.is_specification,
+            writeable: true, //Note: Original object is initially always writeable
         };
 
         // Define the initial object location
