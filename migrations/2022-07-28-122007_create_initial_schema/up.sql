@@ -217,8 +217,8 @@ CREATE TABLE collection_objects (
     is_specification BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (object_id) REFERENCES objects(id),
-    -- Funktioniert das ? JA !
-    FOREIGN KEY (collection_id) REFERENCES collections(id)
+    FOREIGN KEY (collection_id) REFERENCES collections(id),
+    CONSTRAINT unique_collection_object UNIQUE (object_id,collection_id)
 );
 -- Join table between collections and object_groups
 CREATE TABLE collection_object_groups (
