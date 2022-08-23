@@ -284,7 +284,7 @@ SELECT col.id AS id,
 FROM collections AS col
     JOIN collection_objects AS cobj ON col.id = cobj.collection_id
     JOIN objects AS obj ON cobj.object_id = obj.id
-    JOIN collection_object_groups AS cobjgrp ON col.id = objgrp.collection_id
+    JOIN collection_object_groups AS cobjgrp ON col.id = cobjgrp.collection_id
 GROUP BY col.id;
 -- Materialized view for the object_groups table
 CREATE MATERIALIZED VIEW object_group_stats AS
