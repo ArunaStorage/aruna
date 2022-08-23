@@ -236,7 +236,6 @@ CREATE TABLE object_group_objects (
     object_id UUID NOT NULL,
     object_group_id UUID NOT NULL,
     is_meta BOOL NOT NULL DEFAULT FALSE,
-    writeable BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (object_group_id) REFERENCES object_groups(id)
 );

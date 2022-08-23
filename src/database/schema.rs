@@ -193,7 +193,6 @@ diesel::table! {
         object_id -> Uuid,
         object_group_id -> Uuid,
         is_meta -> Bool,
-        writeable -> Bool,
     }
 }
 

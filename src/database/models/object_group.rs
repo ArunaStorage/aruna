@@ -35,5 +35,4 @@ pub struct ObjectGroupObject {
     pub object_group_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
     pub is_meta: bool,
-    pub writeable: bool,
 }
