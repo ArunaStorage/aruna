@@ -212,6 +212,12 @@ pub struct BorrowObjectRequest {
     ///  BorrowerCollectionID
     #[prost(string, tag="3")]
     pub target_collection_id: ::prost::alloc::string::String,
+    ///  Should the other collection have permissions to edit the ressource
+    #[prost(bool, tag="4")]
+    pub writeable: bool,
+    ///  Should the borrowed ressource be automatically updated ?
+    #[prost(bool, tag="5")]
+    pub auto_update: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BorrowObjectResponse {
@@ -264,8 +270,6 @@ pub struct GetObjectByIdRequest {
     pub collection_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub object_id: ::prost::alloc::string::String,
-    #[prost(int64, tag="3")]
-    pub revision: i64,
     ///  With URL: Include URL in response ?
     #[prost(bool, tag="4")]
     pub with_url: bool,
@@ -1835,6 +1839,43 @@ pub struct DestroyProjectRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DestroyProjectResponse {
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateProjectRequest {
+    #[prost(string, tag="1")]
+    pub project_id: ::prost::alloc::string::String,
+    ///  Updated name
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    ///  Update description
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateProjectResponse {
+    #[prost(message, optional, tag="1")]
+    pub project: ::core::option::Option<super::super::models::v1::ProjectOverview>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveUserFromProjectRequest {
+    #[prost(string, tag="1")]
+    pub project_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub user_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveUserFromProjectResponse {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EditUserPermissionsForProjectRequest {
+    #[prost(string, tag="1")]
+    pub project_id: ::prost::alloc::string::String,
+    ///  This contains the user_id and the "new permission"
+    #[prost(message, optional, tag="2")]
+    pub user_permission: ::core::option::Option<super::super::models::v1::ProjectPermission>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EditUserPermissionsForProjectResponse {
+}
 /// Generated client implementations.
 pub mod project_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -1989,9 +2030,8 @@ pub mod project_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// This will destroy the project and all its associated data.
-        /// including users, collections, and API tokens and all data associated with
-        /// them.
+        /// Destroys the project and all its associated data. Must be empty
+        /// (cannot contain any collections).
         pub async fn destroy_project(
             &mut self,
             request: impl tonic::IntoRequest<super::DestroyProjectRequest>,
@@ -2008,6 +2048,72 @@ pub mod project_service_client {
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/aruna.api.storage.services.v1.ProjectService/DestroyProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Updates the project. All (meta) data will be overwritten.
+        pub async fn update_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateProjectRequest>,
+        ) -> Result<tonic::Response<super::UpdateProjectResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.ProjectService/UpdateProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Removes a specified user from the project.
+        pub async fn remove_user_from_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveUserFromProjectRequest>,
+        ) -> Result<
+            tonic::Response<super::RemoveUserFromProjectResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.ProjectService/RemoveUserFromProject",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Edit the user_permission of a specific user for the project.
+        pub async fn edit_user_permissions_for_project(
+            &mut self,
+            request: impl tonic::IntoRequest<super::EditUserPermissionsForProjectRequest>,
+        ) -> Result<
+            tonic::Response<super::EditUserPermissionsForProjectResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.ProjectService/EditUserPermissionsForProject",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -2045,13 +2151,33 @@ pub mod project_service_server {
             &self,
             request: tonic::Request<super::GetProjectRequest>,
         ) -> Result<tonic::Response<super::GetProjectResponse>, tonic::Status>;
-        /// This will destroy the project and all its associated data.
-        /// including users, collections, and API tokens and all data associated with
-        /// them.
+        /// Destroys the project and all its associated data. Must be empty
+        /// (cannot contain any collections).
         async fn destroy_project(
             &self,
             request: tonic::Request<super::DestroyProjectRequest>,
         ) -> Result<tonic::Response<super::DestroyProjectResponse>, tonic::Status>;
+        /// Updates the project. All (meta) data will be overwritten.
+        async fn update_project(
+            &self,
+            request: tonic::Request<super::UpdateProjectRequest>,
+        ) -> Result<tonic::Response<super::UpdateProjectResponse>, tonic::Status>;
+        /// Removes a specified user from the project.
+        async fn remove_user_from_project(
+            &self,
+            request: tonic::Request<super::RemoveUserFromProjectRequest>,
+        ) -> Result<
+            tonic::Response<super::RemoveUserFromProjectResponse>,
+            tonic::Status,
+        >;
+        /// Edit the user_permission of a specific user for the project.
+        async fn edit_user_permissions_for_project(
+            &self,
+            request: tonic::Request<super::EditUserPermissionsForProjectRequest>,
+        ) -> Result<
+            tonic::Response<super::EditUserPermissionsForProjectResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct ProjectServiceServer<T: ProjectService> {
@@ -2299,6 +2425,131 @@ pub mod project_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DestroyProjectSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.ProjectService/UpdateProject" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateProjectSvc<T: ProjectService>(pub Arc<T>);
+                    impl<
+                        T: ProjectService,
+                    > tonic::server::UnaryService<super::UpdateProjectRequest>
+                    for UpdateProjectSvc<T> {
+                        type Response = super::UpdateProjectResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateProjectRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).update_project(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateProjectSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.ProjectService/RemoveUserFromProject" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveUserFromProjectSvc<T: ProjectService>(pub Arc<T>);
+                    impl<
+                        T: ProjectService,
+                    > tonic::server::UnaryService<super::RemoveUserFromProjectRequest>
+                    for RemoveUserFromProjectSvc<T> {
+                        type Response = super::RemoveUserFromProjectResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoveUserFromProjectRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).remove_user_from_project(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RemoveUserFromProjectSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.ProjectService/EditUserPermissionsForProject" => {
+                    #[allow(non_camel_case_types)]
+                    struct EditUserPermissionsForProjectSvc<T: ProjectService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ProjectService,
+                    > tonic::server::UnaryService<
+                        super::EditUserPermissionsForProjectRequest,
+                    > for EditUserPermissionsForProjectSvc<T> {
+                        type Response = super::EditUserPermissionsForProjectResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::EditUserPermissionsForProjectRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).edit_user_permissions_for_project(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = EditUserPermissionsForProjectSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -133,7 +133,7 @@ impl ProjectService for ProjectServiceImpl {
         ))
     }
 
-    /// DestoryProject deletes a project and all associated user_permissions.
+    /// DestroyProject deletes a project and all associated user_permissions.
     /// Needs admin permissions and the project must be empty -> 0 collections must be associated.
     ///
     /// ## Arguments
@@ -163,6 +163,103 @@ impl ProjectService for ProjectServiceImpl {
         // Execute request and return response
         Ok(Response::new(
             self.database.destroy_project(req_clone, _user_id)?,
+        ))
+    }
+
+    /// UpdateProject updates a project and all associated user_permissions.
+    /// Needs admin permissions and the project
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateProject: contains project_id and new project information.
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<UpdateProjectResponse>, tonic::Status>: ProjectOverview for the project
+    async fn update_project(
+        &self,
+        request: tonic::Request<UpdateProjectRequest>,
+    ) -> Result<tonic::Response<UpdateProjectResponse>, tonic::Status> {
+        // Clone metadata map
+        let metadata = request.metadata().clone();
+        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
+        let req_clone = request.into_inner().clone();
+        // Parse the project Uuid
+        let parsed_project_id =
+            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+        // Authorize user
+        let user_id = self
+            .authz
+            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .await?;
+        // Execute request and return response
+        Ok(Response::new(
+            self.database.update_project(req_clone, user_id)?,
+        ))
+    }
+
+    /// RemoveUserFromProject removes a specific user from the project
+    /// Needs project admin permissions and the project
+    ///
+    /// ## Arguments
+    ///
+    /// * request: RemoveUserFromProjectRequest: contains project_id and user_id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<RemoveUserFromProjectResponse>, tonic::Status>: Placeholder, empty response means success
+    async fn remove_user_from_project(
+        &self,
+        request: tonic::Request<RemoveUserFromProjectRequest>,
+    ) -> Result<tonic::Response<RemoveUserFromProjectResponse>, tonic::Status> {
+        // Clone metadata map
+        let metadata = request.metadata().clone();
+        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
+        let req_clone = request.into_inner().clone();
+        // Parse the project Uuid
+        let parsed_project_id =
+            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+        // Authorize user
+        let user_id = self
+            .authz
+            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .await?;
+        // Execute request and return response
+        Ok(Response::new(
+            self.database.remove_user_from_project(req_clone, user_id)?,
+        ))
+    }
+
+    /// EditUserPermissionsForProject updates the user permissions of a specific user
+    /// Needs project admin permissions and the project
+    ///
+    /// ## Arguments
+    ///
+    /// * request: EditUserPermissionsForProjectRequest: contains project_id and user_permissions for a user (including user_id)
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<EditUserPermissionsForProjectResponse>, tonic::Status>: Placeholder, empty response means success
+    async fn edit_user_permissions_for_project(
+        &self,
+        request: tonic::Request<EditUserPermissionsForProjectRequest>,
+    ) -> Result<tonic::Response<EditUserPermissionsForProjectResponse>, tonic::Status> {
+        // Clone metadata map
+        let metadata = request.metadata().clone();
+        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
+        let req_clone = request.into_inner().clone();
+        // Parse the project Uuid
+        let parsed_project_id =
+            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+        // Authorize user
+        let user_id = self
+            .authz
+            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .await?;
+        // Execute request and return response
+        Ok(Response::new(
+            self.database
+                .edit_user_permissions_for_project(req_clone, user_id)?,
         ))
     }
 }

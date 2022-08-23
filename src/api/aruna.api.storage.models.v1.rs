@@ -30,9 +30,7 @@ pub struct CollectionStats {
     #[prost(int64, tag="2")]
     pub object_group_count: i64,
     #[prost(message, optional, tag="3")]
-    pub specification_stats: ::core::option::Option<Stats>,
-    #[prost(message, optional, tag="6")]
-    pub last_date_updated: ::core::option::Option<::prost_types::Timestamp>,
+    pub last_updated: ::core::option::Option<::prost_types::Timestamp>,
 }
 ///  Stats for an object group
 #[derive(Clone, PartialEq, ::prost::Message)]

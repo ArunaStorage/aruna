@@ -16,8 +16,11 @@ use crate::api::aruna::api::storage::models::v1::{
 use crate::api::aruna::api::storage::models::v1::{ProjectOverview, Version};
 use crate::api::aruna::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
-    DestroyProjectRequest, DestroyProjectResponse, GetProjectCollectionsRequest,
+    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
+    EditUserPermissionsForProjectResponse, GetProjectCollectionsRequest,
     GetProjectCollectionsResponse, GetProjectRequest, GetProjectResponse,
+    RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
+    UpdateProjectResponse,
 };
 use crate::database::connection::Database;
 use crate::database::models::auth::{Project, UserPermission};
@@ -29,7 +32,7 @@ use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
 
 use chrono::Utc;
-use diesel::{delete, insert_into, prelude::*};
+use diesel::{delete, insert_into, prelude::*, update};
 
 impl Database {
     /// Creates a new project in the database. Adds the creating user to the project with admin permissions.
@@ -237,11 +240,11 @@ impl Database {
 
                     // Map ontology
                     let map_req_label = req_label.as_ref().map(|rlbl| LabelOntology {
-                            required_label_keys: rlbl
-                                .iter()
-                                .map(|rq_lbl| rq_lbl.label_key.clone())
-                                .collect::<Vec<_>>(),
-                        });
+                        required_label_keys: rlbl
+                            .iter()
+                            .map(|rq_lbl| rq_lbl.label_key.clone())
+                            .collect::<Vec<_>>(),
+                    });
 
                     // Map statistics
                     let map_stats = Some(CollectionStats {
@@ -250,8 +253,7 @@ impl Database {
                             acc_size: stats.size,
                         }),
                         object_group_count: stats.object_group_count,
-                        specification_stats: None,
-                        last_date_updated: Some(
+                        last_updated: Some(
                             naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
                         ),
                     });
@@ -279,9 +281,7 @@ impl Database {
                         ),
                         stats: map_stats,
                         is_public: match coll.dataclass {
-                            Some(dclass) => {
-                                dclass == Dataclass::PUBLIC
-                            }
+                            Some(dclass) => dclass == Dataclass::PUBLIC,
                             None => false,
                         },
                         version: map_version,
@@ -415,14 +415,200 @@ impl Database {
                 .ok_or_else(||ArunaError::InvalidRequest("Cannot delete non empty project, please delete/move all associated collections first".to_string()))?;
 
             // Delete user_permissions
-            delete(user_permissions).filter(crate::database::schema::user_permissions::project_id.eq(p_id)).execute(conn)?;
+            delete(user_permissions.filter(crate::database::schema::user_permissions::project_id.eq(p_id))).execute(conn)?;
             // Delete project
-            delete(projects).filter(crate::database::schema::projects::id.eq(p_id)).execute(conn)?;
+            delete(projects.filter(crate::database::schema::projects::id.eq(p_id))).execute(conn)?;
             Ok(())
 
         })?;
 
         // Return empty response
         Ok(DestroyProjectResponse {})
+    }
+
+    /// Updates a specific project (name + description)
+    /// This needs project admin permissions
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateProjectRequest: Which project should be updated
+    /// * user_id: uuid::Uuid : who updated the project ?
+    ///
+    /// ## Returns
+    ///
+    /// * Result<UpdateProjectResponse, ArunaError>: Placeholder, currently empty
+    ///
+    pub fn update_project(
+        &self,
+        request: UpdateProjectRequest,
+        req_user_id: uuid::Uuid,
+    ) -> Result<UpdateProjectResponse, ArunaError> {
+        use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::projects::dsl::*;
+        use crate::database::schema::user_permissions::dsl::*;
+        use diesel::result::Error as dError;
+        // Get project_id
+        let p_id = uuid::Uuid::parse_str(&request.project_id)?;
+
+        // Execute db query
+        let project_info = self.pg_connection.get()?.transaction::<Option<(
+            Project,
+            Option<Vec<uuid::Uuid>>,
+            Vec<uuid::Uuid>,
+        )>, dError, _>(|conn| {
+            // Update the project and return the updated project
+            let project_info =
+                update(projects.filter(crate::database::schema::projects::id.eq(p_id)))
+                    .set((
+                        crate::database::schema::projects::name.eq(request.name),
+                        crate::database::schema::projects::description.eq(request.description),
+                        crate::database::schema::projects::created_by.eq(req_user_id),
+                    ))
+                    .get_result(conn)
+                    .optional()?;
+            // Check if project_info is some
+            match project_info {
+                // If is_some
+                Some(p_info) => {
+                    // Query collection_ids
+                    let colls = collections
+                        .filter(crate::database::schema::collections::project_id.eq(p_id))
+                        .select(crate::database::schema::collections::id)
+                        .load::<uuid::Uuid>(conn)
+                        .optional()?;
+                    // Query user_ids -> Should not be optional, every project should have at least one user_permission
+                    let usrs = user_permissions
+                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
+                        .select(crate::database::schema::user_permissions::user_id)
+                        .load::<uuid::Uuid>(conn)?;
+                    Ok(Some((p_info, colls, usrs)))
+                }
+                // If is_none return none
+                None => Ok(None),
+            }
+        })?;
+
+        // Map result to Project_overview
+        let map_project = match project_info {
+            // If project_info is some
+            Some((project_info, coll_ids, user_ids)) => {
+                let mapped_col_ids = match coll_ids {
+                    Some(c_id) => c_id.iter().map(|elem| elem.to_string()).collect::<Vec<_>>(),
+                    None => Vec::new(),
+                };
+                Some(ProjectOverview {
+                    id: project_info.id.to_string(),
+                    name: project_info.name,
+                    description: project_info.description,
+                    collection_ids: mapped_col_ids,
+                    user_ids: user_ids
+                        .iter()
+                        .map(|elem| elem.to_string())
+                        .collect::<Vec<_>>(),
+                })
+            }
+            // Return None if project does not exist
+            None => None,
+        };
+
+        Ok(UpdateProjectResponse {
+            project: map_project,
+        })
+    }
+
+    /// Removes a specific user from a projects
+    /// This needs project admin permissions
+    ///
+    /// ## Arguments
+    ///
+    /// * request: RemoveUserFromProjectRequest: Which user + project
+    /// * _user_id: uuid::Uuid unused
+    ///
+    /// ## Returns
+    ///
+    /// * Result<RemoveUserFromProjectResponse, ArunaError>: Placeholder, currently empty
+    ///
+    pub fn remove_user_from_project(
+        &self,
+        request: RemoveUserFromProjectRequest,
+        _req_user_id: uuid::Uuid,
+    ) -> Result<RemoveUserFromProjectResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        // Get project_id
+        let p_id = uuid::Uuid::parse_str(&request.project_id)?;
+        let d_u_id = uuid::Uuid::parse_str(&request.user_id)?;
+
+        // Execute db query
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                // Delete user_permissions
+                delete(
+                    user_permissions.filter(
+                        crate::database::schema::user_permissions::project_id
+                            .eq(p_id)
+                            .and(crate::database::schema::user_permissions::user_id.eq(d_u_id)),
+                    ),
+                )
+                .execute(conn)?;
+                Ok(())
+            })?;
+
+        // Return empty response
+        Ok(RemoveUserFromProjectResponse {})
+    }
+
+    /// Modifies the permissions of specific user for a project
+    /// This needs project admin permissions
+    ///
+    /// ## Arguments
+    ///
+    /// * request: EditUserPermissionsForProjectRequest: Which user + project and new permissions
+    /// * _user_id: uuid::Uuid unused
+    ///
+    /// ## Returns
+    ///
+    /// * Result<EditUserPermissionsForProjectResponse, ArunaError>: Not used, currently empty
+    ///
+    pub fn edit_user_permissions_for_project(
+        &self,
+        request: EditUserPermissionsForProjectRequest,
+        _req_user_id: uuid::Uuid,
+    ) -> Result<EditUserPermissionsForProjectResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        // Get project_id
+        let p_id = uuid::Uuid::parse_str(&request.project_id)?;
+
+        if let Some(perm) = request.user_permission {
+            let parsed_user_id = uuid::Uuid::parse_str(&perm.user_id)?;
+            let user_perm = map_permissions(perm.permission()).ok_or_else(|| {
+                ArunaError::InvalidRequest("User permissions are required".to_string())
+            })?;
+
+            // Execute db query
+            self.pg_connection
+                .get()?
+                .transaction::<_, ArunaError, _>(|conn| {
+                    // Update user_permissions
+                    update(
+                        user_permissions.filter(
+                            crate::database::schema::user_permissions::user_id
+                                .eq(parsed_user_id)
+                                .and(
+                                    crate::database::schema::user_permissions::project_id.eq(p_id),
+                                ),
+                        ),
+                    )
+                    .set(crate::database::schema::user_permissions::user_right.eq(user_perm))
+                    .execute(conn)?;
+                    Ok(())
+                })?;
+        } else {
+            return Err(ArunaError::InvalidRequest(
+                "User and permissions must be specified".to_string(),
+            ));
+        }
+        // Return empty response
+        Ok(EditUserPermissionsForProjectResponse {})
     }
 }
