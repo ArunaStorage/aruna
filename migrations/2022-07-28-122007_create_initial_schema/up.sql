@@ -4,7 +4,8 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'INITIALIZING',
     'AVAILABLE',
     'UNAVAILABLE',
-    'ERROR'
+    'ERROR',
+    'TRASH'
 );
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
@@ -12,6 +13,7 @@ CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
 CREATE TYPE IDENTITY_PROVIDER_TYPE AS ENUM ('OIDC');
 CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
+CREATE TYPE REFERENCE_STATUS AS ENUM ('STAGING', 'HIDDEN', 'OK');
 CREATE TYPE RESOURCES AS ENUM (
     'PROJECT',
     'COLLECTION',
@@ -213,12 +215,14 @@ CREATE TABLE collection_objects (
     id UUID PRIMARY KEY,
     collection_id UUID NOT NULL,
     object_id UUID NOT NULL,
+    is_latest BOOL NOT NULL DEFAULT FALSE,
     auto_update BOOL NOT NULL DEFAULT FALSE,
     is_specification BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
+    reference_status REFERENCE_STATUS NOT NULL DEFAULT 'OK',
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (collection_id) REFERENCES collections(id),
-    CONSTRAINT unique_collection_object UNIQUE (object_id,collection_id)
+    CONSTRAINT unique_collection_object UNIQUE (object_id, collection_id)
 );
 -- Join table between collections and object_groups
 CREATE TABLE collection_object_groups (

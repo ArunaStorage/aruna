@@ -26,6 +26,10 @@ pub mod sql_types {
     pub struct ObjectStatus;
 
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "reference_status"))]
+    pub struct ReferenceStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "resources"))]
     pub struct Resources;
 
@@ -78,13 +82,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::ReferenceStatus;
+
     collection_objects (id) {
         id -> Uuid,
         collection_id -> Uuid,
         object_id -> Uuid,
+        is_latest -> Bool,
         auto_update -> Bool,
         is_specification -> Bool,
         writeable -> Bool,
+        reference_status -> ReferenceStatus,
     }
 }
 
