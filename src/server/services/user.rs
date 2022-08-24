@@ -209,32 +209,31 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<DeleteApiTokensRequest>,
     ) -> Result<tonic::Response<DeleteApiTokensResponse>, tonic::Status> {
-        // Clone the metdata to remove move constraint
-        let metadata = request.metadata().clone();
-        // Clone the request body
-        let body = request.into_inner().clone();
         // Check if user_id is empty
-        if body.user_id.is_empty() {
+        if request.get_ref().user_id.is_empty() {
             // Authenticate personally
-            let user_id = self.authz.personal_authorize(&metadata).await?;
+            let user_id = self.authz.personal_authorize(request.metadata()).await?;
             // Execute the request in a personal context
             // Delete all tokens for the user
             return Ok(Response::new(
-                self.database.delete_api_tokens(body, user_id)?,
+                self.database
+                    .delete_api_tokens(request.into_inner(), user_id)?,
             ));
         // This should only be used as admin
         // If a non admin issues this request for himself
         // this might fail with an unauthenticated error
         } else {
             // Authorize as admin
-            self.authz.admin_authorize(&metadata).await?;
+            self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the request body and get the user_id
-            let parsed_body_uid = uuid::Uuid::parse_str(&body.user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid =
+                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
 
             // Delete all tokens for this user and return response (empty)
             return Ok(Response::new(
-                self.database.delete_api_tokens(body, parsed_body_uid)?,
+                self.database
+                    .delete_api_tokens(request.into_inner(), parsed_body_uid)?,
             ));
         }
     }
@@ -301,27 +300,26 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetUserProjectsRequest>,
     ) -> Result<tonic::Response<GetUserProjectsResponse>, tonic::Status> {
-        // Clone metadata
-        let metadata = request.metadata().clone();
-        // Clone request body
-        let body = request.into_inner().clone();
         // Check if user_id is empty
-        if body.user_id.is_empty() {
+        if request.get_ref().user_id.is_empty() {
             // Authenticate personally
-            let user_id = self.authz.personal_authorize(&metadata).await?;
+            let user_id = self.authz.personal_authorize(request.metadata()).await?;
             // Get all projects and return a list as gRPC response
             return Ok(Response::new(
-                self.database.get_user_projects(body, user_id)?,
+                self.database
+                    .get_user_projects(request.into_inner(), user_id)?,
             ));
         // Otherwise this must be authenticated as admin
         } else {
             // Authenticate as admin
-            self.authz.admin_authorize(&metadata).await?;
+            self.authz.admin_authorize(request.metadata()).await?;
             // Parse the user_id from the request body
-            let parsed_body_uid = uuid::Uuid::parse_str(&body.user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid =
+                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
             // Get all projects for a user and return the list as gRPC response
             return Ok(Response::new(
-                self.database.get_user_projects(body, parsed_body_uid)?,
+                self.database
+                    .get_user_projects(request.into_inner(), parsed_body_uid)?,
             ));
         }
     }

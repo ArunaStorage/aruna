@@ -50,23 +50,20 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<AddUserToProjectRequest>,
     ) -> Result<tonic::Response<AddUserToProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize the request
         let _user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
 
         // Add user to project
         Ok(Response::new(
-            self.database.add_user_to_project(req_clone, _user_id)?,
+            self.database
+                .add_user_to_project(request.into_inner(), _user_id)?,
         ))
     }
     /// GetProjectCollections queries all collections of a project
@@ -83,21 +80,18 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<GetProjectCollectionsRequest>,
     ) -> Result<tonic::Response<GetProjectCollectionsResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         let _user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::READ)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
 
         Ok(Response::new(
-            self.database.get_project_collections(req_clone, _user_id)?,
+            self.database
+                .get_project_collections(request.into_inner(), _user_id)?,
         ))
     }
 
@@ -115,21 +109,17 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<GetProjectRequest>,
     ) -> Result<tonic::Response<GetProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
         // Authorize user
         let _user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::READ)
+            .project_authorize(&request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
         // Execute request and return response
         Ok(Response::new(
-            self.database.get_project(req_clone, _user_id)?,
+            self.database.get_project(request.into_inner(), _user_id)?,
         ))
     }
 
@@ -148,21 +138,18 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<DestroyProjectRequest>,
     ) -> Result<tonic::Response<DestroyProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
         // Authorize user
         let _user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
         // Execute request and return response
         Ok(Response::new(
-            self.database.destroy_project(req_clone, _user_id)?,
+            self.database
+                .destroy_project(request.into_inner(), _user_id)?,
         ))
     }
 
@@ -180,21 +167,18 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<UpdateProjectRequest>,
     ) -> Result<tonic::Response<UpdateProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
         // Authorize user
         let user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
         // Execute request and return response
         Ok(Response::new(
-            self.database.update_project(req_clone, user_id)?,
+            self.database
+                .update_project(request.into_inner(), user_id)?,
         ))
     }
 
@@ -212,21 +196,18 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<RemoveUserFromProjectRequest>,
     ) -> Result<tonic::Response<RemoveUserFromProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
         // Authorize user
         let user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .project_authorize(&request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
         // Execute request and return response
         Ok(Response::new(
-            self.database.remove_user_from_project(req_clone, user_id)?,
+            self.database
+                .remove_user_from_project(request.into_inner(), user_id)?,
         ))
     }
 
@@ -244,22 +225,18 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<EditUserPermissionsForProjectRequest>,
     ) -> Result<tonic::Response<EditUserPermissionsForProjectResponse>, tonic::Status> {
-        // Clone metadata map
-        let metadata = request.metadata().clone();
-        // Clone request to allow for move to database, TODO: Actually these should all be borrows and not moves!
-        let req_clone = request.into_inner().clone();
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&req_clone.project_id).map_err(ArunaError::from)?;
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
         // Authorize user
         let user_id = self
             .authz
-            .project_authorize(&metadata, parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
         // Execute request and return response
         Ok(Response::new(
             self.database
-                .edit_user_permissions_for_project(req_clone, user_id)?,
+                .edit_user_permissions_for_project(request.into_inner(), user_id)?,
         ))
     }
 }
