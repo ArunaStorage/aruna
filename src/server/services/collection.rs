@@ -6,12 +6,13 @@ use tonic::Response;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
+use crate::error::TypeConversionError;
 use crate::{
     api::aruna::api::storage::services::v1::collection_service_server::CollectionService,
     error::ArunaError,
 };
 
-use super::authz::{Authz, Context};
+use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(CollectionServiceImpl);
@@ -28,17 +29,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let creator_id = self
             .authz
-            .authorize(
-                request.metadata(),
-                &Context {
-                    user_right: UserRights::WRITE,
-                    resource_type: Resources::PROJECT,
-                    resource_id: project_id,
-                    admin: false,
-                    personal: false,
-                    oidc_context: false,
-                },
-            )
+            .project_authorize(request.metadata(), project_id, UserRights::WRITE)
             .await?;
 
         let db = self.database.clone();
@@ -54,15 +45,27 @@ impl CollectionService for CollectionServiceImpl {
 
     /// GetCollection queries a specific Collection by ID
     /// The result can be one_of:
-    /// CollectionOverview -> default
-    /// CollectionWithID
-    /// Collection (full)
     /// This can be modified with the optional OutputFormat parameter
     async fn get_collection_by_id(
         &self,
-        _request: tonic::Request<GetCollectionByIdRequest>,
+        request: tonic::Request<GetCollectionByIdRequest>,
     ) -> Result<tonic::Response<GetCollectionByIdResponse>, tonic::Status> {
-        todo!()
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::READ,
+            )
+            .await?;
+
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || db.get_collection_by_id(request.get_ref().to_owned()))
+                .await
+                .map_err(ArunaError::from)??,
+        ))
     }
     /// GetCollections queries multiple collections by ID or by LabelFilter
     /// This returns by default a paginated result with 20 entries.
@@ -103,28 +106,4 @@ impl CollectionService for CollectionServiceImpl {
     ) -> Result<tonic::Response<DeleteCollectionResponse>, tonic::Status> {
         todo!()
     }
-
-    // async fn create_collection(
-    //     &self,
-    //     request: tonic::Request<CreateCollectionRequest>,
-    // ) -> Result<tonic::Response<CreateCollectionResponse>, tonic::Status> {
-    //     let id = self.database.create_collection(request.into_inner());
-
-    //     Ok(Response::new(CreateCollectionResponse {
-    //         id: id.to_string(),
-    //     }))
-    // }
-
-    // async fn get_collection(
-    //     &self,
-    //     request: tonic::Request<GetCollectionRequest>,
-    // ) -> Result<tonic::Response<GetCollectionResponse>, tonic::Status> {
-    //     let request_uuid = uuid::Uuid::parse_str(request.into_inner().id.as_str()).unwrap();
-
-    //     let collection = self.database.get_collection(request_uuid);
-
-    //     Ok(Response::new(GetCollectionResponse {
-    //         collection: Some(collection),
-    //     }))
-    // }
 }

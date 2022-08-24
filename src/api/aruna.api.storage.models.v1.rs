@@ -557,60 +557,19 @@ pub struct PageRequest {
 pub struct LabelFilter {
     #[prost(message, repeated, tag="1")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
-    #[prost(enumeration="LabelQueryType", tag="2")]
-    pub r#type: i32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResourceIdList {
-    #[prost(string, repeated, tag="1")]
-    pub ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bool, tag="2")]
+    pub and_or_or: bool,
+    #[prost(bool, tag="3")]
+    pub keys_only: bool,
 }
 ///  This is a combined query for either a list of resource IDs or filtered by
 ///  Label Can be expanded in the future to allow for more complex queries
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LabelOrIdQuery {
-    #[prost(oneof="label_or_id_query::Query", tags="1, 2")]
-    pub query: ::core::option::Option<label_or_id_query::Query>,
-}
-/// Nested message and enum types in `LabelOrIDQuery`.
-pub mod label_or_id_query {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Query {
-        #[prost(message, tag="1")]
-        Labels(super::LabelFilter),
-        #[prost(message, tag="2")]
-        Ids(super::ResourceIdList),
-    }
-}
-///  This defines the behaviour of the Query how to combine multiple Labels
-///  The default Query Type is: AND so each Label must be present in the result
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum LabelQueryType {
-    Unspecified = 0,
-    ///  A AND B
-    And = 1,
-    ///  A OR B including A AND B, This is similar to Any
-    Or = 2,
-    ///  Either A OR B but not both
-    Xor = 3,
-    ///  Return all objects with a specific Key independent of value
-    Key = 4,
-}
-impl LabelQueryType {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            LabelQueryType::Unspecified => "LABEL_QUERY_TYPE_UNSPECIFIED",
-            LabelQueryType::And => "LABEL_QUERY_TYPE_AND",
-            LabelQueryType::Or => "LABEL_QUERY_TYPE_OR",
-            LabelQueryType::Xor => "LABEL_QUERY_TYPE_XOR",
-            LabelQueryType::Key => "LABEL_QUERY_TYPE_KEY",
-        }
-    }
+    #[prost(message, optional, tag="1")]
+    pub labels: ::core::option::Option<LabelFilter>,
+    #[prost(string, repeated, tag="2")]
+    pub ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 ///  A Project is a list of collections with associated users
 ///  This is used to manage access to multiple collections at the same time

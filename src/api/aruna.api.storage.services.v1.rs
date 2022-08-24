@@ -4962,9 +4962,11 @@ pub struct GetCollectionByIdResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionsRequest {
     ///  Filter by Labels (optional) OR request a specific list of Collections
-    #[prost(message, optional, tag="1")]
-    pub label_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
+    #[prost(string, tag="1")]
+    pub project_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="2")]
+    pub label_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
+    #[prost(message, optional, tag="3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
