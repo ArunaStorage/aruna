@@ -202,7 +202,7 @@ pub struct UpdateObjectResponse {
     pub collection_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BorrowObjectRequest {
+pub struct CreateObjectReferenceRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
     pub object_id: ::prost::alloc::string::String,
@@ -220,7 +220,7 @@ pub struct BorrowObjectRequest {
     pub auto_update: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BorrowObjectResponse {
+pub struct CreateObjectReferenceResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloneObjectRequest {
@@ -245,11 +245,12 @@ pub struct DeleteObjectRequest {
     ///  CollectionID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    ///  This will by default delete the object only in the specified collection.
-    ///  If the collection_id is the owner of the object, cascading=true will delete
-    ///  the object in all collections. Default: false
+    ///  Delete including revisions
     #[prost(bool, tag="3")]
-    pub cascade: bool,
+    pub with_revisions: bool,
+    ///  Force delete including revisions
+    #[prost(bool, tag="4")]
+    pub force: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteObjectResponse {
@@ -382,6 +383,31 @@ pub struct SetHooksOfObjectResponse {
     ///  Returns the updated Object
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetReferencesRequest {
+    #[prost(string, tag="1")]
+    pub collection_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub object_id: ::prost::alloc::string::String,
+    #[prost(bool, tag="3")]
+    pub with_revisions: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ObjectReference {
+    #[prost(string, tag="1")]
+    pub object_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub collection_id: ::prost::alloc::string::String,
+    #[prost(int64, tag="3")]
+    pub revision_number: i64,
+    #[prost(bool, tag="4")]
+    pub is_writeable: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetReferencesResponse {
+    #[prost(message, repeated, tag="1")]
+    pub references: ::prost::alloc::vec::Vec<ObjectReference>,
 }
 /// Generated client implementations.
 pub mod object_service_client {
@@ -613,17 +639,13 @@ pub mod object_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// This method will borrow an object to another collection.
-        /// This can only be used if the object is owned by the current collection.
-        /// Borrowed objects are references and cannot be updated directly.
-        /// Updating a borrowed object will clone the object and create a copy in the
-        /// new collection. This copy will not receive any updates from the original
-        /// object. The original owner will be referenced in the origin section of the
-        /// object. This owner can delete the object even if it was cloned
-        pub async fn borrow_object(
+        pub async fn create_object_reference(
             &mut self,
-            request: impl tonic::IntoRequest<super::BorrowObjectRequest>,
-        ) -> Result<tonic::Response<super::BorrowObjectResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::CreateObjectReferenceRequest>,
+        ) -> Result<
+            tonic::Response<super::CreateObjectReferenceResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -635,7 +657,7 @@ pub mod object_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.ObjectService/BorrowObject",
+                "/aruna.api.storage.services.v1.ObjectService/CreateObjectReference",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -847,6 +869,26 @@ pub mod object_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Get a list of references for this object (optional) including all revisions
+        pub async fn get_references(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetReferencesRequest>,
+        ) -> Result<tonic::Response<super::GetReferencesResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.ObjectService/GetReferences",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -916,17 +958,13 @@ pub mod object_service_server {
             &self,
             request: tonic::Request<super::UpdateObjectRequest>,
         ) -> Result<tonic::Response<super::UpdateObjectResponse>, tonic::Status>;
-        /// This method will borrow an object to another collection.
-        /// This can only be used if the object is owned by the current collection.
-        /// Borrowed objects are references and cannot be updated directly.
-        /// Updating a borrowed object will clone the object and create a copy in the
-        /// new collection. This copy will not receive any updates from the original
-        /// object. The original owner will be referenced in the origin section of the
-        /// object. This owner can delete the object even if it was cloned
-        async fn borrow_object(
+        async fn create_object_reference(
             &self,
-            request: tonic::Request<super::BorrowObjectRequest>,
-        ) -> Result<tonic::Response<super::BorrowObjectResponse>, tonic::Status>;
+            request: tonic::Request<super::CreateObjectReferenceRequest>,
+        ) -> Result<
+            tonic::Response<super::CreateObjectReferenceResponse>,
+            tonic::Status,
+        >;
         /// This method clones an object and creates a copy in the same collection.
         /// This copy has a new id and revision and will not receive any updates from
         /// the original object.
@@ -1000,6 +1038,11 @@ pub mod object_service_server {
             &self,
             request: tonic::Request<super::SetHooksOfObjectRequest>,
         ) -> Result<tonic::Response<super::SetHooksOfObjectResponse>, tonic::Status>;
+        /// Get a list of references for this object (optional) including all revisions
+        async fn get_references(
+            &self,
+            request: tonic::Request<super::GetReferencesRequest>,
+        ) -> Result<tonic::Response<super::GetReferencesResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct ObjectServiceServer<T: ObjectService> {
@@ -1344,25 +1387,25 @@ pub mod object_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/aruna.api.storage.services.v1.ObjectService/BorrowObject" => {
+                "/aruna.api.storage.services.v1.ObjectService/CreateObjectReference" => {
                     #[allow(non_camel_case_types)]
-                    struct BorrowObjectSvc<T: ObjectService>(pub Arc<T>);
+                    struct CreateObjectReferenceSvc<T: ObjectService>(pub Arc<T>);
                     impl<
                         T: ObjectService,
-                    > tonic::server::UnaryService<super::BorrowObjectRequest>
-                    for BorrowObjectSvc<T> {
-                        type Response = super::BorrowObjectResponse;
+                    > tonic::server::UnaryService<super::CreateObjectReferenceRequest>
+                    for CreateObjectReferenceSvc<T> {
+                        type Response = super::CreateObjectReferenceResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::BorrowObjectRequest>,
+                            request: tonic::Request<super::CreateObjectReferenceRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move {
-                                (*inner).borrow_object(request).await
+                                (*inner).create_object_reference(request).await
                             };
                             Box::pin(fut)
                         }
@@ -1372,7 +1415,7 @@ pub mod object_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = BorrowObjectSvc(inner);
+                        let method = CreateObjectReferenceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1733,6 +1776,46 @@ pub mod object_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SetHooksOfObjectSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.ObjectService/GetReferences" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetReferencesSvc<T: ObjectService>(pub Arc<T>);
+                    impl<
+                        T: ObjectService,
+                    > tonic::server::UnaryService<super::GetReferencesRequest>
+                    for GetReferencesSvc<T> {
+                        type Response = super::GetReferencesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetReferencesRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).get_references(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetReferencesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -2722,30 +2805,6 @@ pub struct GetObjectGroupHistoryResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BorrowObjectGroupRequest {
-    #[prost(string, tag="1")]
-    pub group_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub collection_id: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub target_collection_id: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BorrowObjectGroupResponse {
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloneObjectGroupRequest {
-    #[prost(string, tag="1")]
-    pub group_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub collection_id: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloneObjectGroupResponse {
-    #[prost(message, optional, tag="1")]
-    pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroupOverview>,
-}
 /// Generated client implementations.
 pub mod object_group_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2967,54 +3026,6 @@ pub mod object_group_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// This method will borrow an ObjectGroup to another collection.
-        /// Borrowed ObjectGroup are references and cannot be updated directly.
-        /// Borrowing an ObjectGroup will also automatically borrow all associated
-        /// Objects to the new collection. Updating a borrowed ObjectGroup will clone
-        /// the ObjectGroup and create a copy in the new collection. This is equivalent
-        /// to the CloneObjectGroup rpc. This copy will not receive any updates from
-        /// the original ObjectGroup.
-        pub async fn borrow_object_group(
-            &mut self,
-            request: impl tonic::IntoRequest<super::BorrowObjectGroupRequest>,
-        ) -> Result<tonic::Response<super::BorrowObjectGroupResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.ObjectGroupService/BorrowObjectGroup",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
-        /// This method clones an ObjectGroup and creates a copy in the same
-        /// collection. This copy has a new id and revision and will not receive any
-        /// updates from the original ObjectGroup.
-        pub async fn clone_object_group(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CloneObjectGroupRequest>,
-        ) -> Result<tonic::Response<super::CloneObjectGroupResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/aruna.api.storage.services.v1.ObjectGroupService/CloneObjectGroup",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -3071,24 +3082,6 @@ pub mod object_group_service_server {
             &self,
             request: tonic::Request<super::DeleteObjectGroupRequest>,
         ) -> Result<tonic::Response<super::DeleteObjectGroupResponse>, tonic::Status>;
-        /// This method will borrow an ObjectGroup to another collection.
-        /// Borrowed ObjectGroup are references and cannot be updated directly.
-        /// Borrowing an ObjectGroup will also automatically borrow all associated
-        /// Objects to the new collection. Updating a borrowed ObjectGroup will clone
-        /// the ObjectGroup and create a copy in the new collection. This is equivalent
-        /// to the CloneObjectGroup rpc. This copy will not receive any updates from
-        /// the original ObjectGroup.
-        async fn borrow_object_group(
-            &self,
-            request: tonic::Request<super::BorrowObjectGroupRequest>,
-        ) -> Result<tonic::Response<super::BorrowObjectGroupResponse>, tonic::Status>;
-        /// This method clones an ObjectGroup and creates a copy in the same
-        /// collection. This copy has a new id and revision and will not receive any
-        /// updates from the original ObjectGroup.
-        async fn clone_object_group(
-            &self,
-            request: tonic::Request<super::CloneObjectGroupRequest>,
-        ) -> Result<tonic::Response<super::CloneObjectGroupResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct ObjectGroupServiceServer<T: ObjectGroupService> {
@@ -3423,86 +3416,6 @@ pub mod object_group_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteObjectGroupSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/aruna.api.storage.services.v1.ObjectGroupService/BorrowObjectGroup" => {
-                    #[allow(non_camel_case_types)]
-                    struct BorrowObjectGroupSvc<T: ObjectGroupService>(pub Arc<T>);
-                    impl<
-                        T: ObjectGroupService,
-                    > tonic::server::UnaryService<super::BorrowObjectGroupRequest>
-                    for BorrowObjectGroupSvc<T> {
-                        type Response = super::BorrowObjectGroupResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::BorrowObjectGroupRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).borrow_object_group(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = BorrowObjectGroupSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/aruna.api.storage.services.v1.ObjectGroupService/CloneObjectGroup" => {
-                    #[allow(non_camel_case_types)]
-                    struct CloneObjectGroupSvc<T: ObjectGroupService>(pub Arc<T>);
-                    impl<
-                        T: ObjectGroupService,
-                    > tonic::server::UnaryService<super::CloneObjectGroupRequest>
-                    for CloneObjectGroupSvc<T> {
-                        type Response = super::CloneObjectGroupResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CloneObjectGroupRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).clone_object_group(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = CloneObjectGroupSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5107,12 +5020,8 @@ pub struct PinCollectionVersionResponse {
 pub struct DeleteCollectionRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    ///  Should the collection and all associated versions be deleted
     #[prost(bool, tag="2")]
-    pub with_versions: bool,
-    ///  Should the deletion cascade to all owned objects ?
-    #[prost(bool, tag="3")]
-    pub cascade: bool,
+    pub force: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollectionResponse {
