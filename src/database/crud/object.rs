@@ -1,50 +1,39 @@
-use chrono::{Local};
+use chrono::Local;
 
 use diesel::dsl::max;
 use diesel::prelude::*;
 use diesel::result::Error;
 
-
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::{
-        Location as ProtoLocation,
-        LocationType
-    },
+    internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
-        KeyValue,
-        Hash as ProtoHash,
-        Object as ProtoObject,
-        Origin as ProtoOrigin,
+        Hash as ProtoHash, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
         Source as ProtoSource,
     },
     services::v1::{
-        BorrowObjectRequest, BorrowObjectResponse,
-        CloneObjectRequest, CloneObjectResponse,
-        DeleteObjectRequest, DeleteObjectResponse,
-        GetObjectByIdRequest,
-        GetObjectsRequest, GetObjectsResponse,
-        GetObjectRevisionsRequest, GetObjectRevisionsResponse,
-        InitializeNewObjectRequest, InitializeNewObjectResponse,
-        UpdateObjectRequest, UpdateObjectResponse
-    }
+        BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
+        DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest, GetObjectRevisionsRequest,
+        GetObjectRevisionsResponse, GetObjectsRequest, GetObjectsResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
+    },
 };
 
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::utils::{from_object_key_values, naivedatetime_to_prost_time, to_object_key_values};
+use crate::database::crud::utils::{
+    from_object_key_values, naivedatetime_to_prost_time, to_object_key_values,
+};
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
-use crate::database::models::object::{Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source};
+use crate::database::models::object::{
+    Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
+};
 use crate::database::schema::{
-    collection_objects::dsl::*,
-    endpoints::dsl::*,
-    hashes::dsl::*,
-    object_key_value::dsl::*,
-    object_locations::dsl::*,
-    objects::dsl::*,
-    sources::dsl::*,
+    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
+    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
 
 /// Implementing CRUD+ database operations for Objects
@@ -75,7 +64,7 @@ impl Database {
         creator: &uuid::Uuid,
         location: &ProtoLocation,
         upload_id: String,
-        default_endpoint: uuid::Uuid
+        default_endpoint: uuid::Uuid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
@@ -93,7 +82,7 @@ impl Database {
         // Check if preferred endpoint is specified
         let endpoint_uuid = match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
             Ok(ep_id) => ep_id,
-            Err(_) => default_endpoint
+            Err(_) => default_endpoint,
         };
 
         // Define object in database representation
@@ -116,6 +105,8 @@ impl Database {
         let collection_object = CollectionObject {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
+            is_latest: true, // TODO: is this really latest ?
+            reference_status: database::models::enums::ReferenceStatus::STAGING,
             object_id: object.id,
             auto_update: false, //Note: Finally set with FinishObjectStagingRequest
             is_specification: request.is_specification,
@@ -141,11 +132,8 @@ impl Database {
         };
 
         // Convert the object's labels and hooks to their database representation
-        let key_value_pairs = to_object_key_values(
-            staging_object.labels,
-            staging_object.hooks,
-            object_uuid,
-        );
+        let key_value_pairs =
+            to_object_key_values(staging_object.labels, staging_object.hooks, object_uuid);
 
         // Insert all defined objects into the database
         self.pg_connection
@@ -153,10 +141,18 @@ impl Database {
             .transaction::<_, Error, _>(|conn| {
                 diesel::insert_into(sources).values(&source).execute(conn)?;
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
-                diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
-                diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
-                diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
+                diesel::insert_into(object_locations)
+                    .values(&object_location)
+                    .execute(conn)?;
+                diesel::insert_into(hashes)
+                    .values(&empty_hash)
+                    .execute(conn)?;
+                diesel::insert_into(object_key_value)
+                    .values(&key_value_pairs)
+                    .execute(conn)?;
+                diesel::insert_into(collection_objects)
+                    .values(&collection_object)
+                    .execute(conn)?;
 
                 Ok(())
             })?;
@@ -180,10 +176,7 @@ impl Database {
     /// * `Result<aruna_server::api::aruna::api::storage::models::v1::Object, ArunaError>` -
     /// All of the Objects fields are filled as long as the database contains the corresponding values.
     ///
-    pub fn get_object(
-        &self,
-        request: &GetObjectByIdRequest,
-    ) -> Result<ProtoObject, ArunaError> {
+    pub fn get_object(&self, request: &GetObjectByIdRequest) -> Result<ProtoObject, ArunaError> {
         // Check if id in request has valid format
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
         let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
@@ -208,12 +201,11 @@ impl Database {
                     .filter(database::schema::objects::id.eq(&object_uuid))
                     .first::<Object>(conn)?;
 
-                let object_key_values = ObjectKeyValue::belonging_to(&object)
-                    .load::<ObjectKeyValue>(conn)?;
+                let object_key_values =
+                    ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
                 let (labels, hooks) = from_object_key_values(object_key_values);
 
-                let object_hash: Hash = Hash::belonging_to(&object)
-                    .first::<Hash>(conn)?;
+                let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
 
                 let source: Option<Source> = match &object.source_id {
                     None => None,
@@ -226,12 +218,17 @@ impl Database {
 
                 let update: bool = CollectionObject::belonging_to(&object)
                     .select(database::schema::collection_objects::auto_update)
-                    .filter(database::schema::collection_objects::collection_id.eq(&collection_uuid))
+                    .filter(
+                        database::schema::collection_objects::collection_id.eq(&collection_uuid),
+                    )
                     .first::<bool>(conn)?;
 
                 let latest_object_revision: Option<i64> = objects
                     .select(max(database::schema::objects::revision_number))
-                    .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+                    .filter(
+                        database::schema::objects::shared_revision_id
+                            .eq(&object.shared_revision_id),
+                    )
                     .first::<Option<i64>>(conn)?;
 
                 let latest = match latest_object_revision {
@@ -303,13 +300,10 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
-    pub fn get_object_by_id(
-        &self,
-        object_uuid: &uuid::Uuid,
-    ) -> Result<Object, ArunaError> {
-
+    pub fn get_object_by_id(&self, object_uuid: &uuid::Uuid) -> Result<Object, ArunaError> {
         // Read object from database
-        let db_object = self.pg_connection
+        let db_object = self
+            .pg_connection
             .get()?
             .transaction::<Object, Error, _>(|conn| {
                 let object = objects
@@ -351,10 +345,10 @@ impl Database {
         &self,
         object_uuid: &uuid::Uuid,
     ) -> Result<(ObjectLocation, Endpoint), ArunaError> {
-        let location = self.pg_connection
+        let location = self
+            .pg_connection
             .get()?
             .transaction::<(ObjectLocation, Endpoint), Error, _>(|conn| {
-
                 let location: ObjectLocation = object_locations
                     .filter(database::schema::object_locations::object_id.eq(&object_uuid))
                     .filter(database::schema::object_locations::is_primary.eq(true))
@@ -399,11 +393,9 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
-    pub fn get_endpoint(
-        &self,
-        endpoint_uuid: &uuid::Uuid,
-    ) -> Result<Endpoint, ArunaError> {
-        let endpoint = self.pg_connection
+    pub fn get_endpoint(&self, endpoint_uuid: &uuid::Uuid) -> Result<Endpoint, ArunaError> {
+        let endpoint = self
+            .pg_connection
             .get()?
             .transaction::<Endpoint, Error, _>(|conn| {
                 let endpoint: Endpoint = endpoints

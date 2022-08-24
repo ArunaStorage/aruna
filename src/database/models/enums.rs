@@ -13,6 +13,7 @@ pub enum ObjectStatus {
     AVAILABLE,
     UNAVAILABLE,
     ERROR,
+    TRASH,
 }
 
 #[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize)]
@@ -109,4 +110,13 @@ pub enum Resources {
     COLLECTION,
     OBJECT,
     OBJECTGROUP,
+}
+
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, PartialOrd)]
+#[DieselTypePath = "sql_types::ReferenceStatus"]
+#[DbValueStyle = "UPPERCASE"]
+pub enum ReferenceStatus {
+    STAGING,
+    HIDDEN,
+    OK,
 }
