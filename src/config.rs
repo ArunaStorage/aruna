@@ -95,3 +95,9 @@ impl ArunaServerConfig {
         Ok(EnvConfig {})
     }
 }
+
+impl Default for ArunaServerConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
