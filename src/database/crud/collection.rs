@@ -347,10 +347,10 @@ fn map_to_collection_overview(
                 Ok(None)
             };
 
-        let is_public = match ret_coll.coll.dataclass {
-            Some(models::enums::Dataclass::PUBLIC) => true,
-            _ => false,
-        };
+        let is_public = matches!(
+            ret_coll.coll.dataclass,
+            Some(models::enums::Dataclass::PUBLIC)
+        );
 
         let mapped_version = match ret_coll.coll_version {
             Some(vers) => Some(collection_overview::Version::SemanticVersion(Version {

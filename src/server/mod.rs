@@ -1,2 +1,2 @@
-pub mod server;
+pub mod grpc_server;
 pub mod services;
