@@ -115,7 +115,7 @@ impl ProjectService for ProjectServiceImpl {
         // Authorize user
         let _user_id = self
             .authz
-            .project_authorize(&request.metadata(), parsed_project_id, UserRights::READ)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
         // Execute request and return response
         Ok(Response::new(
@@ -202,7 +202,7 @@ impl ProjectService for ProjectServiceImpl {
         // Authorize user
         let user_id = self
             .authz
-            .project_authorize(&request.metadata(), parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
         // Execute request and return response
         Ok(Response::new(

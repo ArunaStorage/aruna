@@ -67,7 +67,7 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the specific data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn try_connect_endpoint(
+    async fn _try_connect_endpoint(
         &self,
         endpoint_uuid: uuid::Uuid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
@@ -281,10 +281,10 @@ impl ObjectService for ObjectServiceImpl {
         todo!()
     }
 
-    async fn borrow_object(
+    async fn create_object_reference(
         &self,
-        _request: Request<BorrowObjectRequest>,
-    ) -> Result<Response<BorrowObjectResponse>, Status> {
+        _request: Request<CreateObjectReferenceRequest>,
+    ) -> Result<Response<CreateObjectReferenceResponse>, Status> {
         todo!()
     }
 
@@ -495,6 +495,14 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         _request: Request<CreateDownloadLinksStreamRequest>,
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
+        todo!()
+    }
+
+    /// Get a list of references for this object (optional) including all revisions
+    async fn get_references(
+        &self,
+        _request: tonic::Request<GetReferencesRequest>,
+    ) -> Result<tonic::Response<GetReferencesResponse>, tonic::Status> {
         todo!()
     }
 }

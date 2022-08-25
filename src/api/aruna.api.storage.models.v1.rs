@@ -548,8 +548,8 @@ pub struct PageRequest {
     #[prost(string, tag="1")]
     pub last_uuid: ::prost::alloc::string::String,
     ///  Default to 20, -1 for all
-    #[prost(uint64, tag="2")]
-    pub page_size: u64,
+    #[prost(int64, tag="2")]
+    pub page_size: i64,
 }
 ///  LabelFilter is used to filter resources by labels.
 ///  The labels are specified as a map of key-value pairs.
@@ -557,8 +557,10 @@ pub struct PageRequest {
 pub struct LabelFilter {
     #[prost(message, repeated, tag="1")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
+    ///  True if and, if empty or false or
     #[prost(bool, tag="2")]
     pub and_or_or: bool,
+    ///  Should only the keys be considered ?
     #[prost(bool, tag="3")]
     pub keys_only: bool,
 }

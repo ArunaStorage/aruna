@@ -1,11 +1,12 @@
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::KeyValue;
+use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest};
 
 use crate::database::models::collection::CollectionKeyValue;
 use crate::database::models::enums::{KeyValueType, UserRights};
 use crate::database::models::object::ObjectKeyValue;
+use crate::error::ArunaError;
 
 /// This is a helper function that converts two
 /// gRPC `Vec<KeyValue>` for labels and hooks
@@ -273,10 +274,144 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
     }
 }
 
+/// This helper function parses a page_request and returns a result with optional pagesize and optional last_uuid
+///
+///
+/// ## Behaviour
+///
+/// The PageRequest is an optional Parameter for many requests. The following variants can occur:
+///
+/// - p_request isNone() => Return Ok(Some(default_pagesize), None): No pagerequest means use the default pagesize starting at the beginning
+/// - p_request isSome(size = 0) => Return Ok(Some(default_pagesize), None)
+/// - p_request isSome(size = -1) => Return Ok(None, None) pagesize == None means unlimited size
+/// - last_uuid is Some if it is specified otherwise its the same as above
+///
+/// ## Arguments
+///
+/// * `p_request`:`Option<PageRequest>` - PageRequest information
+/// * `default_pagesize`:`i64` - pagesize that should be "default"
+///
+/// ## Returns
+///
+/// * Result<(Option<i64>, Option<uuid::Uuid>)>: Pagesize, last_uuid, can error when the uuid_parsing fails.
+///
+pub fn parse_page_request(
+    p_request: Option<PageRequest>,
+    default_pagesize: i64,
+) -> Result<(Option<i64>, Option<uuid::Uuid>), ArunaError> {
+    match p_request {
+        // If the p_request is some
+        Some(p_req) => {
+            // if the last_uuid is empty
+            if p_req.last_uuid.is_empty() {
+                // when the pagesize is 0 == unspecified or < -1 --> use default
+                if p_req.page_size == 0 || p_req.page_size < -1 {
+                    Ok((Some(default_pagesize), None))
+                // When page_size is explicitly -1 == umlimited
+                } else if p_req.page_size == -1 {
+                    Ok((None, None))
+                } else {
+                    Ok((Some(p_req.page_size), None))
+                }
+            // When the last_uuid is not empty
+            } else {
+                let parsed_uuid = uuid::Uuid::parse_str(&p_req.last_uuid)?;
+                // when the pagesize is 0 == unspecified or < -1 --> use default
+                if p_req.page_size == 0 || p_req.page_size < -1 {
+                    Ok((Some(default_pagesize), Some(parsed_uuid)))
+                // When page_size is explicitly -1 == umlimited
+                } else if p_req.page_size == -1 {
+                    Ok((None, Some(parsed_uuid)))
+                } else {
+                    Ok((Some(p_req.page_size), Some(parsed_uuid)))
+                }
+            }
+        }
+
+        // if it is None
+        None => Ok((Some(default_pagesize), None)),
+    }
+}
+
+/// Struct that specifies a query
+/// Can either be LabelQuery or IdsQuery
+#[derive(PartialEq, Debug)]
+pub enum ParsedQuery {
+    // List with Labels (key and optional(value)) and a bool value that specifies and == true or or behaviour == false
+    // default is or
+    LabelQuery((Vec<(String, Option<String>)>, bool)),
+    // List of uuids to query, this should be always "or"
+    IdsQuery(Vec<uuid::Uuid>),
+}
+/// Function that parses the query to ParsedQuery enum.
+///
+/// ## Behaviour
+///
+/// This parses the LabelOrIdQuery to a "ParsedQuery" enum.
+/// The enum either contains LabelQuery with a vector of Labels and a boolean for and/or
+/// or an enum with a vector of ids that should be queried. Will return None if no labels and ids are specified
+/// In this case a list with ALL elements should be returned by the calling DB function
+///
+/// ## Arguments
+///
+/// * `grpc_query`:`Option<LabelOrIdQuery>` gRPC LabelOrIdQuery, will be splitted in an enum
+///
+/// ## Returns
+///
+/// * Result<Option<ParsedQuery>, ArunaError>: ParsedQuery is an enum with either a list of UUIDs or a list of label (key-value pairs)
+///
+pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQuery>, ArunaError> {
+    match grpc_query {
+        Some(g_query) => {
+            if g_query.ids.is_empty() {
+                if let Some(filters) = g_query.labels {
+                    if filters.labels.is_empty() {
+                        return Ok(None);
+                    }
+                    let mapped_labels = filters
+                        .labels
+                        .iter()
+                        .map(|kv| {
+                            (
+                                kv.key.clone(),
+                                if filters.keys_only {
+                                    None
+                                } else {
+                                    Some(kv.value.clone())
+                                },
+                            )
+                        })
+                        .collect::<Vec<_>>();
+
+                    Ok(Some(ParsedQuery::LabelQuery((
+                        mapped_labels,
+                        filters.and_or_or,
+                    ))))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                if g_query.labels.is_some() {
+                    return Err(ArunaError::InvalidRequest(
+                        "Either uids, or labelfilter can be specified".to_string(),
+                    ));
+                }
+                let mut parsed_uids = Vec::new();
+                for q_id in g_query.ids {
+                    parsed_uids.push(uuid::Uuid::parse_str(&q_id)?)
+                }
+                Ok(Some(ParsedQuery::IdsQuery(parsed_uids)))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::aruna::api::storage::models::v1::KeyValue;
+    use crate::api::aruna::api::storage::models::v1::LabelFilter;
     use crate::api::aruna::api::storage::models::v1::Permission;
     use std::any::type_name;
 
@@ -508,6 +643,205 @@ mod tests {
         for x in hooks {
             assert!(x.key == *"hook")
         }
+    }
+
+    #[test]
+    fn test_parse_page_request() {
+        // Empty PageRequest
+        let empty: Option<PageRequest> = None;
+        let result = parse_page_request(empty, 25).unwrap();
+        assert!(&result.0.is_some()); // Should contain a pagesize
+        assert!(&result.1.is_none()); // Should not contain a last_uuid
+        assert_eq!(result.0.unwrap(), 25); // Pagesize should be 25
+
+        // Empty non_null request
+        let zero_values = Some(PageRequest {
+            last_uuid: "".to_string(),
+            page_size: 0,
+        });
+        let result = parse_page_request(zero_values, 30).unwrap();
+        assert!(&result.0.is_some()); // Should contain a pagesize
+        assert!(&result.1.is_none()); // Should not contain a last_uuid
+        assert_eq!(result.0.unwrap(), 30); // Pagesize should be 30
+
+        // Non zero pagesize
+        let non_zero_psize = Some(PageRequest {
+            last_uuid: "".to_string(),
+            page_size: 99,
+        });
+
+        let result = parse_page_request(non_zero_psize, 30).unwrap();
+        assert!(&result.0.is_some()); // Should contain a pagesize
+        assert!(&result.1.is_none()); // Should not contain a last_uuid
+        assert_eq!(result.0.unwrap(), 99); // Pagesize should be 99
+
+        // Non zero pagesize and uuid
+        let test_uuid = uuid::Uuid::new_v4();
+        let non_zero_psize = Some(PageRequest {
+            last_uuid: test_uuid.to_string(),
+            page_size: 99,
+        });
+
+        let result = parse_page_request(non_zero_psize, 30).unwrap();
+        assert!(result.0.is_some()); // Should contain a pagesize
+        assert!(result.1.is_some()); // Should not contain a last_uuid
+        assert_eq!(result.0.unwrap(), 99); // Pagesize should be 99
+        assert_eq!(result.1.unwrap(), test_uuid); // Uuid should be equal
+
+        // Invalid uuid
+        let non_zero_psize = Some(PageRequest {
+            last_uuid: "broken_string12356".to_string(),
+            page_size: 99,
+        });
+
+        let result = parse_page_request(non_zero_psize, 30);
+        assert!(result.is_err()); // Should be err
+    }
+
+    #[test]
+    fn test_parse_query() {
+        // None LabelOrIdQuery
+        let empty: Option<LabelOrIdQuery> = None;
+        let result = parse_query(empty);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        // Empty LabelOrIdQuery
+        let empty = Some(LabelOrIdQuery {
+            labels: None,
+            ids: Vec::new(),
+        });
+        let result = parse_query(empty);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        // Labels
+        let test_labels = vec![
+            KeyValue {
+                key: "test1".to_string(),
+                value: "value1".to_string(),
+            },
+            KeyValue {
+                key: "test2".to_string(),
+                value: "value2".to_string(),
+            },
+            KeyValue {
+                key: "test3".to_string(),
+                value: "value3".to_string(),
+            },
+        ];
+        let expect_with_values = vec![
+            ("test1".to_string(), Some("value1".to_string())),
+            ("test2".to_string(), Some("value2".to_string())),
+            ("test3".to_string(), Some("value3".to_string())),
+        ];
+
+        let expect_without_values: Vec<(String, Option<String>)> = vec![
+            ("test1".to_string(), None),
+            ("test2".to_string(), None),
+            ("test3".to_string(), None),
+        ];
+
+        // With labels + and not keys_only
+        let labels = Some(LabelOrIdQuery {
+            labels: Some(LabelFilter {
+                labels: test_labels.clone(),
+                and_or_or: true,
+                keys_only: false,
+            }),
+            ids: Vec::new(),
+        });
+
+        let result = parse_query(labels).unwrap();
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            ParsedQuery::LabelQuery((expect_with_values.clone(), true))
+        );
+
+        // With labels + and keys_only
+        let labels = Some(LabelOrIdQuery {
+            labels: Some(LabelFilter {
+                labels: test_labels.clone(),
+                and_or_or: true,
+                keys_only: true,
+            }),
+            ids: Vec::new(),
+        });
+
+        let result = parse_query(labels).unwrap();
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            ParsedQuery::LabelQuery((expect_without_values, true))
+        );
+
+        // With labels or not keys_only
+        let labels = Some(LabelOrIdQuery {
+            labels: Some(LabelFilter {
+                labels: test_labels.clone(),
+                and_or_or: false,
+                keys_only: false,
+            }),
+            ids: Vec::new(),
+        });
+
+        let result = parse_query(labels).unwrap();
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            ParsedQuery::LabelQuery((expect_with_values, false))
+        );
+
+        // Id section
+
+        let test_ids = vec![
+            uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
+        ];
+        let test_ids_string = test_ids
+            .iter()
+            .map(uuid::Uuid::to_string)
+            .collect::<Vec<String>>();
+
+        // With ids
+        let ids = Some(LabelOrIdQuery {
+            labels: None,
+            ids: test_ids_string.clone(),
+        });
+
+        let result = parse_query(ids).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), ParsedQuery::IdsQuery(test_ids));
+
+        // Errors:
+
+        // Malformed id:
+
+        let bad_test_id_string = vec!["asdasdasdaswd".to_string(), "asdasdasd".to_string()];
+        // With ids
+        let ids = Some(LabelOrIdQuery {
+            labels: None,
+            ids: bad_test_id_string,
+        });
+
+        let result = parse_query(ids);
+
+        assert!(result.is_err());
+
+        // Ids AND Labels specified
+
+        let broken = Some(LabelOrIdQuery {
+            labels: Some(LabelFilter {
+                labels: test_labels,
+                and_or_or: true,
+                keys_only: false,
+            }),
+            ids: test_ids_string,
+        });
+
+        let result = parse_query(broken);
+
+        assert!(result.is_err());
     }
 
     /// Helper method to return the fully qualified type name of an object

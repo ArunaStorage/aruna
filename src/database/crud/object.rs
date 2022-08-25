@@ -4,6 +4,9 @@ use diesel::dsl::max;
 use diesel::prelude::*;
 use diesel::result::Error;
 
+use crate::api::aruna::api::storage::services::v1::{
+    CreateObjectReferenceRequest, CreateObjectReferenceResponse,
+};
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
@@ -13,11 +16,10 @@ use crate::api::aruna::api::storage::{
         Source as ProtoSource,
     },
     services::v1::{
-        BorrowObjectRequest, BorrowObjectResponse, CloneObjectRequest, CloneObjectResponse,
-        DeleteObjectRequest, DeleteObjectResponse, GetObjectByIdRequest, GetObjectRevisionsRequest,
-        GetObjectRevisionsResponse, GetObjectsRequest, GetObjectsResponse,
-        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
-        UpdateObjectResponse,
+        CloneObjectRequest, CloneObjectResponse, DeleteObjectRequest, DeleteObjectResponse,
+        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectRevisionsResponse,
+        GetObjectsRequest, GetObjectsResponse, InitializeNewObjectRequest,
+        InitializeNewObjectResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
 
@@ -431,8 +433,8 @@ impl Database {
 
     pub fn borrow_object(
         &self,
-        _request: BorrowObjectRequest,
-    ) -> Result<BorrowObjectResponse, Box<dyn std::error::Error>> {
+        _request: CreateObjectReferenceRequest,
+    ) -> Result<CreateObjectReferenceResponse, Box<dyn std::error::Error>> {
         todo!()
     }
 

@@ -1,17 +1,14 @@
-use std::fs;
-use std::env::VarError;
 use crate::database::models::enums::EndpointType;
+use std::env::VarError;
+use std::fs;
 
-use serde::Deserialize;
-
-use tonic::codegen::Body;
 use crate::error::{ArunaError, TypeConversionError};
-
+use serde::Deserialize;
 
 /// This struct contains all parsed configuration parameters of the ArunaServer
 pub struct ArunaServerConfig {
     pub config: Config,
-    pub env_config: EnvConfig
+    pub env_config: EnvConfig,
 }
 
 /// This struct contains all values collected from environmental variables
@@ -38,13 +35,12 @@ pub struct DefaultEndpoint {
 ///
 impl ArunaServerConfig {
     pub fn new() -> Self {
-        let config = ArunaServerConfig::load_config_file().expect("Reading/Parsing config file failed");
-        let env_config = ArunaServerConfig::load_config_env().expect("Loading config env vars failed");
+        let config =
+            ArunaServerConfig::load_config_file().expect("Reading/Parsing config file failed");
+        let env_config =
+            ArunaServerConfig::load_config_env().expect("Loading config env vars failed");
 
-        ArunaServerConfig {
-            config,
-            env_config
-        }
+        ArunaServerConfig { config, env_config }
     }
 
     /// This method tries to read the ArunaServer config file and parse its content.
@@ -66,10 +62,12 @@ impl ArunaServerConfig {
     ///
     fn load_config_file() -> Result<Config, ArunaError> {
         // Read config file content
-        let content = fs::read_to_string("./config.toml").map_err(|_| TypeConversionError::PARSECONFIG)?;
+        let content =
+            fs::read_to_string("./config.toml").map_err(|_| TypeConversionError::PARSECONFIG)?;
 
         //Parse config file content
-        toml::from_str(content.as_str()).map_err(|_| ArunaError::TypeConversionError(TypeConversionError::PARSECONFIG))
+        toml::from_str(content.as_str())
+            .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::PARSECONFIG))
     }
 
     /// This method loads the config parameters stored in environmental variables.
