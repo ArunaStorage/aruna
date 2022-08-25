@@ -6,6 +6,7 @@ use crate::api::aruna::api::storage::models::v1::{
 use crate::api::aruna::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateNewCollectionResponse, GetCollectionByIdRequest,
     GetCollectionByIdResponse, GetCollectionsRequest, GetCollectionsResponse,
+    UpdateCollectionRequest, UpdateCollectionResponse,
 };
 use crate::database::connection::Database;
 use crate::database::models;
@@ -208,6 +209,29 @@ impl Database {
         Ok(GetCollectionsResponse {
             collections: coll_overviews,
         })
+    }
+
+    pub fn update_collection(
+        &self,
+        request: UpdateCollectionRequest,
+        _user_id: uuid::Uuid,
+    ) -> Result<UpdateCollectionResponse, ArunaError> {
+        // Todo: What needs to be done to update a collection ?
+        //
+        // 1. Get the existing collection.
+        // 2. Is versioned or will be versioned ?
+        //    Yes: Execute "Pin" routing
+        //    No: Update collection in place
+        //
+        // (3.) Pin Routine:
+        //   - Create new collection with identical infos
+        //   - Clone all Objects & ObjectGroups including key-values (reference them immutably) set origin to old key/value id
+        //   -
+        //
+
+        let _old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        todo!();
     }
 }
 
