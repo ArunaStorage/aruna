@@ -17,6 +17,9 @@ use crate::error::ArunaError;
 use chrono::Local;
 use diesel::insert_into;
 use diesel::prelude::*;
+use diesel::r2d2::ConnectionManager;
+use diesel::result::Error;
+use r2d2::PooledConnection;
 
 #[derive(Debug)]
 struct CollectionOverviewDb {
@@ -35,7 +38,6 @@ impl Database {
     ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
-        use diesel::result::Error;
 
         let collection_uuid = uuid::Uuid::new_v4();
 
@@ -78,13 +80,8 @@ impl Database {
         &self,
         request: GetCollectionByIdRequest,
     ) -> Result<GetCollectionByIdResponse, ArunaError> {
-        use crate::database::schema::collection_key_value::dsl as ckv;
-        use crate::database::schema::collection_stats::dsl as clstats;
-        use crate::database::schema::collection_version::dsl as clversion;
         use crate::database::schema::collections::dsl as col;
-        use crate::database::schema::required_labels::dsl as rlbl;
         use diesel::prelude::*;
-        use diesel::result::Error;
 
         let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
@@ -98,44 +95,7 @@ impl Database {
                     .optional()?;
 
                 match collection_info {
-                    Some(coll_info) => {
-                        let collection_key_values = ckv::collection_key_value
-                            .filter(ckv::collection_id.eq(collection_id))
-                            .load::<models::collection::CollectionKeyValue>(conn)
-                            .optional()?;
-
-                        let req_labels = rlbl::required_labels
-                            .filter(rlbl::collection_id.eq(collection_id))
-                            .load::<models::collection::RequiredLabel>(conn)
-                            .optional()?;
-
-                        let stats = clstats::collection_stats
-                            .filter(clstats::id.eq(collection_id))
-                            .first::<CollectionStat>(conn)
-                            .optional()?;
-
-                        if let Some(cl_version) = coll_info.version_id {
-                            let version = clversion::collection_version
-                                .filter(clversion::id.eq(cl_version))
-                                .first::<CollectionVersion>(conn)?;
-
-                            Ok(Some(CollectionOverviewDb {
-                                coll: coll_info,
-                                coll_key_value: collection_key_values,
-                                coll_req_labels: req_labels,
-                                coll_stats: stats,
-                                coll_version: Some(version),
-                            }))
-                        } else {
-                            Ok(Some(CollectionOverviewDb {
-                                coll: coll_info,
-                                coll_key_value: collection_key_values,
-                                coll_req_labels: req_labels,
-                                coll_stats: stats,
-                                coll_version: None,
-                            }))
-                        }
-                    }
+                    Some(coll_info) => Ok(Some(query_overview(conn, coll_info)?)),
                     None => Ok(None),
                 }
             })?;
@@ -150,12 +110,8 @@ impl Database {
         request: GetCollectionsRequest,
     ) -> Result<GetCollectionsResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckv;
-        use crate::database::schema::collection_stats::dsl as clstats;
-        use crate::database::schema::collection_version::dsl as clversion;
         use crate::database::schema::collections::dsl as col;
-        use crate::database::schema::required_labels::dsl as rlbl;
         use diesel::prelude::*;
-        use diesel::result::Error;
 
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         let parsed_query = parse_query(request.label_or_id_filter)?;
@@ -224,42 +180,7 @@ impl Database {
 
                 if let Some(q_colls) = query_collections {
                     for col in q_colls {
-                        let collection_key_values = ckv::collection_key_value
-                            .filter(ckv::collection_id.eq(col.id))
-                            .load::<models::collection::CollectionKeyValue>(conn)
-                            .optional()?;
-
-                        let req_labels = rlbl::required_labels
-                            .filter(rlbl::collection_id.eq(col.id))
-                            .load::<models::collection::RequiredLabel>(conn)
-                            .optional()?;
-
-                        let stats = clstats::collection_stats
-                            .filter(clstats::id.eq(col.id))
-                            .first::<CollectionStat>(conn)
-                            .optional()?;
-
-                        if let Some(cl_version) = col.version_id {
-                            let version = clversion::collection_version
-                                .filter(clversion::id.eq(cl_version))
-                                .first::<CollectionVersion>(conn)?;
-
-                            return_vec.push(CollectionOverviewDb {
-                                coll: col,
-                                coll_key_value: collection_key_values,
-                                coll_req_labels: req_labels,
-                                coll_stats: stats,
-                                coll_version: Some(version),
-                            });
-                        } else {
-                            return_vec.push(CollectionOverviewDb {
-                                coll: col,
-                                coll_key_value: collection_key_values,
-                                coll_req_labels: req_labels,
-                                coll_stats: stats,
-                                coll_version: None,
-                            });
-                        }
+                        return_vec.push(query_overview(conn, col)?);
                     }
                     Ok(Some(return_vec))
                 } else {
@@ -292,19 +213,72 @@ impl Database {
 
 /* ----------------- Section for collection specific helper functions ------------------- */
 
+/// This is a helper function that queries and builds a CollectionOverviewDb based on an existing collection query
+/// Used to query all associated Tables and map them to one consistent struct.
+/// TODO: Optimize with belonging to
+///
+/// ## Arguments
+///
+/// *  conn: &mut PooledConnection<ConnectionManager<PgConnection>>, Database connection
+/// *  col: Collection, collection information
+///
+/// ## Returns
+///
+/// * Result<CollectionOverviewDb, Error>: Returns an CollectionOverviewDb based on all query results
+///
+fn query_overview(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    col: Collection,
+) -> Result<CollectionOverviewDb, Error> {
+    use crate::database::schema::collection_key_value::dsl as ckv;
+    use crate::database::schema::collection_stats::dsl as clstats;
+    use crate::database::schema::collection_version::dsl as clversion;
+    use crate::database::schema::required_labels::dsl as rlbl;
+    use diesel::prelude::*;
+    let collection_key_values = ckv::collection_key_value
+        .filter(ckv::collection_id.eq(col.id))
+        .load::<models::collection::CollectionKeyValue>(conn)
+        .optional()?;
+
+    let req_labels = rlbl::required_labels
+        .filter(rlbl::collection_id.eq(col.id))
+        .load::<models::collection::RequiredLabel>(conn)
+        .optional()?;
+
+    let stats = clstats::collection_stats
+        .filter(clstats::id.eq(col.id))
+        .first::<CollectionStat>(conn)
+        .optional()?;
+
+    if let Some(cl_version) = col.version_id {
+        let version = clversion::collection_version
+            .filter(clversion::id.eq(cl_version))
+            .first::<CollectionVersion>(conn)?;
+
+        Ok(CollectionOverviewDb {
+            coll: col,
+            coll_key_value: collection_key_values,
+            coll_req_labels: req_labels,
+            coll_stats: stats,
+            coll_version: Some(version),
+        })
+    } else {
+        Ok(CollectionOverviewDb {
+            coll: col,
+            coll_key_value: collection_key_values,
+            coll_req_labels: req_labels,
+            coll_stats: stats,
+            coll_version: None,
+        })
+    }
+}
+
 /// This is a helper function that maps different database information to a grpc collection_overview
 ///
 /// ## Arguments
 ///
 /// * coll_infos:
-/// Option                                  Optional, might be None
-/// <(
-///     Collection,                         Database collection info
-///     Option<Vec<CollectionKeyValue>>,    Optional Vector with key_values -> (labels, hooks)
-///     Option<Vec<RequiredLabel>>,         Optional Vector with required_labels -> LabelOntology
-///     Option<CollectionStat>,             Optional CollectionStats (This can only be None for freshly created collections)
-///     Option<CollectionVersion>,          Optional Version, if no version is present -> latest
-/// )>
+/// Option<CollectionOverviewDb> All collection associated tables (key_values, version, ontology etc.) in one struct.
 ///
 /// ## Returns
 ///

@@ -71,9 +71,24 @@ impl CollectionService for CollectionServiceImpl {
     /// This returns by default a paginated result with 20 entries.
     async fn get_collections(
         &self,
-        _request: tonic::Request<GetCollectionsRequest>,
+        request: tonic::Request<GetCollectionsRequest>,
     ) -> Result<tonic::Response<GetCollectionsResponse>, tonic::Status> {
-        todo!()
+        self.authz
+            .project_authorize(
+                request.metadata(),
+                uuid::Uuid::parse_str(&request.get_ref().project_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::READ,
+            )
+            .await?;
+
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || db.get_collections(request.get_ref().to_owned()))
+                .await
+                .map_err(ArunaError::from)??,
+        ))
     }
     /// UpdateCollection updates the current collection
     /// This will update the collection in place if it is unversioned / latest
