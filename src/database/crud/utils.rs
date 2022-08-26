@@ -445,7 +445,7 @@ where
             }
 
             for (target_key, target_value) in targets.clone() {
-                if target_key == *col_key_value.get_key() {
+                if target_key == col_key_value.get_key() {
                     if let Some(tkv) = target_value {
                         if col_key_value.get_value() == tkv {
                             *hits.get_mut(col_key_value.get_associated_uuid()).unwrap() += 1
@@ -950,7 +950,9 @@ mod tests {
             ("test_key3".to_string(), Some("test_value3".to_string())),
         ];
 
-        let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_with_values.clone());
+        let none_option: Option<Vec<CollectionKeyValue>> = None;
+
+        let hits = check_all_for_db_kv(none_option, targets_with_values.clone());
         assert!(hits.is_none());
 
         let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_with_values);
@@ -977,8 +979,8 @@ mod tests {
         let hits = check_all_for_db_kv(Some(coll_key_values), targets_both);
 
         assert_eq!(hits.clone().unwrap().len(), 2);
-        assert_eq!(hits.clone().unwrap()[0], id_hit);
-        assert_eq!(hits.unwrap()[1], id_non_hit);
+        assert!(hits.clone().unwrap().contains(&id_non_hit));
+        assert!(hits.clone().unwrap().contains(&id_hit));
     }
 
     /// Helper method to return the fully qualified type name of an object
