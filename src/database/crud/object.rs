@@ -396,11 +396,19 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
-    pub fn get_location_endpoint(
-        &self,
-        _location: &ObjectLocation,
-    ) -> Result<Vec<(ObjectLocation, Endpoint)>, ArunaError> {
-        todo!()
+    pub fn get_location_endpoint(&self, location: &ObjectLocation) -> Result<Endpoint, ArunaError> {
+        let endpoint = self
+            .pg_connection
+            .get()?
+            .transaction::<Endpoint, Error, _>(|conn| {
+                let endpoint: Endpoint = endpoints
+                    .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                    .first::<Endpoint>(conn)?;
+
+                Ok(endpoint)
+            })?;
+
+        Ok(endpoint)
     }
 
     ///ToDo: Rust Doc
