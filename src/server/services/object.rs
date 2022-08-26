@@ -281,10 +281,56 @@ impl ObjectService for ObjectServiceImpl {
         todo!()
     }
 
+    /// Creates a reference to an object in another collection.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<BorrowObjectRequest>` -
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<BorrowObjectResponse>, Status>` - An empty BorrowObjectResponse signals success
+    ///
+    /// ## Behaviour:
+    ///
+    /// Returns an error if `collection_id == target_collection_id` and/or the object is already borrowed
+    /// to the target collection as object duplicates in collections are not allowed.
+    ///
     async fn create_object_reference(
         &self,
-        _request: Request<CreateObjectReferenceRequest>,
+        request: Request<CreateObjectReferenceRequest>
     ) -> Result<Response<CreateObjectReferenceResponse>, Status> {
+        let src_collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let dst_collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+
+        // Need WRITE permission for writeable == true; READ else
+        let needed_permission = match request.get_ref().writeable {
+            true => UserRights::WRITE,
+            false => UserRights::READ
+        };
+
+        // Check if user is authorized to borrow object from source collection
+        self.authz.collection_authorize(&request.metadata(), src_collection_id, needed_permission).await?;
+        // Check if user is authorized to borrow object to target collection
+        self.authz.collection_authorize(&request.metadata(), dst_collection_id, UserRights::APPEND).await?;
+
+        // Consume request
+        let inner_request = request.into_inner();
+
+        // Try to create object reference
+        let response = self.database.create_object_reference(inner_request)?;
+
+        // Return response if everything passed successfully
+        Ok(Response::new(response))
+    }
+
+    ///ToDo: Rust Doc
+    async fn get_references(
+        &self,
+        _request: Request<GetReferencesRequest>
+    ) -> Result<Response<GetReferencesResponse>, Status> {
         todo!()
     }
 
@@ -497,19 +543,4 @@ impl ObjectService for ObjectServiceImpl {
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
         todo!()
     }
-
-    /// Get a list of references for this object (optional) including all revisions
-    async fn get_references(
-        &self,
-        _request: tonic::Request<GetReferencesRequest>,
-    ) -> Result<tonic::Response<GetReferencesResponse>, tonic::Status> {
-        todo!()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_init_new_object() {}
 }

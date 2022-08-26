@@ -76,10 +76,10 @@ pub struct CollectionObject {
     pub collection_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
     pub is_latest: bool,
-    pub reference_status: ReferenceStatus,
     pub auto_update: bool,
     pub is_specification: bool,
     pub writeable: bool,
+    pub reference_status: ReferenceStatus,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug)]

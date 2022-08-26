@@ -2,7 +2,9 @@ use chrono::Local;
 
 use diesel::dsl::max;
 use diesel::prelude::*;
+use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
+use r2d2::PooledConnection;
 
 use crate::api::aruna::api::storage::services::v1::{
     CreateObjectReferenceRequest, CreateObjectReferenceResponse,
@@ -10,32 +12,44 @@ use crate::api::aruna::api::storage::services::v1::{
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::api::aruna::api::storage::{
-    internal::v1::{Location as ProtoLocation, LocationType},
+    internal::v1::{
+        Location as ProtoLocation,
+        LocationType
+    },
     models::v1::{
-        Hash as ProtoHash, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
+        KeyValue,
+        Hash as ProtoHash,
+        Object as ProtoObject,
+        Origin as ProtoOrigin,
         Source as ProtoSource,
     },
     services::v1::{
-        CloneObjectRequest, CloneObjectResponse, DeleteObjectRequest, DeleteObjectResponse,
-        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectRevisionsResponse,
-        GetObjectsRequest, GetObjectsResponse, InitializeNewObjectRequest,
-        InitializeNewObjectResponse, UpdateObjectRequest, UpdateObjectResponse,
-    },
+        CreateObjectReferenceRequest, CreateObjectReferenceResponse,
+        CloneObjectRequest, CloneObjectResponse,
+        DeleteObjectRequest, DeleteObjectResponse,
+        GetLatestObjectRevisionRequest, GetLatestObjectRevisionResponse,
+        GetObjectByIdRequest,
+        GetObjectsRequest, //GetObjectsResponse,
+        GetObjectRevisionsRequest, GetObjectRevisionsResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse,
+        UpdateObjectRequest, UpdateObjectResponse
+    }
 };
 
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::utils::{
-    from_object_key_values, naivedatetime_to_prost_time, to_object_key_values,
-};
+use crate::database::crud::utils::{from_object_key_values, naivedatetime_to_prost_time, to_object_key_values};
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
-use crate::database::models::object::{
-    Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
-};
+use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, ReferenceStatus, SourceType};
+use crate::database::models::object::{Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source};
 use crate::database::schema::{
-    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_objects::dsl::*,
+    endpoints::dsl::*,
+    hashes::dsl::*,
+    object_key_value::dsl::*,
+    object_locations::dsl::*,
+    objects::dsl::*,
+    sources::dsl::*,
 };
 
 /// Implementing CRUD+ database operations for Objects
@@ -431,11 +445,61 @@ impl Database {
         todo!()
     }
 
-    pub fn borrow_object(
+    /// Creates a reference to the original object in the target collection.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `BorrowObjectRequest` - Request which contains the needed information to borrow an object to another collection
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<BorrowObjectResponse, ArunaError>` - Empty BorrowObjectResponse signals success
+    ///
+    /// ## Behaviour:
+    ///
+    /// Returns an error if `collection_id == target_collection_id` and/or the object is already borrowed
+    /// to the target collection as object duplicates in collections are not allowed.
+    ///
+    pub fn create_object_reference(
         &self,
-        _request: CreateObjectReferenceRequest,
-    ) -> Result<CreateObjectReferenceResponse, Box<dyn std::error::Error>> {
-        todo!()
+        request: CreateObjectReferenceRequest,
+    ) -> Result<CreateObjectReferenceResponse, ArunaError> {
+
+        // Extract (and automagically validate) uuids from request
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let source_collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let target_collection_uuid = uuid::Uuid::parse_str(&request.target_collection_id)?;
+
+        // Transaction time
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+
+                // Get collection_object association of original object
+                let original_reference: CollectionObject = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
+                    .filter(database::schema::collection_objects::collection_id.eq(&source_collection_uuid))
+                    .first::<CollectionObject>(conn)?;
+
+                let collection_object = CollectionObject {
+                    id: uuid::Uuid::new_v4(),
+                    collection_id: target_collection_uuid,
+                    object_id: object_uuid,
+                    is_latest: original_reference.is_latest,
+                    is_specification: original_reference.is_specification,
+                    auto_update: request.auto_update,
+                    writeable: request.writeable,
+                    reference_status: original_reference.reference_status
+                };
+
+                // Insert borrowed object reference
+                diesel::insert_into(collection_objects).values(collection_object).execute(conn)?;
+
+                Ok(())
+            })?;
+
+        // Empty response signals success
+        Ok(CreateObjectReferenceResponse {})
     }
 
     pub fn clone_object(
@@ -455,4 +519,105 @@ impl Database {
     //ToDo: Implement higher level database operations
     //      - e.g. get_object_with_labels
     //      - ...
+}
+
+
+/* ----------------- Section for object specific helper functions ------------------- */
+/// This is a general helper function that can be use inside already open transactions
+/// to clone an object.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid: uuid::Uuid` - Unique object identifier
+/// * `source_collection_uuid: uuid::Uuid` - Unique source collection identifier
+/// * `target_collection_uuid: uuid::Uuid` - Unique target collection identifier
+///
+/// ## Resturns:
+///
+/// `Result<use crate::api::aruna::api::storage::models::Object, Error>` -
+/// The Object contains the newly created object clone in its gRPC proto format
+///
+pub fn clone_object(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_uuid: uuid::Uuid,
+    source_collection_uuid: uuid::Uuid,
+    target_collection_uuid: uuid::Uuid,
+) -> Result<ProtoObject, Error> {
+    // Get original object, collection_object reference, key_values, hash and source
+    let mut db_object: Object = objects
+        .filter(database::schema::objects::id.eq(&object_uuid))
+        .first::<Object>(conn)?;
+
+    let mut db_collection_object: CollectionObject = CollectionObject::belonging_to(&db_object)
+        .filter(database::schema::collection_objects::collection_id.eq(&source_collection_uuid))
+        .first::<CollectionObject>(conn)?;
+
+    let mut db_object_key_values: Vec<ObjectKeyValue> = ObjectKeyValue::belonging_to(&db_object)
+        .load::<ObjectKeyValue>(conn)?;
+
+    let db_hash: Hash = Hash::belonging_to(&db_object)
+        .first::<Hash>(conn)?;
+
+    let db_source: Option<Source> = match &db_object.source_id {
+        None => None,
+        Some(src_id) => Some(
+            sources
+                .filter(database::schema::sources::id.eq(src_id))
+                .first::<Source>(conn)?,
+        ),
+    };
+
+    // Modify object
+    db_object.id = uuid::Uuid::new_v4();
+    db_object.shared_revision_id = uuid::Uuid::new_v4();
+    db_object.revision_number = 0;
+    db_object.origin_id = Some(object_uuid.clone());
+
+    // Modify collection_object reference
+    db_collection_object.id = uuid::Uuid::new_v4();
+    db_collection_object.collection_id = target_collection_uuid;
+    db_collection_object.object_id = object_uuid;
+
+    // Modify object_key_values
+    for kv in &mut db_object_key_values {
+        kv.id = uuid::Uuid::new_v4();
+        kv.object_id = db_object.id.clone();
+    }
+
+    // Insert object, key_Values and references
+    diesel::insert_into(objects).values(&db_object).execute(conn)?;
+    diesel::insert_into(object_key_value).values(&db_object_key_values).execute(conn)?;
+    diesel::insert_into(collection_objects).values(&db_collection_object).execute(conn)?;
+
+    // Transform everything into gRPC proto format
+    let (labels, hooks) = from_object_key_values(db_object_key_values);
+    let timestamp =
+        naivedatetime_to_prost_time(db_object.created_at).map_err(|_| Error::RollbackTransaction)?;
+
+    let proto_source = match db_source {
+        None => None,
+        Some(source) => Some(ProtoSource {
+            identifier: source.link,
+            source_type: source.source_type as i32,
+        }),
+    };
+
+    // Return ProtoObject
+    Ok(ProtoObject {
+        id: db_object.id.to_string(),
+        filename: db_object.filename,
+        labels: labels,
+        hooks: hooks,
+        created: Some(timestamp),
+        content_len: db_object.content_len,
+        status: db_object.object_status as i32,
+        origin: Some(ProtoOrigin { r#type: 2, id: db_object.id.to_string() }),
+        data_class: db_object.dataclass as i32,
+        hash: Some(ProtoHash { alg: db_hash.hash_type as i32, hash: db_hash.hash.to_string() }),
+        rev_number: db_object.revision_number,
+        source: proto_source,
+        latest: db_collection_object.is_latest,
+        auto_update: db_collection_object.auto_update
+    })
 }
