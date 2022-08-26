@@ -445,9 +445,9 @@ where
             }
 
             for (target_key, target_value) in targets.clone() {
-                if target_key == col_key_value.get_key().to_string() {
+                if target_key == *col_key_value.get_key() {
                     if let Some(tkv) = target_value {
-                        if col_key_value.get_value() == tkv.to_string() {
+                        if col_key_value.get_value() == tkv {
                             *hits.get_mut(col_key_value.get_associated_uuid()).unwrap() += 1
                         }
                     } else {
@@ -978,7 +978,7 @@ mod tests {
 
         assert_eq!(hits.clone().unwrap().len(), 2);
         assert_eq!(hits.clone().unwrap()[0], id_hit);
-        assert_eq!(hits.clone().unwrap()[1], id_non_hit);
+        assert_eq!(hits.unwrap()[1], id_non_hit);
     }
 
     /// Helper method to return the fully qualified type name of an object

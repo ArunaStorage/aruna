@@ -312,9 +312,9 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         // Check if user is authorized to borrow object from source collection
-        self.authz.collection_authorize(&request.metadata(), src_collection_id, needed_permission).await?;
+        self.authz.collection_authorize(request.metadata(), src_collection_id, needed_permission).await?;
         // Check if user is authorized to borrow object to target collection
-        self.authz.collection_authorize(&request.metadata(), dst_collection_id, UserRights::APPEND).await?;
+        self.authz.collection_authorize(request.metadata(), dst_collection_id, UserRights::APPEND).await?;
 
         // Consume request
         let inner_request = request.into_inner();
