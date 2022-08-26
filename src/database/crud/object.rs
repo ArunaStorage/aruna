@@ -5,11 +5,7 @@ use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use r2d2::PooledConnection;
 
-use crate::api::aruna::api::storage::services::v1::{
-    CreateObjectReferenceRequest, CreateObjectReferenceResponse, GetObjectsResponse,
-};
 use crate::error::{ArunaError, GrpcNotFoundError};
-
 use crate::api::aruna::api::storage::{
     internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
@@ -19,6 +15,8 @@ use crate::api::aruna::api::storage::{
     services::v1::{
         CloneObjectRequest,
         CloneObjectResponse,
+        CreateObjectReferenceRequest,
+        CreateObjectReferenceResponse,
         DeleteObjectRequest,
         DeleteObjectResponse,
         GetLatestObjectRevisionRequest,
@@ -26,7 +24,8 @@ use crate::api::aruna::api::storage::{
         GetObjectByIdRequest,
         GetObjectRevisionsRequest,
         GetObjectRevisionsResponse,
-        GetObjectsRequest, //GetObjectsResponse,
+        GetObjectsRequest,
+        GetObjectsResponse,
         InitializeNewObjectRequest,
         InitializeNewObjectResponse,
         UpdateObjectRequest,
@@ -40,7 +39,7 @@ use crate::database::crud::utils::{
     from_object_key_values, naivedatetime_to_prost_time, to_object_key_values,
 };
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, SourceType};
+use crate::database::models::enums::{Dataclass, HashType, ObjectStatus, ReferenceStatus, SourceType};
 use crate::database::models::object::{
     Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
@@ -119,7 +118,7 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
             is_latest: true, // TODO: is this really latest ?
-            reference_status: database::models::enums::ReferenceStatus::STAGING,
+            reference_status: ReferenceStatus::STAGING,
             object_id: object.id,
             auto_update: false, //Note: Finally set with FinishObjectStagingRequest
             is_specification: request.is_specification,
@@ -444,14 +443,14 @@ impl Database {
     pub fn get_object_revisions(
         &self,
         _request: GetObjectRevisionsRequest,
-    ) -> Result<GetObjectRevisionsResponse, Box<dyn std::error::Error>> {
+    ) -> Result<GetObjectRevisionsResponse, ArunaError> {
         todo!()
     }
 
     pub fn get_objects(
         &self,
         _request: GetObjectsRequest,
-    ) -> Result<GetObjectsResponse, Box<dyn std::error::Error>> {
+    ) -> Result<GetObjectsResponse, ArunaError> {
         todo!()
     }
 
