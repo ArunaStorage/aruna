@@ -441,11 +441,46 @@ impl Database {
         todo!()
     }
 
+    ///ToDo: Rust Doc
     pub fn update_object(
         &self,
         _request: UpdateObjectRequest,
-    ) -> Result<UpdateObjectResponse, Box<dyn std::error::Error>> {
+    ) -> Result<UpdateObjectResponse, ArunaError> {
         todo!()
+
+        /*ToDo:
+         *  - Check permissions if update on collection is ok
+         *  - Create staging object and update differing metadata
+         *      - Set object status UNAVAILABLE
+         *      - Set revision e.g. None
+         *  - Copy key-value pairs and sync them with the provided (Add, Update, Delete)
+         *  - Create collection_objects reference with status STAGING
+         *  - If reupload == true
+         *      - Set object status INITIALIZING
+         *      - Create new location
+         *      - Create new empty hash
+         *      - Generate upload id with data proxy request
+         */
+
+        /*ToDo:
+         * ----- ObjectFinishRequest starts here ---------------------------------------------------
+         *  - Check if collection_objects reference with object_id+collection_id exists+STAGING exists
+         *  - Set revision old_latest+1 (unique constraint shared_revision_id+revision)
+         *  - Iterate through all collections_objects of old_latest (join collection)
+         *      - Check if collection is pinned version
+         *          - True: Do nothing.
+         *          - Else:
+         *              - Is Object auto_update?
+         *                  - True: Replace collection_objects entry with latest
+         *                      - Create object group revisions with updated object
+         *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
+         *                          - Copy object group with revision+1
+         *                          - Copy object_group_object references and replace updated object_id
+         *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
+         *                  - False: set is_latest false
+         *  - Set object with latest+1 status AVAILABLE
+         *  - Set collection_objects reference latest+1 status OK
+         */
     }
 
     /// Creates a reference to the original object in the target collection.
