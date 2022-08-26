@@ -21,6 +21,8 @@ use crate::api::aruna::api::storage::{
         CloneObjectResponse,
         DeleteObjectRequest,
         DeleteObjectResponse,
+        GetLatestObjectRevisionRequest,
+        GetLatestObjectRevisionResponse,
         GetObjectByIdRequest,
         GetObjectRevisionsRequest,
         GetObjectRevisionsResponse,
@@ -427,6 +429,18 @@ impl Database {
         Ok(endpoint)
     }
 
+    ///ToDo: Rust Doc
+    pub fn get_latest_object_revision(
+        &self,
+        _request: GetLatestObjectRevisionRequest,
+    ) -> Result<GetLatestObjectRevisionResponse, ArunaError> {
+        todo!()
+
+        // Case depends on writeable == true
+        //  If writeable == false --> object is borrowed and revisions have to be fetched through
+    }
+
+    ///ToDo: Rust Doc
     pub fn get_object_revisions(
         &self,
         _request: GetObjectRevisionsRequest,
