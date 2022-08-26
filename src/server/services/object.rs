@@ -544,10 +544,3 @@ impl ObjectService for ObjectServiceImpl {
         todo!()
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_init_new_object() {}
-}
