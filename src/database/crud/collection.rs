@@ -380,3 +380,21 @@ fn map_to_collection_overview(
         Ok(None)
     }
 }
+
+fn _pin_collection_to_version(
+    _origin_collection: Collection,
+    _new_collection: Collection,
+    _conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Collection {
+    // Todo:
+    //
+    // Query all objects and objectgroups from the "origin collection". Create mapping table with
+    // old object <-> objectgroup associations
+    //
+    // - Create the new collection.
+    // - Clone all objects to new collection
+    // - Clone all object_groups from old collection to new collection (without objects)
+    // - Map object <-> object_group associations to new collection
+    //
+    todo!()
+}

@@ -980,7 +980,7 @@ mod tests {
 
         assert_eq!(hits.clone().unwrap().len(), 2);
         assert!(hits.clone().unwrap().contains(&id_non_hit));
-        assert!(hits.clone().unwrap().contains(&id_hit));
+        assert!(hits.unwrap().contains(&id_hit));
     }
 
     /// Helper method to return the fully qualified type name of an object
