@@ -1,5 +1,6 @@
 use super::auth::*;
 use super::enums::*;
+use super::traits::IsKeyValue;
 use crate::database::schema::*;
 use uuid;
 
@@ -70,4 +71,22 @@ pub struct ObjectKeyValue {
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
+}
+
+impl IsKeyValue for ObjectKeyValue {
+    fn get_key(&self) -> &str {
+        &self.key
+    }
+
+    fn get_value(&self) -> &str {
+        &self.value
+    }
+
+    fn get_associated_uuid(&self) -> &uuid::Uuid {
+        &self.object_id
+    }
+
+    fn get_type(&self) -> &KeyValueType {
+        &self.key_value_type
+    }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
@@ -6,6 +8,7 @@ use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, Page
 use crate::database::models::collection::CollectionKeyValue;
 use crate::database::models::enums::{KeyValueType, UserRights};
 use crate::database::models::object::ObjectKeyValue;
+use crate::database::models::traits::IsKeyValue;
 use crate::error::ArunaError;
 
 /// This is a helper function that converts two
@@ -404,6 +407,67 @@ pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQu
             }
         }
         None => Ok(None),
+    }
+}
+
+/// Generic function that checks if the "all" constraint for queried key_values is fullfilled.
+///
+/// ## Behaviour
+///
+/// Because each key_value pair for Objects/ObjectGroups/Collections is its own database entry it is not possible
+/// to directly combine multiple key_value constraints via "all". To circumvent this first all db keyvalue pairs that match
+/// at least one requested key or value are queried. This list is afterwards processed via this function. This function checks
+/// if their are resources that match all "target" key_value pairs, which are returned as list of uuids. If no entries match
+/// None is returned.
+///
+/// ## Arguments
+///
+/// * `database_key_value`: `Option<Vec<T>>` Vector of Database resources that implement the `IsKeyValue` trait.
+/// * `targets`:`Vec<(String, Option<String>)>` Vector of keys with (optional) values that should all match.
+///
+/// ## Returns
+///
+/// * Option<Vec<uuid::Uuid>: Vec with all uuids that match.
+///
+pub fn check_all_for_db_kv<T>(
+    database_key_value: Option<Vec<T>>,
+    targets: Vec<(String, Option<String>)>,
+) -> Option<Vec<uuid::Uuid>>
+where
+    T: IsKeyValue,
+{
+    if let Some(ckv) = database_key_value {
+        let mut hits = HashMap::new();
+
+        for col_key_value in ckv {
+            if !hits.contains_key(col_key_value.get_associated_uuid()) {
+                hits.insert(*col_key_value.get_associated_uuid(), 0);
+            }
+
+            for (target_key, target_value) in targets.clone() {
+                if target_key == col_key_value.get_key() {
+                    if let Some(tkv) = target_value {
+                        if col_key_value.get_value() == tkv {
+                            *hits.get_mut(col_key_value.get_associated_uuid()).unwrap() += 1
+                        }
+                    } else {
+                        *hits.get_mut(col_key_value.get_associated_uuid()).unwrap() += 1;
+                    }
+                }
+            }
+        }
+
+        let result = hits
+            .iter()
+            .filter_map(|(k, v)| if *v == targets.len() { Some(*k) } else { None })
+            .collect::<Vec<_>>();
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
+    } else {
+        None
     }
 }
 

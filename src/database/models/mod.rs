@@ -4,4 +4,5 @@ pub mod enums;
 pub mod notifications;
 pub mod object;
 pub mod object_group;
+pub mod traits;
 pub mod views;

@@ -142,27 +142,32 @@ impl Database {
                         ParsedQuery::LabelQuery(l_query) => {
                             let mut ckv_query = ckv::collection_key_value.into_boxed();
 
+                            let found_cols: Option<Vec<uuid::Uuid>>;
                             // Is "and"
                             if l_query.1 {
-                                for (key, value) in l_query.0 {
+                                for (key, value) in l_query.0.clone() {
                                     ckv_query = ckv_query.filter(ckv::key.eq(key));
                                     if let Some(val) = value {
                                         ckv_query = ckv_query.filter(ckv::value.eq(val))
                                     };
                                 }
+
+                                let found_cols_key_values: Option<Vec<CollectionKeyValue>> =
+                                    ckv_query.load::<CollectionKeyValue>(conn).optional()?;
+
+                                found_cols = check_all_for_db_kv(found_cols_key_values, l_query.0)
                             } else {
                                 for (key, value) in l_query.0 {
                                     ckv_query = ckv_query.or_filter(ckv::key.eq(key));
                                     if let Some(val) = value {
-                                        ckv_query = ckv_query.or_filter(ckv::value.eq(val))
+                                        ckv_query = ckv_query.filter(ckv::value.eq(val))
                                     };
                                 }
+                                found_cols = ckv_query
+                                    .select(ckv::collection_id)
+                                    .load::<uuid::Uuid>(conn)
+                                    .optional()?;
                             }
-
-                            let found_cols: Option<Vec<uuid::Uuid>> = ckv_query
-                                .select(ckv::collection_id)
-                                .load::<uuid::Uuid>(conn)
-                                .optional()?;
 
                             if let Some(fcolls) = found_cols {
                                 base_request = base_request.filter(col::id.eq_any(fcolls))
