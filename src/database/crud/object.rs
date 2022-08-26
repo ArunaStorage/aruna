@@ -588,11 +588,92 @@ impl Database {
     */
     }
 
+    /// This performs a soft delete on the object. Instead of removing it
+    /// from the database and storage backend, the status of the object will
+    /// be set to DELETED.
+    ///
+    /// ## Arguments:
+    ///
+    ///
+    /// ## Results:
+    ///
+    ///
+    /// ## Behaviour:
+    ///
+    ///
+    pub fn delete(
+        &self,
+        _request: DeleteObjectRequest,
+    ) -> Result<DeleteObjectResponse, ArunaError> {
+        todo!()
+
+        //writeable = w+ or w-
+        //history   = h+ or h-
+        //force     = f+ or f-
+
+        // Permissions needed:
+        //   w*,h*,f-: Collection WRITE
+        //   w*,h*,f+: Project ADMIN
+
+        /*
+         * w-,h-,f* : - Remove collection_object reference for specific collection
+         *            - Remove object_group_object reference and update object_group
+         * w-,h+,f* : - Remove collection_object reference for all revisions in specific collection
+         *            - For all revisions remove object_group_object reference and update object_group
+         * w+,h-,f- : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for specific collection
+         *                       - Remove object_group_object reference and update object_group
+         *              - True: Error -> Transfer Ownership or force
+         * w+,h+,f- : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for all revisions in specific collection
+         *                       - For all revisions remove object_group_object reference and update object_group
+         *              - True: Error -> Transfer ownership or force
+         * w+,h-,f+ : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for specific collection
+         *                       - Remove object_group_object reference and update object_group
+         *              - True: - Remove all references and set object status to TRASH
+         *                      - Update all object_groups with references to the specific object/revision
+         * w+,h+,f+ : - Remove all references and set object status to TRASH
+         *            - Update all object_groups with references to the specific object/revision
+         */
+
+        //Ok(DeleteObjectResponse{})
+    }
+
+    /// This performs a hard delete on the object. The object and all its assets will be
+    /// removed from the database. Dependeing on the request this also includes all its
+    /// revisions and also objects which were derived from the original.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request: DeleteObjectRequest` -
+    ///
+    /// ## Results:
+    ///
+    /// * `Result<DeleteObjectResponse, ArunaError>` - An empty DeleteObjectResponse signals success
+    ///
+    /// ## Behaviour:
+    ///
+    /// ToDo
+    ///
     pub fn delete_object(
         &self,
         _request: DeleteObjectRequest,
-    ) -> Result<DeleteObjectResponse, Box<dyn std::error::Error>> {
+    ) -> Result<DeleteObjectResponse, ArunaError> {
         todo!()
+
+        //ToDo: - Set status of all affected objects to UNAVAILABLE
+        //ToDo: - What do with borrowed child objects?
+        /*ToDo: - Delete only possible on latest revision?
+         *      - Delete for each revision:
+         *          - Hash
+         *          - ObjectLocations --> S3 Objects (Currently no delete function available in data proxy)
+         *          - Source (Only with original)
+         *          - ObjectKeyValues
+         *          - CollectionObject
+         *          - ObjectGroupObject
+         *          - Object
+         */
     }
 
     //ToDo: Implement higher level database operations
