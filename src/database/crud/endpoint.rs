@@ -1,12 +1,12 @@
-use diesel::result::Error;
 use diesel::prelude::*;
+use diesel::result::Error;
 
 use crate::config::DefaultEndpoint;
 
 use crate::database;
-use crate::database::schema::endpoints::dsl::*;
 use crate::database::connection::Database;
 use crate::database::models::object::Endpoint;
+use crate::database::schema::endpoints::dsl::*;
 
 use crate::error::ArunaError;
 
@@ -29,17 +29,30 @@ impl Database {
     /// will be returned; else an endpoint with the values from the config will be inserted in the
     /// database and the newly generated uuid will be returned.
     ///
-    pub fn init_default_endpoint(&self, default_endpoint: DefaultEndpoint) -> Result<Endpoint, ArunaError> {
+    pub fn init_default_endpoint(
+        &self,
+        default_endpoint: DefaultEndpoint,
+    ) -> Result<Endpoint, ArunaError> {
         // Check if endpoint defined in the config already exists in the database
         let endpoint = self
             .pg_connection
             .get()?
             .transaction::<Endpoint, Error, _>(|conn| {
                 let result = endpoints
-                    .filter(database::schema::endpoints::endpoint_type.eq(&default_endpoint.ep_type))
-                    .filter(database::schema::endpoints::proxy_hostname.eq(&default_endpoint.endpoint_proxy))
-                    .filter(database::schema::endpoints::internal_hostname.eq(&default_endpoint.endpoint_host))
-                    .filter(database::schema::endpoints::is_public.eq(default_endpoint.endpoint_public))
+                    .filter(
+                        database::schema::endpoints::endpoint_type.eq(&default_endpoint.ep_type),
+                    )
+                    .filter(
+                        database::schema::endpoints::proxy_hostname
+                            .eq(&default_endpoint.endpoint_proxy),
+                    )
+                    .filter(
+                        database::schema::endpoints::internal_hostname
+                            .eq(&default_endpoint.endpoint_host),
+                    )
+                    .filter(
+                        database::schema::endpoints::is_public.eq(default_endpoint.endpoint_public),
+                    )
                     .first::<Endpoint>(conn)?;
 
                 Ok(result)
@@ -56,13 +69,15 @@ impl Database {
                     name: default_endpoint.endpoint_name,
                     internal_hostname: default_endpoint.endpoint_host,
                     documentation_path: default_endpoint.endpoint_docu,
-                    is_public: default_endpoint.endpoint_public
+                    is_public: default_endpoint.endpoint_public,
                 };
 
                 self.pg_connection
                     .get()?
                     .transaction::<_, Error, _>(|conn| {
-                        diesel::insert_into(endpoints).values(&endpoint).execute(conn)?;
+                        diesel::insert_into(endpoints)
+                            .values(&endpoint)
+                            .execute(conn)?;
                         Ok(())
                     })?;
 
