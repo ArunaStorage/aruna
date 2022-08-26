@@ -35,4 +35,4 @@ until [ "`$Runtime inspect -f {{.State.Running}} roach`"=="true" ]; do
     sleep 0.1;
 done;
 # Give the container some time to be available
-sleep 2;
+sleep 5;
