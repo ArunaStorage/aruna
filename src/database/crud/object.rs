@@ -543,11 +543,49 @@ impl Database {
         Ok(CreateObjectReferenceResponse {})
     }
 
+    /// This clones a specific revision of an object into another collection.
+    /// The cloned object is then treated like any other individual object.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request: CloneObjectRequest` - A gRPC request containing the needed information to clone a specific object
+    ///
+    /// ## Results:
+    ///
+    /// * `Result<CloneObjectResponse, ArunaError>` -
+    /// The CloneObjectResponse contains the newly created object in its gRPC proto format.
+    ///
     pub fn clone_object(
         &self,
-        _request: CloneObjectRequest,
-    ) -> Result<CloneObjectResponse, Box<dyn std::error::Error>> {
-        todo!()
+        request: CloneObjectRequest,
+    ) -> Result<CloneObjectResponse, ArunaError> {
+        unimplemented!("CloneObjectRequest is missing target_collection_id. If fixed remove macro and uncomment rest of function body.");
+
+    /*
+        // Extract (and automagically validate) uuids from request
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let source_collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let target_collection_uuid = uuid::Uuid::parse_str(&request.target_collection_id)?;
+
+        // Transaction time
+        let cloned_object = self
+            .pg_connection
+            .get()?
+            .transaction::<ProtoObject, Error, _>(|conn| {
+                let proto_object = clone_object(
+                    conn,
+                    object_uuid,
+                    source_collection_uuid,
+                    target_collection_uuid,
+                )?;
+
+                Ok(proto_object)
+            })?;
+
+        Ok(CloneObjectResponse {
+            object: Some(cloned_object),
+        })
+    */
     }
 
     pub fn delete_object(
