@@ -445,9 +445,9 @@ where
             }
 
             for (target_key, target_value) in targets.clone() {
-                if target_key == col_key_value.get_key() {
+                if target_key == col_key_value.get_key().to_string() {
                     if let Some(tkv) = target_value {
-                        if col_key_value.get_value() == tkv {
+                        if col_key_value.get_value() == tkv.to_string() {
                             *hits.get_mut(col_key_value.get_associated_uuid()).unwrap() += 1
                         }
                     } else {
@@ -906,6 +906,79 @@ mod tests {
         let result = parse_query(broken);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_all_for_db_kv() {
+        let test_kvs = vec![
+            ("test_key1", "test_value1"),
+            ("test_key2", "test_value2"),
+            ("test_key3", "test_value3"),
+            ("test_key4", "test_value4"),
+            ("test_key5", "test_value5"),
+            ("test_key6", "test_value6"),
+        ];
+
+        let mut coll_key_values = Vec::new();
+
+        let id_hit = uuid::Uuid::new_v4();
+        let id_non_hit = uuid::Uuid::new_v4();
+
+        for (index, (k, v)) in test_kvs.iter().enumerate() {
+            if index % 3 == 0 {
+                coll_key_values.push(CollectionKeyValue {
+                    id: uuid::Uuid::new_v4(),
+                    collection_id: id_non_hit,
+                    key: k.to_string(),
+                    value: v.to_string(),
+                    key_value_type: KeyValueType::LABEL,
+                });
+            }
+
+            coll_key_values.push(CollectionKeyValue {
+                id: uuid::Uuid::new_v4(),
+                collection_id: id_hit,
+                key: k.to_string(),
+                value: v.to_string(),
+                key_value_type: KeyValueType::LABEL,
+            });
+        }
+
+        let targets_with_values = vec![
+            ("test_key1".to_string(), Some("test_value1".to_string())),
+            ("test_key2".to_string(), Some("test_value2".to_string())),
+            ("test_key3".to_string(), Some("test_value3".to_string())),
+        ];
+
+        let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_with_values.clone());
+        assert!(hits.is_none());
+
+        let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_with_values);
+
+        assert_eq!(hits.clone().unwrap().len(), 1);
+        assert_eq!(hits.unwrap()[0], id_hit);
+
+        let targets_without_values: Vec<(String, Option<String>)> = vec![
+            ("test_key1".to_string(), None),
+            ("test_key2".to_string(), None),
+            ("test_key3".to_string(), None),
+        ];
+
+        let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_without_values);
+
+        assert_eq!(hits.clone().unwrap().len(), 1);
+        assert_eq!(hits.unwrap()[0], id_hit);
+
+        let targets_both: Vec<(String, Option<String>)> = vec![
+            ("test_key1".to_string(), Some("test_value1".to_string())),
+            ("test_key4".to_string(), Some("test_value4".to_string())),
+        ];
+
+        let hits = check_all_for_db_kv(Some(coll_key_values), targets_both);
+
+        assert_eq!(hits.clone().unwrap().len(), 2);
+        assert_eq!(hits.clone().unwrap()[0], id_hit);
+        assert_eq!(hits.clone().unwrap()[1], id_non_hit);
     }
 
     /// Helper method to return the fully qualified type name of an object
