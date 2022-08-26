@@ -1,6 +1,6 @@
-use uuid;
 use super::collection::*;
 use super::enums::*;
+use uuid;
 
 use crate::database::schema::*;
 

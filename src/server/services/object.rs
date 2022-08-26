@@ -298,7 +298,7 @@ impl ObjectService for ObjectServiceImpl {
     ///
     async fn create_object_reference(
         &self,
-        request: Request<CreateObjectReferenceRequest>
+        request: Request<CreateObjectReferenceRequest>,
     ) -> Result<Response<CreateObjectReferenceResponse>, Status> {
         let src_collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -308,13 +308,17 @@ impl ObjectService for ObjectServiceImpl {
         // Need WRITE permission for writeable == true; READ else
         let needed_permission = match request.get_ref().writeable {
             true => UserRights::WRITE,
-            false => UserRights::READ
+            false => UserRights::READ,
         };
 
         // Check if user is authorized to borrow object from source collection
-        self.authz.collection_authorize(request.metadata(), src_collection_id, needed_permission).await?;
+        self.authz
+            .collection_authorize(request.metadata(), src_collection_id, needed_permission)
+            .await?;
         // Check if user is authorized to borrow object to target collection
-        self.authz.collection_authorize(request.metadata(), dst_collection_id, UserRights::APPEND).await?;
+        self.authz
+            .collection_authorize(request.metadata(), dst_collection_id, UserRights::APPEND)
+            .await?;
 
         // Consume request
         let inner_request = request.into_inner();
@@ -329,7 +333,7 @@ impl ObjectService for ObjectServiceImpl {
     ///ToDo: Rust Doc
     async fn get_references(
         &self,
-        _request: Request<GetReferencesRequest>
+        _request: Request<GetReferencesRequest>,
     ) -> Result<Response<GetReferencesResponse>, Status> {
         todo!()
     }
