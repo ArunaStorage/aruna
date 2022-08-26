@@ -445,11 +445,61 @@ impl Database {
         todo!()
     }
 
-    pub fn borrow_object(
+    /// Creates a reference to the original object in the target collection.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `BorrowObjectRequest` - Request which contains the needed information to borrow an object to another collection
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<BorrowObjectResponse, ArunaError>` - Empty BorrowObjectResponse signals success
+    ///
+    /// ## Behaviour:
+    ///
+    /// Returns an error if `collection_id == target_collection_id` and/or the object is already borrowed
+    /// to the target collection as object duplicates in collections are not allowed.
+    ///
+    pub fn create_object_reference(
         &self,
-        _request: CreateObjectReferenceRequest,
-    ) -> Result<CreateObjectReferenceResponse, Box<dyn std::error::Error>> {
-        todo!()
+        request: CreateObjectReferenceRequest,
+    ) -> Result<CreateObjectReferenceResponse, ArunaError> {
+
+        // Extract (and automagically validate) uuids from request
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let source_collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let target_collection_uuid = uuid::Uuid::parse_str(&request.target_collection_id)?;
+
+        // Transaction time
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+
+                // Get collection_object association of original object
+                let original_reference: CollectionObject = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
+                    .filter(database::schema::collection_objects::collection_id.eq(&source_collection_uuid))
+                    .first::<CollectionObject>(conn)?;
+
+                let collection_object = CollectionObject {
+                    id: uuid::Uuid::new_v4(),
+                    collection_id: target_collection_uuid,
+                    object_id: object_uuid,
+                    is_latest: original_reference.is_latest,
+                    is_specification: original_reference.is_specification,
+                    auto_update: request.auto_update,
+                    writeable: request.writeable,
+                    reference_status: original_reference.reference_status
+                };
+
+                // Insert borrowed object reference
+                diesel::insert_into(collection_objects).values(collection_object).execute(conn)?;
+
+                Ok(())
+            })?;
+
+        // Empty response signals success
+        Ok(CreateObjectReferenceResponse {})
     }
 
     pub fn clone_object(
