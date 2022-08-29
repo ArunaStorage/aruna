@@ -7,7 +7,8 @@ use crate::api::aruna::api::storage::models::v1::{
 use crate::api::aruna::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateNewCollectionResponse, GetCollectionByIdRequest,
     GetCollectionByIdResponse, GetCollectionsRequest, GetCollectionsResponse,
-    UpdateCollectionRequest, UpdateCollectionResponse,
+    PinCollectionVersionRequest, PinCollectionVersionResponse, UpdateCollectionRequest,
+    UpdateCollectionResponse,
 };
 use crate::database::connection::Database;
 use crate::database::crud::object::clone_object;
@@ -310,6 +311,63 @@ impl Database {
             })?;
 
         Ok(UpdateCollectionResponse {
+            collection: ret_collections,
+        })
+    }
+    pub fn pin_collection_version(
+        &self,
+        request: PinCollectionVersionRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<PinCollectionVersionResponse, ArunaError> {
+        use crate::database::schema::collections::dsl::*;
+
+        let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let ret_collections = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<CollectionOverview>, ArunaError, _>(|conn| {
+                // Query the old collection
+                let old_collection = collections
+                    .filter(id.eq(old_collection_id))
+                    .first::<Collection>(conn)?;
+                let old_overview = query_overview(conn, old_collection.clone())?;
+
+                // If the old collection or the update creates a new "versioned" collection
+                // -> This needs to perform a pin
+                if old_collection.version_id.is_some() {
+                    // Return error if old_version is >= new_version
+                    // Updates must increase the semver
+                    // Updates for "historic" versions are not allowed
+                    if let Some(v) = &old_overview.coll_version {
+                        if Version::from(v.clone()) >= request.version.clone().unwrap() {
+                            return Err(ArunaError::InvalidRequest(
+                                "New version must be greater than old one".to_string(),
+                            ));
+                        }
+                    }
+                }
+                let new_version = option_new_version_grpc_to_db(request.version.clone()).unwrap();
+
+                let new_coll = Collection {
+                    id: uuid::Uuid::new_v4(),
+                    shared_version_id: old_collection.shared_version_id,
+                    name: old_collection.name,
+                    description: old_collection.description,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    created_by: user_id,
+                    version_id: Some(new_version.id),
+                    dataclass: old_collection.dataclass,
+                    project_id: old_collection.project_id,
+                };
+
+                Ok(Some(pin_collection_to_version(
+                    old_collection_id,
+                    user_id,
+                    transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
+                    conn,
+                )?))
+            })?;
+        Ok(PinCollectionVersionResponse {
             collection: ret_collections,
         })
     }

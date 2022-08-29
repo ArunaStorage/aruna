@@ -101,9 +101,9 @@ impl CollectionService for CollectionServiceImpl {
     ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
         let user_id = self
             .authz
-            .project_authorize(
+            .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().project_id)
+                uuid::Uuid::parse_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::WRITE,
             )
@@ -125,9 +125,27 @@ impl CollectionService for CollectionServiceImpl {
     /// Pinned collections can not be updated in place
     async fn pin_collection_version(
         &self,
-        _request: tonic::Request<PinCollectionVersionRequest>,
+        request: tonic::Request<PinCollectionVersionRequest>,
     ) -> Result<tonic::Response<PinCollectionVersionResponse>, tonic::Status> {
-        todo!()
+        let user_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::WRITE,
+            )
+            .await?;
+
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || {
+                db.pin_collection_version(request.get_ref().to_owned(), user_id)
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        ))
     }
     /// This request deletes the collection.
     /// If with_version is true, it deletes the collection and all its versions.
