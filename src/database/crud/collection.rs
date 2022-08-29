@@ -236,6 +236,19 @@ impl Database {
 
         let _old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
+        let created_overview = CollectionOverview {
+            id: uuid::Uuid::new_v4(),
+            name: request.name,
+            description: request.description,
+            labels: request.labels,
+            hooks: request.hooks,
+            label_ontology: todo!(),
+            created: chrono::Utc::now(),
+            stats: todo!(),
+            is_public: todo!(),
+            version: todo!(),
+        };
+
         todo!();
     }
 }
@@ -382,7 +395,7 @@ fn map_to_collection_overview(
 }
 
 fn _pin_collection_to_version(
-    _origin_collection: Collection,
+    origin_collection: CollectionOverview,
     _new_collection: Collection,
     _conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Collection {
@@ -396,5 +409,6 @@ fn _pin_collection_to_version(
     // - Clone all object_groups from old collection to new collection (without objects)
     // - Map object <-> object_group associations to new collection
     //
+
     todo!()
 }
