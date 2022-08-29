@@ -6,7 +6,7 @@ use super::traits::IsKeyValue;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(table_name = collection_version)]
 pub struct CollectionVersion {
     pub id: uuid::Uuid,
@@ -15,7 +15,30 @@ pub struct CollectionVersion {
     pub patch: i64,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+impl PartialEq for CollectionVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.major == other.major && self.minor == other.minor && self.patch == other.patch
+    }
+}
+
+impl PartialOrd for CollectionVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Compare major first continue if equal
+        match self.major.partial_cmp(&other.major) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        // Compare minor continue if equal
+        match self.minor.partial_cmp(&other.minor) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        // Lastly compare patch
+        self.patch.partial_cmp(&other.patch)
+    }
+}
+
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, AsChangeset, Clone)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(belongs_to(CollectionVersion, foreign_key = version_id))]
 #[diesel(belongs_to(Project))]
@@ -60,7 +83,7 @@ impl IsKeyValue for CollectionKeyValue {
     }
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 pub struct RequiredLabel {
     pub id: uuid::Uuid,
@@ -68,7 +91,7 @@ pub struct RequiredLabel {
     pub label_key: String,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]
 pub struct CollectionObject {
@@ -82,7 +105,7 @@ pub struct CollectionObject {
     pub reference_status: ReferenceStatus,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct CollectionObjectGroup {

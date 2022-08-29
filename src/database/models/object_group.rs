@@ -5,8 +5,9 @@ use super::traits::IsKeyValue;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
+#[diesel(table_name=object_groups)]
 pub struct ObjectGroup {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,

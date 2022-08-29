@@ -11,10 +11,11 @@ pub struct Source {
     pub source_type: SourceType,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(belongs_to(Source))]
 #[diesel(belongs_to(Object, foreign_key = origin_id))]
+#[diesel(table_name=objects)]
 pub struct Object {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,

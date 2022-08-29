@@ -143,6 +143,12 @@ impl From<ArunaError> for tonic::Status {
     }
 }
 
+impl From<ArunaError> for DieselError {
+    fn from(_aerror: ArunaError) -> Self {
+        DieselError::RollbackTransaction
+    }
+}
+
 //------------------ Impls for own integrated error-types ----------------
 
 impl From<GrpcNotFoundError> for ArunaError {

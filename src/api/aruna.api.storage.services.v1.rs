@@ -4980,27 +4980,29 @@ pub struct GetCollectionsResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionRequest {
     #[prost(string, tag="1")]
-    pub collection_id: ::prost::alloc::string::String,
+    pub project_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
-    pub name: ::prost::alloc::string::String,
+    pub collection_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
     pub description: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="4")]
-    pub labels: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
     #[prost(message, repeated, tag="5")]
-    pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
+    pub labels: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
     #[prost(message, repeated, tag="6")]
+    pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
+    #[prost(message, repeated, tag="7")]
     pub label_ontology: ::prost::alloc::vec::Vec<super::super::models::v1::LabelOntology>,
     ///  Optional update Dataclass, this will not overwrite
     ///  the dataclass of all existing associated objects
     ///  New objects can only have this dataclass
-    #[prost(enumeration="super::super::models::v1::DataClass", tag="7")]
+    #[prost(enumeration="super::super::models::v1::DataClass", tag="8")]
     pub dataclass: i32,
     ///  If this is set, the collection will be automatically pinned to this version
     ///  Similar to the more explicit Pin request
     ///  Updating a pinned collection will make this field required
     ///  (optional if unpinned || required if pinned)
-    #[prost(message, optional, tag="8")]
+    #[prost(message, optional, tag="9")]
     pub version: ::core::option::Option<super::super::models::v1::Version>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

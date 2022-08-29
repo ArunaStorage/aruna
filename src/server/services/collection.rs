@@ -97,9 +97,27 @@ impl CollectionService for CollectionServiceImpl {
     /// similar to the PinCollectionVersion request
     async fn update_collection(
         &self,
-        _request: tonic::Request<UpdateCollectionRequest>,
+        request: tonic::Request<UpdateCollectionRequest>,
     ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
-        todo! {}
+        let user_id = self
+            .authz
+            .project_authorize(
+                request.metadata(),
+                uuid::Uuid::parse_str(&request.get_ref().project_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::WRITE,
+            )
+            .await?;
+
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || {
+                db.update_collection(request.get_ref().to_owned(), user_id)
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        ))
     }
     /// PinCollectionVersion this pins the current status of the version to a specific version
     /// This effectively creates a copy of the collection with a stable version
