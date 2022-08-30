@@ -20,18 +20,36 @@ crate::impl_grpc_server!(CollectionServiceImpl);
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
     /// Create_new_collection request cretes a new collection based on user request
+    ///
+    /// ## Permissions
+    ///
+    /// This needs project level `WRITE` permissions.
+    ///
+    /// ## Behaviour
+    ///
+    /// A new collection is created when this request is made, it needs project-level "WRITE" permissions to succeed.
+    ///
+    /// ## Arguments
+    ///
+    /// `CreateNewCollectionRequest` - Basic information about the freshly created collection like name description etc.
+    ///
+    /// ## Results
+    ///
+    /// `CreateNewCollectionResponse` - Overview of the new created collection.
+    ///
     async fn create_new_collection(
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
+        // Parse the uuid
         let project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
-
+        // Authorize the request
         let creator_id = self
             .authz
             .project_authorize(request.metadata(), project_id, UserRights::WRITE)
             .await?;
-
+        // Clone db ARC for spawn_blocking
         let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
         Ok(Response::new(
@@ -43,13 +61,30 @@ impl CollectionService for CollectionServiceImpl {
         ))
     }
 
-    /// GetCollection queries a specific Collection by ID
-    /// The result can be one_of:
-    /// This can be modified with the optional OutputFormat parameter
+    /// GetCollectionById queries a single collection via its uuid.
+    ///
+    /// ## Permissions
+    ///
+    /// This needs collection level `READ` permissions.
+    ///
+    /// ## Behaviour
+    ///
+    /// This returns a single collection by id with all available information excluding all informations about objects / objectgroups etc.
+    /// For this the associated methods in objects/objectgroups should be used. This needs collection-level read permissions.
+    ///
+    /// ## Arguments
+    ///
+    /// `GetCollectionByIdRequest` - Contains the requested collection_id
+    ///
+    /// ## Results
+    ///
+    /// `GetCollectionByIdResponse` - Overview of the new created collection.
+    ///
     async fn get_collection_by_id(
         &self,
         request: tonic::Request<GetCollectionByIdRequest>,
     ) -> Result<tonic::Response<GetCollectionByIdResponse>, tonic::Status> {
+        // Authorize collection - READ
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -58,7 +93,7 @@ impl CollectionService for CollectionServiceImpl {
                 UserRights::READ,
             )
             .await?;
-
+        // Clone db ARC for blocking move
         let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
         Ok(Response::new(
@@ -67,12 +102,41 @@ impl CollectionService for CollectionServiceImpl {
                 .map_err(ArunaError::from)??,
         ))
     }
-    /// GetCollections queries multiple collections by ID or by LabelFilter
-    /// This returns by default a paginated result with 20 entries.
+
+    /// GetCollections queries multiple collections via either multiple uuids or a specific set of label filters.
+    ///
+    /// ## Permissions
+    ///
+    /// Needs project-level `READ` permissions.
+    ///
+    /// ## Behaviour
+    ///
+    /// Will return the "first" 20 collections if no pagination / uuid / labelfilter is specified.
+    ///
+    /// This request takes one of two arguments and a pagination filter. The argument to query a subset of collection
+    /// can either be a list with uuids or a specific set of labels/hooks, for now this will query both at once and will
+    /// not distinguish between labels and hooks. As arguments the user can provide a list of key-value pairs and choose if
+    /// all of them should match or any of them. Additionally the user can also choose to just use the keys not the values.
+    /// This enables the user to specifically query a subselection of collections via labels if they are generic enough.
+    ///
+    /// This request also contains a pagination filter. This pagination filter contains the last observed uuid (optional) and
+    /// a pagesize. No pagesize (0) will apply the default pagesize of 20. If -1 is set this will not paginate (WARNING: might take some time)
+    /// The last uuid is always needed if the next page should be returned. By default all responses are ordered by uuid, by specifying the last
+    /// uuid this will return the next "batch" of collections.
+    ///
+    /// ## Arguments
+    ///
+    /// `GetCollectionsRequest` - Contains a list of collectionids or a label_filter and an optional pagination information
+    ///
+    /// ## Results
+    ///
+    /// `GetCollectionsResponse` - Contains a list with collection_overviews that match the request.
+    ///
     async fn get_collections(
         &self,
         request: tonic::Request<GetCollectionsRequest>,
     ) -> Result<tonic::Response<GetCollectionsResponse>, tonic::Status> {
+        // Authorize this needs project-level read permissions.
         self.authz
             .project_authorize(
                 request.metadata(),
@@ -90,15 +154,37 @@ impl CollectionService for CollectionServiceImpl {
                 .map_err(ArunaError::from)??,
         ))
     }
-    /// UpdateCollection updates the current collection
-    /// This will update the collection in place if it is unversioned / latest
-    /// A versioned (pinned) collection requires a new semantic version after the update
-    /// This can be used to pin a collection to a specific version
-    /// similar to the PinCollectionVersion request
+
+    /// UpdateCollection updates a specific collection and optional pins a new version.
+    ///
+    /// ## Permissions
+    ///
+    /// This needs collection `WRITE` permissions.
+    ///
+    /// ## Behaviour
+    ///
+    /// ATTENTION: For now this update will overwrite all existing data with the specified information. Empty fields will be empty,
+    /// if you want to keep some information, query them first. This might change in the future.
+    ///
+    /// This request can be used to update a collection. Two modes of operation are possible, if the collection is mutable and
+    /// has no associated version assigned the updates will be executed `in place`. Otherwise this will perform an update including
+    /// a `pin` operation. Pin operation copys all objects / objectgroups references etc. and creates a new collection that solely owns
+    /// these objects. This makes sure that versioned collections are truely immutable and can not be modified once created.
+    /// (Except forceful deletion to be GDPR compliant)
+    ///
+    /// ## Arguments
+    ///
+    /// `UpdateCollectionRequest` - Contains the information the collection should be updated to.
+    ///
+    /// ## Results
+    ///
+    /// `GetCollectionsResponse` - Responds with an collection_overview for the updated or newly created collection.
+    ///
     async fn update_collection(
         &self,
         request: tonic::Request<UpdateCollectionRequest>,
     ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
+        // Query the user_permissions -> Needs collection "WRITE" permissions
         let user_id = self
             .authz
             .collection_authorize(
@@ -119,10 +205,27 @@ impl CollectionService for CollectionServiceImpl {
             .map_err(ArunaError::from)??,
         ))
     }
-    /// PinCollectionVersion this pins the current status of the version to a specific version
-    /// This effectively creates a copy of the collection with a stable version
-    /// All objects will be pinned to an explicit revision number
-    /// Pinned collections can not be updated in place
+
+    /// PinCollectionVersion creates a copy of the collection with a specific "pinned" version
+    ///
+    /// ## Permissions
+    ///
+    /// This needs collection `WRITE` permissions.
+    ///
+    /// ## Behaviour
+    ///
+    /// Similar to update collection but only updates the `version` without any other fields.
+    /// Should be mainly used to pin down a dynamic collection to a specific version and freeze all its contents.
+    /// Will fail if new version is less than old version. (Backwards updates are not allowed)
+    ///
+    /// ## Arguments
+    ///
+    /// `PinCollectionVersionRequest` - Contains the collection_id and the new version.
+    ///
+    /// ## Results
+    ///
+    /// `PinCollectionVersionResponse` - Responds with an collection_overview for the new versioned collection.
+    ///
     async fn pin_collection_version(
         &self,
         request: tonic::Request<PinCollectionVersionRequest>,
@@ -147,10 +250,31 @@ impl CollectionService for CollectionServiceImpl {
             .map_err(ArunaError::from)??,
         ))
     }
-    /// This request deletes the collection.
-    /// If with_version is true, it deletes the collection and all its versions.
-    /// If cascade is true, all objects that are owned by the collection will also deleted.
-    /// This should be avoided
+
+    /// DeleteCollection will delete a specific collection including its contents.
+    ///
+    /// ## Permissions
+    ///
+    /// This needs collection `WRITE` permissions without force
+    /// and project `ADMIN` with force.
+    ///
+    /// ## Behaviour
+    ///
+    /// This will delete a specific collection and remove all associated objects / keyvalues / objectgroups etc.
+    /// If `force` is not specified this will fail if objects are writeable referenced in any other collection.
+    /// Force will delete all references and set all writeable objects to "TRASH", this might interfere with other
+    /// collections and could create side-effects. -> Only project admins can forcefully delete a collection.
+    /// The preferred way to delete a collection is to first solve all references and delete the collection normally
+    /// afterwards.
+    ///
+    /// ## Arguments
+    ///
+    /// `DeleteCollectionRequest` - Collection_id, project_id and force bool
+    ///
+    /// ## Results
+    ///
+    /// `DeleteCollectionResponse` - Placeholder this response is currently empty, which means success.
+    ///
     async fn delete_collection(
         &self,
         request: tonic::Request<DeleteCollectionRequest>,
