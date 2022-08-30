@@ -153,8 +153,36 @@ impl CollectionService for CollectionServiceImpl {
     /// This should be avoided
     async fn delete_collection(
         &self,
-        _request: tonic::Request<DeleteCollectionRequest>,
+        request: tonic::Request<DeleteCollectionRequest>,
     ) -> Result<tonic::Response<DeleteCollectionResponse>, tonic::Status> {
-        todo!()
+        let user_id = if request.get_ref().force {
+            self.authz
+                .project_authorize(
+                    request.metadata(),
+                    uuid::Uuid::parse_str(&request.get_ref().project_id)
+                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                    UserRights::ADMIN,
+                )
+                .await?
+        } else {
+            self.authz
+                .collection_authorize(
+                    request.metadata(),
+                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                    UserRights::WRITE,
+                )
+                .await?
+        };
+
+        let db = self.database.clone();
+        // Execute request in spawn_blocking task to prevent blocking the API server
+        Ok(Response::new(
+            task::spawn_blocking(move || {
+                db.delete_collection(request.get_ref().to_owned(), user_id)
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        ))
     }
 }

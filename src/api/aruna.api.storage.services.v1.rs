@@ -5026,7 +5026,9 @@ pub struct PinCollectionVersionResponse {
 pub struct DeleteCollectionRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
-    #[prost(bool, tag="2")]
+    #[prost(string, tag="2")]
+    pub project_id: ::prost::alloc::string::String,
+    #[prost(bool, tag="3")]
     pub force: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

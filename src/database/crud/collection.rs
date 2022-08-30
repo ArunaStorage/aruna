@@ -5,24 +5,25 @@ use crate::api::aruna::api::storage::models::v1::{
     CollectionOverviews, CollectionStats, LabelOntology, Stats, Version,
 };
 use crate::api::aruna::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateNewCollectionResponse, GetCollectionByIdRequest,
-    GetCollectionByIdResponse, GetCollectionsRequest, GetCollectionsResponse,
-    PinCollectionVersionRequest, PinCollectionVersionResponse, UpdateCollectionRequest,
-    UpdateCollectionResponse,
+    CreateNewCollectionRequest, CreateNewCollectionResponse, DeleteCollectionRequest,
+    DeleteCollectionResponse, GetCollectionByIdRequest, GetCollectionByIdResponse,
+    GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
+    PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
 };
 use crate::database::connection::Database;
 use crate::database::crud::object::clone_object;
 use crate::database::models;
 use crate::database::models::collection::{
-    Collection, CollectionKeyValue, CollectionObjectGroup, CollectionVersion, RequiredLabel,
+    Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
+    RequiredLabel,
 };
-use crate::database::models::enums::Dataclass as DBDataclass;
+use crate::database::models::enums::{Dataclass as DBDataclass, ObjectStatus};
 use crate::database::models::object::Object;
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
 use chrono::Local;
-use diesel::prelude::*;
+use diesel::{prelude::*, delete};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{insert_into, update};
@@ -370,6 +371,91 @@ impl Database {
         Ok(PinCollectionVersionResponse {
             collection: ret_collections,
         })
+    }
+    pub fn delete_collection(
+        &self,
+        request: DeleteCollectionRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<DeleteCollectionResponse, ArunaError> {
+        use crate::database::schema::collection_objects::dsl as colobj;
+        use crate::database::schema::collection_object_groups::dsl as colobjgrp;
+        use crate::database::schema::collection_key_value::dsl as colkv;
+        use crate::database::schema::object_group_objects::dsl as objgrpobj;
+        use crate::database::schema::object_group_key_value::dsl as objgrpkv;
+        use crate::database::schema::object_groups::dsl as objgrp;
+        use crate::database::schema::objects::dsl as obj;
+        use crate::database::schema::collections::dsl as col;
+
+        let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        self
+            .pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                // Query all object references
+                let all_obj_references = colobj::collection_objects
+                    .filter(colobj::collection_id.eq(collection_id))
+                    .load::<CollectionObject>(conn)?;
+                // Query the object_ids of all writeable references
+                let all_obj_ids = all_obj_references
+                    .iter()
+                    .map(|elem| elem.object_id)
+                    .collect::<Vec<_>>();
+
+                let all_other_references = colobj::collection_objects
+                    .filter(colobj::object_id.eq_any(all_obj_ids))
+                    .filter(colobj::collection_id.ne(collection_id))
+                    .load::<CollectionObject>(conn)?;
+
+                let mut objects_referenced = HashMap::new();
+
+                for specific_ref in all_obj_references {
+                    let mut shared = vec![specific_ref.clone()];
+                    for all_ref in &all_other_references {
+                        if specific_ref.collection_id == all_ref.collection_id {
+                            shared.push(all_ref.to_owned());
+
+                            if shared.len() > 1 && !request.force{
+                                return Err(ArunaError::InvalidRequest("Can not delete collection because of dangling objects. Transfer ownership manually or use force".to_string()))
+                            }
+                        }
+                    }
+                    objects_referenced.insert(specific_ref.object_id, shared);
+                }
+
+                let trash= objects_referenced
+                    .iter()
+                    .fold(Vec::new(), |mut trash, (k, v)| {
+                        
+                        if v.len() == 1 || v[0].writeable{
+                            trash.push(k.to_owned())
+                        }
+                        trash
+                    });
+
+                
+                // Delete all references
+                delete(colobj::collection_objects.filter(colobj::collection_id.eq(collection_id))).execute(conn)?;
+                // Delete all collection object groups belonging to this collection
+                let deleted_objgrp = delete(colobjgrp::collection_object_groups.filter(colobjgrp::collection_id.eq(collection_id))).load::<CollectionObjectGroup>(conn)?;
+                // Filter out the objgrpids
+                let objgrpids = deleted_objgrp.iter().map(|elem| elem.object_group_id).collect::<Vec<_>>();
+                // Delete objgrpobjects
+                delete(objgrpobj::object_group_objects.filter(objgrpobj::object_group_id.eq_any(&objgrpids))).execute(conn)?;
+                // Delete objgrp_kv
+                delete(objgrpkv::object_group_key_value.filter(objgrpkv::object_group_id.eq_any(&objgrpids))).execute(conn)?;
+                // Delete all objgrps -> Objgrps for now are bound to a collection
+                delete(objgrp::object_groups.filter(objgrp::id.eq_any(&objgrpids))).execute(conn)?;
+                // Update all "owned/writeable" objects to be "TRASH" -> The trash routine should update all other objectgroups
+                update(obj::objects.filter(obj::id.eq_any(&trash))).set((obj::object_status.eq(ObjectStatus::TRASH), obj::created_by.eq(user_id))).execute(conn)?;
+                // Delete all collection_key_values
+                delete(colkv::collection_key_value.filter(colkv::collection_id.eq(collection_id))).execute(conn)?;
+                // Delete the collection
+                delete(col::collections.filter(col::id.eq(collection_id))).execute(conn)?;
+                Ok(())
+                
+            })?;
+        Ok(DeleteCollectionResponse{})
     }
 }
 
