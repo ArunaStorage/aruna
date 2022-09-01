@@ -136,10 +136,9 @@ pub struct FinishObjectStagingRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
     pub object_id: ::prost::alloc::string::String,
-    ///  Staging ID, a generic ID when multipart is not enabled, otherwise the
-    ///  multipart upload ID.
+    ///  Always the S3 upload_id
     #[prost(string, tag="2")]
-    pub staging_id: ::prost::alloc::string::String,
+    pub upload_id: ::prost::alloc::string::String,
     ///  CollectionID
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
@@ -147,19 +146,19 @@ pub struct FinishObjectStagingRequest {
     ///  This supports multiple hashing algorithms.
     #[prost(message, optional, tag="4")]
     pub hash: ::core::option::Option<super::super::models::v1::Hash>,
+    ///  If the staging object had no uploads
+    ///  Use this argument to skip the finish upload request
+    #[prost(bool, tag="5")]
+    pub no_upload: bool,
     ///  If the upload was multipart, this is the list of parts that were uploaded.
     ///  Should be empty if the upload was not multipart.
     ///  (optional)
-    #[prost(message, repeated, tag="5")]
+    #[prost(message, repeated, tag="6")]
     pub completed_parts: ::prost::alloc::vec::Vec<CompletedParts>,
-    ///  Should the object be auto-updated in the owner collection?
+    ///  Should the object be auto-updated in the collection?
     ///  default: false
-    #[prost(bool, tag="6")]
+    #[prost(bool, tag="7")]
     pub auto_update: bool,
-    ///  Add the object automatically to these collections
-    ///  (optional)
-    #[prost(string, repeated, tag="7")]
-    pub collection_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinishObjectStagingResponse {

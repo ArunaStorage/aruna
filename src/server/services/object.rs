@@ -165,16 +165,10 @@ impl ObjectService for ObjectServiceImpl {
 
         let creator_id = self
             .authz
-            .authorize(
+            .collection_authorize(
                 request.metadata(),
-                &Context {
-                    user_right: UserRights::APPEND, // User needs at least append permission to create an object
-                    resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
-                    resource_id: collection_id, // This is the collection uuid in which this object should be created
-                    admin: false,
-                    oidc_context: false,
-                    personal: false,
-                },
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
@@ -202,14 +196,14 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let endpoint_clone = self.default_endpoint.clone();
+        let endpoint_id = self.default_endpoint.id;
         let response = task::spawn_blocking(move || {
             database_clone.create_object(
                 &inner_request,
                 &creator_id,
                 &location,
                 upload_id,
-                endpoint_clone.id,
+                endpoint_id,
             )
         })
         .await
@@ -229,16 +223,10 @@ impl ObjectService for ObjectServiceImpl {
 
         let _creator_id = self
             .authz
-            .authorize(
+            .collection_authorize(
                 request.metadata(),
-                &Context {
-                    user_right: UserRights::APPEND, // User needs at least append permission to create an object
-                    resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
-                    resource_id: collection_id, // This is the collection uuid in which this object should be created
-                    admin: false,
-                    oidc_context: false,
-                    personal: false,
-                },
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
@@ -269,9 +257,74 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn finish_object_staging(
         &self,
-        _request: Request<FinishObjectStagingRequest>,
+        request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>, Status> {
-        todo!()
+        // Parse the provided collection id (string) to UUID
+        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+            .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
+
+        // Authorize the request
+        let _creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
+            )
+            .await?;
+
+        // Only finish the upload if no_upload == false
+        // This will otherwise skip the data proxy finish routine
+        if !request.get_ref().no_upload {
+            // Get the data_proxy
+            let (mut data_proxy, _location) = self
+                .try_connect_object_endpoint(
+                    &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
+                        Status::invalid_argument("Unable to parse object_id to uuid")
+                    })?,
+                )
+                .await?;
+
+            // Create the finished parts vec from request
+            let finished_parts = request
+                .get_ref()
+                .completed_parts
+                .iter()
+                .map(|part| PartETag {
+                    part_number: part.part.to_string(),
+                    etag: part.etag.to_string(),
+                })
+                .collect::<Vec<_>>();
+
+            let is_empty = &finished_parts.is_empty();
+
+            // Create Finish request for Dataproxy
+            let finished_presigned = FinishPresignedUploadRequest {
+                upload_id: request.get_ref().upload_id.to_string(),
+                part_etags: finished_parts,
+                multipart: *is_empty, // If finished parts is not empty --> multipart
+            };
+
+            // Execute the proxy request and get the result
+            let proxy_result = data_proxy
+                .finish_presigned_upload(finished_presigned)
+                .await?
+                .into_inner();
+
+            // Only proceed when proxy did not fail
+            if !proxy_result.ok {
+                return Err(Status::aborted("Proxy failed to finish object"));
+            }
+        }
+
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.finish_object_staging(&request.into_inner())
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        Ok(Response::new(response))
     }
 
     async fn update_object(
@@ -378,16 +431,10 @@ impl ObjectService for ObjectServiceImpl {
 
         let _creator_id = self
             .authz
-            .authorize(
+            .collection_authorize(
                 request.metadata(),
-                &Context {
-                    user_right: UserRights::READ, // User needs at least append permission to create an object
-                    resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
-                    resource_id: collection_uuid, // This is the collection uuid in which this object should be created
-                    admin: false,
-                    oidc_context: false,
-                    personal: false,
-                },
+                collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::READ,
             )
             .await?;
 

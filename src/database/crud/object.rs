@@ -14,10 +14,11 @@ use crate::api::aruna::api::storage::{
     services::v1::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
         CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
-        GetLatestObjectRevisionRequest, GetLatestObjectRevisionResponse, GetObjectByIdRequest,
-        GetObjectRevisionsRequest, GetObjectRevisionsResponse, GetObjectsRequest,
-        GetObjectsResponse, InitializeNewObjectRequest, InitializeNewObjectResponse,
-        UpdateObjectRequest, UpdateObjectResponse,
+        FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
+        GetLatestObjectRevisionResponse, GetObjectByIdRequest, GetObjectRevisionsRequest,
+        GetObjectRevisionsResponse, GetObjectsRequest, GetObjectsResponse,
+        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
     },
 };
 use crate::error::{ArunaError, GrpcNotFoundError};
@@ -39,6 +40,16 @@ use crate::database::schema::{
     object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
 
+// Struct to hold the database objects
+struct ObjectDto {
+    object: Object,
+    labels: Vec<KeyValue>,
+    hooks: Vec<KeyValue>,
+    hash: Hash,
+    source: Option<Source>,
+    latest: bool,
+    update: bool,
+}
 /// Implementing CRUD+ database operations for Objects
 impl Database {
     /// Creates the following records in the database to initialize a new object:
@@ -108,7 +119,7 @@ impl Database {
         let collection_object = CollectionObject {
             id: uuid::Uuid::new_v4(),
             collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
-            is_latest: true, // TODO: is this really latest ?
+            is_latest: false, // Will be checked on finish
             reference_status: ReferenceStatus::STAGING,
             object_id: object.id,
             auto_update: false, //Note: Finally set with FinishObjectStagingRequest
@@ -123,7 +134,7 @@ impl Database {
             path: location.path.clone(),
             endpoint_id: endpoint_uuid,
             object_id: object.id,
-            is_primary: false,
+            is_primary: true,
         };
 
         // Define the hash placeholder for the object
@@ -168,6 +179,92 @@ impl Database {
         })
     }
 
+    pub fn finish_object_staging(
+        &self,
+        request: &FinishObjectStagingRequest,
+    ) -> Result<FinishObjectStagingResponse, ArunaError> {
+        let req_object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        // Insert all defined objects into the database
+        let object_dto = self
+            .pg_connection
+            .get()?
+            .transaction::<ObjectDto, Error, _>(|conn| {
+                let latest = get_latest(conn, req_object_uuid)?;
+
+                let is_still_latest = latest.id == req_object_uuid;
+
+                // Update the collection objects
+                // - Status
+                // - is_latest
+                // - auto_update
+                diesel::update(
+                    collection_objects.filter(
+                        database::schema::collection_objects::object_id.eq(req_object_uuid),
+                    ),
+                )
+                .set((
+                    database::schema::collection_objects::is_latest.eq(is_still_latest),
+                    database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                    database::schema::collection_objects::auto_update.eq(request.auto_update),
+                ))
+                .execute(conn)?;
+                // Update the object itself to be available
+                diesel::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
+                    .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    .execute(conn)?;
+
+                get_object(&req_object_uuid, &req_coll_uuid, conn)
+            })?;
+
+        Ok(FinishObjectStagingResponse {
+            object: Some(object_dto.try_into()?),
+        })
+    }
+
+    ///ToDo: Rust Doc
+    pub fn update_object(
+        &self,
+        _request: UpdateObjectRequest,
+    ) -> Result<UpdateObjectResponse, ArunaError> {
+        todo!()
+
+        /*ToDo:
+         *  - Check permissions if update on collection is ok
+         *  - Create staging object and update differing metadata
+         *      - Set object status UNAVAILABLE
+         *      - Set revision e.g. None
+         *  - Copy key-value pairs and sync them with the provided (Add, Update, Delete)
+         *  - Create collection_objects reference with status STAGING
+         *  - If reupload == true
+         *      - Set object status INITIALIZING
+         *      - Create new location
+         *      - Create new empty hash
+         *      - Generate upload id with data proxy request
+         */
+
+        /*ToDo:
+         * ----- ObjectFinishRequest starts here ---------------------------------------------------
+         *  - Check if collection_objects reference with object_id+collection_id exists+STAGING exists
+         *  - Set revision old_latest+1 (unique constraint shared_revision_id+revision)
+         *  - Iterate through all collections_objects of old_latest (join collection)
+         *      - Check if collection is pinned version
+         *          - True: Do nothing.
+         *          - Else:
+         *              - Is Object auto_update?
+         *                  - True: Replace collection_objects entry with latest
+         *                      - Create object group revisions with updated object
+         *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
+         *                          - Copy object group with revision+1
+         *                          - Copy object_group_object references and replace updated object_id
+         *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
+         *                  - False: set is_latest false
+         *  - Set object with latest+1 status AVAILABLE
+         *  - Set collection_objects reference latest+1 status OK
+         */
+    }
+
     /// Returns the object from the database in its gRPC format.
     ///
     /// ## Arguments
@@ -184,122 +281,16 @@ impl Database {
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
         let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
-        // Struct to temporarily hold the database objects
-        struct ObjectDto {
-            object: Object,
-            labels: Vec<KeyValue>,
-            hooks: Vec<KeyValue>,
-            hash: Hash,
-            source: Option<Source>,
-            latest: bool,
-            update: bool,
-        }
-
         // Read object from database
         let object_dto = self
             .pg_connection
             .get()?
             .transaction::<ObjectDto, Error, _>(|conn| {
-                let object: Object = objects
-                    .filter(database::schema::objects::id.eq(&object_uuid))
-                    .first::<Object>(conn)?;
-
-                let object_key_values =
-                    ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
-                let (labels, hooks) = from_object_key_values(object_key_values);
-
-                let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
-
-                let source: Option<Source> = match &object.source_id {
-                    None => None,
-                    Some(src_id) => Some(
-                        sources
-                            .filter(database::schema::sources::id.eq(src_id))
-                            .first::<Source>(conn)?,
-                    ),
-                };
-
-                let update: bool = CollectionObject::belonging_to(&object)
-                    .select(database::schema::collection_objects::auto_update)
-                    .filter(
-                        database::schema::collection_objects::collection_id.eq(&collection_uuid),
-                    )
-                    .first::<bool>(conn)?;
-
-                let latest_object_revision: Option<i64> = objects
-                    .select(max(database::schema::objects::revision_number))
-                    .filter(
-                        database::schema::objects::shared_revision_id
-                            .eq(&object.shared_revision_id),
-                    )
-                    .first::<Option<i64>>(conn)?;
-
-                let latest = match latest_object_revision {
-                    None => Err(Error::NotFound), // false,
-                    Some(revision) => Ok(revision == object.revision_number),
-                }?;
-
-                Ok(ObjectDto {
-                    object,
-                    labels,
-                    hooks,
-                    hash: object_hash,
-                    source,
-                    latest,
-                    update,
-                })
+                // Use the helper function to execute the request
+                get_object(&object_uuid, &collection_uuid, conn)
             })?;
 
-        // Transform db Source to proto Source
-        let proto_source = match object_dto.source {
-            None => None,
-            Some(source) => Some(ProtoSource {
-                identifier: source.link,
-                source_type: source.source_type as i32,
-            }),
-        };
-
-        // If object id == origin id --> original uploaded object
-        //Note: OriginType only stored implicitly
-        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
-            None => None,
-            Some(origin_uuid) => Some(ProtoOrigin {
-                id: origin_uuid.to_string(),
-                r#type: match object_dto.object.id == origin_uuid {
-                    true => 1,
-                    false => 2,
-                },
-            }),
-        };
-
-        // Transform NaiveDateTime to Timestamp
-        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
-
-        // Transform db Hash to proto Hash
-        let proto_hash = ProtoHash {
-            alg: object_dto.hash.hash_type as i32,
-            hash: object_dto.hash.hash,
-        };
-
-        // Construct proto Object
-        let proto_object = ProtoObject {
-            id: object_dto.object.id.to_string(),
-            filename: object_dto.object.filename,
-            labels: object_dto.labels,
-            hooks: object_dto.hooks,
-            created: Some(timestamp),
-            content_len: object_dto.object.content_len,
-            status: object_dto.object.object_status as i32,
-            origin: proto_origin,
-            data_class: object_dto.object.dataclass as i32,
-            hash: Some(proto_hash),
-            rev_number: object_dto.object.revision_number,
-            source: proto_source,
-            latest: object_dto.latest,
-            auto_update: object_dto.update,
-        };
-
-        Ok(proto_object)
+        object_dto.try_into()
     }
 
     ///ToDo: Rust Doc
@@ -444,49 +435,6 @@ impl Database {
     ) -> Result<GetObjectsResponse, ArunaError> {
         todo!()
     }
-
-    ///ToDo: Rust Doc
-    pub fn update_object(
-        &self,
-        _request: UpdateObjectRequest,
-    ) -> Result<UpdateObjectResponse, ArunaError> {
-        todo!()
-
-        /*ToDo:
-         *  - Check permissions if update on collection is ok
-         *  - Create staging object and update differing metadata
-         *      - Set object status UNAVAILABLE
-         *      - Set revision e.g. None
-         *  - Copy key-value pairs and sync them with the provided (Add, Update, Delete)
-         *  - Create collection_objects reference with status STAGING
-         *  - If reupload == true
-         *      - Set object status INITIALIZING
-         *      - Create new location
-         *      - Create new empty hash
-         *      - Generate upload id with data proxy request
-         */
-
-        /*ToDo:
-         * ----- ObjectFinishRequest starts here ---------------------------------------------------
-         *  - Check if collection_objects reference with object_id+collection_id exists+STAGING exists
-         *  - Set revision old_latest+1 (unique constraint shared_revision_id+revision)
-         *  - Iterate through all collections_objects of old_latest (join collection)
-         *      - Check if collection is pinned version
-         *          - True: Do nothing.
-         *          - Else:
-         *              - Is Object auto_update?
-         *                  - True: Replace collection_objects entry with latest
-         *                      - Create object group revisions with updated object
-         *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
-         *                          - Copy object group with revision+1
-         *                          - Copy object_group_object references and replace updated object_id
-         *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
-         *                  - False: set is_latest false
-         *  - Set object with latest+1 status AVAILABLE
-         *  - Set collection_objects reference latest+1 status OK
-         */
-    }
-
     /// Creates a reference to the original object in the target collection.
     ///
     /// ## Arguments:
@@ -794,4 +742,247 @@ pub fn clone_object(
         latest: db_collection_object.is_latest,
         auto_update: db_collection_object.auto_update,
     })
+}
+
+/// This is a helper method that queries the "latest" object based on the current object_uuid.
+/// If returned object.id == ref_object_id -> the current object is "latest"
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `ref_object_id`: `uuid::Uuid` - The Uuid for which the latest Object revision should be found
+///
+/// ## Resturns:
+///
+/// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
+/// The latest database object or error if the request failed.
+///
+pub fn get_latest(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    ref_object_id: uuid::Uuid,
+) -> Result<Object, ArunaError> {
+    let shared_id = objects
+        .filter(database::schema::objects::id.eq(ref_object_id))
+        .select(database::schema::objects::shared_revision_id)
+        .first::<uuid::Uuid>(conn)?;
+
+    let latest_object = objects
+        .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .order_by(database::schema::objects::revision_number.desc())
+        .first::<Object>(conn)?;
+
+    Ok(latest_object)
+}
+
+/// Query all revisions associated to a specific object.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `ref_object_id`: `uuid::Uuid` - the Uuid for the object the latest revisions should be determined for
+///
+/// ## Resturns:
+///
+/// `Result<Vec<Object>, ArunaError>` -
+/// List of all database objects that are revivisons of the original object
+///
+pub fn get_all_revisions(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    ref_object_id: uuid::Uuid,
+) -> Result<Vec<Object>, diesel::result::Error> {
+    let shared_id = objects
+        .filter(database::schema::objects::id.eq(ref_object_id))
+        .select(database::schema::objects::shared_revision_id)
+        .first::<uuid::Uuid>(conn)?;
+
+    let all_revision_objects = objects
+        .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .load::<Object>(conn)?;
+
+    Ok(all_revision_objects)
+}
+/// Query all references for a specific object optionally with revisions
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `ref_object_id`: `uuid::Uuid` - the Uuid for the object the latest revisions should be determined for
+/// * `with_revisions`: `bool` - If true all references for all revisions of the provided object will be returned
+///
+/// ## Resturns:
+///
+/// `Result<Vec<CollectionObjects>, ArunaError>` -
+/// List of all collectionobjects that reference the object with or without all associated revisions
+///
+pub fn get_all_references(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    ref_object_id: &uuid::Uuid,
+    with_revisions: &bool,
+) -> Result<Vec<CollectionObject>, diesel::result::Error> {
+    if !with_revisions {
+        // If with revisions is false -> return just all collection_objects belonging
+        // to the current object
+        collection_objects
+            .filter(database::schema::collection_objects::object_id.eq(ref_object_id))
+            .load::<CollectionObject>(conn)
+    } else {
+        // Alias are needed to join a table with itself
+        // see: https://docs.diesel.rs/master/diesel/macro.alias.html
+        let (orig_obj, other_obj) = diesel::alias!(
+            database::schema::objects as orig_obj,
+            database::schema::objects as other_obj
+        );
+
+        // Hacky way to query all references in one db request
+        orig_obj
+            // First filter only the requested object
+            .filter(
+                orig_obj
+                    .field(database::schema::objects::id)
+                    .eq(ref_object_id),
+            )
+            // Join the objects table with itself based on the filtered collection object
+            // This should return a new object table that only contains entrys with the same
+            // shared_revision_id as the original object
+            .inner_join(
+                other_obj.on(orig_obj
+                    .field(database::schema::objects::shared_revision_id)
+                    .eq(other_obj.field(database::schema::objects::shared_revision_id))),
+            )
+            // Join the result with collection objects on object_id
+            // This will result with a combined result with objects <-> collection_objects
+            // that should all belong to the same shared revision id
+            .inner_join(
+                collection_objects.on(other_obj
+                    .field(database::schema::objects::id)
+                    .eq(database::schema::collection_objects::object_id)),
+            )
+            // Only select the collection_object section of the result
+            // as_select needs a Selectable and table specification on the
+            // model: https://docs.diesel.rs/master/diesel/prelude/derive.Selectable.html
+            .select(CollectionObject::as_select())
+            // Load as list of collection_objects and return
+            .load::<CollectionObject>(conn)
+    }
+}
+/// Helper function to query the current database version of an object "ObjectDto"
+/// ObjectDto can be transformed to gRPC objects
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
+/// * `collection_uuid` `&uuid::Uuid` - The Uuid of the requesting collection
+///
+/// ## Resturns:
+///
+/// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
+/// Database representation of an object
+///
+fn get_object(
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<ObjectDto, diesel::result::Error> {
+    let object: Object = objects
+        .filter(database::schema::objects::id.eq(&object_uuid))
+        .first::<Object>(conn)?;
+
+    let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
+    let (labels, hooks) = from_object_key_values(object_key_values);
+
+    let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+
+    let source: Option<Source> = match &object.source_id {
+        None => None,
+        Some(src_id) => Some(
+            sources
+                .filter(database::schema::sources::id.eq(src_id))
+                .first::<Source>(conn)?,
+        ),
+    };
+
+    let update: bool = CollectionObject::belonging_to(&object)
+        .select(database::schema::collection_objects::auto_update)
+        .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .first::<bool>(conn)?;
+
+    let latest_object_revision: Option<i64> = objects
+        .select(max(database::schema::objects::revision_number))
+        .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+        .first::<Option<i64>>(conn)?;
+
+    let latest = match latest_object_revision {
+        None => Err(Error::NotFound), // false,
+        Some(revision) => Ok(revision == object.revision_number),
+    }?;
+
+    Ok(ObjectDto {
+        object,
+        labels,
+        hooks,
+        hash: object_hash,
+        source,
+        latest,
+        update,
+    })
+}
+
+/// Implement TryFrom for ObjectDto to ProtoObject
+///
+/// This can convert an ObjectDto to a ProtoObject via built-in try convert functions
+///
+impl TryFrom<ObjectDto> for ProtoObject {
+    type Error = ArunaError;
+
+    fn try_from(object_dto: ObjectDto) -> Result<Self, Self::Error> {
+        // Transform db Source to proto Source
+        let proto_source = match object_dto.source {
+            None => None,
+            Some(source) => Some(ProtoSource {
+                identifier: source.link,
+                source_type: source.source_type as i32,
+            }),
+        };
+
+        // If object id == origin id --> original uploaded object
+        //Note: OriginType only stored implicitly
+        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
+            None => None,
+            Some(origin_uuid) => Some(ProtoOrigin {
+                id: origin_uuid.to_string(),
+                r#type: match object_dto.object.id == origin_uuid {
+                    true => 1,
+                    false => 2,
+                },
+            }),
+        };
+
+        // Transform NaiveDateTime to Timestamp
+        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
+
+        // Transform db Hash to proto Hash
+        let proto_hash = ProtoHash {
+            alg: object_dto.hash.hash_type as i32,
+            hash: object_dto.hash.hash,
+        };
+
+        // Construct proto Object
+        Ok(ProtoObject {
+            id: object_dto.object.id.to_string(),
+            filename: object_dto.object.filename,
+            labels: object_dto.labels,
+            hooks: object_dto.hooks,
+            created: Some(timestamp),
+            content_len: object_dto.object.content_len,
+            status: object_dto.object.object_status as i32,
+            origin: proto_origin,
+            data_class: object_dto.object.dataclass as i32,
+            hash: Some(proto_hash),
+            rev_number: object_dto.object.revision_number,
+            source: proto_source,
+            latest: object_dto.latest,
+            auto_update: object_dto.update,
+        })
+    }
 }
