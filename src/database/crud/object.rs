@@ -187,36 +187,61 @@ impl Database {
         let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Insert all defined objects into the database
-        let object_dto = self
-            .pg_connection
-            .get()?
-            .transaction::<ObjectDto, Error, _>(|conn| {
-                let latest = get_latest(conn, req_object_uuid)?;
+        let object_dto =
+            self.pg_connection
+                .get()?
+                .transaction::<ObjectDto, Error, _>(|conn| {
+                    let latest = get_latest_obj(conn, req_object_uuid)?;
 
-                let is_still_latest = latest.id == req_object_uuid;
+                    let is_still_latest = latest.id == req_object_uuid;
 
-                // Update the collection objects
-                // - Status
-                // - is_latest
-                // - auto_update
-                diesel::update(
-                    collection_objects.filter(
-                        database::schema::collection_objects::object_id.eq(req_object_uuid),
-                    ),
-                )
-                .set((
-                    database::schema::collection_objects::is_latest.eq(is_still_latest),
-                    database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
-                    database::schema::collection_objects::auto_update.eq(request.auto_update),
-                ))
-                .execute(conn)?;
-                // Update the object itself to be available
-                diesel::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
+                    // Update the object itself to be available
+                    let returned_obj = diesel::update(
+                        objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                    )
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                    .execute(conn)?;
+                    .get_result::<Object>(conn)?;
 
-                get_object(&req_object_uuid, &req_coll_uuid, conn)
-            })?;
+                    // Check if the origin id is different from uuid
+                    // This indicates an "updated" object and not a new one
+                    // Finishing updates need extra steps to update all references
+                    // In other collections / objectgroups
+                    if let Some(orig_id) = returned_obj.origin_id {
+                        if orig_id != returned_obj.id {
+
+                            /*ToDo:
+                             * ----- ObjectFinishRequest starts here ---------------------------------------------------
+                             *  - Iterate through all collections_objects of old_latest (join collection)
+                             *              - Is Object auto_update?
+                             *                  - True: Replace collection_objects entry with latest
+                             *                      - Create object group revisions with updated object
+                             *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
+                             *                          - Copy object group with revision+1
+                             *                          - Copy object_group_object references and replace updated object_id
+                             *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
+                             *                  - False: set is_latest false
+                             *  - Set object with latest+1 status AVAILABLE
+                             *  - Set collection_objects reference latest+1 status OK
+                             */
+                        }
+                    }
+
+                    // Update the collection objects
+                    // - Status
+                    // - is_latest
+                    // - auto_update
+                    diesel::update(collection_objects.filter(
+                        database::schema::collection_objects::object_id.eq(req_object_uuid),
+                    ))
+                    .set((
+                        database::schema::collection_objects::is_latest.eq(is_still_latest),
+                        database::schema::collection_objects::reference_status
+                            .eq(ReferenceStatus::OK),
+                        database::schema::collection_objects::auto_update.eq(request.auto_update),
+                    ))
+                    .execute(conn)?;
+                    get_object(&req_object_uuid, &req_coll_uuid, conn)
+                })?;
 
         Ok(FinishObjectStagingResponse {
             object: Some(object_dto.try_into()?),
@@ -242,26 +267,6 @@ impl Database {
          *      - Create new location
          *      - Create new empty hash
          *      - Generate upload id with data proxy request
-         */
-
-        /*ToDo:
-         * ----- ObjectFinishRequest starts here ---------------------------------------------------
-         *  - Check if collection_objects reference with object_id+collection_id exists+STAGING exists
-         *  - Set revision old_latest+1 (unique constraint shared_revision_id+revision)
-         *  - Iterate through all collections_objects of old_latest (join collection)
-         *      - Check if collection is pinned version
-         *          - True: Do nothing.
-         *          - Else:
-         *              - Is Object auto_update?
-         *                  - True: Replace collection_objects entry with latest
-         *                      - Create object group revisions with updated object
-         *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
-         *                          - Copy object group with revision+1
-         *                          - Copy object_group_object references and replace updated object_id
-         *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
-         *                  - False: set is_latest false
-         *  - Set object with latest+1 status AVAILABLE
-         *  - Set collection_objects reference latest+1 status OK
          */
     }
 
@@ -757,7 +762,7 @@ pub fn clone_object(
 /// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
 /// The latest database object or error if the request failed.
 ///
-pub fn get_latest(
+pub fn get_latest_obj(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     ref_object_id: uuid::Uuid,
 ) -> Result<Object, ArunaError> {
