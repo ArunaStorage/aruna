@@ -1,8 +1,8 @@
 use chrono::Local;
 use diesel::dsl::max;
-use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
+use diesel::{prelude::*, update};
 use r2d2::PooledConnection;
 
 use crate::api::aruna::api::storage::{
@@ -36,9 +36,11 @@ use crate::database::models::object::{
     Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 use crate::database::schema::{
-    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
+
+use super::objectgroups::bump_revisisions;
 
 // Struct to hold the database objects
 struct ObjectDto {
@@ -182,66 +184,129 @@ impl Database {
     pub fn finish_object_staging(
         &self,
         request: &FinishObjectStagingRequest,
+        user_id: &uuid::Uuid,
     ) -> Result<FinishObjectStagingResponse, ArunaError> {
         let req_object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
         let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Insert all defined objects into the database
-        let object_dto =
-            self.pg_connection
-                .get()?
-                .transaction::<ObjectDto, Error, _>(|conn| {
-                    let latest = get_latest_obj(conn, req_object_uuid)?;
+        let object_dto = self
+            .pg_connection
+            .get()?
+            .transaction::<ObjectDto, Error, _>(|conn| {
+                let latest = get_latest_obj(conn, req_object_uuid)?;
 
-                    let is_still_latest = latest.id == req_object_uuid;
+                let is_still_latest = latest.id == req_object_uuid;
 
-                    // Update the object itself to be available
-                    let returned_obj = diesel::update(
-                        objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                    )
-                    .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                    .get_result::<Object>(conn)?;
+                // Update the object itself to be available
+                let returned_obj = diesel::update(
+                    objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                )
+                .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                .get_result::<Object>(conn)?;
 
-                    // Check if the origin id is different from uuid
-                    // This indicates an "updated" object and not a new one
-                    // Finishing updates need extra steps to update all references
-                    // In other collections / objectgroups
-                    if let Some(orig_id) = returned_obj.origin_id {
-                        if orig_id != returned_obj.id {
+                // Check if the origin id is different from uuid
+                // This indicates an "updated" object and not a new one
+                // Finishing updates need extra steps to update all references
+                // In other collections / objectgroups
+                if let Some(orig_id) = returned_obj.origin_id {
+                    if orig_id != returned_obj.id {
+                        // Get all revisions of the object it could be that an older version still has "auto_update" set
+                        let all_revisions = get_all_revisions(conn, req_object_uuid)?;
+                        // Filter out the UUIDs
+                        let all_rev_ids =
+                            all_revisions.iter().map(|full| full.id).collect::<Vec<_>>();
 
-                            /*ToDo:
-                             * ----- ObjectFinishRequest starts here ---------------------------------------------------
-                             *  - Iterate through all collections_objects of old_latest (join collection)
-                             *              - Is Object auto_update?
-                             *                  - True: Replace collection_objects entry with latest
-                             *                      - Create object group revisions with updated object
-                             *                          - Update collection_object_groups object_group_ids only for collection_objects with auto_update true
-                             *                          - Copy object group with revision+1
-                             *                          - Copy object_group_object references and replace updated object_id
-                             *                          - Update collection_object_group object_group_ids only for collection_objects with auto_update true with new object_group_id
-                             *                  - False: set is_latest false
-                             *  - Set object with latest+1 status AVAILABLE
-                             *  - Set collection_objects reference latest+1 status OK
-                             */
+                        // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
+                        // Set all auto_updates and is_latest to be false
+                        let auto_updating_coll_obj = update(
+                            collection_objects
+                                .filter(
+                                    database::schema::collection_objects::object_id
+                                        .eq_any(all_rev_ids),
+                                )
+                                .filter(database::schema::collection_objects::auto_update.eq(true)),
+                        )
+                        .set((
+                            database::schema::collection_objects::auto_update.eq(false),
+                            database::schema::collection_objects::is_latest.eq(false),
+                        ))
+                        .get_results::<CollectionObject>(conn)?;
+
+                        let auto_updating_obj_id = auto_updating_coll_obj
+                            .iter()
+                            .map(|elem| elem.object_id)
+                            .collect::<Vec<_>>();
+
+                        let auto_updating_coll_obj_id = auto_updating_coll_obj
+                            .iter()
+                            .map(|elem| elem.id)
+                            .collect::<Vec<_>>();
+
+                        // Only proceed if the list is not empty, if it is empty no updates need to be performed
+
+                        if !auto_updating_coll_obj.is_empty() {
+                            // Query the affected object_groups
+                            let affected_object_groups = object_group_objects
+                                .filter(
+                                    database::schema::object_group_objects::object_id
+                                        .eq_any(&auto_updating_obj_id),
+                                )
+                                .select(database::schema::object_group_objects::object_group_id)
+                                .load::<uuid::Uuid>(conn)?;
+                            // Bump all revisions for object_groups
+                            let new_ogroups =
+                                bump_revisisions(&affected_object_groups, user_id, conn)?;
+                            let new_group_ids =
+                                new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+                            // Update Collectionobjects to use the new object_id
+                            update(
+                                collection_objects.filter(
+                                    database::schema::collection_objects::id
+                                        .eq_any(&auto_updating_coll_obj_id),
+                                ),
+                            )
+                            .set((
+                                database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                database::schema::collection_objects::is_latest.eq(true),
+                                database::schema::collection_objects::auto_update.eq(true),
+                            ))
+                            .execute(conn)?;
+                            // Update object_group references
+                            update(object_group_objects)
+                                .filter(
+                                    database::schema::object_group_objects::object_group_id
+                                        .eq_any(&new_group_ids),
+                                )
+                                .filter(
+                                    database::schema::object_group_objects::object_id.eq(orig_id),
+                                )
+                                .set(
+                                    database::schema::object_group_objects::object_id
+                                        .eq(req_object_uuid),
+                                )
+                                .execute(conn)?;
                         }
                     }
+                }
 
-                    // Update the collection objects
-                    // - Status
-                    // - is_latest
-                    // - auto_update
-                    diesel::update(collection_objects.filter(
+                // Update the collection objects
+                // - Status
+                // - is_latest
+                // - auto_update
+                diesel::update(
+                    collection_objects.filter(
                         database::schema::collection_objects::object_id.eq(req_object_uuid),
-                    ))
-                    .set((
-                        database::schema::collection_objects::is_latest.eq(is_still_latest),
-                        database::schema::collection_objects::reference_status
-                            .eq(ReferenceStatus::OK),
-                        database::schema::collection_objects::auto_update.eq(request.auto_update),
-                    ))
-                    .execute(conn)?;
-                    get_object(&req_object_uuid, &req_coll_uuid, conn)
-                })?;
+                    ),
+                )
+                .set((
+                    database::schema::collection_objects::is_latest.eq(is_still_latest),
+                    database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                    database::schema::collection_objects::auto_update.eq(request.auto_update),
+                ))
+                .execute(conn)?;
+                get_object(&req_object_uuid, &req_coll_uuid, conn)
+            })?;
 
         Ok(FinishObjectStagingResponse {
             object: Some(object_dto.try_into()?),

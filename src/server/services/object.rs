@@ -264,7 +264,7 @@ impl ObjectService for ObjectServiceImpl {
             .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
         // Authorize the request
-        let _creator_id = self
+        let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
@@ -319,7 +319,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let database_clone = self.database.clone();
         let response = task::spawn_blocking(move || {
-            database_clone.finish_object_staging(&request.into_inner())
+            database_clone.finish_object_staging(&request.into_inner(), &creator_id)
         })
         .await
         .map_err(ArunaError::from)??;

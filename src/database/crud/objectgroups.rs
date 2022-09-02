@@ -73,7 +73,7 @@ pub fn bump_revisisions(
                 name: old.name.clone(),
                 description: old.description.clone(),
                 created_at: Utc::now().naive_utc(),
-                created_by: creator_id.clone(),
+                created_by: *creator_id,
             })
         })
         .collect::<Result<Vec<_>, diesel::result::Error>>()?;
@@ -91,10 +91,9 @@ pub fn bump_revisisions(
         .map(|old| {
             Ok(ObjectGroupKeyValue {
                 id: uuid::Uuid::new_v4(),
-                object_group_id: mappings
+                object_group_id: *mappings
                     .get(&old.object_group_id)
-                    .ok_or(diesel::result::Error::NotFound)?
-                    .clone(),
+                    .ok_or(diesel::result::Error::NotFound)?,
                 key: old.key.to_string(),
                 value: old.value.to_string(),
                 key_value_type: old.key_value_type,
@@ -112,10 +111,9 @@ pub fn bump_revisisions(
         .map(|old| {
             Ok(ObjectGroupObject {
                 id: uuid::Uuid::new_v4(),
-                object_group_id: mappings
+                object_group_id: *mappings
                     .get(&old.object_group_id)
-                    .ok_or(diesel::result::Error::NotFound)?
-                    .clone(),
+                    .ok_or(diesel::result::Error::NotFound)?,
                 object_id: old.object_id,
                 is_meta: old.is_meta,
             })
@@ -128,10 +126,9 @@ pub fn bump_revisisions(
             Ok(CollectionObjectGroup {
                 id: uuid::Uuid::new_v4(),
                 collection_id: old.collection_id,
-                object_group_id: mappings
+                object_group_id: *mappings
                     .get(&old.object_group_id)
-                    .ok_or(diesel::result::Error::NotFound)?
-                    .clone(),
+                    .ok_or(diesel::result::Error::NotFound)?,
                 writeable: old.writeable,
             })
         })
