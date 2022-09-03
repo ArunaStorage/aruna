@@ -1,7 +1,7 @@
 use std::{env, str::FromStr};
 
 use async_channel::{Receiver, Sender};
-use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
+use aws_sdk_s3::{model::part, types::ByteStream, Client, Endpoint, Region};
 use http::Uri;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -126,5 +126,29 @@ impl S3Backend {
             .unwrap();
 
         return Ok(multipart.upload_id().unwrap().to_string());
+    }
+
+    pub async fn upload_multi_object(
+        &self,
+        recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
+        bucket: String,
+        key: String,
+        content_len: i64,
+        part_number: i32,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let hyper_body = hyper::Body::wrap_stream(recv);
+        let bytestream = ByteStream::from(hyper_body);
+
+        self.s3_client
+            .upload_part()
+            .set_bucket(Some(bucket))
+            .set_key(Some(key))
+            .set_part_number(Some(part_number))
+            .set_content_length(Some(content_len))
+            .body(bytestream)
+            .send()
+            .await?;
+
+        return Ok(());
     }
 }

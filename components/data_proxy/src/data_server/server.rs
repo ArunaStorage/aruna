@@ -190,6 +190,66 @@ async fn single_upload(
     return Ok(HttpResponse::Ok().finish());
 }
 
+/// Endpoint to upload the requested object in one piece
+#[put("/objects/upload/multi/{part}/{bucket}/{key:.*}")]
+async fn multi_upload(
+    req: HttpRequest,
+    server: web::Data<ServerState>,
+    payload: web::Payload,
+    path: web::Path<(i32, String, String)>,
+    sign_query: web::Query<SignedParamsQuery>,
+) -> Result<HttpResponse, Error> {
+    let verified = server
+        .signer
+        .verify_sign_url(sign_query.0, req.path().to_string())
+        .unwrap();
+    if !verified {
+        return Ok(HttpResponse::Unauthorized().finish());
+    }
+
+    let content_len = match req.headers().get("Content-Length") {
+        Some(value) => value,
+        None => {
+            return Ok(HttpResponse::BadRequest().body("could not read Content-Length header"));
+        }
+    };
+    let content_len_string = match std::str::from_utf8(content_len.as_bytes()) {
+        Ok(value) => value,
+        Err(e) => {
+            log::debug!("{}", e);
+            return Ok(HttpResponse::BadRequest().body("could not read Content-Length header"));
+        }
+    };
+    let content_len = match content_len_string.parse::<i64>() {
+        Ok(value) => value,
+        Err(e) => {
+            log::debug!("{}", e);
+            return Ok(HttpResponse::BadRequest().body("could not read Content-Length header"));
+        }
+    };
+
+    let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
+    let (data_middleware_sender, object_handler_recv) = async_channel::bounded(10);
+
+    let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
+    let payload_handler = handle_payload(payload, payload_sender);
+    let middleware_handler = middleware.handle_stream();
+    let s3_handler = server.s3_client.upload_multi_object(
+        object_handler_recv,
+        path.1.to_string(),
+        path.2.to_string(),
+        content_len,
+        path.0,
+    );
+
+    if let Err(err) = try_join!(payload_handler, middleware_handler, s3_handler) {
+        log::error!("{}", err);
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+
+    return Ok(HttpResponse::Ok().finish());
+}
+
 async fn handle_payload(
     mut payload: web::Payload,
     sender: Sender<bytes::Bytes>,

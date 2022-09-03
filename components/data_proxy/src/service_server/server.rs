@@ -33,6 +33,7 @@ pub struct ProxyServer {
     pub data_proxy_hostname: String,
 }
 
+/// The actual implementation of the internal API
 impl ProxyServer {
     pub async fn new(
         internal_api: Arc<InternalServerImpl>,
@@ -104,6 +105,7 @@ impl InternalProxyService for InternalServerImpl {
             upload_id: upload_id,
         }));
     }
+
     async fn create_presigned_upload_url(
         &self,
         request: tonic::Request<CreatePresignedUploadUrlRequest>,
@@ -126,6 +128,7 @@ impl InternalProxyService for InternalServerImpl {
 
         return Ok(Response::new(response));
     }
+
     async fn finish_presigned_upload(
         &self,
         request: tonic::Request<FinishPresignedUploadRequest>,
@@ -135,6 +138,7 @@ impl InternalProxyService for InternalServerImpl {
         let response = FinishPresignedUploadResponse { ok: true };
         return Ok(Response::new(response));
     }
+
     async fn create_presigned_download(
         &self,
         request: tonic::Request<CreatePresignedDownloadRequest>,
