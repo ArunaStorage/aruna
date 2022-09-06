@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Local;
 use diesel::dsl::max;
 use diesel::r2d2::ConnectionManager;
@@ -5,6 +7,9 @@ use diesel::result::Error;
 use diesel::{prelude::*, update};
 use r2d2::PooledConnection;
 
+use crate::api::aruna::api::storage::services::v1::{
+    GetReferencesRequest, GetReferencesResponse, ObjectReference,
+};
 use crate::api::aruna::api::storage::{
     internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
@@ -673,6 +678,82 @@ impl Database {
         Ok(CreateObjectReferenceResponse {})
     }
 
+    /// Get all references for an object in a specific collection
+    ///
+    /// ## Arguments:
+    ///
+    /// * `GetReferencesRequest` - Request that specifies an object
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<GetReferencesResponse, ArunaError>` - List with all current references
+    ///
+    /// ## Behaviour:
+    ///
+    /// Returns a list with all current references of the specified object. Optional all references for all revisions
+    /// are returned (=> `with_revisions`)
+    ///
+    pub fn get_references(
+        &self,
+        request: &GetReferencesRequest,
+    ) -> Result<GetReferencesResponse, ArunaError> {
+        // Extract (and automagically validate) uuids from request
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+
+        // Transaction time
+        let references = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<ObjectReference>, Error, _>(|conn| {
+                let orig_object = objects
+                    .filter(database::schema::objects::id.eq(object_uuid))
+                    .first::<Object>(conn)?;
+
+                if request.with_revisions {
+                    let all_revisions = objects
+                        .filter(
+                            database::schema::objects::shared_revision_id
+                                .eq(orig_object.shared_revision_id),
+                        )
+                        .load::<Object>(conn)?;
+                    let mapped = all_revisions
+                        .iter()
+                        .map(|elem| (elem.id, elem.revision_number))
+                        .collect::<HashMap<uuid::Uuid, i64>>();
+
+                    let reved_references: Vec<CollectionObject> =
+                        CollectionObject::belonging_to(&all_revisions)
+                            .load::<CollectionObject>(conn)?;
+
+                    Ok(reved_references
+                        .iter()
+                        .map(|elem| ObjectReference {
+                            object_id: elem.object_id.to_string(),
+                            collection_id: elem.collection_id.to_string(),
+                            revision_number: *mapped.get(&elem.id).unwrap_or(&0),
+                            is_writeable: elem.writeable,
+                        })
+                        .collect::<Vec<_>>())
+                } else {
+                    let solo_references: Vec<CollectionObject> =
+                        CollectionObject::belonging_to(&orig_object)
+                            .load::<CollectionObject>(conn)?;
+
+                    Ok(solo_references
+                        .iter()
+                        .map(|elem| ObjectReference {
+                            object_id: elem.object_id.to_string(),
+                            collection_id: elem.collection_id.to_string(),
+                            revision_number: orig_object.revision_number,
+                            is_writeable: elem.writeable,
+                        })
+                        .collect::<Vec<_>>())
+                }
+            })?;
+
+        // Empty response signals success
+        Ok(GetReferencesResponse { references })
+    }
     /// This clones a specific revision of an object into another collection.
     /// The cloned object is then treated like any other individual object.
     ///
