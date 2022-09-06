@@ -233,9 +233,12 @@ pub struct CloneObjectRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
     pub object_id: ::prost::alloc::string::String,
-    ///  CollectionID
+    ///  From CollectionID
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
+    ///  Target CollectionID
+    #[prost(string, tag="3")]
+    pub target_collection_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloneObjectResponse {

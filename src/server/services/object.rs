@@ -468,9 +468,40 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn clone_object(
         &self,
-        _request: Request<CloneObjectRequest>,
+        request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>, Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+
+        // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        // Authorize "TARGET"
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::APPEND,     // User needs at least append permission to create an object
+            )
+            .await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || database_clone.clone_object(request.get_ref()))
+            .await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 
     async fn delete_object(
