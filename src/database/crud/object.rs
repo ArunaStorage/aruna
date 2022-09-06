@@ -29,9 +29,7 @@ use crate::database::crud::utils::{
     from_object_key_values, naivedatetime_to_prost_time, to_object_key_values,
 };
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{
-    Dataclass, HashType, ObjectStatus, ReferenceStatus, SourceType,
-};
+use crate::database::models::enums::{HashType, ObjectStatus, ReferenceStatus, SourceType};
 use crate::database::models::object::{
     Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
@@ -41,6 +39,7 @@ use crate::database::schema::{
 };
 
 use super::objectgroups::bump_revisisions;
+use super::utils::parse_dataclass;
 
 // Struct to hold the database objects
 struct ObjectDto {
@@ -86,7 +85,7 @@ impl Database {
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
         //Define source object from updated request; None if empty
-        let source: Option<Source> = match &request.source {
+        let source: Option<Source> = match &staging_object.source {
             Some(source) => Some(Source {
                 id: uuid::Uuid::new_v4(),
                 link: source.identifier.clone(),
@@ -112,7 +111,7 @@ impl Database {
             created_by: *creator,
             content_len: 0,
             object_status: ObjectStatus::INITIALIZING,
-            dataclass: Dataclass::PRIVATE,
+            dataclass: parse_dataclass(&staging_object.dataclass),
             source_id: source.as_ref().map(|src| src.id),
             origin_id: Some(object_uuid),
         };
@@ -316,9 +315,118 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn update_object(
         &self,
-        _request: UpdateObjectRequest,
+        request: &UpdateObjectRequest,
+        location: &Option<ProtoLocation>,
+        creator_uuid: &uuid::Uuid,
+        default_endpoint: uuid::Uuid,
     ) -> Result<UpdateObjectResponse, ArunaError> {
-        todo!()
+        if let Some(sobj) = &request.object {
+            let new_obj_id = uuid::Uuid::new_v4();
+
+            let parsed_old_id = uuid::Uuid::parse_str(&request.object_id)?;
+            let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+            self.pg_connection
+                .get()?
+                .transaction::<_, ArunaError, _>(|conn| {
+                    let latest = get_latest_obj(conn, parsed_old_id)?;
+
+                    //Define source object from updated request; None if empty
+                    let source: Option<Source> = match &sobj.source {
+                        Some(source) => Some(Source {
+                            id: uuid::Uuid::new_v4(),
+                            link: source.identifier.clone(),
+                            source_type: SourceType::from_i32(source.source_type)?,
+                        }),
+                        _ => None,
+                    };
+
+                    let new_object = Object {
+                        id: new_obj_id,
+                        shared_revision_id: latest.shared_revision_id,
+                        revision_number: latest.revision_number + 1,
+                        filename: sobj.filename.to_string(),
+                        created_at: chrono::Utc::now().naive_utc(),
+                        created_by: *creator_uuid,
+                        content_len: sobj.content_len,
+                        object_status: ObjectStatus::UNAVAILABLE, // Is a staging object
+                        dataclass: parse_dataclass(&sobj.dataclass),
+                        source_id: source.as_ref().map(|source| source.id),
+                        origin_id: Some(parsed_old_id),
+                    };
+                    // Define the join table entry collection <--> object
+                    let collection_object = CollectionObject {
+                        id: uuid::Uuid::new_v4(),
+                        collection_id: parsed_col_id,
+                        is_latest: false, // Will be checked on finish
+                        reference_status: ReferenceStatus::STAGING,
+                        object_id: new_obj_id,
+                        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+                        is_specification: request.is_specification,
+                        writeable: true, //Note: Original object is initially always writeable
+                    };
+                    if request.reupload {
+                        if let Some(loc) = location {
+                            // Check if preferred endpoint is specified
+                            let endpoint_uuid =
+                                match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
+                                    Ok(ep_id) => ep_id,
+                                    Err(_) => default_endpoint,
+                                };
+                            let object_location = ObjectLocation {
+                                id: uuid::Uuid::new_v4(),
+                                bucket: loc.bucket.clone(),
+                                path: loc.path.clone(),
+                                endpoint_id: endpoint_uuid,
+                                object_id: new_obj_id,
+                                is_primary: true,
+                            };
+
+                            // Define the hash placeholder for the object
+                            let empty_hash = Hash {
+                                id: uuid::Uuid::new_v4(),
+                                hash: "".to_string(), //Note: Empty hash will be updated later
+                                object_id: new_obj_id,
+                                hash_type: HashType::MD5, //Note: Default. Will be updated later
+                            };
+                            diesel::insert_into(object_locations)
+                                .values(&object_location)
+                                .execute(conn)?;
+                            diesel::insert_into(sources).values(&source).execute(conn)?;
+                            diesel::insert_into(hashes)
+                                .values(&empty_hash)
+                                .execute(conn)?;
+                        }
+                    }
+                    // Define the initial object location
+                    // Convert the object's labels and hooks to their database representation
+                    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
+                    let key_value_pairs =
+                        to_object_key_values(sobj.labels.clone(), sobj.hooks.clone(), new_obj_id);
+
+                    diesel::insert_into(objects)
+                        .values(&new_object)
+                        .execute(conn)?;
+                    diesel::insert_into(object_key_value)
+                        .values(&key_value_pairs)
+                        .execute(conn)?;
+                    diesel::insert_into(collection_objects)
+                        .values(&collection_object)
+                        .execute(conn)?;
+
+                    Ok(())
+                })?;
+
+            Ok(UpdateObjectResponse {
+                object_id: new_obj_id.to_string(),
+                staging_id: new_obj_id.to_string(),
+                collection_id: parsed_col_id.to_string(),
+            })
+        } else {
+            Err(ArunaError::InvalidRequest(
+                "Staging object must be provided".to_string(),
+            ))
+        }
 
         /*ToDo:
          *  - Check permissions if update on collection is ok

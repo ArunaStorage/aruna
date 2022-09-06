@@ -331,9 +331,62 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn update_object(
         &self,
-        _request: Request<UpdateObjectRequest>,
+        request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>, Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+
+        let creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::WRITE, // User needs at least append permission to create an object
+            )
+            .await?;
+
+        // Extract request body
+        let inner_request = request.into_inner(); // Consumes the gRPC request
+
+        let (location, upload_id) = if inner_request.reupload {
+            // Connect to default data proxy endpoint
+            let mut data_proxy = self.try_connect_default_endpoint().await?;
+
+            // Generate upload_id for object through (currently only default) storage endpoint
+            let location = Location {
+                r#type: self.default_endpoint.endpoint_type as i32,
+                bucket: uuid::Uuid::new_v4().to_string(),
+                path: uuid::Uuid::new_v4().to_string(),
+            };
+
+            let upload_id = data_proxy
+                .init_presigned_upload(InitPresignedUploadRequest {
+                    location: Some(location.clone()),
+                    multipart: inner_request.multi_part,
+                })
+                .await?
+                .into_inner()
+                .upload_id;
+            (Some(location), Some(upload_id))
+        } else {
+            (None, None)
+        };
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let endpoint_id = self.default_endpoint.id;
+        let mut response = task::spawn_blocking(move || {
+            database_clone.update_object(&inner_request, &location, &creator_id, endpoint_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        if let Some(up_id) = upload_id {
+            response.staging_id = up_id;
+        };
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 
     /// Creates a reference to an object in another collection.

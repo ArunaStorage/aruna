@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest};
+use crate::api::aruna::api::storage::models::v1::{
+    KeyValue, LabelOrIdQuery, PageRequest,
+};
 
 use crate::database::models::collection::CollectionKeyValue;
-use crate::database::models::enums::{KeyValueType, UserRights};
+use crate::database::models::enums::{Dataclass, KeyValueType, UserRights};
 use crate::database::models::object::ObjectKeyValue;
 use crate::database::models::traits::IsKeyValue;
 use crate::error::ArunaError;
@@ -468,6 +470,17 @@ where
         }
     } else {
         None
+    }
+}
+
+pub fn parse_dataclass(grpcdclass: &i32) -> Dataclass {
+    match grpcdclass {
+        0 => Dataclass::PRIVATE, // Unspecified
+        1 => Dataclass::PUBLIC,
+        2 => Dataclass::PRIVATE,
+        3 => Dataclass::CONFIDENTIAL,
+        4 => Dataclass::PROTECTED,
+        _ => Dataclass::PRIVATE, // Default
     }
 }
 

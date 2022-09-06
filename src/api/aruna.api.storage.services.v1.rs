@@ -18,9 +18,13 @@ pub struct StageObject {
     pub collection_id: ::prost::alloc::string::String,
     #[prost(int64, tag="4")]
     pub content_len: i64,
-    #[prost(message, repeated, tag="5")]
+    #[prost(message, optional, tag="5")]
+    pub source: ::core::option::Option<super::super::models::v1::Source>,
+    #[prost(enumeration="super::super::models::v1::DataClass", tag="6")]
+    pub dataclass: i32,
+    #[prost(message, repeated, tag="7")]
     pub labels: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
-    #[prost(message, repeated, tag="6")]
+    #[prost(message, repeated, tag="8")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -31,9 +35,6 @@ pub struct InitializeNewObjectRequest {
     ///  Collection id of the collection to which the object will be added.
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
-    ///  Source
-    #[prost(message, optional, tag="3")]
-    pub source: ::core::option::Option<super::super::models::v1::Source>,
     ///  (optional) Used to specify a preferred endpoint by id
     ///  this can be used to specify which endpoint this object should use
     ///  only needed if it is not the default endpoint for the current server
@@ -188,6 +189,10 @@ pub struct UpdateObjectRequest {
     ///  Should a multipart upload be used?
     #[prost(bool, tag="6")]
     pub multi_part: bool,
+    ///  Is specification ?
+    ///  Should this object contain a specification for the collection ?
+    #[prost(bool, tag="7")]
+    pub is_specification: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateObjectResponse {
