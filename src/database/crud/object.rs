@@ -4,7 +4,7 @@ use chrono::Local;
 use diesel::dsl::max;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
-use diesel::{prelude::*, update};
+use diesel::{delete, prelude::*, update};
 use r2d2::PooledConnection;
 
 use crate::api::aruna::api::storage::services::v1::{
@@ -25,6 +25,7 @@ use crate::api::aruna::api::storage::{
         InitializeNewObjectResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
+use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::database;
@@ -39,8 +40,9 @@ use crate::database::models::object::{
     Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 use crate::database::schema::{
-    collection_objects::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
+    hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
+    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
 };
 
 use super::objectgroups::bump_revisisions;
@@ -898,24 +900,39 @@ impl Database {
         })
     }
 
-    /// This performs a soft delete on the object. Instead of removing it
-    /// from the database and storage backend, the status of the object will
-    /// be set to DELETED.
+    /// This performs a hard delete on the object. The object and all its assets will be
+    /// removed from the database. Dependeing on the request this also includes all its
+    /// revisions and also objects which were derived from the original.
     ///
     /// ## Arguments:
     ///
+    /// * `request: DeleteObjectRequest` -
     ///
     /// ## Results:
     ///
+    /// * `Result<DeleteObjectResponse, ArunaError>` - An empty DeleteObjectResponse signals success
     ///
     /// ## Behaviour:
     ///
+    /// ToDo
     ///
-    pub fn delete(
+    pub fn delete_object(
         &self,
-        _request: DeleteObjectRequest,
+        request: DeleteObjectRequest,
+        creator_id: uuid::Uuid,
     ) -> Result<DeleteObjectResponse, ArunaError> {
-        todo!()
+        //ToDo: - Set status of all affected objects to UNAVAILABLE
+        //ToDo: - What do with borrowed child objects?
+        /*ToDo: - Delete only possible on latest revision?
+         *      - Delete for each revision:
+         *          - Hash
+         *          - ObjectLocations --> S3 Objects (Currently no delete function available in data proxy)
+         *          - Source (Only with original)
+         *          - ObjectKeyValues
+         *          - CollectionObject
+         *          - ObjectGroupObject
+         *          - Object
+         */
 
         //writeable = w+ or w-
         //history   = h+ or h-
@@ -947,43 +964,100 @@ impl Database {
          *            - Update all object_groups with references to the specific object/revision
          */
 
-        //Ok(DeleteObjectResponse{})
-    }
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
 
-    /// This performs a hard delete on the object. The object and all its assets will be
-    /// removed from the database. Dependeing on the request this also includes all its
-    /// revisions and also objects which were derived from the original.
-    ///
-    /// ## Arguments:
-    ///
-    /// * `request: DeleteObjectRequest` -
-    ///
-    /// ## Results:
-    ///
-    /// * `Result<DeleteObjectResponse, ArunaError>` - An empty DeleteObjectResponse signals success
-    ///
-    /// ## Behaviour:
-    ///
-    /// ToDo
-    ///
-    pub fn delete_object(
-        &self,
-        _request: DeleteObjectRequest,
-    ) -> Result<DeleteObjectResponse, ArunaError> {
-        todo!()
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                let object_ref = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq(parsed_object_id))
+                    .filter(
+                        database::schema::collection_objects::collection_id
+                            .eq(parsed_collection_id),
+                    )
+                    .first::<CollectionObject>(conn)?;
 
-        //ToDo: - Set status of all affected objects to UNAVAILABLE
-        //ToDo: - What do with borrowed child objects?
-        /*ToDo: - Delete only possible on latest revision?
-         *      - Delete for each revision:
-         *          - Hash
-         *          - ObjectLocations --> S3 Objects (Currently no delete function available in data proxy)
-         *          - Source (Only with original)
-         *          - ObjectKeyValues
-         *          - CollectionObject
-         *          - ObjectGroupObject
-         *          - Object
-         */
+                // The reference is writeable
+                if object_ref.writeable {
+
+                    // Reference is not writeable
+                } else {
+                    // Consider all "revisions" in this collection
+                    if request.with_revisions {
+
+                        // Consider only the specified object reference
+                    } else {
+                        // Remove object_group_object reference and update object_group
+
+                        // Query all related object_groups
+                        let all_coll_obj_grps: Option<Vec<ObjectGroupObject>> =
+                            collection_object_groups
+                                .inner_join(object_group_objects.on(
+                                    database::schema::collection_object_groups::object_group_id.eq(
+                                        database::schema::object_group_objects::object_group_id,
+                                    ),
+                                ))
+                                .filter(
+                                    database::schema::object_group_objects::object_id
+                                        .eq(parsed_object_id),
+                                )
+                                .filter(
+                                    database::schema::collection_object_groups::collection_id
+                                        .eq(parsed_collection_id),
+                                )
+                                .select(ObjectGroupObject::as_select())
+                                .load::<ObjectGroupObject>(conn)
+                                .optional()?;
+
+                        // Only proceed if at least one reference exists
+                        if let Some(coll_obj_grps) = all_coll_obj_grps {
+                            // Get object_group_ids
+                            let object_grp_ids = coll_obj_grps
+                                .iter()
+                                .map(|e| e.object_group_id)
+                                .collect::<Vec<_>>();
+
+                            // Bump the revision of all related object_groups -> revision_num +1
+                            let revisioned_ogroups =
+                                bump_revisisions(&object_grp_ids, &creator_id, conn)?;
+
+                            // Parse the returned info as Vec<UUID>
+                            let new_ids =
+                                revisioned_ogroups.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                            // Delete all object_group_objects that reference the object_id and are part of the "new" bumped objectgroups
+                            // Bumping the version will delete the "old" objectgroup reference and create an updated new one
+                            // This ensures that the history can be preserved when a "soft" delete occurs
+                            delete(object_group_objects)
+                                .filter(
+                                    database::schema::object_group_objects::object_id
+                                        .eq(parsed_object_id),
+                                )
+                                .filter(
+                                    database::schema::object_group_objects::object_group_id
+                                        .eq_any(new_ids),
+                                )
+                                .execute(conn)?;
+                        }
+                        // Remove collection_object reference for specific collection
+                        delete(collection_objects)
+                            .filter(
+                                database::schema::collection_objects::object_id
+                                    .eq(parsed_object_id),
+                            )
+                            .filter(
+                                database::schema::collection_objects::collection_id
+                                    .eq(parsed_collection_id),
+                            )
+                            .execute(conn)?;
+                    }
+                }
+
+                Ok(())
+            })?;
+
+        Ok(DeleteObjectResponse {})
     }
 
     //ToDo: Implement higher level database operations

@@ -47,9 +47,10 @@ impl IsKeyValue for ObjectGroupKeyValue {
     }
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable)]
 #[diesel(belongs_to(ObjectGroup))]
 #[diesel(belongs_to(Object))]
+#[diesel(table_name=object_group_objects)]
 pub struct ObjectGroupObject {
     pub id: uuid::Uuid,
     pub object_group_id: uuid::Uuid,
