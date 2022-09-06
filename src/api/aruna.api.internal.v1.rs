@@ -37,6 +37,10 @@ pub struct CreatePresignedUploadUrlRequest {
     pub location: ::core::option::Option<Location>,
     #[prost(string, tag="2")]
     pub upload_id: ::prost::alloc::string::String,
+    #[prost(int64, tag="3")]
+    pub part_number: i64,
+    #[prost(bool, tag="4")]
+    pub multipart: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreatePresignedUploadUrlResponse {

@@ -72,8 +72,10 @@ pub struct GetUploadUrlRequest {
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
     ///  Is this a multipart upload?
+    #[prost(bool, tag="4")]
+    pub multipart: bool,
     ///  (optional) if multi was initialized
-    #[prost(int32, tag="4")]
+    #[prost(int32, tag="5")]
     pub part_number: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
