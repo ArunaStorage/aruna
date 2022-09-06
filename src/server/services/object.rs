@@ -1,8 +1,10 @@
+use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::task;
 use tonic::transport::Channel;
 use tonic::{Code, Request, Response, Status};
 
+use crate::api::aruna::api::storage::models::v1::Object;
 use crate::api::aruna::api::storage::{
     internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
     services::v1::object_service_server::ObjectService, services::v1::*,
@@ -593,9 +595,62 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_objects(
         &self,
-        _request: Request<GetObjectsRequest>,
+        request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>, Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
+
+        let req_clone = request.get_ref().clone();
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || database_clone.get_objects(req_clone))
+            .await
+            .map_err(ArunaError::from)??;
+
+        let result = if let Some(objectdtos) = response {
+            let mut retvec = Vec::new();
+
+            for objdto in objectdtos {
+                let url = if request.get_ref().with_url {
+                    // Connect to one of the objects data proxy endpoints
+                    let (mut data_proxy, location) =
+                        self.try_connect_object_endpoint(&objdto.object.id).await?;
+                    // Get download url from data proxy endpoint
+                    data_proxy
+                        .create_presigned_download(CreatePresignedDownloadRequest {
+                            location: Some(location),
+                            range: Some(Range {
+                                start: 0,
+                                end: objdto.object.content_len,
+                            }),
+                        })
+                        .await?
+                        .into_inner()
+                        .url
+                } else {
+                    "".to_string()
+                };
+                retvec.push(ObjectWithUrl {
+                    object: Some(Object::try_from(objdto)?),
+                    url,
+                })
+            }
+            Vec::new()
+        } else {
+            Vec::new()
+        };
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(GetObjectsResponse { objects: result }));
     }
 
     async fn get_object_revisions(

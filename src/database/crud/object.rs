@@ -21,9 +21,8 @@ use crate::api::aruna::api::storage::{
         CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
         GetLatestObjectRevisionResponse, GetObjectByIdRequest, GetObjectRevisionsRequest,
-        GetObjectRevisionsResponse, GetObjectsRequest, GetObjectsResponse,
-        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
-        UpdateObjectResponse,
+        GetObjectRevisionsResponse, GetObjectsRequest, InitializeNewObjectRequest,
+        InitializeNewObjectResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
 use crate::error::{ArunaError, GrpcNotFoundError};
@@ -31,7 +30,8 @@ use crate::error::{ArunaError, GrpcNotFoundError};
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
-    from_object_key_values, naivedatetime_to_prost_time, to_object_key_values,
+    check_all_for_db_kv, from_object_key_values, naivedatetime_to_prost_time, parse_page_request,
+    parse_query, to_object_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{HashType, ObjectStatus, ReferenceStatus, SourceType};
@@ -44,17 +44,17 @@ use crate::database::schema::{
 };
 
 use super::objectgroups::bump_revisisions;
-use super::utils::parse_dataclass;
+use super::utils::{parse_dataclass, ParsedQuery};
 
 // Struct to hold the database objects
-struct ObjectDto {
-    object: Object,
-    labels: Vec<KeyValue>,
-    hooks: Vec<KeyValue>,
-    hash: Hash,
-    source: Option<Source>,
-    latest: bool,
-    update: bool,
+pub struct ObjectDto {
+    pub object: Object,
+    pub labels: Vec<KeyValue>,
+    pub hooks: Vec<KeyValue>,
+    pub hash: Hash,
+    pub source: Option<Source>,
+    pub latest: bool,
+    pub update: bool,
 }
 /// Implementing CRUD+ database operations for Objects
 impl Database {
@@ -614,10 +614,113 @@ impl Database {
 
     pub fn get_objects(
         &self,
-        _request: GetObjectsRequest,
-    ) -> Result<GetObjectsResponse, ArunaError> {
-        todo!()
+        request: GetObjectsRequest,
+    ) -> Result<Option<Vec<ObjectDto>>, ArunaError> {
+        // Parse the page_request and get pagesize / lastuuid
+        let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
+        // Parse the query to a `ParsedQuery`
+        let parsed_query = parse_query(request.label_id_filter)?;
+        // Collection context
+
+        let query_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        // Execute request
+        use crate::database::schema::object_key_value::dsl as okv;
+        use crate::database::schema::objects::dsl as obj;
+        use diesel::prelude::*;
+        let ret_objects = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<Vec<ObjectDto>>, Error, _>(|conn| {
+                // First build a "boxed" base request to which additional parameters can be added later
+                let mut base_request = obj::objects.into_boxed();
+                // Create returnvector of CollectionOverviewsDb
+                let mut return_vec: Vec<ObjectDto> = Vec::new();
+                // If pagesize is not unlimited set it to pagesize or default = 20
+                if let Some(pg_size) = pagesize {
+                    base_request = base_request.limit(pg_size);
+                }
+                // Add "last_uuid" filter if it is specified
+                if let Some(l_uid) = last_uuid {
+                    base_request = base_request.filter(obj::id.ge(l_uid));
+                }
+                // Add query if it exists
+                if let Some(p_query) = parsed_query {
+                    // Check if query exists
+                    match p_query {
+                        // This is a label query request
+                        ParsedQuery::LabelQuery(l_query) => {
+                            // Create key value boxed request
+                            let mut ckv_query = okv::object_key_value.into_boxed();
+                            // Create vector with "matching" collections
+                            let found_objs: Option<Vec<uuid::Uuid>>;
+                            // Is "and"
+                            if l_query.1 {
+                                // Add each key / value to label query
+                                for (obj_key, obj_value) in l_query.0.clone() {
+                                    // Always add keys
+                                    ckv_query = ckv_query.filter(okv::key.eq(obj_key));
+                                    // Will be Some if keys only == false
+                                    if let Some(val) = obj_value {
+                                        ckv_query = ckv_query.filter(okv::value.eq(val))
+                                    };
+                                }
+                                // Execute request and get a list with all found key values
+                                let found_obj_kv: Option<Vec<ObjectKeyValue>> =
+                                    ckv_query.load::<ObjectKeyValue>(conn).optional()?;
+                                // Parse the returned key_values for the "all" constraint
+                                // and only return matching collection ids
+                                found_objs = check_all_for_db_kv(found_obj_kv, l_query.0)
+                            // If the query is "or"
+                            } else {
+                                // Query all key / values
+                                for (obj_key, obj_value) in l_query.0 {
+                                    ckv_query = ckv_query.or_filter(okv::key.eq(obj_key));
+                                    // Only Some() if key_only is false
+                                    if let Some(val) = obj_value {
+                                        ckv_query = ckv_query.filter(okv::value.eq(val))
+                                    };
+                                }
+                                // Can query the matches collections directly
+                                found_objs = ckv_query
+                                    .select(okv::object_id)
+                                    .distinct()
+                                    .load::<uuid::Uuid>(conn)
+                                    .optional()?;
+                            }
+                            // Add to query if something was found otherwise return Only
+                            if let Some(fobjs) = found_objs {
+                                base_request = base_request.filter(obj::id.eq_any(fobjs))
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        // If the request was an ID request, just filter for all ids
+                        // And for uuids makes no sense
+                        ParsedQuery::IdsQuery(ids) => {
+                            base_request = base_request.filter(obj::id.eq_any(ids));
+                        }
+                    };
+                };
+
+                // Execute the preconfigured query
+                let query_collections: Option<Vec<Object>> =
+                    base_request.load::<Object>(conn).optional()?;
+                // Query overviews for each collection
+                // TODO: This might be inefficient and can be optimized later
+                if let Some(q_objs) = query_collections {
+                    for s_obj in q_objs {
+                        return_vec.push(get_object(&s_obj.id, &query_collection_id, conn)?);
+                    }
+                    Ok(Some(return_vec))
+                } else {
+                    Ok(None)
+                }
+            })?;
+
+        Ok(ret_objects)
     }
+
     /// Creates a reference to the original object in the target collection.
     ///
     /// ## Arguments:
