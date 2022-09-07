@@ -92,7 +92,7 @@ pub struct RequiredLabel {
 }
 
 #[derive(
-    Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable, PartialEq,
+    Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable, PartialEq, Eq,
 )]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]

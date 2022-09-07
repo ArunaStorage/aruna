@@ -338,7 +338,7 @@ pub fn parse_page_request(
 
 /// Struct that specifies a query
 /// Can either be LabelQuery or IdsQuery
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum ParsedQuery {
     // List with Labels (key and optional(value)) and a bool value that specifies and == true or or behaviour == false
     // default is or

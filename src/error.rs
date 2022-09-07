@@ -225,7 +225,7 @@ impl Display for TypeConversionError {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum GrpcNotFoundError {
     METADATATOKEN,
     PROJECTID,
@@ -246,7 +246,7 @@ impl Display for GrpcNotFoundError {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AuthorizationError {
     UNAUTHORIZED,
     PERMISSIONDENIED,

@@ -37,7 +37,7 @@ impl FromStr for EndpointType {
     }
 }
 
-#[derive(Debug, DbEnum, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd)]
 #[DieselTypePath = "sql_types::Dataclass"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Dataclass {
@@ -76,7 +76,7 @@ pub enum HashType {
     XXHASH32,
 }
 
-#[derive(Debug, DbEnum, Clone, Copy, PartialEq)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq)]
 #[DieselTypePath = "sql_types::KeyValueType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum KeyValueType {
@@ -102,7 +102,7 @@ pub enum UserRights {
     ADMIN,
 }
 
-#[derive(Debug, DbEnum, PartialEq, Clone, Copy)]
+#[derive(Debug, DbEnum, PartialEq, Eq, Clone, Copy)]
 #[DieselTypePath = "sql_types::Resources"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Resources {
@@ -112,7 +112,7 @@ pub enum Resources {
     OBJECTGROUP,
 }
 
-#[derive(Debug, DbEnum, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd)]
 #[DieselTypePath = "sql_types::ReferenceStatus"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum ReferenceStatus {

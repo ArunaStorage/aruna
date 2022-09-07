@@ -1,3 +1,4 @@
+#![allow(unknown_lints)]
 #[path = ""]
 pub mod aruna {
     #[path = ""]
