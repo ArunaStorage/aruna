@@ -16,6 +16,8 @@ use crate::api::aruna::api::storage::services::v1::{
     GetObjectEndpointsRequest,
     AddLabelToObjectRequest,
     AddLabelToObjectResponse,
+    SetHooksOfObjectRequest,
+    SetHooksOfObjectResponse,
 };
 use crate::api::aruna::api::storage::{
     internal::v1::{ Location as ProtoLocation, LocationType },
@@ -61,7 +63,13 @@ use crate::database::crud::utils::{
     to_object_key_values,
 };
 use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{ HashType, ObjectStatus, ReferenceStatus, SourceType };
+use crate::database::models::enums::{
+    HashType,
+    ObjectStatus,
+    ReferenceStatus,
+    SourceType,
+    KeyValueType,
+};
 use crate::database::models::object::{
     Endpoint,
     Hash,
@@ -1307,6 +1315,37 @@ impl Database {
         })?;
 
         Ok(AddLabelToObjectResponse { object: Some(updated_objects.try_into()?) })
+    }
+    pub fn set_hooks_of_object(
+        &self,
+        request: SetHooksOfObjectRequest
+    ) -> Result<SetHooksOfObjectResponse, ArunaError> {
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        // Transaction time
+        let updated_objects = self.pg_connection.get()?.transaction::<ObjectDto, Error, _>(|conn| {
+            delete(object_key_value)
+                .filter(database::schema::object_key_value::object_id.eq(&parsed_object_id))
+                .filter(database::schema::object_key_value::key_value_type.eq(KeyValueType::HOOK))
+                .execute(conn)?;
+
+            let new_hooks = request.hooks
+                .iter()
+                .map(|elem| ObjectKeyValue {
+                    id: uuid::Uuid::new_v4(),
+                    object_id: parsed_object_id,
+                    key: elem.key.to_string(),
+                    value: elem.value.to_string(),
+                    key_value_type: KeyValueType::HOOK,
+                })
+                .collect::<Vec<_>>();
+
+            insert_into(object_key_value).values(&new_hooks).execute(conn)?;
+
+            get_object(&parsed_object_id, &parsed_collection_id, conn)
+        })?;
+
+        Ok(SetHooksOfObjectResponse { object: Some(updated_objects.try_into()?) })
     }
 }
 

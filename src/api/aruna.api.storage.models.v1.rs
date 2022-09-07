@@ -159,7 +159,7 @@ pub struct Object {
     pub auto_update: bool,
 }
 ///  Multiple Objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Objects {
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<Object>,
@@ -167,7 +167,7 @@ pub struct Objects {
 ///  ObjectGroups are optional and can be used to group objects in a collection
 ///  together They need to refer to objects in the same collection Objectgroups
 ///  can be changed if the collection is mutable
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroup {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -191,14 +191,14 @@ pub struct ObjectGroup {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroups
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroups {
     #[prost(message, repeated, tag="1")]
     pub object_groups: ::prost::alloc::vec::Vec<ObjectGroup>,
 }
 ///  This is a representation of the ObjectGroup without the recursive nature of
 ///  object references
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupOverview {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -216,14 +216,14 @@ pub struct ObjectGroupOverview {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroupOverviews
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupOverviews {
     #[prost(message, repeated, tag="1")]
     pub object_group_overviews: ::prost::alloc::vec::Vec<ObjectGroupOverview>,
 }
 ///  This is a representation of the ObjectGroup with only ObjectIDs instead of
 ///  full objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupWithId {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -247,7 +247,7 @@ pub struct ObjectGroupWithId {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroupWithIDs
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupWithIDs {
     #[prost(message, repeated, tag="1")]
     pub object_group_with_ids: ::prost::alloc::vec::Vec<ObjectGroupWithId>,
@@ -263,7 +263,7 @@ pub struct ObjectGroupWithIDs {
 //  4. Collections can be created by any user, but only the owner can modify or
 //  delete them
 
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Collection {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -312,7 +312,7 @@ pub struct Collections {
 }
 ///  This is a representation of the Collection without the recursive nature of
 ///  objectreferences
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionOverview {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -347,14 +347,14 @@ pub mod collection_overview {
     }
 }
 ///  Multiple CollectionOverviews
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionOverviews {
     #[prost(message, repeated, tag="1")]
     pub collection_overviews: ::prost::alloc::vec::Vec<CollectionOverview>,
 }
 ///  This is a representation of the Collection with only Resource RevisionIDs
 ///  instead of full objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionWithId {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -395,7 +395,7 @@ pub mod collection_with_id {
     }
 }
 ///  Multiple CollectionWithIDs
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionWithIDs {
     #[prost(message, repeated, tag="1")]
     pub collection_with_ids: ::prost::alloc::vec::Vec<CollectionWithId>,
@@ -568,7 +568,7 @@ pub struct LabelFilter {
 }
 ///  This is a combined query for either a list of resource IDs or filtered by
 ///  Label Can be expanded in the future to allow for more complex queries
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct LabelOrIdQuery {
     #[prost(message, optional, tag="1")]
     pub labels: ::core::option::Option<LabelFilter>,

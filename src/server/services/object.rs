@@ -801,9 +801,25 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn set_hooks_of_object(
         &self,
-        _request: Request<SetHooksOfObjectRequest>
+        request: Request<SetHooksOfObjectRequest>
     ) -> Result<Response<SetHooksOfObjectResponse>, Status> {
-        todo!()
+        let target_collection_uuid = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        self.authz.collection_authorize(
+            request.metadata(),
+            target_collection_uuid, // This is the collection uuid in which this object should be created
+            UserRights::WRITE // User needs at least append permission to create an object
+        ).await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move || database_clone.set_hooks_of_object(request.into_inner())).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 
     ///ToDo: Rust Doc
