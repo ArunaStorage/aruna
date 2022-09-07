@@ -3,12 +3,12 @@
 //  gRPC best practises advice each Request and Response message in a RPC to be
 //  called {rpc_name}Request and {rpc_name}Response.
 
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Url {
     #[prost(string, tag="1")]
     pub url: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct StageObject {
     #[prost(string, tag="1")]
     pub filename: ::prost::alloc::string::String,
@@ -49,7 +49,7 @@ pub struct InitializeNewObjectRequest {
     #[prost(bool, tag="6")]
     pub is_specification: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct InitializeNewObjectResponse {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -61,7 +61,7 @@ pub struct InitializeNewObjectResponse {
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetUploadUrlRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -79,13 +79,13 @@ pub struct GetUploadUrlRequest {
     #[prost(int32, tag="5")]
     pub part_number: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetUploadUrlResponse {
     ///  URL
     #[prost(message, optional, tag="1")]
     pub url: ::core::option::Option<Url>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CompletedParts {
     ///  Multipart identifier
     #[prost(string, tag="1")]
@@ -94,19 +94,19 @@ pub struct CompletedParts {
     #[prost(int64, tag="2")]
     pub part: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDownloadUrlRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub object: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDownloadUrlResponse {
     #[prost(message, optional, tag="1")]
     pub url: ::core::option::Option<Url>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDownloadLinksBatchRequest {
     ///  CollectionID
     #[prost(string, tag="1")]
@@ -115,12 +115,12 @@ pub struct GetDownloadLinksBatchRequest {
     #[prost(string, repeated, tag="2")]
     pub objects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDownloadLinksBatchResponse {
     #[prost(message, repeated, tag="1")]
     pub urls: ::prost::alloc::vec::Vec<Url>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateDownloadLinksStreamRequest {
     ///  CollectionID
     #[prost(string, tag="1")]
@@ -129,12 +129,12 @@ pub struct CreateDownloadLinksStreamRequest {
     #[prost(string, repeated, tag="2")]
     pub objects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateDownloadLinksStreamResponse {
     #[prost(message, optional, tag="1")]
     pub url: ::core::option::Option<Url>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct FinishObjectStagingRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -194,7 +194,7 @@ pub struct UpdateObjectRequest {
     #[prost(bool, tag="7")]
     pub is_specification: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateObjectResponse {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -207,7 +207,7 @@ pub struct UpdateObjectResponse {
     #[prost(string, tag="3")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateObjectReferenceRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -225,10 +225,10 @@ pub struct CreateObjectReferenceRequest {
     #[prost(bool, tag="5")]
     pub auto_update: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateObjectReferenceResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CloneObjectRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -246,7 +246,7 @@ pub struct CloneObjectResponse {
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectRequest {
     ///  ObjectId
     #[prost(string, tag="1")]
@@ -261,7 +261,7 @@ pub struct DeleteObjectRequest {
     #[prost(bool, tag="4")]
     pub force: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -274,7 +274,7 @@ pub struct ObjectWithUrl {
     #[prost(string, tag="2")]
     pub url: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectByIdRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -312,7 +312,7 @@ pub struct GetObjectsResponse {
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<ObjectWithUrl>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectRevisionsRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -328,7 +328,7 @@ pub struct GetObjectRevisionsResponse {
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<ObjectWithUrl>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetLatestObjectRevisionRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -341,19 +341,19 @@ pub struct GetLatestObjectRevisionResponse {
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectEndpointsRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub object_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectEndpointsResponse {
     #[prost(message, repeated, tag="1")]
     pub endpoints: ::prost::alloc::vec::Vec<super::super::models::v1::Endpoint>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddLabelToObjectRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -369,7 +369,7 @@ pub struct AddLabelToObjectResponse {
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct SetHooksOfObjectRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -386,7 +386,7 @@ pub struct SetHooksOfObjectResponse {
     #[prost(message, optional, tag="1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetReferencesRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -395,7 +395,7 @@ pub struct GetReferencesRequest {
     #[prost(bool, tag="3")]
     pub with_revisions: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectReference {
     #[prost(string, tag="1")]
     pub object_id: ::prost::alloc::string::String,
@@ -406,7 +406,7 @@ pub struct ObjectReference {
     #[prost(bool, tag="4")]
     pub is_writeable: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetReferencesResponse {
     #[prost(message, repeated, tag="1")]
     pub references: ::prost::alloc::vec::Vec<ObjectReference>,
@@ -1868,19 +1868,19 @@ pub mod object_service_server {
         const NAME: &'static str = "aruna.api.storage.services.v1.ObjectService";
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateProjectRequest {
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub description: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateProjectResponse {
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddUserToProjectRequest {
     ///  The id of the project to add the user to
     #[prost(string, tag="1")]
@@ -1888,10 +1888,10 @@ pub struct AddUserToProjectRequest {
     #[prost(message, optional, tag="3")]
     pub user_permission: ::core::option::Option<super::super::models::v1::ProjectPermission>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddUserToProjectResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetProjectCollectionsRequest {
     ///  The id of the project to get the collections for
     #[prost(string, tag="1")]
@@ -1904,27 +1904,27 @@ pub struct GetProjectCollectionsResponse {
     #[prost(message, repeated, tag="1")]
     pub collection: ::prost::alloc::vec::Vec<super::super::models::v1::CollectionOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetProjectRequest {
     ///  The id of the project to get
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetProjectResponse {
     #[prost(message, optional, tag="1")]
     pub project: ::core::option::Option<super::super::models::v1::ProjectOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DestroyProjectRequest {
     ///  The id of the project to destroy
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DestroyProjectResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateProjectRequest {
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
@@ -1935,22 +1935,22 @@ pub struct UpdateProjectRequest {
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateProjectResponse {
     #[prost(message, optional, tag="1")]
     pub project: ::core::option::Option<super::super::models::v1::ProjectOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct RemoveUserFromProjectRequest {
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub user_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct RemoveUserFromProjectResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct EditUserPermissionsForProjectRequest {
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
@@ -1958,7 +1958,7 @@ pub struct EditUserPermissionsForProjectRequest {
     #[prost(message, optional, tag="2")]
     pub user_permission: ::core::option::Option<super::super::models::v1::ProjectPermission>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct EditUserPermissionsForProjectResponse {
 }
 /// Generated client implementations.
@@ -2709,7 +2709,7 @@ pub struct CreateObjectGroupRequest {
     #[prost(message, repeated, tag="7")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateObjectGroupResponse {
     #[prost(string, tag="1")]
     pub object_group_id: ::prost::alloc::string::String,
@@ -2741,7 +2741,7 @@ pub struct UpdateObjectGroupResponse {
     #[prost(message, optional, tag="1")]
     pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroup>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupByIdRequest {
     #[prost(string, tag="1")]
     pub group_id: ::prost::alloc::string::String,
@@ -2753,7 +2753,7 @@ pub struct GetObjectGroupByIdResponse {
     #[prost(message, optional, tag="1")]
     pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroupOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsFromObjectRequest {
     #[prost(string, tag="1")]
     pub object_id: ::prost::alloc::string::String,
@@ -2767,14 +2767,14 @@ pub struct GetObjectGroupsFromObjectResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectGroupRequest {
     #[prost(string, tag="1")]
     pub group_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectGroupResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2793,7 +2793,7 @@ pub struct GetObjectGroupsResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupHistoryRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -3469,7 +3469,7 @@ pub mod object_group_service_server {
         const NAME: &'static str = "aruna.api.storage.services.v1.ObjectGroupService";
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddEndpointRequest {
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
@@ -3484,19 +3484,19 @@ pub struct AddEndpointRequest {
     #[prost(bool, tag="6")]
     pub is_public: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddEndpointResponse {
     #[prost(message, optional, tag="1")]
     pub endpoint: ::core::option::Option<super::super::models::v1::Endpoint>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetEndpointRequest {
     #[prost(oneof="get_endpoint_request::Endpoint", tags="1, 2")]
     pub endpoint: ::core::option::Option<get_endpoint_request::Endpoint>,
 }
 /// Nested message and enum types in `GetEndpointRequest`.
 pub mod get_endpoint_request {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Endpoint {
         #[prost(string, tag="1")]
         EndpointName(::prost::alloc::string::String),
@@ -3504,31 +3504,31 @@ pub mod get_endpoint_request {
         EndpointId(::prost::alloc::string::String),
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetEndpointResponse {
     #[prost(message, optional, tag="1")]
     pub endpoint: ::core::option::Option<super::super::models::v1::Endpoint>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetEndpointsRequest {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetEndpointsResponse {
     #[prost(message, repeated, tag="1")]
     pub endpoints: ::prost::alloc::vec::Vec<super::super::models::v1::Endpoint>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteEndpointRequest {
     #[prost(string, tag="1")]
     pub endpoint_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteEndpointResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDefaultEndpointRequest {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetDefaultEndpointResponse {
     #[prost(message, optional, tag="1")]
     pub endpoint: ::core::option::Option<super::super::models::v1::Endpoint>,
@@ -4037,22 +4037,22 @@ pub mod endpoint_service_server {
         const NAME: &'static str = "aruna.api.storage.services.v1.EndpointService";
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ExpiresAt {
     #[prost(message, optional, tag="1")]
     pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct RegisterUserRequest {
     #[prost(string, tag="1")]
     pub display_name: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct RegisterUserResponse {
     #[prost(string, tag="1")]
     pub user_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateApiTokenRequest {
     ///  Empty if token_type is personal, otherwise the id of the collection or
     ///  project to create the token for
@@ -4067,7 +4067,7 @@ pub struct CreateApiTokenRequest {
     #[prost(enumeration="super::super::models::v1::Permission", tag="5")]
     pub permission: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateApiTokenResponse {
     ///  This contains only the token description
     #[prost(message, optional, tag="1")]
@@ -4078,7 +4078,7 @@ pub struct CreateApiTokenResponse {
     #[prost(string, tag="2")]
     pub token_secret: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetApiTokenRequest {
     ///  The token id
     #[prost(string, tag="1")]
@@ -4087,31 +4087,31 @@ pub struct GetApiTokenRequest {
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetApiTokenResponse {
     ///  List of API tokens
     #[prost(message, optional, tag="1")]
     pub token: ::core::option::Option<super::super::models::v1::Token>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetApiTokensRequest {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetApiTokensResponse {
     ///  List of API tokens with redacted actual token
     #[prost(message, repeated, tag="1")]
     pub token: ::prost::alloc::vec::Vec<super::super::models::v1::Token>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteApiTokenRequest {
     ///  The token_id
     #[prost(string, tag="1")]
     pub token_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteApiTokenResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteApiTokensRequest {
     ///  This request invalidates all tokens of a specific user
     ///  usually the user_id is specified via the provided oidc or aruna token
@@ -4120,33 +4120,33 @@ pub struct DeleteApiTokensRequest {
     #[prost(string, tag="1")]
     pub user_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteApiTokensResponse {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UserWhoAmIRequest {
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UserWhoAmIResponse {
     #[prost(message, optional, tag="1")]
     pub user: ::core::option::Option<super::super::models::v1::User>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateUserDisplayNameRequest {
     #[prost(string, tag="1")]
     pub new_display_name: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateUserDisplayNameResponse {
     #[prost(message, optional, tag="1")]
     pub user: ::core::option::Option<super::super::models::v1::User>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetUserProjectsRequest {
     #[prost(string, tag="1")]
     pub user_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UserProject {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -4155,7 +4155,7 @@ pub struct UserProject {
     #[prost(string, tag="3")]
     pub description: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetUserProjectsResponse {
     #[prost(message, repeated, tag="1")]
     pub projects: ::prost::alloc::vec::Vec<UserProject>,
@@ -4930,7 +4930,7 @@ pub mod user_service_server {
 }
 //  Models:
 
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateNewCollectionRequest {
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
@@ -4946,12 +4946,12 @@ pub struct CreateNewCollectionRequest {
     #[prost(enumeration="super::super::models::v1::DataClass", tag="6")]
     pub dataclass: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateNewCollectionResponse {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetCollectionByIdRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -4979,7 +4979,7 @@ pub struct GetCollectionsResponse {
 }
 ///  This updates the collection
 ///  Updating a pinned collection will require a new version to be created
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateCollectionRequest {
     #[prost(string, tag="1")]
     pub project_id: ::prost::alloc::string::String,
@@ -5012,7 +5012,7 @@ pub struct UpdateCollectionResponse {
     #[prost(message, optional, tag="1")]
     pub collection: ::core::option::Option<super::super::models::v1::CollectionOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct PinCollectionVersionRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -5024,7 +5024,7 @@ pub struct PinCollectionVersionResponse {
     #[prost(message, optional, tag="1")]
     pub collection: ::core::option::Option<super::super::models::v1::CollectionOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteCollectionRequest {
     #[prost(string, tag="1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -5033,7 +5033,7 @@ pub struct DeleteCollectionRequest {
     #[prost(bool, tag="3")]
     pub force: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteCollectionResponse {
 }
 /// Generated client implementations.

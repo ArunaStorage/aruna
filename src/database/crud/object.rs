@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 
 use chrono::Local;
 use diesel::dsl::max;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
-use diesel::{ delete, prelude::*, update };
+use diesel::{ delete, prelude::*, update, insert_into };
 use r2d2::PooledConnection;
 
 use crate::api::aruna::api::storage::services::v1::{
@@ -13,6 +14,8 @@ use crate::api::aruna::api::storage::services::v1::{
     ObjectReference,
     GetObjectEndpointsResponse,
     GetObjectEndpointsRequest,
+    AddLabelToObjectRequest,
+    AddLabelToObjectResponse,
 };
 use crate::api::aruna::api::storage::{
     internal::v1::{ Location as ProtoLocation, LocationType },
@@ -1249,8 +1252,7 @@ impl Database {
 
                 let default_id = locations
                     .iter()
-                    .filter(|e| e.is_primary)
-                    .next()
+                    .find(|e| e.is_primary)
                     .unwrap();
 
                 Ok((
@@ -1264,7 +1266,7 @@ impl Database {
         let mapped_ep = obj_eps.0
             .iter()
             .map(|ep| {
-                let is_default = if ep.id == obj_eps.1 { true } else { false };
+                let is_default = ep.id == obj_eps.1;
 
                 ProtoEndpoint {
                     id: ep.id.to_string(),
@@ -1277,12 +1279,34 @@ impl Database {
                         .map(|e| e.to_string())
                         .unwrap_or_default(),
                     is_public: ep.is_public,
-                    is_default: is_default,
+                    is_default,
                 }
             })
             .collect::<Vec<_>>();
 
         Ok(GetObjectEndpointsResponse { endpoints: mapped_ep })
+    }
+
+    pub fn add_label_to_object(
+        &self,
+        request: AddLabelToObjectRequest
+    ) -> Result<AddLabelToObjectResponse, ArunaError> {
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        // Transaction time
+        let updated_objects = self.pg_connection.get()?.transaction::<ObjectDto, Error, _>(|conn| {
+            let db_key_values = to_object_key_values(
+                request.labels_to_add,
+                Vec::new(),
+                parsed_object_id
+            );
+
+            insert_into(object_key_value).values(&db_key_values).execute(conn)?;
+
+            get_object(&parsed_object_id, &parsed_collection_id, conn)
+        })?;
+
+        Ok(AddLabelToObjectResponse { object: Some(updated_objects.try_into()?) })
     }
 }
 

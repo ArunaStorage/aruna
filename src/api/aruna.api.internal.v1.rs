@@ -1,5 +1,5 @@
 ///  Locations is the path to the requested data.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Location {
     #[prost(enumeration="LocationType", tag="1")]
     pub r#type: i32,
@@ -11,14 +11,14 @@ pub struct Location {
     pub path: ::prost::alloc::string::String,
 }
 ///  Etag / Part combination to finish a presigned multipart upload.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct PartETag {
     #[prost(string, tag="1")]
     pub part_number: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub etag: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct InitPresignedUploadRequest {
     #[prost(message, optional, tag="1")]
     pub location: ::core::option::Option<Location>,
@@ -26,12 +26,12 @@ pub struct InitPresignedUploadRequest {
     #[prost(bool, tag="2")]
     pub multipart: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct InitPresignedUploadResponse {
     #[prost(string, tag="1")]
     pub upload_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreatePresignedUploadUrlRequest {
     #[prost(message, optional, tag="1")]
     pub location: ::core::option::Option<Location>,
@@ -42,13 +42,13 @@ pub struct CreatePresignedUploadUrlRequest {
     #[prost(bool, tag="4")]
     pub multipart: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreatePresignedUploadUrlResponse {
     ///  The presigned URL to upload the file to.
     #[prost(string, tag="1")]
     pub url: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct FinishPresignedUploadRequest {
     #[prost(string, tag="1")]
     pub upload_id: ::prost::alloc::string::String,
@@ -57,20 +57,20 @@ pub struct FinishPresignedUploadRequest {
     #[prost(bool, tag="3")]
     pub multipart: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct FinishPresignedUploadResponse {
     ///  If the upload finished successfully.
     #[prost(bool, tag="1")]
     pub ok: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Range {
     #[prost(int64, tag="1")]
     pub start: i64,
     #[prost(int64, tag="2")]
     pub end: i64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreatePresignedDownloadRequest {
     #[prost(message, optional, tag="1")]
     pub location: ::core::option::Option<Location>,
@@ -78,7 +78,7 @@ pub struct CreatePresignedDownloadRequest {
     #[prost(message, optional, tag="2")]
     pub range: ::core::option::Option<Range>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreatePresignedDownloadResponse {
     ///  The presigned URL to download the file to.
     #[prost(string, tag="1")]
