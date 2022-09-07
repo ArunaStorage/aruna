@@ -876,9 +876,41 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_download_links_batch(
         &self,
-        _request: Request<GetDownloadLinksBatchRequest>
+        request: Request<GetDownloadLinksBatchRequest>
     ) -> Result<Response<GetDownloadLinksBatchResponse>, Status> {
-        todo!()
+        let mapped_uuids = request
+            .get_ref()
+            .objects.iter()
+            .map(|obj_str| uuid::Uuid::parse_str(obj_str))
+            .collect::<Result<Vec<uuid::Uuid>, _>>()
+            .map_err(ArunaError::from)?;
+
+        let mut urls: Vec<String> = Vec::new();
+
+        for map_uid in mapped_uuids {
+            let (mut data_proxy, location) = self.try_connect_object_endpoint(&map_uid).await?;
+
+            let object = self.database.get_object_by_id(&map_uid)?;
+            // Get download url from data proxy endpoint
+            urls.push(
+                data_proxy
+                    .create_presigned_download(CreatePresignedDownloadRequest {
+                        location: Some(location),
+                        range: Some(Range {
+                            start: 0,
+                            end: object.content_len,
+                        }),
+                    }).await?
+                    .into_inner().url
+            );
+        }
+
+        let mapped_urls = urls
+            .iter()
+            .map(|e| Url { url: e.to_string() })
+            .collect::<Vec<_>>();
+
+        Ok(Response::new(GetDownloadLinksBatchResponse { urls: mapped_urls }))
     }
 
     type CreateDownloadLinksStreamStream = tonic::Streaming<CreateDownloadLinksStreamResponse>;
