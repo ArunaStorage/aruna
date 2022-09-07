@@ -34,7 +34,6 @@ use crate::api::aruna::api::storage::{
         GetLatestObjectRevisionResponse,
         GetObjectByIdRequest,
         GetObjectRevisionsRequest,
-        GetObjectRevisionsResponse,
         GetObjectsRequest,
         InitializeNewObjectRequest,
         InitializeNewObjectResponse,
@@ -618,9 +617,20 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn get_object_revisions(
         &self,
-        _request: GetObjectRevisionsRequest
-    ) -> Result<GetObjectRevisionsResponse, ArunaError> {
-        todo!()
+        request: GetObjectRevisionsRequest
+    ) -> Result<Vec<ObjectDto>, ArunaError> {
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let all_revs = self.pg_connection.get()?.transaction::<Vec<ObjectDto>, Error, _>(|conn| {
+            let all = get_all_revisions(conn, parsed_object_id)?;
+            all
+                    .iter()
+                    .map(|obj| get_object(&obj.id, &parsed_collection_id, conn))
+                    .collect::<Result<Vec<ObjectDto>, _>>()
+        })?;
+
+        Ok(all_revs)
     }
 
     pub fn get_objects(

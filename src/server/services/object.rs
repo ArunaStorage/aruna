@@ -661,7 +661,7 @@ impl ObjectService for ObjectServiceImpl {
                     url,
                 });
             }
-            Vec::new()
+            retvec
         } else {
             Vec::new()
         };
@@ -672,9 +672,58 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_object_revisions(
         &self,
-        _request: Request<GetObjectRevisionsRequest>
+        request: Request<GetObjectRevisionsRequest>
     ) -> Result<Response<GetObjectRevisionsResponse>, Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::READ // User needs at least append permission to create an object
+        ).await?;
+
+        let req_clone = request.get_ref().clone();
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move || database_clone.get_object_revisions(req_clone)).await
+            .map_err(ArunaError::from)??;
+
+        let result = {
+            let mut retvec = Vec::new();
+
+            for objdto in response {
+                let url = if request.get_ref().with_url {
+                    // Connect to one of the objects data proxy endpoints
+                    let (mut data_proxy, location) = self.try_connect_object_endpoint(
+                        &objdto.object.id
+                    ).await?;
+                    // Get download url from data proxy endpoint
+                    data_proxy
+                        .create_presigned_download(CreatePresignedDownloadRequest {
+                            location: Some(location),
+                            range: Some(Range {
+                                start: 0,
+                                end: objdto.object.content_len,
+                            }),
+                        }).await?
+                        .into_inner().url
+                } else {
+                    "".to_string()
+                };
+                retvec.push(ObjectWithUrl {
+                    object: Some(Object::try_from(objdto)?),
+                    url,
+                });
+            }
+            retvec
+        };
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(GetObjectRevisionsResponse { objects: result }));
     }
 
     async fn get_latest_object_revision(
