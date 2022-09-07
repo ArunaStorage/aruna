@@ -91,7 +91,9 @@ pub struct RequiredLabel {
     pub label_key: String,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable)]
+#[derive(
+    Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable, PartialEq,
+)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]
 #[diesel(table_name=collection_objects)]

@@ -969,7 +969,7 @@ impl Database {
 
         self.pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<_, ArunaError, _>(|conn| {
                 let object_ref = collection_objects
                     .filter(database::schema::collection_objects::object_id.eq(parsed_object_id))
                     .filter(
@@ -980,77 +980,152 @@ impl Database {
 
                 // The reference is writeable
                 if object_ref.writeable {
-
-                    // Reference is not writeable
-                } else {
-                    // Consider all "revisions" in this collection
-                    if request.with_revisions {
-
-                        // Consider only the specified object reference
-                    } else {
-                        // Remove object_group_object reference and update object_group
-
-                        // Query all related object_groups
-                        let all_coll_obj_grps: Option<Vec<ObjectGroupObject>> =
-                            collection_object_groups
-                                .inner_join(object_group_objects.on(
-                                    database::schema::collection_object_groups::object_group_id.eq(
-                                        database::schema::object_group_objects::object_group_id,
-                                    ),
-                                ))
-                                .filter(
-                                    database::schema::object_group_objects::object_id
-                                        .eq(parsed_object_id),
-                                )
-                                .filter(
-                                    database::schema::collection_object_groups::collection_id
-                                        .eq(parsed_collection_id),
-                                )
-                                .select(ObjectGroupObject::as_select())
-                                .load::<ObjectGroupObject>(conn)
-                                .optional()?;
-
-                        // Only proceed if at least one reference exists
-                        if let Some(coll_obj_grps) = all_coll_obj_grps {
-                            // Get object_group_ids
-                            let object_grp_ids = coll_obj_grps
-                                .iter()
-                                .map(|e| e.object_group_id)
-                                .collect::<Vec<_>>();
-
-                            // Bump the revision of all related object_groups -> revision_num +1
-                            let revisioned_ogroups =
-                                bump_revisisions(&object_grp_ids, &creator_id, conn)?;
-
-                            // Parse the returned info as Vec<UUID>
-                            let new_ids =
-                                revisioned_ogroups.iter().map(|e| e.id).collect::<Vec<_>>();
-
-                            // Delete all object_group_objects that reference the object_id and are part of the "new" bumped objectgroups
-                            // Bumping the version will delete the "old" objectgroup reference and create an updated new one
-                            // This ensures that the history can be preserved when a "soft" delete occurs
-                            delete(object_group_objects)
-                                .filter(
-                                    database::schema::object_group_objects::object_id
-                                        .eq(parsed_object_id),
-                                )
-                                .filter(
-                                    database::schema::object_group_objects::object_group_id
-                                        .eq_any(new_ids),
-                                )
-                                .execute(conn)?;
+                    // Check if this is the last writeable reference
+                    let all_other_refs = collection_objects
+                        .filter(
+                            database::schema::collection_objects::object_id
+                                .eq(&object_ref.object_id),
+                        )
+                        .load::<CollectionObject>(conn)?;
+                    let mut deletable = false;
+                    for obj_ref in all_other_refs {
+                        if obj_ref != object_ref && obj_ref.writeable {
+                            deletable = true;
+                            break;
                         }
-                        // Remove collection_object reference for specific collection
-                        delete(collection_objects)
+                    }
+                    if !deletable && !request.force{
+                        return Err(ArunaError::InvalidRequest(format!(
+                            "Can not delete object because it is the last writable reference, please transfer ownership or use force"
+                        )));
+                    }
+
+                    if request.with_revisions && !request.force{
+                        // Get all revisions of object
+
+                        let all_objects = get_all_revisions(conn, parsed_object_id)?;
+
+                        // Parse revision ids
+                        let all_rev_ids = all_objects.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                        // Find all references in specified collection
+                        let obj_refs_revisions = collection_objects
                             .filter(
                                 database::schema::collection_objects::object_id
-                                    .eq(parsed_object_id),
+                                    .eq_any(&all_rev_ids),
                             )
                             .filter(
                                 database::schema::collection_objects::collection_id
-                                    .eq(parsed_collection_id),
+                                    .eq(&parsed_collection_id),
                             )
-                            .execute(conn)?;
+                            .load::<CollectionObject>(conn)?;
+                        // Parse out the relevant UUIDs
+                        let all_target_uuid = obj_refs_revisions
+                            .iter()
+                            .map(|e| e.object_id)
+                            .collect::<Vec<_>>();
+
+                        // Delete all references and update the object_groups
+                        delete_and_bump_objs(
+                            &all_target_uuid,
+                            &parsed_collection_id,
+                            &creator_id,
+                            conn,
+                        )?;
+                    } else if !request.force{
+                        // Request is without revisions and force == false
+                        delete_and_bump_objs(&vec![object_ref.id], &parsed_collection_id, &creator_id, conn)?;
+                    }else{
+                        // Request is writable and force == true
+
+                        // With revisions or last writable reference
+                        if request.with_revisions || deletable {
+                            let all_revisions = get_all_revisions(conn, parsed_object_id)?;
+                            let all_rev_ids = all_revisions.iter().map(|e| e.id).collect::<Vec<_>>();
+                            let all_obj_groups = object_group_objects.filter(database::schema::object_group_objects::object_id.eq_any(&all_rev_ids))
+                                                    .select(database::schema::object_group_objects::object_group_id)
+                                                    .load::<uuid::Uuid>(conn)?;
+                            bump_revisisions(
+                                &all_obj_groups, &creator_id, conn)?;
+                            // Delete all object_group_objects
+                            delete(object_group_objects).filter(database::schema::object_group_objects::object_id.eq_any(&all_rev_ids)).execute(conn)?;
+                            // Delete all collection objects -> no references should be left
+                            delete(collection_objects).filter(database::schema::collection_objects::object_id.eq_any(&all_rev_ids)).execute(conn)?;
+                            // Update object_status to "TRASH"
+                            update(objects).filter(database::schema::objects::id.eq_any(&all_rev_ids)).set(database::schema::objects::object_status.eq(ObjectStatus::TRASH)).execute(conn)?;
+
+                        // Request is writeable but not the last writeable reference and not all revisions should be considered
+                        }else{
+                            // Bump object_ids
+                            delete_and_bump_objs(&vec![object_ref.id], &parsed_collection_id, &creator_id, conn)?;
+
+                            // All object_groups for this object + collection
+                            let all_object_groups: Option<Vec<ObjectGroupObject>> = collection_object_groups.inner_join(object_group_objects.on(database::schema::collection_object_groups::object_group_id.eq(database::schema::object_group_objects::object_group_id))).filter(database::schema::collection_object_groups::collection_id.eq(&parsed_collection_id)).filter(database::schema::object_group_objects::object_id.eq(&parsed_object_id)).select(ObjectGroupObject::as_select()).load::<ObjectGroupObject>(conn).optional()?;
+                            if let Some(all_obj_grps) = all_object_groups {
+                                let ogroup_ids = all_obj_grps.iter().map(|e| e.id).collect::<Vec<_>>();
+                                // Delete all object_group_objects
+                            delete(object_group_objects).filter(database::schema::object_group_objects::object_id.eq(&object_ref.id)).filter(database::schema::object_group_objects::object_group_id.eq_any(&ogroup_ids)).execute(conn)?;
+                        }
+                            // Delete all collection objects -> no references should be left
+                            delete(collection_objects).filter(database::schema::collection_objects::object_id.eq(&object_ref.id)).execute(conn)?;
+
+                        }
+                    }
+
+                // Reference is not writeable
+                } else {
+                    // Consider all "revisions" in this collection
+                    if request.with_revisions {
+                        // Get all revisions of object
+
+                        let all_objects = get_all_revisions(conn, parsed_object_id)?;
+
+                        // Parse revision ids
+                        let all_rev_ids = all_objects.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                        // Find all references in specified collection
+                        let obj_refs_revisions = collection_objects
+                            .filter(
+                                database::schema::collection_objects::object_id
+                                    .eq_any(&all_rev_ids),
+                            )
+                            .filter(
+                                database::schema::collection_objects::collection_id
+                                    .eq(&parsed_collection_id),
+                            )
+                            .load::<CollectionObject>(conn)?;
+
+                        // Check if all of them are NOT writeable
+                        for obj_ref in &obj_refs_revisions {
+                            if obj_ref.writeable {
+                                return Err(ArunaError::InvalidRequest(format!(
+                                    "Can not delete full history because id: {:?} is writable",
+                                    obj_ref.object_id
+                                )));
+                            }
+                        }
+                        // Parse out the relevant UUIDs
+                        let all_target_uuid = obj_refs_revisions
+                            .iter()
+                            .map(|e| e.object_id)
+                            .collect::<Vec<_>>();
+
+                        // Delete all references and update the object_groups
+                        delete_and_bump_objs(
+                            &all_target_uuid,
+                            &parsed_collection_id,
+                            &creator_id,
+                            conn,
+                        )?;
+
+                        // Consider only the specified object reference
+                    } else {
+                        delete_and_bump_objs(
+                            &vec![parsed_object_id],
+                            &parsed_collection_id,
+                            &creator_id,
+                            conn,
+                        )?;
                     }
                 }
 
@@ -1417,4 +1492,55 @@ impl TryFrom<ObjectDto> for ProtoObject {
             auto_update: object_dto.update,
         })
     }
+}
+
+fn delete_and_bump_objs(
+    deletable_objects_uuids: &Vec<uuid::Uuid>,
+    target_collection: &uuid::Uuid,
+    creator_id: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), diesel::result::Error> {
+    // Remove object_group_object reference and update object_group
+    // Query all related object_groups
+    let all_coll_obj_grps: Option<Vec<ObjectGroupObject>> = collection_object_groups
+        .inner_join(
+            object_group_objects.on(database::schema::collection_object_groups::object_group_id
+                .eq(database::schema::object_group_objects::object_group_id)),
+        )
+        .filter(database::schema::object_group_objects::object_id.eq_any(deletable_objects_uuids))
+        .filter(database::schema::collection_object_groups::collection_id.eq(target_collection))
+        .select(ObjectGroupObject::as_select())
+        .load::<ObjectGroupObject>(conn)
+        .optional()?;
+
+    // Only proceed if at least one reference exists
+    if let Some(coll_obj_grps) = all_coll_obj_grps {
+        // Get object_group_ids
+        let object_grp_ids = coll_obj_grps
+            .iter()
+            .map(|e| e.object_group_id)
+            .collect::<Vec<_>>();
+
+        // Bump the revision of all related object_groups -> revision_num +1
+        let revisioned_ogroups = bump_revisisions(&object_grp_ids, &creator_id, conn)?;
+
+        // Parse the returned info as Vec<UUID>
+        let new_ids = revisioned_ogroups.iter().map(|e| e.id).collect::<Vec<_>>();
+
+        // Delete all object_group_objects that reference the object_id and are part of the "new" bumped objectgroups
+        // Bumping the version will delete the "old" objectgroup reference and create an updated new one
+        // This ensures that the history can be preserved when a "soft" delete occurs
+        delete(object_group_objects)
+            .filter(
+                database::schema::object_group_objects::object_id.eq_any(deletable_objects_uuids),
+            )
+            .filter(database::schema::object_group_objects::object_group_id.eq_any(new_ids))
+            .execute(conn)?;
+    }
+    // Remove collection_object reference for specific collection
+    delete(collection_objects)
+        .filter(database::schema::collection_objects::object_id.eq_any(deletable_objects_uuids))
+        .filter(database::schema::collection_objects::collection_id.eq(target_collection))
+        .execute(conn)?;
+    Ok(())
 }

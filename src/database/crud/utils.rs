@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::{
-    KeyValue, LabelOrIdQuery, PageRequest,
-};
+use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest};
 
 use crate::database::models::collection::CollectionKeyValue;
 use crate::database::models::enums::{Dataclass, KeyValueType, UserRights};

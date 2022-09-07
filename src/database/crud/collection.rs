@@ -33,15 +33,15 @@ use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, Ob
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
 use chrono::Local;
-use diesel::{prelude::*, delete};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
+use diesel::{delete, prelude::*};
 use diesel::{insert_into, update};
 use r2d2::PooledConnection;
 use std::collections::HashMap;
 
 /// Helper struct that contains a `CollectionOverviewDb`
-/// 
+///
 /// Fields:
 /// - coll -> CollectionOverview
 /// - coll_key_value -> Labels / Hooks
@@ -154,7 +154,7 @@ impl Database {
                     .optional()?;
                 // Check if collection_info is Some()
                 match collection_info {
-                    Some(coll_info) => Ok(Some(query_overview(conn, coll_info)?)), // This will query all associated collectiondata 
+                    Some(coll_info) => Ok(Some(query_overview(conn, coll_info)?)), // This will query all associated collectiondata
                     None => Ok(None),
                 }
             })?;
@@ -167,7 +167,7 @@ impl Database {
     /// GetCollections queries multiple collections via either multiple uuids or a specific set of label filters.
     ///
     /// ## Behaviour
-    /// 
+    ///
     /// Parses the query / pagerequest and tries to return the requested subset of collections
     ///
     /// ## Arguments
@@ -202,7 +202,7 @@ impl Database {
                     .into_boxed();
                 // Create returnvector of CollectionOverviewsDb
                 let mut return_vec: Vec<CollectionOverviewDb> = Vec::new();
-                // If pagesize is not unlimited set it to pagesize or default = 20 
+                // If pagesize is not unlimited set it to pagesize or default = 20
                 if let Some(pg_size) = pagesize {
                     base_request = base_request.limit(pg_size);
                 }
@@ -305,7 +305,7 @@ impl Database {
             collections: coll_overviews,
         })
     }
-    
+
     /// UpdateCollection updates a specific collection and optional pins a new version.
     ///
     /// ## Arguments
@@ -348,8 +348,12 @@ impl Database {
                             ));
                         }
                     }
-                    // Create new "Version" database struct  
-                    let new_version = request.version.clone().map(|v| v.into_collection_version(uuid::Uuid::new_v4())).unwrap();
+                    // Create new "Version" database struct
+                    let new_version = request
+                        .version
+                        .clone()
+                        .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
+                        .unwrap();
 
                     // Put together the new collection info
                     let new_coll = Collection {
@@ -399,7 +403,7 @@ impl Database {
             collection: ret_collections,
         })
     }
-   
+
     /// PinCollectionVersion creates a copy of the collection with a specific "pinned" version
     ///
     /// ## Arguments
@@ -443,8 +447,12 @@ impl Database {
                         }
                     }
                 }
-                // Build the new version 
-                let new_version = request.version.clone().map(|v| v.into_collection_version(uuid::Uuid::new_v4())).unwrap();
+                // Build the new version
+                let new_version = request
+                    .version
+                    .clone()
+                    .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
+                    .unwrap();
                 // Create new collection database struct
                 let new_coll = Collection {
                     id: uuid::Uuid::new_v4(),
@@ -470,9 +478,9 @@ impl Database {
             collection: ret_collections,
         })
     }
-   
+
     /// DeleteCollection will delete a specific collection including its contents.
-    /// 
+    ///
     /// Note: This does not delete the objects permanently it adds them just to a "trashable" status
     ///       Might in the future implement a rollback function
     ///
@@ -490,14 +498,14 @@ impl Database {
         user_id: uuid::Uuid,
     ) -> Result<DeleteCollectionResponse, ArunaError> {
         // Import of database structures
-        use crate::database::schema::collection_objects::dsl as colobj;
-        use crate::database::schema::collection_object_groups::dsl as colobjgrp;
         use crate::database::schema::collection_key_value::dsl as colkv;
-        use crate::database::schema::object_group_objects::dsl as objgrpobj;
+        use crate::database::schema::collection_object_groups::dsl as colobjgrp;
+        use crate::database::schema::collection_objects::dsl as colobj;
+        use crate::database::schema::collections::dsl as col;
         use crate::database::schema::object_group_key_value::dsl as objgrpkv;
+        use crate::database::schema::object_group_objects::dsl as objgrpobj;
         use crate::database::schema::object_groups::dsl as objgrp;
         use crate::database::schema::objects::dsl as obj;
-        use crate::database::schema::collections::dsl as col;
         // Parse the collection_id string to uuid
         let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute the request in transaction
@@ -555,8 +563,6 @@ impl Database {
                         }
                         trash
                     });
-
-                
                 // Delete all references
                 delete(colobj::collection_objects.filter(colobj::collection_id.eq(collection_id))).execute(conn)?;
                 // Delete all collection object groups belonging to this collection
@@ -576,9 +582,8 @@ impl Database {
                 // Delete the collection
                 delete(col::collections.filter(col::id.eq(collection_id))).execute(conn)?;
                 Ok(())
-                
             })?;
-        Ok(DeleteCollectionResponse{})
+        Ok(DeleteCollectionResponse {})
     }
 }
 
@@ -994,7 +999,7 @@ fn pin_collection_to_version(
     let mapped_version = new_collection_overview
         .coll_version
         .map(|v| CollectionVersiongRPC::SemanticVersion(v.into()));
-    // Construct collectionoverview and return it 
+    // Construct collectionoverview and return it
     Ok(CollectionOverview {
         id: new_collection_overview.coll.id.to_string(),
         name: new_collection_overview.coll.name,
@@ -1011,7 +1016,6 @@ fn pin_collection_to_version(
         version: mapped_version,
     })
 }
-
 
 /// Implement `from` CollectionVersion for gRPC "Version"
 /// This makes it easier to convert gRPC to database version types
@@ -1041,7 +1045,7 @@ impl PartialOrd for Version {
 }
 
 /// Function that converts a gRPC version to a database collection version
-/// This function needs a uuid to correctly map 
+/// This function needs a uuid to correctly map
 impl Version {
     fn into_collection_version(self, version_id: uuid::Uuid) -> CollectionVersion {
         CollectionVersion {
