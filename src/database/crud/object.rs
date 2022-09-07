@@ -602,12 +602,17 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn get_latest_object_revision(
         &self,
-        _request: GetLatestObjectRevisionRequest
+        request: GetLatestObjectRevisionRequest
     ) -> Result<GetLatestObjectRevisionResponse, ArunaError> {
-        todo!()
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
-        // Case depends on writeable == true
-        //  If writeable == false --> object is borrowed and revisions have to be fetched through
+        let latest_rev = self.pg_connection.get()?.transaction::<ObjectDto, Error, _>(|conn| {
+            let lat_obj = get_latest_obj(conn, parsed_object_id)?;
+            get_object(&lat_obj.id, &parsed_collection_id, conn)
+        })?;
+
+        Ok(GetLatestObjectRevisionResponse { object: Some(latest_rev.try_into()?) })
     }
 
     ///ToDo: Rust Doc

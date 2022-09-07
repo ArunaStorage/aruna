@@ -679,9 +679,27 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_latest_object_revision(
         &self,
-        _request: Request<GetLatestObjectRevisionRequest>
+        request: Request<GetLatestObjectRevisionRequest>
     ) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
-        todo!()
+        let target_collection_uuid = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        self.authz.collection_authorize(
+            request.metadata(),
+            target_collection_uuid, // This is the collection uuid in which this object should be created
+            UserRights::APPEND // User needs at least append permission to create an object
+        ).await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move ||
+                database_clone.get_latest_object_revision(request.into_inner())
+            ).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 
     async fn get_object_endpoints(
