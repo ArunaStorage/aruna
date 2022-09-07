@@ -11,6 +11,9 @@ use crate::api::aruna::api::storage::services::v1::{
     GetReferencesRequest,
     GetReferencesResponse,
     ObjectReference,
+    GetObjectEndpointsResponse,
+    GetObjectEndpointsRequest,
+    EndpointsList,
 };
 use crate::api::aruna::api::storage::{
     internal::v1::{ Location as ProtoLocation, LocationType },
@@ -624,10 +627,9 @@ impl Database {
 
         let all_revs = self.pg_connection.get()?.transaction::<Vec<ObjectDto>, Error, _>(|conn| {
             let all = get_all_revisions(conn, parsed_object_id)?;
-            all
-                    .iter()
-                    .map(|obj| get_object(&obj.id, &parsed_collection_id, conn))
-                    .collect::<Result<Vec<ObjectDto>, _>>()
+            all.iter()
+                .map(|obj| get_object(&obj.id, &parsed_collection_id, conn))
+                .collect::<Result<Vec<ObjectDto>, _>>()
         })?;
 
         Ok(all_revs)
@@ -1225,6 +1227,19 @@ impl Database {
         })?;
 
         Ok(DeleteObjectResponse {})
+    }
+
+    pub fn get_object_endpoints(
+        request: GetObjectEndpointsRequest
+    ) -> Result<GetObjectEndpointsResponse, ArunaError> {
+        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        GetObjectEndpointsResponse {
+            endpoints: Some(EndpointsList { endpoint: todo!(), is_default: todo!() }),
+        };
+
+        todo!()
     }
 }
 
