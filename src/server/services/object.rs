@@ -157,15 +157,6 @@ impl ObjectServiceImpl {
                     )
                 ),
         }
-
-        /*
-        match InternalProxyServiceClient::connect(endpoint_url).await {
-            Ok(data_proxy) => (location, data_proxy),
-            Err(err) => {
-                //ToDo: Try remaining location/endpoint pairs if available.
-            }
-        }
-        */
     }
 }
 
@@ -920,14 +911,98 @@ impl ObjectService for ObjectServiceImpl {
     >;
     async fn create_download_links_stream(
         &self,
-        _request: Request<CreateDownloadLinksStreamRequest>
+        request: Request<CreateDownloadLinksStreamRequest>
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
+        let mapped_uuids = request
+            .get_ref()
+            .objects.iter()
+            .map(|obj_str| uuid::Uuid::parse_str(obj_str))
+            .collect::<Result<Vec<uuid::Uuid>, _>>()
+            .map_err(ArunaError::from)?;
+
+        let db_clone = self.database.clone();
 
         tokio::spawn(async move {
-            tx.send(Ok(CreateDownloadLinksStreamResponse { url: todo!() })).await.unwrap();
+            for map_uid in mapped_uuids {
+                let try_connect = try_connect_object_endpoint_moveable(
+                    db_clone.clone(),
+                    &map_uid
+                ).await;
+
+                if let Ok((mut data_proxy, location)) = try_connect {
+                    let object = db_clone.get_object_by_id(&map_uid);
+
+                    match object {
+                        Ok(obj_elem) => {
+                            tx.send(
+                                Ok(CreateDownloadLinksStreamResponse {
+                                    url: Some(Url {
+                                        url: data_proxy
+                                            .create_presigned_download(
+                                                CreatePresignedDownloadRequest {
+                                                    location: Some(location),
+                                                    range: Some(Range {
+                                                        start: 0,
+                                                        end: obj_elem.content_len,
+                                                    }),
+                                                }
+                                            ).await
+                                            .unwrap()
+                                            .into_inner().url,
+                                    }),
+                                })
+                            ).await.unwrap();
+                        }
+                        Err(e) => {
+                            tx.send(
+                                Err(tonic::Status::invalid_argument(e.to_string()))
+                            ).await.unwrap();
+                        }
+                    }
+                }
+            }
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))
+    }
+}
+
+// This is a moveable version of the connect_object_endpoint
+// That can be transferred to
+pub async fn try_connect_object_endpoint_moveable(
+    database: Arc<Database>,
+    object_uuid: &uuid::Uuid
+) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
+    // Get primary location with its endpoint from database
+    let (location, endpoint) = database.get_primary_object_location_with_endpoint(object_uuid)?;
+
+    // Evaluate endpoint url
+    let endpoint_url = match &endpoint.is_public {
+        true => &endpoint.proxy_hostname,
+        false => &endpoint.internal_hostname,
+    };
+
+    // Try to establish connection to endpoint
+    let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
+
+    match data_proxy {
+        Ok(dp) => {
+            let proto_location = Location {
+                r#type: endpoint.endpoint_type as i32,
+                bucket: location.bucket,
+                path: location.path,
+            };
+            Ok((dp, proto_location))
+        }
+        Err(_) =>
+            Err(
+                ArunaError::DataProxyError(
+                    Status::new(
+                        Code::Internal,
+                        "Could not connect to objects primary data proxy endpoint"
+                    )
+                )
+            ),
     }
 }
