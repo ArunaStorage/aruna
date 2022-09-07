@@ -13,7 +13,6 @@ use crate::api::aruna::api::storage::services::v1::{
     ObjectReference,
     GetObjectEndpointsResponse,
     GetObjectEndpointsRequest,
-    EndpointsList,
 };
 use crate::api::aruna::api::storage::{
     internal::v1::{ Location as ProtoLocation, LocationType },
@@ -23,6 +22,7 @@ use crate::api::aruna::api::storage::{
         Object as ProtoObject,
         Origin as ProtoOrigin,
         Source as ProtoSource,
+        Endpoint as ProtoEndpoint,
     },
     services::v1::{
         CloneObjectRequest,
@@ -1230,16 +1230,59 @@ impl Database {
     }
 
     pub fn get_object_endpoints(
+        &self,
         request: GetObjectEndpointsRequest
     ) -> Result<GetObjectEndpointsResponse, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        // Transaction time
+        let obj_eps = self.pg_connection
+            .get()?
+            .transaction::<(Vec<Endpoint>, uuid::Uuid), Error, _>(|conn| {
+                // Get collection_object association of original object
+                let locations = object_locations
+                    .filter(database::schema::object_locations::object_id.eq(&parsed_object_id))
+                    .load::<ObjectLocation>(conn)?;
+                let endpoint_ids = locations
+                    .iter()
+                    .map(|e| e.endpoint_id)
+                    .collect::<Vec<_>>();
 
-        GetObjectEndpointsResponse {
-            endpoints: Some(EndpointsList { endpoint: todo!(), is_default: todo!() }),
-        };
+                let default_id = locations
+                    .iter()
+                    .filter(|e| e.is_primary)
+                    .next()
+                    .unwrap();
 
-        todo!()
+                Ok((
+                    endpoints
+                        .filter(database::schema::endpoints::id.eq_any(&endpoint_ids))
+                        .load::<Endpoint>(conn)?,
+                    default_id.endpoint_id,
+                ))
+            })?;
+
+        let mapped_ep = obj_eps.0
+            .iter()
+            .map(|ep| {
+                let is_default = if ep.id == obj_eps.1 { true } else { false };
+
+                ProtoEndpoint {
+                    id: ep.id.to_string(),
+                    ep_type: ep.endpoint_type as i32,
+                    name: ep.name.to_string(),
+                    proxy_hostname: ep.proxy_hostname.to_string(),
+                    internal_hostname: ep.internal_hostname.to_string(),
+                    documentation_path: ep.documentation_path
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default(),
+                    is_public: ep.is_public,
+                    is_default: is_default,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(GetObjectEndpointsResponse { endpoints: mapped_ep })
     }
 }
 
