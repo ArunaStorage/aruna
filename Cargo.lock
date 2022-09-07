@@ -29,6 +29,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "tokio",
+ "tokio-stream",
  "toml",
  "tonic",
  "tonic-build",

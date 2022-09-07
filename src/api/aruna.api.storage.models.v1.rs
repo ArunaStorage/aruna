@@ -305,7 +305,7 @@ pub mod collection {
     }
 }
 ///  Multiple Collections
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Collections {
     #[prost(message, repeated, tag="1")]
     pub collections: ::prost::alloc::vec::Vec<Collection>,

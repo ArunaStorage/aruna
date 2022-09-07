@@ -1,6 +1,8 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::task;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tonic::{ Code, Request, Response, Status };
 
@@ -913,11 +915,19 @@ impl ObjectService for ObjectServiceImpl {
         Ok(Response::new(GetDownloadLinksBatchResponse { urls: mapped_urls }))
     }
 
-    type CreateDownloadLinksStreamStream = tonic::Streaming<CreateDownloadLinksStreamResponse>;
+    type CreateDownloadLinksStreamStream = ReceiverStream<
+        Result<CreateDownloadLinksStreamResponse, Status>
+    >;
     async fn create_download_links_stream(
         &self,
         _request: Request<CreateDownloadLinksStreamRequest>
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
-        todo!()
+        let (tx, rx) = mpsc::channel(4);
+
+        tokio::spawn(async move {
+            tx.send(Ok(CreateDownloadLinksStreamResponse { url: todo!() })).await.unwrap();
+        });
+
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 }

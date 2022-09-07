@@ -2762,7 +2762,7 @@ pub struct GetObjectGroupsFromObjectRequest {
     #[prost(message, optional, tag="3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsFromObjectResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -2788,7 +2788,7 @@ pub struct GetObjectGroupsRequest {
     #[prost(message, optional, tag="3")]
     pub label_id_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -2802,7 +2802,7 @@ pub struct GetObjectGroupHistoryRequest {
     #[prost(message, optional, tag="3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupHistoryResponse {
     #[prost(message, optional, tag="1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -4971,7 +4971,7 @@ pub struct GetCollectionsRequest {
     #[prost(message, optional, tag="3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetCollectionsResponse {
     ///  These are plural representations of their specific single counterparts
     #[prost(message, optional, tag="1")]
