@@ -76,9 +76,27 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// be specified separately
     async fn get_object_group_by_id(
         &self,
-        _request: tonic::Request<GetObjectGroupByIdRequest>
+        request: tonic::Request<GetObjectGroupByIdRequest>
     ) -> Result<tonic::Response<GetObjectGroupByIdResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::READ // User needs at least append permission to create an object
+        ).await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move || database_clone.get_object_group_by_id(request.get_ref())).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
     /// GetObjectGroupsFromObject gets all ObjectGroups associated to a specific
     /// Object Objects can be part of multiple ObjectGroups at once

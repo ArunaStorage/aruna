@@ -13,7 +13,12 @@ use crate::{
     },
     api::aruna::api::storage::{
         models::v1::{ ObjectGroupStats, Stats },
-        services::v1::{ UpdateObjectGroupRequest, UpdateObjectGroupResponse },
+        services::v1::{
+            UpdateObjectGroupRequest,
+            UpdateObjectGroupResponse,
+            GetObjectGroupByIdRequest,
+            GetObjectGroupByIdResponse,
+        },
     },
 };
 use itertools::Itertools;
@@ -226,6 +231,23 @@ impl Database {
 
         // Return already complete gRPC response
         Ok(UpdateObjectGroupResponse {
+            object_group: Some(overview.into()),
+        })
+    }
+    pub fn get_object_group_by_id(
+        &self,
+        request: &GetObjectGroupByIdRequest
+    ) -> Result<GetObjectGroupByIdResponse, ArunaError> {
+        let parsed_obj_id = uuid::Uuid::parse_str(&request.group_id)?;
+
+        //Insert all defined object_groups into the database
+        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
+            let grp = query_object_group(parsed_obj_id, conn)?;
+            grp.ok_or(diesel::NotFound)
+        })?;
+
+        // Return already complete gRPC response
+        Ok(GetObjectGroupByIdResponse {
             object_group: Some(overview.into()),
         })
     }
