@@ -1,12 +1,12 @@
 ///  A key value pair for hooks and labels
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct KeyValue {
     #[prost(string, tag="1")]
     pub key: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub value: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct LabelOntology {
     ///  These are the keys for labels that are required for the collection
     ///  Adding an Object without these keys will result in an error
@@ -15,7 +15,7 @@ pub struct LabelOntology {
     pub required_label_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 ///  Stats for a set of objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Stats {
     #[prost(int64, tag="1")]
     pub count: i64,
@@ -23,7 +23,7 @@ pub struct Stats {
     pub acc_size: i64,
 }
 ///  Stats for a collection
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionStats {
     #[prost(message, optional, tag="1")]
     pub object_stats: ::core::option::Option<Stats>,
@@ -33,18 +33,16 @@ pub struct CollectionStats {
     pub last_updated: ::core::option::Option<::prost_types::Timestamp>,
 }
 ///  Stats for an object group
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupStats {
     #[prost(message, optional, tag="1")]
-    pub total_stats: ::core::option::Option<Stats>,
-    #[prost(message, optional, tag="2")]
     pub object_stats: ::core::option::Option<Stats>,
-    #[prost(message, optional, tag="3")]
-    pub meta_object_stats: ::core::option::Option<Stats>,
+    #[prost(message, optional, tag="2")]
+    pub last_updated: ::core::option::Option<::prost_types::Timestamp>,
 }
 ///  Semver version -> Alpha Beta release are not supported -> Use "latest" for
 ///  mutable collections that are in development
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Version {
     #[prost(int32, tag="1")]
     pub major: i32,
@@ -53,7 +51,7 @@ pub struct Version {
     #[prost(int32, tag="3")]
     pub patch: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Hash {
     #[prost(enumeration="Hashalgorithm", tag="1")]
     pub alg: i32,
@@ -61,14 +59,14 @@ pub struct Hash {
     pub hash: ::prost::alloc::string::String,
 }
 ///  Origin of the object -> To be GDPA compliant
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Origin {
     #[prost(enumeration="OriginType", tag="1")]
     pub r#type: i32,
     #[prost(string, tag="2")]
     pub id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Source {
     ///  This is a URL / DOI
     #[prost(string, tag="1")]
@@ -77,7 +75,7 @@ pub struct Source {
     #[prost(enumeration="SourceType", tag="2")]
     pub source_type: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Endpoint {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -112,7 +110,7 @@ pub struct Endpoint {
 //  4.  Objects can only be permanently deleted by a person with admin rights on
 //  the owner collection
 
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Object {
     ///  ObjectID
     #[prost(string, tag="1")]
@@ -159,7 +157,7 @@ pub struct Object {
     pub auto_update: bool,
 }
 ///  Multiple Objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Objects {
     #[prost(message, repeated, tag="1")]
     pub objects: ::prost::alloc::vec::Vec<Object>,
@@ -167,7 +165,7 @@ pub struct Objects {
 ///  ObjectGroups are optional and can be used to group objects in a collection
 ///  together They need to refer to objects in the same collection Objectgroups
 ///  can be changed if the collection is mutable
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroup {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -191,14 +189,14 @@ pub struct ObjectGroup {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroups
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroups {
     #[prost(message, repeated, tag="1")]
     pub object_groups: ::prost::alloc::vec::Vec<ObjectGroup>,
 }
 ///  This is a representation of the ObjectGroup without the recursive nature of
 ///  object references
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupOverview {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -216,14 +214,14 @@ pub struct ObjectGroupOverview {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroupOverviews
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupOverviews {
     #[prost(message, repeated, tag="1")]
     pub object_group_overviews: ::prost::alloc::vec::Vec<ObjectGroupOverview>,
 }
 ///  This is a representation of the ObjectGroup with only ObjectIDs instead of
 ///  full objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupWithId {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -247,7 +245,7 @@ pub struct ObjectGroupWithId {
     pub rev_number: i64,
 }
 ///  Multiple ObjectGroupWithIDs
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupWithIDs {
     #[prost(message, repeated, tag="1")]
     pub object_group_with_ids: ::prost::alloc::vec::Vec<ObjectGroupWithId>,
@@ -263,7 +261,7 @@ pub struct ObjectGroupWithIDs {
 //  4. Collections can be created by any user, but only the owner can modify or
 //  delete them
 
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Collection {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -296,7 +294,7 @@ pub struct Collection {
 }
 /// Nested message and enum types in `Collection`.
 pub mod collection {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag="12")]
         SemanticVersion(super::Version),
@@ -305,14 +303,14 @@ pub mod collection {
     }
 }
 ///  Multiple Collections
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Collections {
     #[prost(message, repeated, tag="1")]
     pub collections: ::prost::alloc::vec::Vec<Collection>,
 }
 ///  This is a representation of the Collection without the recursive nature of
 ///  objectreferences
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionOverview {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -338,7 +336,7 @@ pub struct CollectionOverview {
 }
 /// Nested message and enum types in `CollectionOverview`.
 pub mod collection_overview {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag="12")]
         SemanticVersion(super::Version),
@@ -347,14 +345,14 @@ pub mod collection_overview {
     }
 }
 ///  Multiple CollectionOverviews
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionOverviews {
     #[prost(message, repeated, tag="1")]
     pub collection_overviews: ::prost::alloc::vec::Vec<CollectionOverview>,
 }
 ///  This is a representation of the Collection with only Resource RevisionIDs
 ///  instead of full objects
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionWithId {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -386,7 +384,7 @@ pub struct CollectionWithId {
 }
 /// Nested message and enum types in `CollectionWithID`.
 pub mod collection_with_id {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag="12")]
         SemanticVersion(super::Version),
@@ -395,7 +393,7 @@ pub mod collection_with_id {
     }
 }
 ///  Multiple CollectionWithIDs
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CollectionWithIDs {
     #[prost(message, repeated, tag="1")]
     pub collection_with_ids: ::prost::alloc::vec::Vec<CollectionWithId>,
@@ -544,7 +542,7 @@ impl EndpointType {
 ///  The page request specifies the page size and last_id.
 ///  If page_size is not specified, it defaults to 20.
 ///  If page_size is -1, it returns all objects.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct PageRequest {
     ///  This is the last ID of the previous returned request
     #[prost(string, tag="1")]
@@ -555,7 +553,7 @@ pub struct PageRequest {
 }
 ///  LabelFilter is used to filter resources by labels.
 ///  The labels are specified as a map of key-value pairs.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct LabelFilter {
     #[prost(message, repeated, tag="1")]
     pub labels: ::prost::alloc::vec::Vec<KeyValue>,
@@ -568,7 +566,7 @@ pub struct LabelFilter {
 }
 ///  This is a combined query for either a list of resource IDs or filtered by
 ///  Label Can be expanded in the future to allow for more complex queries
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct LabelOrIdQuery {
     #[prost(message, optional, tag="1")]
     pub labels: ::core::option::Option<LabelFilter>,
@@ -578,7 +576,7 @@ pub struct LabelOrIdQuery {
 ///  A Project is a list of collections with associated users
 ///  This is used to manage access to multiple collections at the same time
 ///  Each Collection can only be in one Project at a time
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Project {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -591,7 +589,7 @@ pub struct Project {
     #[prost(string, tag="5")]
     pub description: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ProjectOverview {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -604,7 +602,7 @@ pub struct ProjectOverview {
     #[prost(string, repeated, tag="5")]
     pub user_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct User {
     ///  Internal Aruna UserID
     #[prost(string, tag="1")]
@@ -619,7 +617,7 @@ pub struct User {
     #[prost(bool, tag="4")]
     pub active: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct Token {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -638,7 +636,7 @@ pub struct Token {
     #[prost(enumeration="Permission", tag="9")]
     pub permission: i32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ProjectPermission {
     #[prost(string, tag="1")]
     pub user_id: ::prost::alloc::string::String,

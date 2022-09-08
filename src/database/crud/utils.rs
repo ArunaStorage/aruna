@@ -98,7 +98,7 @@ pub fn to_key_values<T>(labels: Vec<KeyValue>, hooks: Vec<KeyValue>, belongs_to:
 pub fn from_key_values<T>(key_values: Vec<T>) -> (Vec<KeyValue>, Vec<KeyValue>) where T: IsKeyValue {
     let (labels, hooks): (Vec<T>, Vec<T>) = key_values
         .into_iter()
-        .partition(|elem| elem.get_type().clone() == KeyValueType::LABEL);
+        .partition(|elem| *elem.get_type() == KeyValueType::LABEL);
 
     (
         labels

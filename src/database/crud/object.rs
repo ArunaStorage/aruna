@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 
 use chrono::Local;
-use diesel::dsl::max;
+use diesel::dsl::{ max, count };
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{ delete, prelude::*, update, insert_into };
@@ -1751,4 +1751,19 @@ fn delete_and_bump_objs(
         .filter(database::schema::collection_objects::collection_id.eq(target_collection))
         .execute(conn)?;
     Ok(())
+}
+
+pub fn check_if_obj_in_coll(
+    object_ids: &Vec<uuid::Uuid>,
+    collection_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
+) -> bool {
+    let result = collection_objects
+        .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .filter(database::schema::collection_objects::object_id.eq_any(object_ids))
+        .select(count(database::schema::collection_objects::object_id))
+        .first::<i64>(conn)
+        .unwrap_or(0);
+
+    result == (object_ids.len() as i64)
 }

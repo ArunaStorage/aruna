@@ -3,23 +3,45 @@ use std::collections::HashMap;
 use chrono::Utc;
 use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error };
 use r2d2::PooledConnection;
-
+use crate::{
+    database::schema::{
+        collection_object_groups::dsl::*,
+        object_groups::dsl::*,
+        object_group_objects::dsl::*,
+        object_group_key_value::dsl::*,
+        object_group_stats::dsl::*,
+    },
+    api::aruna::api::storage::models::v1::{ ObjectGroupStats, Stats },
+};
+use itertools::Itertools;
 use crate::{
     database::{
         connection::Database,
         models::{
             collection::CollectionObjectGroup,
             object_group::{ ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject },
+            views::ObjectGroupStat,
         },
-        schema::object_group_objects,
     },
     api::aruna::api::storage::services::v1::CreateObjectGroupRequest,
     api::aruna::api::storage::{
         services::v1::CreateObjectGroupResponse,
-        models::v1::ObjectGroupOverview,
+        models::v1::{ ObjectGroupOverview, KeyValue },
     },
     error::ArunaError,
 };
+
+use super::{
+    utils::{ to_key_values, from_key_values, naivedatetime_to_prost_time },
+    object::check_if_obj_in_coll,
+};
+
+pub struct ObjectGroupDb {
+    pub object_group: ObjectGroup,
+    pub labels: Vec<KeyValue>,
+    pub hooks: Vec<KeyValue>,
+    pub stats: Option<ObjectGroupStat>,
+}
 
 /// Implementing CRUD+ database operations for ObjectGroups
 impl Database {
@@ -49,9 +71,13 @@ impl Database {
             writeable: true,
         };
 
-        //let key_values = to_k
+        let key_values = to_key_values::<ObjectGroupKeyValue>(
+            request.labels.clone(),
+            request.hooks.clone(),
+            new_obj_grp_uuid
+        );
 
-        let object_group_objects = request.object_ids
+        let objgrp_obs = request.object_ids
             .iter()
             .map(|id_str| {
                 let obj_id = uuid::Uuid::parse_str(id_str)?;
@@ -75,34 +101,66 @@ impl Database {
             )
             .collect::<Result<Vec<ObjectGroupObject>, ArunaError>>()?;
 
-        // Insert all defined objects into the database
-        // self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
-        //     diesel::insert_into(sources).values(&source).execute(conn)?;
-        //     diesel::insert_into(objects).values(&object).execute(conn)?;
-        //     diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
-        //     diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
-        //     diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
-        //     diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
+        let obj_uuids = objgrp_obs
+            .iter()
+            .map(|e| e.object_id)
+            .unique()
+            .collect::<Vec<uuid::Uuid>>();
 
-        //     Ok(())
-        // })?;
+        //Insert all defined object_groups into the database
+        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
+            diesel::insert_into(object_groups).values(&database_obj_group).execute(conn)?;
+            diesel::insert_into(object_group_key_value).values(&key_values).execute(conn)?;
+            diesel
+                ::insert_into(collection_object_groups)
+                .values(&collection_object_group)
+                .execute(conn)?;
+            if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
+                return Err(diesel::result::Error::NotFound);
+            }
+
+            diesel::insert_into(object_group_objects).values(&objgrp_obs).execute(conn)?;
+
+            let grp = query_object_group(new_obj_grp_uuid, conn)?;
+
+            grp.ok_or(diesel::NotFound)
+        })?;
 
         // Return already complete gRPC response
         Ok(CreateObjectGroupResponse {
-            object_group: Some(ObjectGroupOverview {
-                id: todo!(),
-                name: todo!(),
-                description: todo!(),
-                labels: todo!(),
-                hooks: todo!(),
-                stats: todo!(),
-                rev_number: todo!(),
-            }),
+            object_group: Some(overview.into()),
         })
     }
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
+
+pub fn query_object_group(
+    ogroup_id: uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
+) -> Result<Option<ObjectGroupDb>, diesel::result::Error> {
+    let object_group = object_groups
+        .filter(crate::database::schema::object_groups::id.eq(&ogroup_id))
+        .first::<ObjectGroup>(conn)
+        .optional()?;
+
+    if let Some(ogroup) = object_group {
+        let object_key_values = ObjectGroupKeyValue::belonging_to(
+            &ogroup
+        ).load::<ObjectGroupKeyValue>(conn)?;
+        let (labels, hooks) = from_key_values(object_key_values);
+
+        let stats = object_group_stats
+            .filter(crate::database::schema::object_group_stats::id.eq(ogroup.id))
+            .first::<ObjectGroupStat>(conn)
+            .optional()?;
+
+        Ok(Some(ObjectGroupDb { object_group: ogroup, labels, hooks, stats }))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Helper function that bumps all specified object_groups to a "new" revision. This will create
 /// a copy for each Objectgroup with same objects / keyvalues.
 /// Will also work when the objectgroup that is updated is not already or still the latest revision.
@@ -272,4 +330,25 @@ pub fn get_latest_objgrp(
         .first::<ObjectGroup>(conn)?;
 
     Ok(latest_object_grp)
+}
+
+impl From<ObjectGroupDb> for ObjectGroupOverview {
+    fn from(ogroup_db: ObjectGroupDb) -> Self {
+        let stats = ogroup_db.stats.map(|ogstats| ObjectGroupStats {
+            object_stats: Some(Stats { count: ogstats.object_count, acc_size: ogstats.size }),
+            last_updated: Some(
+                naivedatetime_to_prost_time(ogstats.last_updated).unwrap_or_default()
+            ),
+        });
+
+        ObjectGroupOverview {
+            id: ogroup_db.object_group.id.to_string(),
+            name: ogroup_db.object_group.name.unwrap_or_else(|| "".to_string()),
+            description: ogroup_db.object_group.description.unwrap_or_else(|| "".to_string()),
+            labels: ogroup_db.labels,
+            hooks: ogroup_db.hooks,
+            stats,
+            rev_number: ogroup_db.object_group.revision_number,
+        }
+    }
 }
