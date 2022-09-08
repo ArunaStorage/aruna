@@ -11,7 +11,10 @@ use crate::{
         object_group_key_value::dsl::*,
         object_group_stats::dsl::*,
     },
-    api::aruna::api::storage::models::v1::{ ObjectGroupStats, Stats },
+    api::aruna::api::storage::{
+        models::v1::{ ObjectGroupStats, Stats },
+        services::v1::{ UpdateObjectGroupRequest, UpdateObjectGroupResponse },
+    },
 };
 use itertools::Itertools;
 use crate::{
@@ -128,6 +131,101 @@ impl Database {
 
         // Return already complete gRPC response
         Ok(CreateObjectGroupResponse {
+            object_group: Some(overview.into()),
+        })
+    }
+    pub fn update_object_group(
+        &self,
+        request: &UpdateObjectGroupRequest,
+        creator: &uuid::Uuid
+    ) -> Result<UpdateObjectGroupResponse, ArunaError> {
+        let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let parsed_old_id = uuid::Uuid::parse_str(&request.group_id)?;
+
+        let new_obj_grp_uuid = uuid::Uuid::new_v4();
+
+        let mut database_obj_group = ObjectGroup {
+            id: new_obj_grp_uuid,
+            shared_revision_id: uuid::Uuid::default(),
+            revision_number: -10,
+            name: Some(request.name.to_string()),
+            description: Some(request.description.to_string()),
+            created_at: Utc::now().naive_utc(),
+            created_by: *creator,
+        };
+
+        let collection_object_group = CollectionObjectGroup {
+            id: uuid::Uuid::new_v4(),
+            collection_id: parsed_col_id,
+            object_group_id: new_obj_grp_uuid,
+            writeable: true,
+        };
+
+        let key_values = to_key_values::<ObjectGroupKeyValue>(
+            request.labels.clone(),
+            request.hooks.clone(),
+            new_obj_grp_uuid
+        );
+
+        let objgrp_obs = request.object_ids
+            .iter()
+            .map(|id_str| {
+                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                Ok(ObjectGroupObject {
+                    id: uuid::Uuid::new_v4(),
+                    object_group_id: new_obj_grp_uuid,
+                    object_id: obj_id,
+                    is_meta: false,
+                })
+            })
+            .chain(
+                request.meta_object_ids.iter().map(|id_str| {
+                    let obj_id = uuid::Uuid::parse_str(id_str)?;
+                    Ok(ObjectGroupObject {
+                        id: uuid::Uuid::new_v4(),
+                        object_group_id: new_obj_grp_uuid,
+                        object_id: obj_id,
+                        is_meta: true,
+                    })
+                })
+            )
+            .collect::<Result<Vec<ObjectGroupObject>, ArunaError>>()?;
+
+        let obj_uuids = objgrp_obs
+            .iter()
+            .map(|e| e.object_id)
+            .unique()
+            .collect::<Vec<uuid::Uuid>>();
+
+        //Insert all defined object_groups into the database
+        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
+            let old_grp = object_groups
+                .filter(crate::database::schema::object_groups::id.eq(parsed_old_id))
+                .first::<ObjectGroup>(conn)?;
+
+            database_obj_group.shared_revision_id = old_grp.shared_revision_id;
+            database_obj_group.revision_number = old_grp.revision_number + 1;
+
+            diesel::insert_into(object_groups).values(&database_obj_group).execute(conn)?;
+            diesel::insert_into(object_group_key_value).values(&key_values).execute(conn)?;
+            diesel
+                ::insert_into(collection_object_groups)
+                .values(&collection_object_group)
+                .execute(conn)?;
+            if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
+                return Err(diesel::result::Error::NotFound);
+            }
+
+            diesel::insert_into(object_group_objects).values(&objgrp_obs).execute(conn)?;
+
+            let grp = query_object_group(new_obj_grp_uuid, conn)?;
+
+            grp.ok_or(diesel::NotFound)
+        })?;
+
+        // Return already complete gRPC response
+        Ok(UpdateObjectGroupResponse {
             object_group: Some(overview.into()),
         })
     }

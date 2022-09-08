@@ -47,9 +47,29 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// Updating an ObjectGroup will create a new Revision of the ObjectGroup
     async fn update_object_group(
         &self,
-        _request: tonic::Request<UpdateObjectGroupRequest>
+        request: tonic::Request<UpdateObjectGroupRequest>
     ) -> Result<tonic::Response<UpdateObjectGroupResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        let creator_id = self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::APPEND // User needs at least append permission to create an object
+        ).await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move ||
+                database_clone.update_object_group(request.get_ref(), &creator_id)
+            ).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
     /// GetObjectGroupById gets a specific ObjectGroup by ID
     /// By default the latest revision is always returned, older revisions need to
