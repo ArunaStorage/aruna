@@ -13,7 +13,7 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// CreateObjectGroup creates a new ObjectGroup in the collection
     async fn create_object_group(
         &self,
-        _request: tonic::Request<CreateObjectGroupRequest>,
+        _request: tonic::Request<CreateObjectGroupRequest>
     ) -> Result<tonic::Response<CreateObjectGroupResponse>, tonic::Status> {
         todo!()
     }
@@ -22,7 +22,7 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// Updating an ObjectGroup will create a new Revision of the ObjectGroup
     async fn update_object_group(
         &self,
-        _request: tonic::Request<UpdateObjectGroupRequest>,
+        _request: tonic::Request<UpdateObjectGroupRequest>
     ) -> Result<tonic::Response<UpdateObjectGroupResponse>, tonic::Status> {
         todo!()
     }
@@ -31,7 +31,7 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// be specified separately
     async fn get_object_group_by_id(
         &self,
-        _request: tonic::Request<GetObjectGroupByIdRequest>,
+        _request: tonic::Request<GetObjectGroupByIdRequest>
     ) -> Result<tonic::Response<GetObjectGroupByIdResponse>, tonic::Status> {
         todo!()
     }
@@ -39,7 +39,7 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// Object Objects can be part of multiple ObjectGroups at once
     async fn get_object_groups_from_object(
         &self,
-        _request: tonic::Request<GetObjectGroupsFromObjectRequest>,
+        _request: tonic::Request<GetObjectGroupsFromObjectRequest>
     ) -> Result<tonic::Response<GetObjectGroupsFromObjectResponse>, tonic::Status> {
         todo!()
     }
@@ -47,21 +47,27 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// ObjectGroups that contain a specific set of labels.
     async fn get_object_groups(
         &self,
-        _request: tonic::Request<GetObjectGroupsRequest>,
+        _request: tonic::Request<GetObjectGroupsRequest>
     ) -> Result<tonic::Response<GetObjectGroupsResponse>, tonic::Status> {
         todo!()
     }
     async fn get_object_group_history(
         &self,
-        _request: tonic::Request<GetObjectGroupHistoryRequest>,
+        _request: tonic::Request<GetObjectGroupHistoryRequest>
     ) -> Result<tonic::Response<GetObjectGroupHistoryResponse>, tonic::Status> {
+        todo!()
+    }
+    async fn get_object_group_objects(
+        &self,
+        _request: tonic::Request<GetObjectGroupObjectsRequest>
+    ) -> Result<tonic::Response<GetObjectGroupObjectsResponse>, tonic::Status> {
         todo!()
     }
     /// DeleteObjectGroup is a request that deletes a specified ObjectGroup
     /// This does not delete the associated Objects
     async fn delete_object_group(
         &self,
-        _request: tonic::Request<DeleteObjectGroupRequest>,
+        _request: tonic::Request<DeleteObjectGroupRequest>
     ) -> Result<tonic::Response<DeleteObjectGroupResponse>, tonic::Status> {
         todo!()
     }
