@@ -269,14 +269,12 @@ impl Database {
                     .select(crate::database::schema::object_group_objects::object_group_id)
                     .load::<uuid::Uuid>(conn)?;
 
-                Ok(
-                    object_grp_ids
+                object_grp_ids
                         .iter()
                         .map(|obj_grp_id|
                             query_object_group(*obj_grp_id, conn)?.ok_or(diesel::NotFound)
                         )
-                        .collect::<Result<Vec<ObjectGroupDb>, _>>()?
-                )
+                        .collect::<Result<Vec<ObjectGroupDb>, _>>()
             })?;
 
         let ogoverview = ObjectGroupOverviews {
