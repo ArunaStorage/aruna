@@ -2,12 +2,13 @@ use super::auth::*;
 use super::enums::*;
 use super::object::*;
 use super::traits::IsKeyValue;
+use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
-#[diesel(table_name=object_groups)]
+#[diesel(table_name = object_groups)]
 pub struct ObjectGroup {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,
@@ -47,10 +48,27 @@ impl IsKeyValue for ObjectGroupKeyValue {
     }
 }
 
+impl ToDbKeyValue for ObjectGroupKeyValue {
+    fn new_kv<ObjectGroupKeyValue>(
+        key: &str,
+        value: &str,
+        belongs_to: uuid::Uuid,
+        kv_type: KeyValueType
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            object_group_id: belongs_to,
+            key: key.to_string(),
+            value: value.to_string(),
+            key_value_type: kv_type,
+        }
+    }
+}
+
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable)]
 #[diesel(belongs_to(ObjectGroup))]
 #[diesel(belongs_to(Object))]
-#[diesel(table_name=object_group_objects)]
+#[diesel(table_name = object_group_objects)]
 pub struct ObjectGroupObject {
     pub id: uuid::Uuid,
     pub object_group_id: uuid::Uuid,

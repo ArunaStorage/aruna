@@ -1,6 +1,7 @@
 use super::auth::*;
 use super::enums::*;
 use super::traits::IsKeyValue;
+use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
@@ -15,7 +16,7 @@ pub struct Source {
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(belongs_to(Source))]
 #[diesel(belongs_to(Object, foreign_key = origin_id))]
-#[diesel(table_name=objects)]
+#[diesel(table_name = objects)]
 pub struct Object {
     pub id: uuid::Uuid,
     pub shared_revision_id: uuid::Uuid,
@@ -89,5 +90,22 @@ impl IsKeyValue for ObjectKeyValue {
 
     fn get_type(&self) -> &KeyValueType {
         &self.key_value_type
+    }
+}
+
+impl ToDbKeyValue for ObjectKeyValue {
+    fn new_kv<ObjectKeyValue>(
+        key: &str,
+        value: &str,
+        belongs_to: uuid::Uuid,
+        kv_type: KeyValueType
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            object_id: belongs_to,
+            key: key.to_string(),
+            value: value.to_string(),
+            key_value_type: kv_type,
+        }
     }
 }

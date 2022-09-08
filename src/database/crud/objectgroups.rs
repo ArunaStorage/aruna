@@ -1,19 +1,106 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager};
+use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error };
 use r2d2::PooledConnection;
 
-use crate::database::{
-    connection::Database,
-    models::{
-        collection::CollectionObjectGroup,
-        object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
+use crate::{
+    database::{
+        connection::Database,
+        models::{
+            collection::CollectionObjectGroup,
+            object_group::{ ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject },
+        },
+        schema::object_group_objects,
     },
+    api::aruna::api::storage::services::v1::CreateObjectGroupRequest,
+    api::aruna::api::storage::{
+        services::v1::CreateObjectGroupResponse,
+        models::v1::ObjectGroupOverview,
+    },
+    error::ArunaError,
 };
 
 /// Implementing CRUD+ database operations for ObjectGroups
-impl Database {}
+impl Database {
+    pub fn create_object_group(
+        &self,
+        request: &CreateObjectGroupRequest,
+        creator: &uuid::Uuid
+    ) -> Result<CreateObjectGroupResponse, ArunaError> {
+        let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let new_obj_grp_uuid = uuid::Uuid::new_v4();
+
+        let database_obj_group = ObjectGroup {
+            id: new_obj_grp_uuid,
+            shared_revision_id: uuid::Uuid::new_v4(),
+            revision_number: 0,
+            name: Some(request.name.to_string()),
+            description: Some(request.description.to_string()),
+            created_at: Utc::now().naive_utc(),
+            created_by: *creator,
+        };
+
+        let collection_object_group = CollectionObjectGroup {
+            id: uuid::Uuid::new_v4(),
+            collection_id: parsed_col_id,
+            object_group_id: new_obj_grp_uuid,
+            writeable: true,
+        };
+
+        //let key_values = to_k
+
+        let object_group_objects = request.object_ids
+            .iter()
+            .map(|id_str| {
+                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                Ok(ObjectGroupObject {
+                    id: uuid::Uuid::new_v4(),
+                    object_group_id: new_obj_grp_uuid,
+                    object_id: obj_id,
+                    is_meta: false,
+                })
+            })
+            .chain(
+                request.meta_object_ids.iter().map(|id_str| {
+                    let obj_id = uuid::Uuid::parse_str(id_str)?;
+                    Ok(ObjectGroupObject {
+                        id: uuid::Uuid::new_v4(),
+                        object_group_id: new_obj_grp_uuid,
+                        object_id: obj_id,
+                        is_meta: true,
+                    })
+                })
+            )
+            .collect::<Result<Vec<ObjectGroupObject>, ArunaError>>()?;
+
+        // Insert all defined objects into the database
+        // self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
+        //     diesel::insert_into(sources).values(&source).execute(conn)?;
+        //     diesel::insert_into(objects).values(&object).execute(conn)?;
+        //     diesel::insert_into(object_locations).values(&object_location).execute(conn)?;
+        //     diesel::insert_into(hashes).values(&empty_hash).execute(conn)?;
+        //     diesel::insert_into(object_key_value).values(&key_value_pairs).execute(conn)?;
+        //     diesel::insert_into(collection_objects).values(&collection_object).execute(conn)?;
+
+        //     Ok(())
+        // })?;
+
+        // Return already complete gRPC response
+        Ok(CreateObjectGroupResponse {
+            object_group: Some(ObjectGroupOverview {
+                id: todo!(),
+                name: todo!(),
+                description: todo!(),
+                labels: todo!(),
+                hooks: todo!(),
+                stats: todo!(),
+                rev_number: todo!(),
+            }),
+        })
+    }
+}
 
 /* ----------------- Section for object specific helper functions ------------------- */
 /// Helper function that bumps all specified object_groups to a "new" revision. This will create
@@ -35,7 +122,7 @@ impl Database {}
 pub fn bump_revisisions(
     objectgroups: &Vec<uuid::Uuid>,
     creator_id: &uuid::Uuid,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
 ) -> Result<Vec<ObjectGroup>, diesel::result::Error> {
     use crate::database::schema::collection_object_groups::dsl as collobjgrps;
     use crate::database::schema::object_group_key_value::dsl as objgrpkv;
@@ -139,19 +226,15 @@ pub fn bump_revisisions(
         .values(&new_groups)
         .get_results::<ObjectGroup>(conn)?;
     // Insert key_values
-    insert_into(objgrpkv::object_group_key_value)
-        .values(&new_object_group_kv)
-        .execute(conn)?;
+    insert_into(objgrpkv::object_group_key_value).values(&new_object_group_kv).execute(conn)?;
     // New object_group objects
-    insert_into(objgrpobjs::object_group_objects)
-        .values(&new_object_group_obj)
-        .execute(conn)?;
+    insert_into(objgrpobjs::object_group_objects).values(&new_object_group_obj).execute(conn)?;
     // delete old collection object_groups
     delete(
-        collobjgrps::collection_object_groups
-            .filter(collobjgrps::id.eq_any(&old_coll_objectgroup_ids)),
-    )
-    .execute(conn)?;
+        collobjgrps::collection_object_groups.filter(
+            collobjgrps::id.eq_any(&old_coll_objectgroup_ids)
+        )
+    ).execute(conn)?;
     // Insert new coll obj grp
     insert_into(collobjgrps::collection_object_groups)
         .values(&new_collection_object_groups)
@@ -175,7 +258,7 @@ pub fn bump_revisisions(
 ///
 pub fn get_latest_objgrp(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_group_id: uuid::Uuid,
+    ref_object_group_id: uuid::Uuid
 ) -> Result<ObjectGroup, diesel::result::Error> {
     use crate::database::schema::object_groups::dsl as objgrps;
     let shared_id = objgrps::object_groups

@@ -3,6 +3,7 @@ use super::enums::*;
 use super::object::*;
 use super::object_group::*;
 use super::traits::IsKeyValue;
+use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
@@ -26,12 +27,16 @@ impl PartialOrd for CollectionVersion {
         // Compare major first continue if equal
         match self.major.partial_cmp(&other.major) {
             Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
+            ord => {
+                return ord;
+            }
         }
         // Compare minor continue if equal
         match self.minor.partial_cmp(&other.minor) {
             Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
+            ord => {
+                return ord;
+            }
         }
         // Lastly compare patch
         self.patch.partial_cmp(&other.patch)
@@ -82,6 +87,22 @@ impl IsKeyValue for CollectionKeyValue {
         &self.key_value_type
     }
 }
+impl ToDbKeyValue for CollectionKeyValue {
+    fn new_kv<CollectionKeyValue>(
+        key: &str,
+        value: &str,
+        belongs_to: uuid::Uuid,
+        kv_type: KeyValueType
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            collection_id: belongs_to,
+            key: key.to_string(),
+            value: value.to_string(),
+            key_value_type: kv_type,
+        }
+    }
+}
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
@@ -92,11 +113,19 @@ pub struct RequiredLabel {
 }
 
 #[derive(
-    Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable, PartialEq, Eq,
+    Associations,
+    Queryable,
+    Insertable,
+    Identifiable,
+    Debug,
+    Clone,
+    Selectable,
+    PartialEq,
+    Eq
 )]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]
-#[diesel(table_name=collection_objects)]
+#[diesel(table_name = collection_objects)]
 pub struct CollectionObject {
     pub id: uuid::Uuid,
     pub collection_id: uuid::Uuid,

@@ -56,11 +56,11 @@ use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
     check_all_for_db_kv,
-    from_object_key_values,
+    from_key_values,
     naivedatetime_to_prost_time,
     parse_page_request,
     parse_query,
-    to_object_key_values,
+    to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
@@ -200,7 +200,7 @@ impl Database {
         };
 
         // Convert the object's labels and hooks to their database representation
-        let key_value_pairs = to_object_key_values(
+        let key_value_pairs = to_key_values::<ObjectKeyValue>(
             staging_object.labels,
             staging_object.hooks,
             object_uuid
@@ -447,7 +447,7 @@ impl Database {
                 // Define the initial object location
                 // Convert the object's labels and hooks to their database representation
                 // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
-                let key_value_pairs = to_object_key_values(
+                let key_value_pairs = to_key_values::<ObjectKeyValue>(
                     sobj.labels.clone(),
                     sobj.hooks.clone(),
                     new_obj_id
@@ -1303,7 +1303,7 @@ impl Database {
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Transaction time
         let updated_objects = self.pg_connection.get()?.transaction::<ObjectDto, Error, _>(|conn| {
-            let db_key_values = to_object_key_values(
+            let db_key_values = to_key_values::<ObjectKeyValue>(
                 request.labels_to_add,
                 Vec::new(),
                 parsed_object_id
@@ -1415,7 +1415,7 @@ pub fn clone_object(
     diesel::insert_into(collection_objects).values(&db_collection_object).execute(conn)?;
 
     // Transform everything into gRPC proto format
-    let (labels, hooks) = from_object_key_values(db_object_key_values);
+    let (labels, hooks) = from_key_values(db_object_key_values);
     let timestamp = naivedatetime_to_prost_time(db_object.created_at).map_err(
         |_| Error::RollbackTransaction
     )?;
@@ -1599,7 +1599,7 @@ fn get_object(
         .first::<Object>(conn)?;
 
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
-    let (labels, hooks) = from_object_key_values(object_key_values);
+    let (labels, hooks) = from_key_values(object_key_values);
 
     let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
 
