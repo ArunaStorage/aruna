@@ -12,12 +12,14 @@ use crate::{
         object_group_stats::dsl::*,
     },
     api::aruna::api::storage::{
-        models::v1::{ ObjectGroupStats, Stats },
+        models::v1::{ ObjectGroupStats, Stats, ObjectGroupOverviews },
         services::v1::{
             UpdateObjectGroupRequest,
             UpdateObjectGroupResponse,
             GetObjectGroupByIdRequest,
             GetObjectGroupByIdResponse,
+            GetObjectGroupsFromObjectRequest,
+            GetObjectGroupsFromObjectResponse,
         },
     },
 };
@@ -44,6 +46,7 @@ use super::{
     object::check_if_obj_in_coll,
 };
 
+#[derive(Clone, Debug)]
 pub struct ObjectGroupDb {
     pub object_group: ObjectGroup,
     pub labels: Vec<KeyValue>,
@@ -249,6 +252,43 @@ impl Database {
         // Return already complete gRPC response
         Ok(GetObjectGroupByIdResponse {
             object_group: Some(overview.into()),
+        })
+    }
+    pub fn get_object_groups_from_object(
+        &self,
+        request: &GetObjectGroupsFromObjectRequest
+    ) -> Result<GetObjectGroupsFromObjectResponse, ArunaError> {
+        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
+
+        //Insert all defined object_groups into the database
+        let overviews = self.pg_connection
+            .get()?
+            .transaction::<Vec<ObjectGroupDb>, Error, _>(|conn| {
+                let object_grp_ids = object_group_objects
+                    .filter(crate::database::schema::object_group_objects::object_id.eq(obj_id))
+                    .select(crate::database::schema::object_group_objects::object_group_id)
+                    .load::<uuid::Uuid>(conn)?;
+
+                Ok(
+                    object_grp_ids
+                        .iter()
+                        .map(|obj_grp_id|
+                            query_object_group(*obj_grp_id, conn)?.ok_or(diesel::NotFound)
+                        )
+                        .collect::<Result<Vec<ObjectGroupDb>, _>>()?
+                )
+            })?;
+
+        let ogoverview = ObjectGroupOverviews {
+            object_group_overviews: overviews
+                .iter()
+                .map(|ov| ObjectGroupOverview::from(ov.clone()))
+                .collect::<Vec<ObjectGroupOverview>>(),
+        };
+
+        // Return already complete gRPC response
+        Ok(GetObjectGroupsFromObjectResponse {
+            object_groups: Some(ogoverview),
         })
     }
 }
