@@ -1,8 +1,13 @@
 //! This file contains the gRPC implementation for the ObjectGroupService
+use tokio::task;
+use tonic::Response;
+
 use super::authz::Authz;
 use crate::api::aruna::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
+use crate::database::models::enums::UserRights;
+use crate::error::ArunaError;
 use std::sync::Arc;
 
 // This automatically creates the ObjectGroupServiceImpl struct and ::new methods
@@ -13,9 +18,29 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// CreateObjectGroup creates a new ObjectGroup in the collection
     async fn create_object_group(
         &self,
-        _request: tonic::Request<CreateObjectGroupRequest>
+        request: tonic::Request<CreateObjectGroupRequest>
     ) -> Result<tonic::Response<CreateObjectGroupResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        let creator_id = self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::APPEND // User needs at least append permission to create an object
+        ).await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move ||
+                database_clone.create_object_group(request.get_ref(), &creator_id)
+            ).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
     /// UpdateObjectGroup creates an updated ObjectGroup
     /// ObjectGroups are immutable
