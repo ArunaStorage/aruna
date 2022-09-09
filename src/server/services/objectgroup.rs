@@ -130,15 +130,53 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// ObjectGroups that contain a specific set of labels.
     async fn get_object_groups(
         &self,
-        _request: tonic::Request<GetObjectGroupsRequest>
+        request: tonic::Request<GetObjectGroupsRequest>
     ) -> Result<tonic::Response<GetObjectGroupsResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::READ // User needs at least append permission to create an object
+        ).await?;
+
+        // Query object_group in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move || database_clone.get_object_groups(request.into_inner())).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
     async fn get_object_group_history(
         &self,
-        _request: tonic::Request<GetObjectGroupHistoryRequest>
+        request: tonic::Request<GetObjectGroupHistoryRequest>
     ) -> Result<tonic::Response<GetObjectGroupHistoryResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::READ // User needs at least append permission to create an object
+        ).await?;
+
+        // Query object_group in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move ||
+                database_clone.get_object_group_history(request.into_inner())
+            ).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
     async fn get_object_group_objects(
         &self,

@@ -1,15 +1,18 @@
-use std::collections::HashMap;
+use std::{ collections::HashMap, convert::identity };
 
 use chrono::Utc;
 use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error };
 use r2d2::PooledConnection;
 use crate::{
-    database::schema::{
-        collection_object_groups::dsl::*,
-        object_groups::dsl::*,
-        object_group_objects::dsl::*,
-        object_group_key_value::dsl::*,
-        object_group_stats::dsl::*,
+    database::{
+        schema::{
+            collection_object_groups::dsl::*,
+            object_groups::dsl::*,
+            object_group_objects::dsl::*,
+            object_group_key_value::dsl::*,
+            object_group_stats::dsl::*,
+        },
+        crud::utils::{ ParsedQuery, check_all_for_db_kv },
     },
     api::aruna::api::storage::{
         models::v1::{ ObjectGroupStats, Stats, ObjectGroupOverviews },
@@ -20,6 +23,10 @@ use crate::{
             GetObjectGroupByIdResponse,
             GetObjectGroupsFromObjectRequest,
             GetObjectGroupsFromObjectResponse,
+            GetObjectGroupsResponse,
+            GetObjectGroupsRequest,
+            GetObjectGroupHistoryRequest,
+            GetObjectGroupHistoryResponse,
         },
     },
 };
@@ -42,7 +49,13 @@ use crate::{
 };
 
 use super::{
-    utils::{ to_key_values, from_key_values, naivedatetime_to_prost_time },
+    utils::{
+        to_key_values,
+        from_key_values,
+        naivedatetime_to_prost_time,
+        parse_page_request,
+        parse_query,
+    },
     object::check_if_obj_in_coll,
 };
 
@@ -270,11 +283,11 @@ impl Database {
                     .load::<uuid::Uuid>(conn)?;
 
                 object_grp_ids
-                        .iter()
-                        .map(|obj_grp_id|
-                            query_object_group(*obj_grp_id, conn)?.ok_or(diesel::NotFound)
-                        )
-                        .collect::<Result<Vec<ObjectGroupDb>, _>>()
+                    .iter()
+                    .map(|obj_grp_id|
+                        query_object_group(*obj_grp_id, conn)?.ok_or(diesel::NotFound)
+                    )
+                    .collect::<Result<Vec<ObjectGroupDb>, _>>()
             })?;
 
         let ogoverview = ObjectGroupOverviews {
@@ -286,6 +299,188 @@ impl Database {
 
         // Return already complete gRPC response
         Ok(GetObjectGroupsFromObjectResponse {
+            object_groups: Some(ogoverview),
+        })
+    }
+    pub fn get_object_groups(
+        &self,
+        request: GetObjectGroupsRequest
+    ) -> Result<GetObjectGroupsResponse, ArunaError> {
+        // Parse the page_request and get pagesize / lastuuid
+        let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
+        // Parse the query to a `ParsedQuery`
+        let parsed_query = parse_query(request.label_id_filter)?;
+        // Collection context
+
+        use crate::database::schema::object_group_key_value::dsl as ogkv;
+        use crate::database::schema::object_groups::dsl as ogrps;
+        use diesel::prelude::*;
+        //Insert all defined object_groups into the database
+        let overviews = self.pg_connection
+            .get()?
+            .transaction::<Option<Vec<ObjectGroupDb>>, Error, _>(|conn| {
+                // First build a "boxed" base request to which additional parameters can be added later
+                let mut base_request = ogrps::object_groups.into_boxed();
+                // Create returnvector of CollectionOverviewsDb
+                let mut return_vec: Vec<ObjectGroupDb> = Vec::new();
+                // If pagesize is not unlimited set it to pagesize or default = 20
+                if let Some(pg_size) = pagesize {
+                    base_request = base_request.limit(pg_size);
+                }
+                // Add "last_uuid" filter if it is specified
+                if let Some(l_uid) = last_uuid {
+                    base_request = base_request.filter(ogrps::id.ge(l_uid));
+                }
+                // Add query if it exists
+                if let Some(p_query) = parsed_query {
+                    // Check if query exists
+                    match p_query {
+                        // This is a label query request
+                        ParsedQuery::LabelQuery(l_query) => {
+                            // Create key value boxed request
+                            let mut ckv_query = ogkv::object_group_key_value.into_boxed();
+                            // Create vector with "matching" collections
+                            let found_objs: Option<Vec<uuid::Uuid>>;
+                            // Is "and"
+                            if l_query.1 {
+                                // Add each key / value to label query
+                                for (obj_key, obj_value) in l_query.0.clone() {
+                                    // Always add keys
+                                    ckv_query = ckv_query.filter(ogkv::key.eq(obj_key));
+                                    // Will be Some if keys only == false
+                                    if let Some(val) = obj_value {
+                                        ckv_query = ckv_query.filter(ogkv::value.eq(val));
+                                    }
+                                }
+                                // Execute request and get a list with all found key values
+                                let found_obj_kv: Option<Vec<ObjectGroupKeyValue>> = ckv_query
+                                    .load::<ObjectGroupKeyValue>(conn)
+                                    .optional()?;
+                                // Parse the returned key_values for the "all" constraint
+                                // and only return matching collection ids
+                                found_objs = check_all_for_db_kv(found_obj_kv, l_query.0);
+                                // If the query is "or"
+                            } else {
+                                // Query all key / values
+                                for (obj_key, obj_value) in l_query.0 {
+                                    ckv_query = ckv_query.or_filter(ogkv::key.eq(obj_key));
+                                    // Only Some() if key_only is false
+                                    if let Some(val) = obj_value {
+                                        ckv_query = ckv_query.filter(ogkv::value.eq(val));
+                                    }
+                                }
+                                // Can query the matches collections directly
+                                found_objs = ckv_query
+                                    .select(ogkv::object_group_id)
+                                    .distinct()
+                                    .load::<uuid::Uuid>(conn)
+                                    .optional()?;
+                            }
+                            // Add to query if something was found otherwise return Only
+                            if let Some(fobjs) = found_objs {
+                                base_request = base_request.filter(ogrps::id.eq_any(fobjs));
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        // If the request was an ID request, just filter for all ids
+                        // And for uuids makes no sense
+                        ParsedQuery::IdsQuery(ids) => {
+                            base_request = base_request.filter(ogrps::id.eq_any(ids));
+                        }
+                    }
+                }
+
+                // Execute the preconfigured query
+                let query_collections: Option<Vec<ObjectGroup>> = base_request
+                    .load::<ObjectGroup>(conn)
+                    .optional()?;
+                // Query overviews for each collection
+                // TODO: This might be inefficient and can be optimized later
+                if let Some(q_objs_grp) = query_collections {
+                    for s_obj_grp in q_objs_grp {
+                        if let Some(ogdb) = query_object_group(s_obj_grp.id, conn)? {
+                            return_vec.push(ogdb);
+                        }
+                    }
+                    Ok(Some(return_vec))
+                } else {
+                    Ok(None)
+                }
+            })?;
+
+        let ogoverview = if
+            let Some(some_ogoverview) = overviews.map(|elem|
+                elem
+                    .iter()
+                    .map(|ov| ObjectGroupOverview::from(ov.clone()))
+                    .collect::<Vec<ObjectGroupOverview>>()
+            )
+        {
+            Some(ObjectGroupOverviews { object_group_overviews: some_ogoverview })
+        } else {
+            None
+        };
+
+        // Return already complete gRPC response
+        Ok(GetObjectGroupsResponse {
+            object_groups: ogoverview,
+        })
+    }
+    pub fn get_object_group_history(
+        &self,
+        request: GetObjectGroupHistoryRequest
+    ) -> Result<GetObjectGroupHistoryResponse, ArunaError> {
+        let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
+        let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
+        //Insert all defined object_groups into the database
+        let overviews = self.pg_connection
+            .get()?
+            .transaction::<Vec<ObjectGroupDb>, Error, _>(|conn| {
+                let base_group = object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(grp_id))
+                    .first::<ObjectGroup>(conn)?;
+
+                // First build a "boxed" base request to which additional parameters can be added later
+                let mut base_request = object_groups
+                    .filter(
+                        crate::database::schema::object_groups::shared_revision_id.eq(
+                            base_group.shared_revision_id
+                        )
+                    )
+                    .into_boxed();
+                // If pagesize is not unlimited set it to pagesize or default = 20
+                if let Some(pg_size) = pagesize {
+                    base_request = base_request.limit(pg_size);
+                }
+                // Add "last_uuid" filter if it is specified
+                if let Some(l_uid) = last_uuid {
+                    base_request = base_request.filter(
+                        crate::database::schema::object_groups::id.ge(l_uid)
+                    );
+                }
+
+                let all: Vec<uuid::Uuid> = base_request
+                    .select(crate::database::schema::object_groups::id)
+                    .load::<uuid::Uuid>(conn)?;
+                Ok(
+                    all
+                        .iter()
+                        .filter_map(|s_obj_grp| query_object_group(*s_obj_grp, conn).ok())
+                        .filter_map(identity)
+                        .collect::<Vec<ObjectGroupDb>>()
+                )
+            })?;
+
+        let ogoverview = ObjectGroupOverviews {
+            object_group_overviews: overviews
+                .iter()
+                .map(|ov| ObjectGroupOverview::from(ov.clone()))
+                .collect::<Vec<ObjectGroupOverview>>(),
+        };
+
+        // Return already complete gRPC response
+        Ok(GetObjectGroupHistoryResponse {
             object_groups: Some(ogoverview),
         })
     }
