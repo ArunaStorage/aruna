@@ -94,6 +94,7 @@ use super::objectgroups::bump_revisisions;
 use super::utils::{ parse_dataclass, ParsedQuery };
 
 // Struct to hold the database objects
+#[derive(Debug, Clone)]
 pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
@@ -1589,7 +1590,7 @@ pub fn get_all_references(
 /// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
 /// Database representation of an object
 ///
-fn get_object(
+pub fn get_object(
     object_uuid: &uuid::Uuid,
     collection_uuid: &uuid::Uuid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>

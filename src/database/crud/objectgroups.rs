@@ -27,6 +27,9 @@ use crate::{
             GetObjectGroupsRequest,
             GetObjectGroupHistoryRequest,
             GetObjectGroupHistoryResponse,
+            GetObjectGroupObjectsRequest,
+            GetObjectGroupObjectsResponse,
+            ObjectGroupObject as ProtoObjectGroupObject,
         },
     },
 };
@@ -43,7 +46,7 @@ use crate::{
     api::aruna::api::storage::services::v1::CreateObjectGroupRequest,
     api::aruna::api::storage::{
         services::v1::CreateObjectGroupResponse,
-        models::v1::{ ObjectGroupOverview, KeyValue },
+        models::v1::{ ObjectGroupOverview, KeyValue, Object as ProtoObject },
     },
     error::ArunaError,
 };
@@ -56,7 +59,7 @@ use super::{
         parse_page_request,
         parse_query,
     },
-    object::check_if_obj_in_coll,
+    object::{ check_if_obj_in_coll, ObjectDto, get_object },
 };
 
 #[derive(Clone, Debug)]
@@ -482,6 +485,58 @@ impl Database {
         // Return already complete gRPC response
         Ok(GetObjectGroupHistoryResponse {
             object_groups: Some(ogoverview),
+        })
+    }
+    pub fn get_object_group_objects(
+        &self,
+        request: GetObjectGroupObjectsRequest
+    ) -> Result<GetObjectGroupObjectsResponse, ArunaError> {
+        let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
+        //Insert all defined object_groups into the database
+        let overviews = self.pg_connection
+            .get()?
+            .transaction::<Vec<(ObjectDto, bool)>, Error, _>(|conn| {
+                // First build a "boxed" base request to which additional parameters can be added later
+                let mut base_request = object_group_objects
+                    .filter(
+                        crate::database::schema::object_group_objects::object_group_id.eq(grp_id)
+                    )
+                    .into_boxed();
+                // If pagesize is not unlimited set it to pagesize or default = 20
+                if let Some(pg_size) = pagesize {
+                    base_request = base_request.limit(pg_size);
+                }
+                // Add "last_uuid" filter if it is specified
+                if let Some(l_uid) = last_uuid {
+                    base_request = base_request.filter(
+                        crate::database::schema::object_group_objects::object_id.ge(l_uid)
+                    );
+                }
+
+                let all: Vec<ObjectGroupObject> = base_request.load::<ObjectGroupObject>(conn)?;
+
+                all.iter()
+                    .map(|obj_grp_obj|
+                        Ok((get_object(&obj_grp_obj.id, &col_id, conn)?, obj_grp_obj.is_meta))
+                    )
+                    .collect::<Result<Vec<(_, _)>, _>>()
+            })?;
+
+        let ogobjects = overviews
+            .iter()
+            .map(|(ov, is_meta_obj)|
+                Ok(ProtoObjectGroupObject {
+                    object: Some(ProtoObject::try_from(ov.clone())?),
+                    is_metadata: *is_meta_obj,
+                })
+            )
+            .collect::<Result<Vec<ProtoObjectGroupObject>, ArunaError>>()?;
+
+        // Return already complete gRPC response
+        Ok(GetObjectGroupObjectsResponse {
+            object_group_objects: ogobjects,
         })
     }
 }
