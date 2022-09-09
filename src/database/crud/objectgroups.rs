@@ -1,7 +1,7 @@
-use std::{ collections::HashMap, convert::identity };
+use std::{ collections::HashMap };
 
 use chrono::Utc;
-use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error };
+use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update };
 use r2d2::PooledConnection;
 use crate::{
     database::{
@@ -30,6 +30,8 @@ use crate::{
             GetObjectGroupObjectsRequest,
             GetObjectGroupObjectsResponse,
             ObjectGroupObject as ProtoObjectGroupObject,
+            DeleteObjectGroupRequest,
+            DeleteObjectGroupResponse,
         },
     },
 };
@@ -412,18 +414,12 @@ impl Database {
                 }
             })?;
 
-        let ogoverview = if
-            let Some(some_ogoverview) = overviews.map(|elem|
+        let ogoverview = overviews.map(|elem|
                 elem
                     .iter()
                     .map(|ov| ObjectGroupOverview::from(ov.clone()))
                     .collect::<Vec<ObjectGroupOverview>>()
-            )
-        {
-            Some(ObjectGroupOverviews { object_group_overviews: some_ogoverview })
-        } else {
-            None
-        };
+            ).map(|some_ogoverview| ObjectGroupOverviews { object_group_overviews: some_ogoverview });
 
         // Return already complete gRPC response
         Ok(GetObjectGroupsResponse {
@@ -470,7 +466,7 @@ impl Database {
                     all
                         .iter()
                         .filter_map(|s_obj_grp| query_object_group(*s_obj_grp, conn).ok())
-                        .filter_map(identity)
+                        .flatten()
                         .collect::<Vec<ObjectGroupDb>>()
                 )
             })?;
@@ -538,6 +534,83 @@ impl Database {
         Ok(GetObjectGroupObjectsResponse {
             object_group_objects: ogobjects,
         })
+    }
+    pub fn delete_object_group(
+        &self,
+        request: DeleteObjectGroupRequest
+    ) -> Result<DeleteObjectGroupResponse, ArunaError> {
+        let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
+        //Insert all defined object_groups into the database
+        self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
+            // Update object_group to name/description -> "DELETED"
+            // The group will not get deleted if revisions still exist
+            let queried_group = object_groups
+                .filter(crate::database::schema::object_groups::id.eq(grp_id))
+                .first::<ObjectGroup>(conn)?;
+
+            let others = object_groups
+                .filter(
+                    crate::database::schema::object_groups::shared_revision_id.eq(
+                        queried_group.shared_revision_id
+                    )
+                )
+                .load::<ObjectGroup>(conn)?;
+
+            // Delete key values
+            delete(object_group_key_value)
+                .filter(crate::database::schema::object_group_key_value::object_group_id.eq(grp_id))
+                .execute(conn)?;
+            // Delete collection_object_groups
+            delete(collection_object_groups)
+                .filter(
+                    crate::database::schema::collection_object_groups::object_group_id.eq(grp_id)
+                )
+                .execute(conn)?;
+            // Delete object_group_objects
+            delete(object_group_objects)
+                .filter(crate::database::schema::object_group_objects::object_group_id.eq(grp_id))
+                .execute(conn)?;
+
+            // All references are deleted -> Check if objectgroup should be deleted
+            let should_update = others
+                .iter()
+                .enumerate()
+                .fold(true, |acc, (index, ogroup)| {
+                    if index == 0 {
+                        false
+                    } else if acc {
+                        ogroup.name != Some("DELETED".to_string())
+                    } else {
+                        true
+                    }
+                });
+
+            if should_update {
+                update(object_groups)
+                    .filter(crate::database::schema::object_groups::id.eq(grp_id))
+                    .set((
+                        crate::database::schema::object_groups::name.eq("DELETED".to_string()),
+                        crate::database::schema::object_groups::description.eq(
+                            "DELETED".to_string()
+                        ),
+                    ))
+                    .execute(conn)?;
+            } else {
+                // All associated grps can be removed
+                delete(object_groups)
+                    .filter(
+                        crate::database::schema::object_groups::shared_revision_id.eq(
+                            queried_group.shared_revision_id
+                        )
+                    )
+                    .execute(conn)?;
+            }
+
+            Ok(())
+        })?;
+
+        // Return already complete gRPC response
+        Ok(DeleteObjectGroupResponse {})
     }
 }
 

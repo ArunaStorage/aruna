@@ -208,8 +208,26 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
     /// This does not delete the associated Objects
     async fn delete_object_group(
         &self,
-        _request: tonic::Request<DeleteObjectGroupRequest>
+        request: tonic::Request<DeleteObjectGroupRequest>
     ) -> Result<tonic::Response<DeleteObjectGroupResponse>, tonic::Status> {
-        todo!()
+        // Check if user is authorized to create objects in this collection
+        let collection_id = uuid::Uuid
+            ::parse_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+
+        self.authz.collection_authorize(
+            request.metadata(),
+            collection_id, // This is the collection uuid in which this object should be created
+            UserRights::WRITE // User needs at least append permission to create an object
+        ).await?;
+
+        // Query object_group_objects in database
+        let database_clone = self.database.clone();
+        let response = task
+            ::spawn_blocking(move || database_clone.delete_object_group(request.into_inner())).await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response after everything succeeded
+        return Ok(Response::new(response));
     }
 }

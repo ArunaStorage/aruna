@@ -6,7 +6,7 @@ use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone, AsChangeset)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name = object_groups)]
 pub struct ObjectGroup {
