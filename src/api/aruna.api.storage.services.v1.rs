@@ -3775,6 +3775,13 @@ pub struct GetUserProjectsResponse {
     #[prost(message, repeated, tag = "1")]
     pub projects: ::prost::alloc::vec::Vec<UserProject>,
 }
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+pub struct ActivateUserRequest {
+    #[prost(string, tag = "1")]
+    pub user_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+pub struct ActivateUserResponse {}
 /// Generated client implementations.
 pub mod user_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -3856,6 +3863,22 @@ pub mod user_service_client {
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/aruna.api.storage.services.v1.UserService/RegisterUser",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn activate_user(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ActivateUserRequest>,
+        ) -> Result<tonic::Response<super::ActivateUserResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/aruna.api.storage.services.v1.UserService/ActivateUser",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -4009,6 +4032,10 @@ pub mod user_service_server {
             &self,
             request: tonic::Request<super::RegisterUserRequest>,
         ) -> Result<tonic::Response<super::RegisterUserResponse>, tonic::Status>;
+        async fn activate_user(
+            &self,
+            request: tonic::Request<super::ActivateUserRequest>,
+        ) -> Result<tonic::Response<super::ActivateUserResponse>, tonic::Status>;
         /// CreateAPIToken Creates an API token to authenticate
         async fn create_api_token(
             &self,
@@ -4127,6 +4154,39 @@ pub mod user_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RegisterUserSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/aruna.api.storage.services.v1.UserService/ActivateUser" => {
+                    #[allow(non_camel_case_types)]
+                    struct ActivateUserSvc<T: UserService>(pub Arc<T>);
+                    impl<T: UserService> tonic::server::UnaryService<super::ActivateUserRequest>
+                        for ActivateUserSvc<T>
+                    {
+                        type Response = super::ActivateUserResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ActivateUserRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).activate_user(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ActivateUserSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

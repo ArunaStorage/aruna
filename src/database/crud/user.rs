@@ -11,11 +11,12 @@
 use super::utils::*;
 use crate::api::aruna::api::storage::models::v1::{Token, TokenType, User as gRPCUser};
 use crate::api::aruna::api::storage::services::v1::{
-    CreateApiTokenRequest, DeleteApiTokenRequest, DeleteApiTokenResponse, DeleteApiTokensRequest,
-    DeleteApiTokensResponse, GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest,
-    GetApiTokensResponse, GetUserProjectsRequest, GetUserProjectsResponse, RegisterUserRequest,
-    RegisterUserResponse, UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject,
-    UserWhoAmIRequest, UserWhoAmIResponse,
+    ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
+    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
+    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetUserProjectsRequest,
+    GetUserProjectsResponse, RegisterUserRequest, RegisterUserResponse,
+    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject, UserWhoAmIRequest,
+    UserWhoAmIResponse,
 };
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, Project as ProjectDB, User};
@@ -28,6 +29,7 @@ use diesel::{delete, insert_into};
 use diesel::{prelude::*, update};
 
 impl Database {
+    /// Registers a new (unregistered) user by its oidc `external_id`
     /// Registers a new (unregistered) user by its oidc `external_id`
     /// This must be called once in order to complete the registration for Aruna
     /// Users can provide an optional display_name to use e.g. for websites clients etc.
@@ -74,6 +76,39 @@ impl Database {
         Ok(RegisterUserResponse {
             user_id: user_id.to_string(),
         })
+    }
+    /// Activates a registered user, only activated users can create new api tokens.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: ActivateUserRequest the user_id that should be activated
+    ///
+    /// ## Returns
+    ///
+    /// * Result<ActivateUserResponse, ArunaError>: Placeholder, currently empty response
+    ///
+    pub fn activate_user(
+        &self,
+        request: ActivateUserRequest,
+    ) -> Result<ActivateUserResponse, ArunaError> {
+        use crate::database::schema::users::dsl::*;
+        use diesel::result::Error;
+
+        let user_id = uuid::Uuid::parse_str(&request.user_id)?;
+
+        // Update the user
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                update(users)
+                    .filter(id.eq(user_id))
+                    .set(active.eq(true))
+                    .execute(conn)?;
+                Ok(())
+            })?;
+
+        // Create successfull response
+        Ok(ActivateUserResponse {})
     }
 
     /// Creates a new API Token. This request can be made either with an already existing
@@ -211,7 +246,11 @@ impl Database {
 
         // Either the token_id or the token_name has to be specified
         if token_id.is_none() && token_name.is_none() {
-            return Err(ArunaError::InvalidRequest("token_id or name for the token must be specified use: get_api_tokens for a list of all tokens".to_string()));
+            return Err(
+                ArunaError::InvalidRequest(
+                    "token_id or name for the token must be specified use: get_api_tokens for a list of all tokens".to_string()
+                )
+            );
         }
 
         // Query db to get the token bubble up error if nothing is found

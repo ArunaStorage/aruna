@@ -1,4 +1,4 @@
-use aruna_server::database::{ self };
+use aruna_server::database::{self};
 use serial_test::serial;
 
 #[test]
@@ -29,10 +29,13 @@ fn get_pub_keys_test() {
 
     assert!(result.len() == 2);
     for key in result {
-        if key.pubkey == "pubkey_test_1".to_string() || key.pubkey == "pubkey_test_2".to_string() {
+        if key.pubkey == *"pubkey_test_1" || key.pubkey == *"pubkey_test_2" {
             continue;
         } else {
-            panic!("Expected pubkey_test_1 or pubkey_test_2, got: {:?}", key.pubkey);
+            panic!(
+                "Expected pubkey_test_1 or pubkey_test_2, got: {:?}",
+                key.pubkey
+            );
         }
     }
 }
