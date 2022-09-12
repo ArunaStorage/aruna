@@ -92,7 +92,7 @@ impl ToDbKeyValue for CollectionKeyValue {
         key: &str,
         value: &str,
         belongs_to: uuid::Uuid,
-        kv_type: KeyValueType
+        kv_type: KeyValueType,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4(),
@@ -113,15 +113,7 @@ pub struct RequiredLabel {
 }
 
 #[derive(
-    Associations,
-    Queryable,
-    Insertable,
-    Identifiable,
-    Debug,
-    Clone,
-    Selectable,
-    PartialEq,
-    Eq
+    Associations, Queryable, Insertable, Identifiable, Debug, Clone, Selectable, PartialEq, Eq,
 )]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(Object))]

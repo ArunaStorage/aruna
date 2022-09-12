@@ -6,7 +6,9 @@ use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone, AsChangeset)]
+#[derive(
+    Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone, AsChangeset,
+)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name = object_groups)]
 pub struct ObjectGroup {
@@ -53,7 +55,7 @@ impl ToDbKeyValue for ObjectGroupKeyValue {
         key: &str,
         value: &str,
         belongs_to: uuid::Uuid,
-        kv_type: KeyValueType
+        kv_type: KeyValueType,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4(),

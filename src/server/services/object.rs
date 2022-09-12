@@ -4,22 +4,20 @@ use tokio::sync::mpsc;
 use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
-use tonic::{ Code, Request, Response, Status };
+use tonic::{Code, Request, Response, Status};
 
 use crate::api::aruna::api::storage::models::v1::Object;
 use crate::api::aruna::api::storage::{
-    internal::v1::internal_proxy_service_client::InternalProxyServiceClient,
-    internal::v1::*,
-    services::v1::object_service_server::ObjectService,
-    services::v1::*,
+    internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
+    services::v1::object_service_server::ObjectService, services::v1::*,
 };
 
 use crate::database::connection::Database;
-use crate::database::models::enums::{ Resources, UserRights };
+use crate::database::models::enums::{Resources, UserRights};
 use crate::database::models::object::Endpoint;
 
 use crate::error::ArunaError;
-use crate::server::services::authz::{ Authz, Context };
+use crate::server::services::authz::{Authz, Context};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
@@ -38,7 +36,7 @@ impl ObjectServiceImpl {
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
     async fn try_connect_default_endpoint(
-        &self
+        &self,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Evaluate endpoint url
         let endpoint_url = match &self.default_endpoint.is_public {
@@ -51,15 +49,10 @@ impl ObjectServiceImpl {
 
         match data_proxy {
             Ok(dp) => Ok(dp),
-            Err(_) =>
-                Err(
-                    ArunaError::DataProxyError(
-                        Status::new(
-                            Code::Internal,
-                            "Could not connect to default data proxy endpoint"
-                        )
-                    )
-                ),
+            Err(_) => Err(ArunaError::DataProxyError(Status::new(
+                Code::Internal,
+                "Could not connect to default data proxy endpoint",
+            ))),
         }
     }
 
@@ -80,7 +73,7 @@ impl ObjectServiceImpl {
     ///
     async fn _try_connect_endpoint(
         &self,
-        endpoint_uuid: uuid::Uuid
+        endpoint_uuid: uuid::Uuid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
         let endpoint = self.database.get_endpoint(&endpoint_uuid)?;
@@ -96,12 +89,10 @@ impl ObjectServiceImpl {
 
         match data_proxy {
             Ok(dp) => Ok(dp),
-            Err(_) =>
-                Err(
-                    ArunaError::DataProxyError(
-                        Status::new(Code::Internal, "Could not connect to data proxy endpoint")
-                    )
-                ),
+            Err(_) => Err(ArunaError::DataProxyError(Status::new(
+                Code::Internal,
+                "Could not connect to data proxy endpoint",
+            ))),
         }
     }
 
@@ -123,11 +114,12 @@ impl ObjectServiceImpl {
     ///
     async fn try_connect_object_endpoint(
         &self,
-        object_uuid: &uuid::Uuid
+        object_uuid: &uuid::Uuid,
     ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
         // Get primary location with its endpoint from database
-        let (location, endpoint) =
-            self.database.get_primary_object_location_with_endpoint(object_uuid)?;
+        let (location, endpoint) = self
+            .database
+            .get_primary_object_location_with_endpoint(object_uuid)?;
 
         // Evaluate endpoint url
         let endpoint_url = match &endpoint.is_public {
@@ -147,15 +139,10 @@ impl ObjectServiceImpl {
                 };
                 Ok((dp, proto_location))
             }
-            Err(_) =>
-                Err(
-                    ArunaError::DataProxyError(
-                        Status::new(
-                            Code::Internal,
-                            "Could not connect to objects primary data proxy endpoint"
-                        )
-                    )
-                ),
+            Err(_) => Err(ArunaError::DataProxyError(Status::new(
+                Code::Internal,
+                "Could not connect to objects primary data proxy endpoint",
+            ))),
         }
     }
 }
@@ -165,19 +152,22 @@ impl ObjectServiceImpl {
 impl ObjectService for ObjectServiceImpl {
     async fn initialize_new_object(
         &self,
-        request: Request<InitializeNewObjectRequest>
+        request: Request<InitializeNewObjectRequest>,
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let creator_id = self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::APPEND // User needs at least append permission to create an object
-        ).await?;
+        let creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
+            )
+            .await?;
 
+        let new_object_uuid = uuid::Uuid::new_v4();
         // Connect to default data proxy endpoint
         let mut data_proxy = self.try_connect_default_endpoint().await?;
 
@@ -187,31 +177,34 @@ impl ObjectService for ObjectServiceImpl {
         // Generate upload_id for object through (currently only default) storage endpoint
         let location = Location {
             r#type: self.default_endpoint.endpoint_type as i32,
-            bucket: uuid::Uuid::new_v4().to_string(),
-            path: uuid::Uuid::new_v4().to_string(),
+            bucket: collection_id.to_string(),
+            path: new_object_uuid.to_string(),
         };
 
         let upload_id = data_proxy
             .init_presigned_upload(InitPresignedUploadRequest {
                 location: Some(location.clone()),
                 multipart: inner_request.multipart,
-            }).await?
-            .into_inner().upload_id;
+            })
+            .await?
+            .into_inner()
+            .upload_id;
 
         // Create Object in database
         let database_clone = self.database.clone();
         let endpoint_id = self.default_endpoint.id;
-        let response = task
-            ::spawn_blocking(move || {
-                database_clone.create_object(
-                    &inner_request,
-                    &creator_id,
-                    &location,
-                    upload_id,
-                    endpoint_id
-                )
-            }).await
-            .map_err(ArunaError::from)??;
+        let response = task::spawn_blocking(move || {
+            database_clone.create_object(
+                &inner_request,
+                &creator_id,
+                &location,
+                upload_id,
+                endpoint_id,
+                new_object_uuid,
+            )
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -219,24 +212,27 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_upload_url(
         &self,
-        request: Request<GetUploadUrlRequest>
+        request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
         // Check if user is authorized to upload object data in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let _creator_id = self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::APPEND // User needs at least append permission to create an object
-        ).await?;
+        let _creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         // Get primary object location
-        let object_id = uuid::Uuid::parse_str(&inner_request.object_id).map_err(ArunaError::from)?;
+        let object_id =
+            uuid::Uuid::parse_str(&inner_request.object_id).map_err(ArunaError::from)?;
 
         // Try to connect to one of the objects data proxy endpoints (currently only primary location endpoint)
         let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_id).await?;
@@ -248,46 +244,51 @@ impl ObjectService for ObjectServiceImpl {
                 part_number: inner_request.part_number as i64,
                 location: Some(location),
                 upload_id: inner_request.upload_id, //Note: Can be moved, only used here
-            }).await?
-            .into_inner().url;
-
-        return Ok(
-            Response::new(GetUploadUrlResponse {
-                url: Some(Url { url: upload_url }),
             })
-        );
+            .await?
+            .into_inner()
+            .url;
+
+        return Ok(Response::new(GetUploadUrlResponse {
+            url: Some(Url { url: upload_url }),
+        }));
     }
 
     async fn finish_object_staging(
         &self,
-        request: Request<FinishObjectStagingRequest>
+        request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>, Status> {
         // Parse the provided collection id (string) to UUID
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
+        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
             .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
         // Authorize the request
-        let creator_id = self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::APPEND // User needs at least append permission to create an object
-        ).await?;
+        let creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::APPEND, // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Only finish the upload if no_upload == false
         // This will otherwise skip the data proxy finish routine
         if !request.get_ref().no_upload {
             // Get the data_proxy
-            let (mut data_proxy, _location) = self.try_connect_object_endpoint(
-                &uuid::Uuid
-                    ::parse_str(&request.get_ref().object_id)
-                    .map_err(|_| { Status::invalid_argument("Unable to parse object_id to uuid") })?
-            ).await?;
+            let (mut data_proxy, _location) = self
+                .try_connect_object_endpoint(
+                    &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
+                        Status::invalid_argument("Unable to parse object_id to uuid")
+                    })?,
+                )
+                .await?;
 
             // Create the finished parts vec from request
             let finished_parts = request
                 .get_ref()
-                .completed_parts.iter()
+                .completed_parts
+                .iter()
                 .map(|part| PartETag {
                     part_number: part.part,
                     etag: part.etag.to_string(),
@@ -299,13 +300,16 @@ impl ObjectService for ObjectServiceImpl {
             // Create Finish request for Dataproxy
             let finished_presigned = FinishPresignedUploadRequest {
                 upload_id: request.get_ref().upload_id.to_string(),
+                bucket: collection_id.to_string(),
+                key: request.get_ref().object_id.to_string(),
                 part_etags: finished_parts,
                 multipart: *is_empty, // If finished parts is not empty --> multipart
             };
 
             // Execute the proxy request and get the result
             let proxy_result = data_proxy
-                .finish_presigned_upload(finished_presigned).await?
+                .finish_presigned_upload(finished_presigned)
+                .await?
                 .into_inner();
 
             // Only proceed when proxy did not fail
@@ -315,29 +319,33 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || {
-                database_clone.finish_object_staging(&request.into_inner(), &creator_id)
-            }).await
-            .map_err(ArunaError::from)??;
+        let response = task::spawn_blocking(move || {
+            database_clone.finish_object_staging(&request.into_inner(), &creator_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         Ok(Response::new(response))
     }
 
     async fn update_object(
         &self,
-        request: Request<UpdateObjectRequest>
+        request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let creator_id = self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::WRITE // User needs at least append permission to create an object
-        ).await?;
+        let creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::WRITE, // User needs at least append permission to create an object
+            )
+            .await?;
+
+        let new_object_uuid = uuid::Uuid::new_v4();
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
@@ -349,16 +357,18 @@ impl ObjectService for ObjectServiceImpl {
             // Generate upload_id for object through (currently only default) storage endpoint
             let location = Location {
                 r#type: self.default_endpoint.endpoint_type as i32,
-                bucket: uuid::Uuid::new_v4().to_string(),
-                path: uuid::Uuid::new_v4().to_string(),
+                bucket: collection_id.to_string(),
+                path: new_object_uuid.to_string(),
             };
 
             let upload_id = data_proxy
                 .init_presigned_upload(InitPresignedUploadRequest {
                     location: Some(location.clone()),
                     multipart: inner_request.multi_part,
-                }).await?
-                .into_inner().upload_id;
+                })
+                .await?
+                .into_inner()
+                .upload_id;
             (Some(location), Some(upload_id))
         } else {
             (None, None)
@@ -367,11 +377,17 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let endpoint_id = self.default_endpoint.id;
-        let mut response = task
-            ::spawn_blocking(move || {
-                database_clone.update_object(&inner_request, &location, &creator_id, endpoint_id)
-            }).await
-            .map_err(ArunaError::from)??;
+        let mut response = task::spawn_blocking(move || {
+            database_clone.update_object(
+                &inner_request,
+                &location,
+                &creator_id,
+                endpoint_id,
+                new_object_uuid,
+            )
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         if let Some(up_id) = upload_id {
             response.staging_id = up_id;
@@ -397,14 +413,12 @@ impl ObjectService for ObjectServiceImpl {
     ///
     async fn create_object_reference(
         &self,
-        request: Request<CreateObjectReferenceRequest>
+        request: Request<CreateObjectReferenceRequest>,
     ) -> Result<Response<CreateObjectReferenceResponse>, Status> {
-        let src_collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        let dst_collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let src_collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let dst_collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Need WRITE permission for writeable == true; READ else
         let needed_permission = match request.get_ref().writeable {
@@ -413,17 +427,13 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         // Check if user is authorized to borrow object from source collection
-        self.authz.collection_authorize(
-            request.metadata(),
-            src_collection_id,
-            needed_permission
-        ).await?;
+        self.authz
+            .collection_authorize(request.metadata(), src_collection_id, needed_permission)
+            .await?;
         // Check if user is authorized to borrow object to target collection
-        self.authz.collection_authorize(
-            request.metadata(),
-            dst_collection_id,
-            UserRights::APPEND
-        ).await?;
+        self.authz
+            .collection_authorize(request.metadata(), dst_collection_id, UserRights::APPEND)
+            .await?;
 
         // Consume request
         let inner_request = request.into_inner();
@@ -438,24 +448,26 @@ impl ObjectService for ObjectServiceImpl {
     ///ToDo: Rust Doc
     async fn get_references(
         &self,
-        request: Request<GetReferencesRequest>
+        request: Request<GetReferencesRequest>,
     ) -> Result<Response<GetReferencesResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.get_references(request.get_ref())).await
-            .map_err(ArunaError::from)??;
+        let response =
+            task::spawn_blocking(move || database_clone.get_references(request.get_ref()))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -463,34 +475,36 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn clone_object(
         &self,
-        request: Request<CloneObjectRequest>
+        request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
-        self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
 
-        let target_collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         // Authorize "TARGET"
-        self.authz.collection_authorize(
-            request.metadata(),
-            target_collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::APPEND // User needs at least append permission to create an object
-        ).await?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::APPEND,     // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.clone_object(request.get_ref())).await
+        let response = task::spawn_blocking(move || database_clone.clone_object(request.get_ref()))
+            .await
             .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
@@ -499,28 +513,30 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn delete_object(
         &self,
-        request: Request<DeleteObjectRequest>
+        request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
         let user: uuid::Uuid = if request.get_ref().force {
             // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
             self.authz.admin_authorize(request.metadata()).await?
         } else {
-            let target_collection_uuid = uuid::Uuid
-                ::parse_str(&request.get_ref().collection_id)
+            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
             // Authorize "TARGET"
-            self.authz.collection_authorize(
-                request.metadata(),
-                target_collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::APPEND // User needs at least append permission to create an object
-            ).await?
+            self.authz
+                .collection_authorize(
+                    request.metadata(),
+                    target_collection_uuid, // This is the collection uuid in which this object should be created
+                    UserRights::APPEND, // User needs at least append permission to create an object
+                )
+                .await?
         };
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.delete_object(request.into_inner(), user)).await
-            .map_err(ArunaError::from)??;
+        let response =
+            task::spawn_blocking(move || database_clone.delete_object(request.into_inner(), user))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -542,21 +558,22 @@ impl ObjectService for ObjectServiceImpl {
     ///
     async fn get_object_by_id(
         &self,
-        request: Request<GetObjectByIdRequest>
+        request: Request<GetObjectByIdRequest>,
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        let object_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().object_id)
-            .map_err(ArunaError::from)?;
+        let collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let object_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
-        let _creator_id = self.authz.collection_authorize(
-            request.metadata(),
-            collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::READ
-        ).await?;
+        let _creator_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::READ,
+            )
+            .await?;
 
         // Consume request and extract inner body
         let inner_request = request.into_inner(); // Consumes the gRPC request
@@ -564,17 +581,16 @@ impl ObjectService for ObjectServiceImpl {
         // Get object and its location
         let database_clone = self.database.clone();
         let request_clone = inner_request.clone();
-        let proto_object = task
-            ::spawn_blocking(move || database_clone.get_object(&request_clone)).await
+        let proto_object = task::spawn_blocking(move || database_clone.get_object(&request_clone))
+            .await
             .map_err(ArunaError::from)??;
 
         //Note: Only request url from data proxy if request.with_url == true
         let response = match &inner_request.with_url {
             true => {
                 // Establish connection to data proxy endpoint
-                let (mut data_proxy, location) = self.try_connect_object_endpoint(
-                    &object_uuid
-                ).await?;
+                let (mut data_proxy, location) =
+                    self.try_connect_object_endpoint(&object_uuid).await?;
 
                 let data_proxy_request = CreatePresignedDownloadRequest {
                     location: Some(location),
@@ -589,18 +605,19 @@ impl ObjectService for ObjectServiceImpl {
                     object: Some(ObjectWithUrl {
                         object: Some(proto_object),
                         url: data_proxy
-                            .create_presigned_download(data_proxy_request).await?
-                            .into_inner().url,
+                            .create_presigned_download(data_proxy_request)
+                            .await?
+                            .into_inner()
+                            .url,
                     }),
                 }
             }
-            false =>
-                GetObjectByIdResponse {
-                    object: Some(ObjectWithUrl {
-                        object: Some(proto_object),
-                        url: "".to_string(),
-                    }),
-                },
+            false => GetObjectByIdResponse {
+                object: Some(ObjectWithUrl {
+                    object: Some(proto_object),
+                    url: "".to_string(),
+                }),
+            },
         };
 
         return Ok(Response::new(response));
@@ -608,24 +625,25 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_objects(
         &self,
-        request: Request<GetObjectsRequest>
+        request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
 
         let req_clone = request.get_ref().clone();
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.get_objects(req_clone)).await
+        let response = task::spawn_blocking(move || database_clone.get_objects(req_clone))
+            .await
             .map_err(ArunaError::from)??;
 
         let result = if let Some(objectdtos) = response {
@@ -634,9 +652,8 @@ impl ObjectService for ObjectServiceImpl {
             for objdto in objectdtos {
                 let url = if request.get_ref().with_url {
                     // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self.try_connect_object_endpoint(
-                        &objdto.object.id
-                    ).await?;
+                    let (mut data_proxy, location) =
+                        self.try_connect_object_endpoint(&objdto.object.id).await?;
                     // Get download url from data proxy endpoint
                     data_proxy
                         .create_presigned_download(CreatePresignedDownloadRequest {
@@ -646,8 +663,10 @@ impl ObjectService for ObjectServiceImpl {
                                 start: 0,
                                 end: objdto.object.content_len,
                             }),
-                        }).await?
-                        .into_inner().url
+                        })
+                        .await?
+                        .into_inner()
+                        .url
                 } else {
                     "".to_string()
                 };
@@ -667,24 +686,25 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_object_revisions(
         &self,
-        request: Request<GetObjectRevisionsRequest>
+        request: Request<GetObjectRevisionsRequest>,
     ) -> Result<Response<GetObjectRevisionsResponse>, Status> {
         // Check if user is authorized to create objects in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        self.authz.collection_authorize(
-            request.metadata(),
-            collection_id, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                collection_id, // This is the collection uuid in which this object should be created
+                UserRights::READ, // User needs at least append permission to create an object
+            )
+            .await?;
 
         let req_clone = request.get_ref().clone();
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.get_object_revisions(req_clone)).await
+        let response = task::spawn_blocking(move || database_clone.get_object_revisions(req_clone))
+            .await
             .map_err(ArunaError::from)??;
 
         let result = {
@@ -693,9 +713,8 @@ impl ObjectService for ObjectServiceImpl {
             for objdto in response {
                 let url = if request.get_ref().with_url {
                     // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self.try_connect_object_endpoint(
-                        &objdto.object.id
-                    ).await?;
+                    let (mut data_proxy, location) =
+                        self.try_connect_object_endpoint(&objdto.object.id).await?;
                     // Get download url from data proxy endpoint
                     data_proxy
                         .create_presigned_download(CreatePresignedDownloadRequest {
@@ -705,8 +724,10 @@ impl ObjectService for ObjectServiceImpl {
                                 start: 0,
                                 end: objdto.object.content_len,
                             }),
-                        }).await?
-                        .into_inner().url
+                        })
+                        .await?
+                        .into_inner()
+                        .url
                 } else {
                     "".to_string()
                 };
@@ -719,29 +740,32 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(GetObjectRevisionsResponse { objects: result }));
+        return Ok(Response::new(GetObjectRevisionsResponse {
+            objects: result,
+        }));
     }
 
     async fn get_latest_object_revision(
         &self,
-        request: Request<GetLatestObjectRevisionRequest>
+        request: Request<GetLatestObjectRevisionRequest>,
     ) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
-        let target_collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        self.authz.collection_authorize(
-            request.metadata(),
-            target_collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::READ,       // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move ||
-                database_clone.get_latest_object_revision(request.into_inner())
-            ).await
-            .map_err(ArunaError::from)??;
+        let response = task::spawn_blocking(move || {
+            database_clone.get_latest_object_revision(request.into_inner())
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -749,24 +773,24 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_object_endpoints(
         &self,
-        request: Request<GetObjectEndpointsRequest>
+        request: Request<GetObjectEndpointsRequest>,
     ) -> Result<Response<GetObjectEndpointsResponse>, Status> {
-        let target_collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        self.authz.collection_authorize(
-            request.metadata(),
-            target_collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::READ // User needs at least append permission to create an object
-        ).await?;
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::READ,       // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move ||
-                database_clone.get_object_endpoints(request.into_inner())
-            ).await
-            .map_err(ArunaError::from)??;
+        let response =
+            task::spawn_blocking(move || database_clone.get_object_endpoints(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -774,22 +798,24 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn add_label_to_object(
         &self,
-        request: Request<AddLabelToObjectRequest>
+        request: Request<AddLabelToObjectRequest>,
     ) -> Result<Response<AddLabelToObjectResponse>, Status> {
-        let target_collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        self.authz.collection_authorize(
-            request.metadata(),
-            target_collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::WRITE // User needs at least append permission to create an object
-        ).await?;
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::WRITE,      // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.add_label_to_object(request.into_inner())).await
-            .map_err(ArunaError::from)??;
+        let response =
+            task::spawn_blocking(move || database_clone.add_label_to_object(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -797,22 +823,24 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn set_hooks_of_object(
         &self,
-        request: Request<SetHooksOfObjectRequest>
+        request: Request<SetHooksOfObjectRequest>,
     ) -> Result<Response<SetHooksOfObjectResponse>, Status> {
-        let target_collection_uuid = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
-        self.authz.collection_authorize(
-            request.metadata(),
-            target_collection_uuid, // This is the collection uuid in which this object should be created
-            UserRights::WRITE // User needs at least append permission to create an object
-        ).await?;
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::WRITE,      // User needs at least append permission to create an object
+            )
+            .await?;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task
-            ::spawn_blocking(move || database_clone.set_hooks_of_object(request.into_inner())).await
-            .map_err(ArunaError::from)??;
+        let response =
+            task::spawn_blocking(move || database_clone.set_hooks_of_object(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
         return Ok(Response::new(response));
@@ -821,32 +849,33 @@ impl ObjectService for ObjectServiceImpl {
     ///ToDo: Rust Doc
     async fn get_download_url(
         &self,
-        request: Request<GetDownloadUrlRequest>
+        request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>, Status> {
         // Check if user is authorized to download object data in this collection
-        let collection_id = uuid::Uuid
-            ::parse_str(&request.get_ref().collection_id)
-            .map_err(ArunaError::from)?;
+        let collection_id =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let _creator_id = self.authz.authorize(
-            request.metadata(),
-            &(Context {
-                user_right: UserRights::READ, // User needs at least append permission to create an object
-                resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
-                resource_id: collection_id, // This is the collection uuid in which this object should be created
-                admin: false,
-                oidc_context: false,
-                personal: false,
-            })
-        ).await?;
+        let _creator_id = self
+            .authz
+            .authorize(
+                request.metadata(),
+                &(Context {
+                    user_right: UserRights::READ, // User needs at least append permission to create an object
+                    resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
+                    resource_id: collection_id, // This is the collection uuid in which this object should be created
+                    admin: false,
+                    oidc_context: false,
+                    personal: false,
+                }),
+            )
+            .await?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         // Check if request contains valid object id and get object from database
-        let object_uuid = uuid::Uuid
-            ::parse_str(inner_request.object.as_str())
-            .map_err(ArunaError::from)?;
+        let object_uuid =
+            uuid::Uuid::parse_str(inner_request.object.as_str()).map_err(ArunaError::from)?;
         let object = self.database.get_object_by_id(&object_uuid)?;
 
         // Connect to one of the objects data proxy endpoints
@@ -861,23 +890,24 @@ impl ObjectService for ObjectServiceImpl {
                     start: 0,
                     end: object.content_len,
                 }),
-            }).await?
-            .into_inner().url;
-
-        Ok(
-            Response::new(GetDownloadUrlResponse {
-                url: Some(Url { url: download_url }),
             })
-        )
+            .await?
+            .into_inner()
+            .url;
+
+        Ok(Response::new(GetDownloadUrlResponse {
+            url: Some(Url { url: download_url }),
+        }))
     }
 
     async fn get_download_links_batch(
         &self,
-        request: Request<GetDownloadLinksBatchRequest>
+        request: Request<GetDownloadLinksBatchRequest>,
     ) -> Result<Response<GetDownloadLinksBatchResponse>, Status> {
         let mapped_uuids = request
             .get_ref()
-            .objects.iter()
+            .objects
+            .iter()
             .map(|obj_str| uuid::Uuid::parse_str(obj_str))
             .collect::<Result<Vec<uuid::Uuid>, _>>()
             .map_err(ArunaError::from)?;
@@ -898,8 +928,10 @@ impl ObjectService for ObjectServiceImpl {
                             start: 0,
                             end: object.content_len,
                         }),
-                    }).await?
-                    .into_inner().url
+                    })
+                    .await?
+                    .into_inner()
+                    .url,
             );
         }
 
@@ -908,20 +940,22 @@ impl ObjectService for ObjectServiceImpl {
             .map(|e| Url { url: e.to_string() })
             .collect::<Vec<_>>();
 
-        Ok(Response::new(GetDownloadLinksBatchResponse { urls: mapped_urls }))
+        Ok(Response::new(GetDownloadLinksBatchResponse {
+            urls: mapped_urls,
+        }))
     }
 
-    type CreateDownloadLinksStreamStream = ReceiverStream<
-        Result<CreateDownloadLinksStreamResponse, Status>
-    >;
+    type CreateDownloadLinksStreamStream =
+        ReceiverStream<Result<CreateDownloadLinksStreamResponse, Status>>;
     async fn create_download_links_stream(
         &self,
-        request: Request<CreateDownloadLinksStreamRequest>
+        request: Request<CreateDownloadLinksStreamRequest>,
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
         let mapped_uuids = request
             .get_ref()
-            .objects.iter()
+            .objects
+            .iter()
             .map(|obj_str| uuid::Uuid::parse_str(obj_str))
             .collect::<Result<Vec<uuid::Uuid>, _>>()
             .map_err(ArunaError::from)?;
@@ -930,40 +964,38 @@ impl ObjectService for ObjectServiceImpl {
 
         tokio::spawn(async move {
             for map_uid in mapped_uuids {
-                let try_connect = try_connect_object_endpoint_moveable(
-                    db_clone.clone(),
-                    &map_uid
-                ).await;
+                let try_connect =
+                    try_connect_object_endpoint_moveable(db_clone.clone(), &map_uid).await;
 
                 if let Ok((mut data_proxy, location)) = try_connect {
                     let object = db_clone.get_object_by_id(&map_uid);
 
                     match object {
                         Ok(obj_elem) => {
-                            tx.send(
-                                Ok(CreateDownloadLinksStreamResponse {
-                                    url: Some(Url {
-                                        url: data_proxy
-                                            .create_presigned_download(
-                                                CreatePresignedDownloadRequest {
-                                                    location: Some(location),
-                                                    is_public: false,
-                                                    range: Some(Range {
-                                                        start: 0,
-                                                        end: obj_elem.content_len,
-                                                    }),
-                                                }
-                                            ).await
-                                            .unwrap()
-                                            .into_inner().url,
-                                    }),
-                                })
-                            ).await.unwrap();
+                            tx.send(Ok(CreateDownloadLinksStreamResponse {
+                                url: Some(Url {
+                                    url: data_proxy
+                                        .create_presigned_download(CreatePresignedDownloadRequest {
+                                            location: Some(location),
+                                            is_public: false,
+                                            range: Some(Range {
+                                                start: 0,
+                                                end: obj_elem.content_len,
+                                            }),
+                                        })
+                                        .await
+                                        .unwrap()
+                                        .into_inner()
+                                        .url,
+                                }),
+                            }))
+                            .await
+                            .unwrap();
                         }
                         Err(e) => {
-                            tx.send(
-                                Err(tonic::Status::invalid_argument(e.to_string()))
-                            ).await.unwrap();
+                            tx.send(Err(tonic::Status::invalid_argument(e.to_string())))
+                                .await
+                                .unwrap();
                         }
                     }
                 }
@@ -978,7 +1010,7 @@ impl ObjectService for ObjectServiceImpl {
 // That can be transferred to
 pub async fn try_connect_object_endpoint_moveable(
     database: Arc<Database>,
-    object_uuid: &uuid::Uuid
+    object_uuid: &uuid::Uuid,
 ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
     // Get primary location with its endpoint from database
     let (location, endpoint) = database.get_primary_object_location_with_endpoint(object_uuid)?;
@@ -1001,14 +1033,9 @@ pub async fn try_connect_object_endpoint_moveable(
             };
             Ok((dp, proto_location))
         }
-        Err(_) =>
-            Err(
-                ArunaError::DataProxyError(
-                    Status::new(
-                        Code::Internal,
-                        "Could not connect to objects primary data proxy endpoint"
-                    )
-                )
-            ),
+        Err(_) => Err(ArunaError::DataProxyError(Status::new(
+            Code::Internal,
+            "Could not connect to objects primary data proxy endpoint",
+        ))),
     }
 }
