@@ -7,7 +7,8 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'INITIALIZING',
     'AVAILABLE',
     'UNAVAILABLE',
-    'ERROR'
+    'ERROR',
+    'TRASH'
 );
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
@@ -15,6 +16,7 @@ CREATE TYPE SOURCE_TYPE AS ENUM ('S3', 'URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
 CREATE TYPE IDENTITY_PROVIDER_TYPE AS ENUM ('OIDC');
 CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
+CREATE TYPE REFERENCE_STATUS AS ENUM ('STAGING', 'HIDDEN', 'OK');
 CREATE TYPE RESOURCES AS ENUM (
     'PROJECT',
     'COLLECTION',
@@ -31,6 +33,7 @@ CREATE TYPE HASH_TYPE AS ENUM (
 );
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
+-- Currently not used
 CREATE TABLE identity_providers (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
@@ -39,10 +42,12 @@ CREATE TABLE identity_providers (
 -- Table with users imported from some aai
 CREATE TABLE users (
     id UUID PRIMARY KEY,
+    external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
 );
 -- Join table to map users to multiple identity providers
+-- Currently not used
 CREATE TABLE external_user_ids (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
@@ -146,6 +151,7 @@ CREATE INDEX objects_id_idx ON objects (shared_revision_id, revision_number);
 CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
     endpoint_type ENDPOINT_TYPE NOT NULL,
+    name TEXT NOT NULL,
     proxy_hostname VARCHAR(255) NOT NULL,
     internal_hostname VARCHAR(255) NOT NULL,
     documentation_path TEXT DEFAULT NULL,
@@ -212,11 +218,14 @@ CREATE TABLE collection_objects (
     id UUID PRIMARY KEY,
     collection_id UUID NOT NULL,
     object_id UUID NOT NULL,
+    is_latest BOOL NOT NULL DEFAULT FALSE,
+    auto_update BOOL NOT NULL DEFAULT FALSE,
     is_specification BOOL NOT NULL DEFAULT FALSE,
     writeable BOOL NOT NULL DEFAULT FALSE,
+    reference_status REFERENCE_STATUS NOT NULL DEFAULT 'OK',
     FOREIGN KEY (object_id) REFERENCES objects(id),
-    -- Funktioniert das ? JA !
-    FOREIGN KEY (collection_id) REFERENCES collections(id)
+    FOREIGN KEY (collection_id) REFERENCES collections(id),
+    CONSTRAINT unique_collection_object UNIQUE (object_id, collection_id)
 );
 -- Join table between collections and object_groups
 CREATE TABLE collection_object_groups (
@@ -234,16 +243,22 @@ CREATE TABLE object_group_objects (
     object_id UUID NOT NULL,
     object_group_id UUID NOT NULL,
     is_meta BOOL NOT NULL DEFAULT FALSE,
-    writeable BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (object_group_id) REFERENCES object_groups(id)
+);
+-- Table for available pubkeys
+CREATE TABLE pub_keys (
+    -- This is a serial to make jwt tokens smaller
+    id SERIAL PRIMARY KEY,
+    pubkey TEXT NOT NULL
 );
 /* ----- Authorization --------------------------------------------- */
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection
 CREATE TABLE api_tokens (
     id UUID PRIMARY KEY,
     creator_user_id UUID NOT NULL,
-    token TEXT NOT NULL,
+    pub_key SERIAL NOT NULL,
+    name TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP,
     project_id UUID,
@@ -252,6 +267,7 @@ CREATE TABLE api_tokens (
     user_right USER_RIGHTS,
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (pub_key) REFERENCES pub_keys(id),
     FOREIGN KEY (creator_user_id) REFERENCES users(id)
 );
 /* ----- Notification Service -------------------------------------- */
@@ -269,10 +285,12 @@ CREATE MATERIALIZED VIEW collection_stats AS
 SELECT col.id AS id,
     COUNT(obj.id) AS object_count,
     SUM(obj.content_len) AS size,
+    COUNT(cobj.id) AS object_group_count,
     now() AS last_updated
 FROM collections AS col
     JOIN collection_objects AS cobj ON col.id = cobj.collection_id
     JOIN objects AS obj ON cobj.object_id = obj.id
+    JOIN collection_object_groups AS cobjgrp ON col.id = cobjgrp.collection_id
 GROUP BY col.id;
 -- Materialized view for the object_groups table
 CREATE MATERIALIZED VIEW object_group_stats AS
@@ -285,9 +303,10 @@ FROM object_groups AS objgrp
     JOIN objects AS obj ON objgrpobj.object_id = obj.id
 GROUP BY objgrp.id;
 -- Insert initial data
-INSERT INTO users (id, display_name, active)
+INSERT INTO users (id, external_id, display_name, active)
 VALUES (
         '12345678-1234-1234-1234-111111111111',
+        'admin_test_oidc_id',
         'admin',
         TRUE
     );
@@ -305,10 +324,4 @@ VALUES (
         '12345678-1234-1234-1234-111111111111',
         'ADMIN',
         '12345678-1111-1111-1111-111111111111'
-    );
-INSERT INTO api_tokens (id, creator_user_id, token)
-VALUES (
-        '12345678-8888-8888-8888-999999999999',
-        '12345678-1234-1234-1234-111111111111',
-        'super-secret-admin-token'
     );
