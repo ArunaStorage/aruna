@@ -15,8 +15,8 @@ pub struct Location {
 ///  Etag / Part combination to finish a presigned multipart upload.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartETag {
-    #[prost(string, tag="1")]
-    pub part_number: ::prost::alloc::string::String,
+    #[prost(int64, tag="1")]
+    pub part_number: i64,
     #[prost(string, tag="2")]
     pub etag: ::prost::alloc::string::String,
 }

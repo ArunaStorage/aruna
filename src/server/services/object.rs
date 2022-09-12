@@ -289,7 +289,7 @@ impl ObjectService for ObjectServiceImpl {
                 .get_ref()
                 .completed_parts.iter()
                 .map(|part| PartETag {
-                    part_number: part.part.to_string(),
+                    part_number: part.part,
                     etag: part.etag.to_string(),
                 })
                 .collect::<Vec<_>>();
