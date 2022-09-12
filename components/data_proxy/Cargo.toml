@@ -36,5 +36,6 @@ sha2 = {version = "0.10", features = ["std", "asm", "sha2-asm"]}
 tokio = {version = "1", features = ["full"]}
 tonic = "0.8"
 url = "2.2"
+uuid = {version = "1", features = ["v4", "fast-rng"]}
 [build-dependencies]
 tonic-build = "0.8"

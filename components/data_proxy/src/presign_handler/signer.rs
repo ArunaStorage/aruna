@@ -40,6 +40,7 @@ impl PresignHandler {
     pub fn sign_url(
         &self,
         duration: Duration,
+        upload_id: Option<String>,
         mut url: url::Url,
     ) -> Result<url::Url, Box<dyn std::error::Error>> {
         let expiry_data = SystemTime::now().checked_add(duration).unwrap();
@@ -53,6 +54,7 @@ impl PresignHandler {
             signature: "".to_string(),
             salt: base_64_salt.clone(),
             expiry: expiry_data_rfc3339.clone(),
+            upload_id: upload_id.clone(),
         };
 
         let query_signature =
@@ -72,6 +74,11 @@ impl PresignHandler {
 
         url.query_pairs_mut()
             .append_pair("signature", signature_base64.as_str());
+
+        if let Some(upload_id) = upload_id {
+            url.query_pairs_mut()
+                .append_pair("upload_id", upload_id.as_str());
+        }
 
         return Ok(url);
     }
@@ -102,8 +109,12 @@ impl PresignHandler {
     }
 
     fn query_signature_string(&self, sign_query_params: SignedParamsQuery, path: String) -> String {
-        let query_signature =
-            vec![sign_query_params.expiry, sign_query_params.salt, path].join("|");
+        let mut params = vec![sign_query_params.expiry, sign_query_params.salt, path];
+        if let Some(upload_id) = sign_query_params.upload_id {
+            params.push(upload_id);
+        }
+
+        let query_signature = params.join("|");
 
         return query_signature;
     }
@@ -127,7 +138,7 @@ mod tests {
 
         let url = url::Url::from_str(format!("{}{}", "http://example.com", path).as_str()).unwrap();
 
-        let url = signer.sign_url(duration, url).unwrap();
+        let url = signer.sign_url(duration, None, url).unwrap();
 
         let mut query_sign_params = SignedParamsQuery {
             ..Default::default()

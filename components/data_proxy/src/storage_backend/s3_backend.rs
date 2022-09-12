@@ -1,11 +1,17 @@
 use std::{env, str::FromStr};
 
 use async_channel::{Receiver, Sender};
-use aws_sdk_s3::{model::part, types::ByteStream, Client, Endpoint, Region};
+use aws_sdk_s3::{
+    model::{CompletedMultipartUpload, CompletedPart},
+    types::ByteStream,
+    Client, Endpoint, Region,
+};
 use http::Uri;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::api::aruna::api::internal::proxy::v1::Location;
+use std::convert::TryFrom;
+
+use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag};
 
 const DOWNLOAD_CHUNK_SIZE: usize = 500000;
 const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
@@ -133,22 +139,75 @@ impl S3Backend {
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         bucket: String,
         key: String,
+        upload_id: String,
         content_len: i64,
         part_number: i32,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
-        self.s3_client
+        let upload = self
+            .s3_client
             .upload_part()
             .set_bucket(Some(bucket))
             .set_key(Some(key))
             .set_part_number(Some(part_number))
             .set_content_length(Some(content_len))
+            .set_upload_id(Some(upload_id))
             .body(bytestream)
             .send()
             .await?;
 
+        return Ok(upload.e_tag().unwrap().to_string());
+    }
+
+    pub async fn finish_multipart_upload(
+        &self,
+        parts: Vec<PartETag>,
+        bucket: String,
+        key: String,
+        upload_id: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let mut completed_parts = Vec::new();
+        for etag in parts {
+            let part_number = i32::try_from(etag.part_number)?;
+
+            let completed_part = CompletedPart::builder()
+                .e_tag(etag.etag)
+                .part_number(part_number)
+                .build();
+
+            completed_parts.push(completed_part);
+        }
+
+        log::info!("{:?}", completed_parts);
+
+        self.s3_client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .multipart_upload(
+                CompletedMultipartUpload::builder()
+                    .set_parts(Some(completed_parts))
+                    .build(),
+            )
+            .send()
+            .await?;
+
         return Ok(());
+    }
+
+    pub async fn create_bucket(
+        &self,
+        bucket: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        match self.s3_client.create_bucket().bucket(bucket).send().await {
+            Ok(_) => return Ok(()),
+            Err(err) => {
+                log::error!("{}", err);
+                return Err(Box::new(err));
+            }
+        };
     }
 }

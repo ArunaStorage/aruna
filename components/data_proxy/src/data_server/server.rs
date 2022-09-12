@@ -1,4 +1,4 @@
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ use futures::{try_join, StreamExt};
 use serde::Deserialize;
 use tokio::fs::File;
 
+// Size of the internally used chunks of data
 pub const UPLOAD_CHUNK_SIZE: usize = 6291456;
 
 #[derive(Deserialize, Default, Clone)]
@@ -22,6 +23,7 @@ pub struct SignedParamsQuery {
     pub signature: String,
     pub salt: String,
     pub expiry: String,
+    pub upload_id: Option<String>,
 }
 
 /// The DataServer handle the incoming and outcoming data streams
@@ -64,6 +66,7 @@ impl DataServer {
         HttpServer::new(move || {
             App::new()
                 .service(single_upload)
+                .service(multi_upload)
                 .service(download)
                 .app_data(server.clone())
                 .wrap(Logger::default())
@@ -201,7 +204,7 @@ async fn multi_upload(
 ) -> Result<HttpResponse, Error> {
     let verified = server
         .signer
-        .verify_sign_url(sign_query.0, req.path().to_string())
+        .verify_sign_url(sign_query.0.clone(), req.path().to_string())
         .unwrap();
     if !verified {
         return Ok(HttpResponse::Unauthorized().finish());
@@ -228,6 +231,16 @@ async fn multi_upload(
         }
     };
 
+    let upload_id = match sign_query.0.upload_id.clone() {
+        Some(value) => value,
+        None => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "upload id required in multipart upload",
+            ))
+        }
+    };
+
     let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
     let (data_middleware_sender, object_handler_recv) = async_channel::bounded(10);
 
@@ -238,16 +251,21 @@ async fn multi_upload(
         object_handler_recv,
         path.1.to_string(),
         path.2.to_string(),
+        upload_id,
         content_len,
         path.0,
     );
 
-    if let Err(err) = try_join!(payload_handler, middleware_handler, s3_handler) {
-        log::error!("{}", err);
-        return Ok(HttpResponse::InternalServerError().finish());
+    let (_, _, etag) = match try_join!(payload_handler, middleware_handler, s3_handler) {
+        Ok(values) => values,
+        Err(err) => {
+            log::error!("{}", err);
+            return Ok(HttpResponse::InternalServerError().finish());
+        }
     };
 
-    return Ok(HttpResponse::Ok().finish());
+    let response = HttpResponse::Ok().append_header(("ETag", etag)).finish();
+    return Ok(response);
 }
 
 async fn handle_payload(
