@@ -27,7 +27,7 @@ pub struct StageObject {
     #[prost(message, repeated, tag = "8")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct InitializeNewObjectRequest {
     ///  This describes the object to be initialized.
     #[prost(message, optional, tag = "1")]
@@ -163,12 +163,12 @@ pub struct FinishObjectStagingRequest {
     #[prost(bool, tag = "7")]
     pub auto_update: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct FinishObjectStagingResponse {
     #[prost(message, optional, tag = "1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateObjectRequest {
     ///  Existing object ID
     #[prost(string, tag = "1")]
@@ -239,7 +239,7 @@ pub struct CloneObjectRequest {
     #[prost(string, tag = "3")]
     pub target_collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CloneObjectResponse {
     ///  This describes the new object.
     #[prost(message, optional, tag = "1")]
@@ -262,7 +262,7 @@ pub struct DeleteObjectRequest {
 }
 #[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectResponse {}
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectWithUrl {
     ///  Description of a specified object
     #[prost(message, optional, tag = "1")]
@@ -282,12 +282,12 @@ pub struct GetObjectByIdRequest {
     #[prost(bool, tag = "4")]
     pub with_url: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectByIdResponse {
     #[prost(message, optional, tag = "1")]
     pub object: ::core::option::Option<ObjectWithUrl>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectsRequest {
     #[prost(string, tag = "1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -304,7 +304,7 @@ pub struct GetObjectsRequest {
     #[prost(bool, tag = "5")]
     pub include_history: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectsResponse {
     ///  A List of objects with (optional) associated URLs
     #[prost(message, repeated, tag = "1")]
@@ -321,7 +321,7 @@ pub struct GetObjectRevisionsRequest {
     #[prost(bool, tag = "4")]
     pub with_url: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectRevisionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub objects: ::prost::alloc::vec::Vec<ObjectWithUrl>,
@@ -333,7 +333,7 @@ pub struct GetLatestObjectRevisionRequest {
     #[prost(string, tag = "2")]
     pub object_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetLatestObjectRevisionResponse {
     ///  The object with the latest revision
     #[prost(message, optional, tag = "1")]
@@ -361,7 +361,7 @@ pub struct AddLabelToObjectRequest {
     #[prost(message, repeated, tag = "3")]
     pub labels_to_add: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct AddLabelToObjectResponse {
     ///  Returns the updated Object
     #[prost(message, optional, tag = "1")]
@@ -378,7 +378,7 @@ pub struct SetHooksOfObjectRequest {
     #[prost(message, repeated, tag = "3")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct SetHooksOfObjectResponse {
     ///  Returns the updated Object
     #[prost(message, optional, tag = "1")]
@@ -1695,7 +1695,7 @@ pub struct GetProjectCollectionsRequest {
     #[prost(message, optional, tag = "2")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetProjectCollectionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub collection: ::prost::alloc::vec::Vec<super::super::models::v1::CollectionOverview>,
@@ -2398,7 +2398,7 @@ pub struct CreateObjectGroupRequest {
     #[prost(message, repeated, tag = "7")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct CreateObjectGroupResponse {
     #[prost(message, optional, tag = "1")]
     pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroupOverview>,
@@ -2425,7 +2425,7 @@ pub struct UpdateObjectGroupRequest {
     #[prost(message, repeated, tag = "8")]
     pub hooks: ::prost::alloc::vec::Vec<super::super::models::v1::KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateObjectGroupResponse {
     #[prost(message, optional, tag = "1")]
     pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroupOverview>,
@@ -2437,7 +2437,7 @@ pub struct GetObjectGroupByIdRequest {
     #[prost(string, tag = "2")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupByIdResponse {
     #[prost(message, optional, tag = "1")]
     pub object_group: ::core::option::Option<super::super::models::v1::ObjectGroupOverview>,
@@ -2451,7 +2451,7 @@ pub struct GetObjectGroupsFromObjectRequest {
     #[prost(message, optional, tag = "3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsFromObjectResponse {
     #[prost(message, optional, tag = "1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -2465,7 +2465,7 @@ pub struct DeleteObjectGroupRequest {
 }
 #[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct DeleteObjectGroupResponse {}
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsRequest {
     #[prost(string, tag = "1")]
     pub collection_id: ::prost::alloc::string::String,
@@ -2476,7 +2476,7 @@ pub struct GetObjectGroupsRequest {
     #[prost(message, optional, tag = "3")]
     pub label_id_filter: ::core::option::Option<super::super::models::v1::LabelOrIdQuery>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupsResponse {
     #[prost(message, optional, tag = "1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -2490,7 +2490,7 @@ pub struct GetObjectGroupHistoryRequest {
     #[prost(message, optional, tag = "3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupHistoryResponse {
     #[prost(message, optional, tag = "1")]
     pub object_groups: ::core::option::Option<super::super::models::v1::ObjectGroupOverviews>,
@@ -2509,14 +2509,14 @@ pub struct GetObjectGroupObjectsRequest {
 }
 ///  Objectgroup objects are a combination of "object" and the boolean is_metadata
 ///  flag Returned as single list to allow for more precise queries
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct ObjectGroupObject {
     #[prost(message, optional, tag = "1")]
     pub object: ::core::option::Option<super::super::models::v1::Object>,
     #[prost(bool, tag = "2")]
     pub is_metadata: bool,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetObjectGroupObjectsResponse {
     #[prost(message, repeated, tag = "1")]
     pub object_group_objects: ::prost::alloc::vec::Vec<ObjectGroupObject>,
@@ -4462,12 +4462,12 @@ pub struct GetCollectionByIdRequest {
     #[prost(string, tag = "1")]
     pub collection_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetCollectionByIdResponse {
     #[prost(message, optional, tag = "1")]
     pub collection: ::core::option::Option<super::super::models::v1::CollectionOverview>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetCollectionsRequest {
     ///  Filter by Labels (optional) OR request a specific list of Collections by id
     #[prost(string, tag = "1")]
@@ -4477,7 +4477,7 @@ pub struct GetCollectionsRequest {
     #[prost(message, optional, tag = "3")]
     pub page_request: ::core::option::Option<super::super::models::v1::PageRequest>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct GetCollectionsResponse {
     ///  These are plural representations of their specific single counterparts
     #[prost(message, optional, tag = "1")]
@@ -4513,7 +4513,7 @@ pub struct UpdateCollectionRequest {
     #[prost(message, optional, tag = "9")]
     pub version: ::core::option::Option<super::super::models::v1::Version>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct UpdateCollectionResponse {
     #[prost(message, optional, tag = "1")]
     pub collection: ::core::option::Option<super::super::models::v1::CollectionOverview>,
@@ -4525,7 +4525,7 @@ pub struct PinCollectionVersionRequest {
     #[prost(message, optional, tag = "2")]
     pub version: ::core::option::Option<super::super::models::v1::Version>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, ::prost::Message)]
 pub struct PinCollectionVersionResponse {
     #[prost(message, optional, tag = "1")]
     pub collection: ::core::option::Option<super::super::models::v1::CollectionOverview>,
