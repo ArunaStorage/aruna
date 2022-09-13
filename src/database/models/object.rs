@@ -35,8 +35,8 @@ pub struct Object {
 pub struct Endpoint {
     pub id: uuid::Uuid,
     pub endpoint_type: EndpointType,
-    pub proxy_hostname: String,
     pub name: String,
+    pub proxy_hostname: String,
     pub internal_hostname: String,
     pub documentation_path: Option<String>,
     pub is_public: bool,
@@ -98,7 +98,7 @@ impl ToDbKeyValue for ObjectKeyValue {
         key: &str,
         value: &str,
         belongs_to: uuid::Uuid,
-        kv_type: KeyValueType,
+        kv_type: KeyValueType
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4(),

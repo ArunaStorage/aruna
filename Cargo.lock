@@ -19,6 +19,7 @@ dependencies = [
  "http",
  "itertools",
  "jsonwebtoken",
+ "lazy_static",
  "openssl",
  "prost",
  "prost-types",

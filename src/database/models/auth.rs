@@ -14,8 +14,8 @@ pub struct IdentityProvider {
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 pub struct User {
     pub id: uuid::Uuid,
-    pub display_name: String,
     pub external_id: String,
+    pub display_name: String,
     pub active: bool,
 }
 
@@ -31,7 +31,7 @@ pub struct ExternalUserId {
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
-#[diesel(table_name=projects)]
+#[diesel(table_name = projects)]
 pub struct Project {
     pub id: uuid::Uuid,
     pub name: String,
@@ -42,7 +42,7 @@ pub struct Project {
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
-#[diesel(table_name=user_permissions)]
+#[diesel(table_name = user_permissions)]
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]
 pub struct UserPermission {
