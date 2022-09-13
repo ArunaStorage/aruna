@@ -12,9 +12,11 @@ use aruna_server::{
             GetApiTokensRequest,
             RegisterUserRequest,
             UpdateUserDisplayNameRequest,
+            CreateNewCollectionRequest,
         },
     },
     database::{ self },
+    server::services::authz::Context,
 };
 use serial_test::serial;
 
@@ -45,7 +47,11 @@ fn get_pub_keys_test() {
     // Iterate through keys
     for key in result {
         // Expect it to be either "pubkey_test_1" or "pub_key_test_2"
-        if key.pubkey == *"pubkey_test_1" || key.pubkey == *"pubkey_test_2" {
+        if
+            key.pubkey == *"pubkey_test_1" ||
+            key.pubkey == *"pubkey_test_2" ||
+            key.pubkey == *"admin_key"
+        {
             continue;
             // Panic otherwise -> unknown pubkey in db
         } else {
@@ -538,6 +544,238 @@ fn get_checked_user_id_from_token_test() {
     // This should add the user automatically
     let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();
 
-    // Create tokens with differing permissions:
-    let admin_token = uuid::Uuid::parse_str("").unwrap();
+    // Create / Get tokens with differing permissions:
+
+    // Add fresh pubkey
+    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+
+    // Create personal token for the user
+    let req = CreateApiTokenRequest {
+        project_id: "".to_string(),
+        collection_id: "".to_string(),
+        name: "personal_u2_token".to_string(),
+        expires_at: None,
+        permission: 3, // "APPEND permissions" -> Should be ignored
+    };
+    // Create a initial token
+    let regular_personal_token = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    // Admin token
+    let admin_token = uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap();
+    // Personal token with perm = 3
+    let regular_personal_token = uuid::Uuid::parse_str(&regular_personal_token.id).unwrap();
+    // Project scoped token with "READ" permissions
+    let req = CreateApiTokenRequest {
+        project_id: proj_1.project_id.clone(),
+        collection_id: "".to_string(),
+        name: "personal_u3_token".to_string(),
+        expires_at: None,
+        permission: 2, // READ permissions
+    };
+    // Create a initial token
+    let project_token_with_read = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let project_token_with_read = uuid::Uuid::parse_str(&project_token_with_read.id).unwrap();
+    // Project scoped token with "ADMIN" permissions
+    let req = CreateApiTokenRequest {
+        project_id: _proj_2.project_id.clone(),
+        collection_id: "".to_string(),
+        name: "personal_u4_token".to_string(),
+        expires_at: None,
+        permission: 5, // ADMIN permissions
+    };
+    // Create a initial token
+    let project_token_with_admin = db
+        .create_api_token(req.clone(), user_id, pubkey_result)
+        .unwrap();
+    let project_token_with_admin = uuid::Uuid::parse_str(&project_token_with_admin.id).unwrap();
+
+    // Create collection in proj_1 --> Admin
+    let ccoll_1_req = CreateNewCollectionRequest {
+        name: "test_col_1".to_string(),
+        description: "".to_string(),
+        project_id: proj_1.project_id.clone(),
+        labels: Vec::new(),
+        hooks: Vec::new(),
+        dataclass: 0,
+    };
+
+    let col_1 = db.create_new_collection(ccoll_1_req, user_id).unwrap();
+    // Create collection in proj_1 --> Admin
+    let ccoll_2_req = CreateNewCollectionRequest {
+        name: "test_col_2".to_string(),
+        description: "".to_string(),
+        project_id: _proj_2.clone().project_id,
+        labels: Vec::new(),
+        hooks: Vec::new(),
+        dataclass: 0,
+    };
+
+    let col_2 = db.create_new_collection(ccoll_2_req, user_id).unwrap();
+
+    // Collection scoped token with "READ" permissions
+    let req = CreateApiTokenRequest {
+        project_id: "".to_string(),
+        collection_id: col_2.clone().collection_id,
+        name: "personal_u5_token".to_string(),
+        expires_at: None,
+        permission: 2, // ADMIN permissions
+    };
+    // Create a initial token
+    let col_token_with_read = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let col_token_with_read = uuid::Uuid::parse_str(&col_token_with_read.id).unwrap();
+    // Collection scoped token with "ADMIN" permissions
+    let req = CreateApiTokenRequest {
+        project_id: "".to_string(),
+        collection_id: col_1.collection_id,
+        name: "personal_u5_token".to_string(),
+        expires_at: None,
+        permission: 5, // ADMIN permissions
+    };
+    // Create a initial token
+    let col_token_with_admin = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let col_token_with_admin = uuid::Uuid::parse_str(&col_token_with_admin.id).unwrap();
+
+    // TEST all tokens / cases
+    // Case 1. Admin token / Admin context:
+    let res = db
+        .get_checked_user_id_from_token(
+            &admin_token,
+            &(Context {
+                user_right: database::models::enums::UserRights::ADMIN,
+                resource_type: database::models::enums::Resources::COLLECTION,
+                resource_id: uuid::Uuid::default(),
+                admin: true,
+                personal: false,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res.to_string(), "12345678-1234-1234-1234-111111111111".to_string());
+    // Case 2. Non admin token / Requested admin context: SHOULD fail
+    let res = db.get_checked_user_id_from_token(
+        &col_token_with_admin,
+        &(Context {
+            user_right: database::models::enums::UserRights::ADMIN,
+            resource_type: database::models::enums::Resources::COLLECTION,
+            resource_id: uuid::Uuid::default(),
+            admin: true,
+            personal: false,
+            oidc_context: false,
+        })
+    );
+    assert!(res.is_err());
+    // Case 3. Personal token in "ADMIN" project
+    let res = db
+        .get_checked_user_id_from_token(
+            &regular_personal_token,
+            &(Context {
+                user_right: database::models::enums::UserRights::ADMIN,
+                resource_type: database::models::enums::Resources::PROJECT,
+                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res, user_id);
+    // READ project
+    let res = db
+        .get_checked_user_id_from_token(
+            &regular_personal_token,
+            &(Context {
+                user_right: database::models::enums::UserRights::READ,
+                resource_type: database::models::enums::Resources::PROJECT,
+                resource_id: uuid::Uuid::parse_str(&proj_1.project_id).unwrap(),
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res, user_id);
+    // READ in ADMIN project
+    let res = db
+        .get_checked_user_id_from_token(
+            &regular_personal_token,
+            &(Context {
+                user_right: database::models::enums::UserRights::READ,
+                resource_type: database::models::enums::Resources::PROJECT,
+                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res, user_id);
+    // Personal only
+    let res = db
+        .get_checked_user_id_from_token(
+            &regular_personal_token,
+            &(Context {
+                user_right: database::models::enums::UserRights::READ,
+                resource_type: database::models::enums::Resources::PROJECT,
+                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                admin: false,
+                personal: true,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res, user_id);
+    // Personal with unpersonal token user
+    let res = db.get_checked_user_id_from_token(
+        &project_token_with_admin,
+        &(Context {
+            user_right: database::models::enums::UserRights::READ,
+            resource_type: database::models::enums::Resources::PROJECT,
+            resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+            admin: false,
+            personal: true,
+            oidc_context: false,
+        })
+    );
+    assert!(res.is_err());
+    // Project token for collection
+    // Personal with unpersonal token user
+    let res = db
+        .get_checked_user_id_from_token(
+            &project_token_with_admin,
+            &(Context {
+                user_right: database::models::enums::UserRights::READ,
+                resource_type: database::models::enums::Resources::COLLECTION,
+                resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            })
+        )
+        .unwrap();
+    assert_eq!(res, user_id);
+    // Collection with read with "higher" permissions -> Should fail
+    let res = db.get_checked_user_id_from_token(
+        &col_token_with_read,
+        &(Context {
+            user_right: database::models::enums::UserRights::ADMIN,
+            resource_type: database::models::enums::Resources::COLLECTION,
+            resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+            admin: false,
+            personal: false,
+            oidc_context: false,
+        })
+    );
+    assert!(res.is_err());
+    // Project with read with "higher" permissions -> Should fail
+    let res = db.get_checked_user_id_from_token(
+        &project_token_with_read,
+        &(Context {
+            user_right: database::models::enums::UserRights::ADMIN,
+            resource_type: database::models::enums::Resources::COLLECTION,
+            resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+            admin: false,
+            personal: false,
+            oidc_context: false,
+        })
+    );
+    assert!(res.is_err());
 }
