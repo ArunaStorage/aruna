@@ -1,7 +1,12 @@
 use aruna_server::{
-    api::aruna::api::storage::services::v1::{
-        ActivateUserRequest, CreateApiTokenRequest, DeleteApiTokenRequest, DeleteApiTokensRequest,
-        GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
+    api::aruna::api::storage::{
+        models::v1::ProjectPermission,
+        services::v1::{
+            ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
+            CreateProjectRequest, DeleteApiTokenRequest, DeleteApiTokensRequest,
+            GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
+            UpdateUserDisplayNameRequest,
+        },
     },
     database::{self},
 };
@@ -407,4 +412,110 @@ fn get_user_test() {
         user_info.user.unwrap().display_name,
         "test_user_4".to_string()
     );
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn update_user_display_name_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Create new user
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+
+    // Activate the user
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
+    db.activate_user(req).unwrap();
+    let user_info = db.get_user(user_id).unwrap();
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "test_user_4".to_string()
+    );
+
+    let req = UpdateUserDisplayNameRequest {
+        new_display_name: "new_name_1".to_string(),
+    };
+    db.update_user_display_name(req, user_id).unwrap();
+
+    // Test who am i
+    let user_info = db.get_user(user_id).unwrap();
+
+    println!("{:?}", user_info);
+
+    assert!(user_info.clone().user.unwrap().active);
+    assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
+    assert_eq!(
+        user_info.clone().user.unwrap().external_id,
+        "test_user_4_oidc".to_string()
+    );
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "new_name_1".to_string()
+    );
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_user_projects_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Create new user
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+
+    // Activate the user
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
+    db.activate_user(req).unwrap();
+
+    // Create project as admin
+    let crt_proj_req = CreateProjectRequest {
+        name: "testproj_1".to_string(),
+        description: "".to_string(),
+    };
+    let proj = db
+        .create_project(
+            crt_proj_req,
+            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
+        )
+        .unwrap();
+    // Add new user to the proj
+    let add_user_req = AddUserToProjectRequest {
+        project_id: proj.project_id.clone(),
+        user_permission: Some(ProjectPermission {
+            user_id: user_id.to_string(),
+            project_id: proj.project_id,
+            permission: 1,
+        }),
+    };
+    db.add_user_to_project(add_user_req, user_id).unwrap();
+
+    // Create project as user
+    let crt_proj_req = CreateProjectRequest {
+        name: "testproj_2".to_string(),
+        description: "".to_string(),
+    };
+    // This should add the user automatically
+    let _proj = db.create_project(crt_proj_req, user_id).unwrap();
+
+    // Check the user_perms
+    let perms = db.get_user(user_id).unwrap();
+    // Should contain two permissions
+    assert!(perms.project_permissions.len() == 2)
+    // TODO modify permissions to contain a project id
 }

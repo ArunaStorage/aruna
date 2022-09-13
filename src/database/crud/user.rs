@@ -504,6 +504,7 @@ impl Database {
                         })
                         .id
                         .to_string(),
+                    project_id: elem.project_id.to_string(),
                     permission: map_permissions_rev(Some(elem.user_right)),
                 })
                 .collect::<Vec<_>>(),

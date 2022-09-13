@@ -606,6 +606,7 @@ impl Database {
         let resp = GetUserPermissionsForProjectResponse {
             user_permission: permissions.map(|perm| ProjectPermission {
                 user_id: d_u_id.to_string(),
+                project_id: p_id.to_string(),
                 permission: map_permissions_rev(Some(perm.user_right)),
             }),
         };

@@ -640,7 +640,9 @@ pub struct Token {
 pub struct ProjectPermission {
     #[prost(string, tag = "1")]
     pub user_id: ::prost::alloc::string::String,
-    #[prost(enumeration = "Permission", tag = "2")]
+    #[prost(string, tag = "2")]
+    pub project_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "Permission", tag = "3")]
     pub permission: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
