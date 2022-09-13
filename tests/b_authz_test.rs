@@ -2,13 +2,19 @@ use aruna_server::{
     api::aruna::api::storage::{
         models::v1::ProjectPermission,
         services::v1::{
-            ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
-            CreateProjectRequest, DeleteApiTokenRequest, DeleteApiTokensRequest,
-            GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
+            ActivateUserRequest,
+            AddUserToProjectRequest,
+            CreateApiTokenRequest,
+            CreateProjectRequest,
+            DeleteApiTokenRequest,
+            DeleteApiTokensRequest,
+            GetApiTokenRequest,
+            GetApiTokensRequest,
+            RegisterUserRequest,
             UpdateUserDisplayNameRequest,
         },
     },
-    database::{self},
+    database::{ self },
 };
 use serial_test::serial;
 
@@ -43,10 +49,7 @@ fn get_pub_keys_test() {
             continue;
             // Panic otherwise -> unknown pubkey in db
         } else {
-            panic!(
-                "Expected pubkey_test_1 or pubkey_test_2, got: {:?}",
-                key.pubkey
-            );
+            panic!("Expected pubkey_test_1 or pubkey_test_2, got: {:?}", key.pubkey);
         }
     }
 }
@@ -76,9 +79,7 @@ fn register_user_test() {
         display_name: "test_user_1".to_string(),
     };
     // Create new user
-    let _resp = db
-        .register_user(req, "test_user_1_oidc".to_string())
-        .unwrap();
+    let _resp = db.register_user(req, "test_user_1_oidc".to_string()).unwrap();
 }
 
 #[test]
@@ -93,9 +94,7 @@ fn activate_user_test() {
         display_name: "test_user_2".to_string(),
     };
     // Create new user
-    let resp_2 = db
-        .register_user(req_2, "test_user_2_oidc".to_string())
-        .unwrap();
+    let resp_2 = db.register_user(req_2, "test_user_2_oidc".to_string()).unwrap();
 
     // Build request for new user
     let req = ActivateUserRequest {
@@ -115,9 +114,7 @@ fn create_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_3".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_3_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_3_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -150,9 +147,7 @@ fn get_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -173,9 +168,7 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let initial_token = db
-        .create_api_token(req.clone(), user_id, pubkey_result)
-        .unwrap();
+    let initial_token = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
@@ -204,9 +197,7 @@ fn get_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -266,9 +257,7 @@ fn delete_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -321,9 +310,7 @@ fn delete_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -386,9 +373,7 @@ fn get_user_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -404,14 +389,8 @@ fn get_user_test() {
 
     assert!(user_info.clone().user.unwrap().active);
     assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
-    assert_eq!(
-        user_info.clone().user.unwrap().external_id,
-        "test_user_4_oidc".to_string()
-    );
-    assert_eq!(
-        user_info.user.unwrap().display_name,
-        "test_user_4".to_string()
-    );
+    assert_eq!(user_info.clone().user.unwrap().external_id, "test_user_4_oidc".to_string());
+    assert_eq!(user_info.user.unwrap().display_name, "test_user_4".to_string());
 }
 
 #[test]
@@ -424,9 +403,7 @@ fn update_user_display_name_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -435,10 +412,7 @@ fn update_user_display_name_test() {
     };
     db.activate_user(req).unwrap();
     let user_info = db.get_user(user_id).unwrap();
-    assert_eq!(
-        user_info.user.unwrap().display_name,
-        "test_user_4".to_string()
-    );
+    assert_eq!(user_info.user.unwrap().display_name, "test_user_4".to_string());
 
     let req = UpdateUserDisplayNameRequest {
         new_display_name: "new_name_1".to_string(),
@@ -452,14 +426,8 @@ fn update_user_display_name_test() {
 
     assert!(user_info.clone().user.unwrap().active);
     assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
-    assert_eq!(
-        user_info.clone().user.unwrap().external_id,
-        "test_user_4_oidc".to_string()
-    );
-    assert_eq!(
-        user_info.user.unwrap().display_name,
-        "new_name_1".to_string()
-    );
+    assert_eq!(user_info.clone().user.unwrap().external_id, "test_user_4_oidc".to_string());
+    assert_eq!(user_info.user.unwrap().display_name, "new_name_1".to_string());
 }
 
 #[test]
@@ -472,9 +440,7 @@ fn get_user_projects_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db
-        .register_user(user_req, "test_user_4_oidc".to_string())
-        .unwrap();
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -488,34 +454,37 @@ fn get_user_projects_test() {
         name: "testproj_1".to_string(),
         description: "".to_string(),
     };
-    let proj = db
+    let proj_1 = db
         .create_project(
             crt_proj_req,
-            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
+            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
         )
         .unwrap();
     // Add new user to the proj
     let add_user_req = AddUserToProjectRequest {
-        project_id: proj.project_id.clone(),
+        project_id: proj_1.project_id.clone(),
         user_permission: Some(ProjectPermission {
             user_id: user_id.to_string(),
-            project_id: proj.project_id,
-            permission: 1,
+            project_id: proj_1.clone().project_id,
+            permission: 2,
         }),
     };
     db.add_user_to_project(add_user_req, user_id).unwrap();
 
     // Create project as user
-    let crt_proj_req = CreateProjectRequest {
+    let crt_proj_req_2 = CreateProjectRequest {
         name: "testproj_2".to_string(),
         description: "".to_string(),
     };
     // This should add the user automatically
-    let _proj = db.create_project(crt_proj_req, user_id).unwrap();
+    let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();
 
     // Check the user_perms
     let perms = db.get_user(user_id).unwrap();
     // Should contain two permissions
-    assert!(perms.project_permissions.len() == 2)
-    // TODO modify permissions to contain a project id
+    assert!(perms.project_permissions.len() == 2);
+
+    for perm in perms.project_permissions {
+        assert!(perm.project_id == proj_1.project_id || perm.project_id == _proj_2.project_id);
+    }
 }

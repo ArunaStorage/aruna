@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use chrono::{Datelike, Timelike};
+use chrono::{ Datelike, Timelike };
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest};
+use crate::api::aruna::api::storage::models::v1::{ KeyValue, LabelOrIdQuery, PageRequest };
 
-use crate::database::models::enums::{Dataclass, KeyValueType, UserRights};
-use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
+use crate::database::models::enums::{ Dataclass, KeyValueType, UserRights };
+use crate::database::models::traits::{ IsKeyValue, ToDbKeyValue };
 use crate::error::ArunaError;
 
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
@@ -23,7 +23,7 @@ use crate::error::ArunaError;
 ///
 
 pub fn naivedatetime_to_prost_time(
-    ndt: chrono::NaiveDateTime,
+    ndt: chrono::NaiveDateTime
 ) -> Result<prost_types::Timestamp, prost_types::TimestampError> {
     prost_types::Timestamp::date_time(
         ndt.date().year().into(),
@@ -31,7 +31,7 @@ pub fn naivedatetime_to_prost_time(
         ndt.date().day() as u8,
         ndt.time().hour() as u8,
         ndt.time().minute() as u8,
-        ndt.time().second() as u8,
+        ndt.time().second() as u8
     )
 }
 
@@ -46,10 +46,7 @@ pub fn naivedatetime_to_prost_time(
 ///
 /// * `Option<String>` Associated option as String
 ///
-pub fn option_to_string<T>(generic_option: Option<T>) -> Option<String>
-where
-    T: ToString,
-{
+pub fn option_to_string<T>(generic_option: Option<T>) -> Option<String> where T: ToString {
     generic_option.map(|t| t.to_string())
 }
 
@@ -68,27 +65,18 @@ where
 /// * `Vec<T>` - A vector containing all key-value pairs in their database representation
 ///
 pub fn to_key_values<T>(labels: Vec<KeyValue>, hooks: Vec<KeyValue>, belongs_to: Uuid) -> Vec<T>
-where
-    T: ToDbKeyValue,
+    where T: ToDbKeyValue
 {
     let mut db_key_value: Vec<T> = Vec::new();
 
     for label in labels {
-        db_key_value.push(T::new_kv::<T>(
-            &label.key,
-            &label.value,
-            belongs_to,
-            KeyValueType::LABEL,
-        ));
+        db_key_value.push(
+            T::new_kv::<T>(&label.key, &label.value, belongs_to, KeyValueType::LABEL)
+        );
     }
 
     for hook in hooks {
-        db_key_value.push(T::new_kv::<T>(
-            &hook.key,
-            &hook.value,
-            belongs_to,
-            KeyValueType::HOOK,
-        ));
+        db_key_value.push(T::new_kv::<T>(&hook.key, &hook.value, belongs_to, KeyValueType::HOOK));
     }
 
     db_key_value
@@ -107,10 +95,7 @@ where
 /// * `Vec<KeyValue>` - A vector containing the label key-value pairs
 /// * `Vec<KeyValue>` - A vector containing the hook key-value pairs
 ///
-pub fn from_key_values<T>(key_values: Vec<T>) -> (Vec<KeyValue>, Vec<KeyValue>)
-where
-    T: IsKeyValue,
-{
+pub fn from_key_values<T>(key_values: Vec<T>) -> (Vec<KeyValue>, Vec<KeyValue>) where T: IsKeyValue {
     let (labels, hooks): (Vec<T>, Vec<T>) = key_values
         .into_iter()
         .partition(|elem| *elem.get_type() == KeyValueType::LABEL);
@@ -145,15 +130,15 @@ where
 /// * `Option<UserRights>` - Optional user_rights
 //
 pub fn map_permissions(
-    perm: crate::api::aruna::api::storage::models::v1::Permission,
+    perm: crate::api::aruna::api::storage::models::v1::Permission
 ) -> Option<UserRights> {
     match perm {
         crate::api::aruna::api::storage::models::v1::Permission::Unspecified => None,
+        crate::api::aruna::api::storage::models::v1::Permission::None => None,
         crate::api::aruna::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
         crate::api::aruna::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
         crate::api::aruna::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
         crate::api::aruna::api::storage::models::v1::Permission::Admin => Some(UserRights::ADMIN),
-        crate::api::aruna::api::storage::models::v1::Permission::None => None,
     }
 }
 
@@ -187,13 +172,14 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
     //  Admin = 5
     //
     match right {
-        Some(t) => match t {
-            UserRights::READ => 2,
-            UserRights::APPEND => 3,
-            UserRights::MODIFY => 4,
-            UserRights::WRITE => 4,
-            UserRights::ADMIN => 5,
-        },
+        Some(t) =>
+            match t {
+                UserRights::READ => 2,
+                UserRights::APPEND => 3,
+                UserRights::MODIFY => 4,
+                UserRights::WRITE => 4,
+                UserRights::ADMIN => 5,
+            }
         None => 0,
     }
 }
@@ -221,7 +207,7 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
 ///
 pub fn parse_page_request(
     p_request: Option<PageRequest>,
-    default_pagesize: i64,
+    default_pagesize: i64
 ) -> Result<(Option<i64>, Option<uuid::Uuid>), ArunaError> {
     match p_request {
         // If the p_request is some
@@ -292,33 +278,27 @@ pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQu
                     if filters.labels.is_empty() {
                         return Ok(None);
                     }
-                    let mapped_labels = filters
-                        .labels
+                    let mapped_labels = filters.labels
                         .iter()
                         .map(|kv| {
                             (
                                 kv.key.clone(),
-                                if filters.keys_only {
-                                    None
-                                } else {
-                                    Some(kv.value.clone())
-                                },
+                                if filters.keys_only { None } else { Some(kv.value.clone()) },
                             )
                         })
                         .collect::<Vec<_>>();
 
-                    Ok(Some(ParsedQuery::LabelQuery((
-                        mapped_labels,
-                        filters.and_or_or,
-                    ))))
+                    Ok(Some(ParsedQuery::LabelQuery((mapped_labels, filters.and_or_or))))
                 } else {
                     Ok(None)
                 }
             } else {
                 if g_query.labels.is_some() {
-                    return Err(ArunaError::InvalidRequest(
-                        "Either uids, or labelfilter can be specified".to_string(),
-                    ));
+                    return Err(
+                        ArunaError::InvalidRequest(
+                            "Either uids, or labelfilter can be specified".to_string()
+                        )
+                    );
                 }
                 let mut parsed_uids = Vec::new();
                 for q_id in g_query.ids {
@@ -352,10 +332,9 @@ pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQu
 ///
 pub fn check_all_for_db_kv<T>(
     database_key_value: Option<Vec<T>>,
-    targets: Vec<(String, Option<String>)>,
+    targets: Vec<(String, Option<String>)>
 ) -> Option<Vec<uuid::Uuid>>
-where
-    T: IsKeyValue,
+    where T: IsKeyValue
 {
     if let Some(ckv) = database_key_value {
         let mut hits = HashMap::new();
@@ -433,7 +412,7 @@ mod tests {
             (Some(UserRights::APPEND), 3),
             (Some(UserRights::MODIFY), 4),
             (Some(UserRights::WRITE), 4),
-            (Some(UserRights::ADMIN), 5),
+            (Some(UserRights::ADMIN), 5)
         ];
 
         for (opt, expected) in tests {
@@ -449,11 +428,10 @@ mod tests {
             Permission::Append,
             Permission::Modify,
             Permission::Admin,
-            Permission::None,
+            Permission::None
         ]
-        .iter()
-        .enumerate()
-        {
+            .iter()
+            .enumerate() {
             match index {
                 0 => assert_eq!(map_permissions(*perm), None),
                 1 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
@@ -476,7 +454,7 @@ mod tests {
             KeyValue {
                 key: "Key_02".to_string(),
                 value: "Value_02".to_string(),
-            },
+            }
         ];
 
         let hooks: Vec<KeyValue> = vec![
@@ -487,7 +465,7 @@ mod tests {
             KeyValue {
                 key: "ValidateMe".to_string(),
                 value: "<url-to-validation-server>".to_string(),
-            },
+            }
         ];
 
         let db_pairs = to_key_values::<CollectionKeyValue>(labels, hooks, uuid::Uuid::default());
@@ -533,7 +511,7 @@ mod tests {
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
-            },
+            }
         ];
 
         let (label_result, hooks_result) = from_key_values(labels);
@@ -559,7 +537,7 @@ mod tests {
             KeyValue {
                 key: "Key_02".to_string(),
                 value: "Value_02".to_string(),
-            },
+            }
         ];
 
         let hooks: Vec<KeyValue> = vec![
@@ -570,7 +548,7 @@ mod tests {
             KeyValue {
                 key: "ValidateMe".to_string(),
                 value: "<url-to-validation-server>".to_string(),
-            },
+            }
         ];
 
         let db_pairs = to_key_values::<ObjectKeyValue>(labels, hooks, uuid::Uuid::default());
@@ -590,10 +568,7 @@ mod tests {
         assert_eq!("<url-to-validation-server>", db_pairs.get(3).unwrap().value);
 
         for pair in db_pairs {
-            assert_eq!(
-                "aruna_server::database::models::object::ObjectKeyValue",
-                type_of(pair)
-            );
+            assert_eq!("aruna_server::database::models::object::ObjectKeyValue", type_of(pair));
         }
     }
 
@@ -627,7 +602,7 @@ mod tests {
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
-            },
+            }
         ];
 
         let (labels, hooks) = from_key_values(object_key_values);
@@ -724,18 +699,18 @@ mod tests {
             KeyValue {
                 key: "test3".to_string(),
                 value: "value3".to_string(),
-            },
+            }
         ];
         let expect_with_values = vec![
             ("test1".to_string(), Some("value1".to_string())),
             ("test2".to_string(), Some("value2".to_string())),
-            ("test3".to_string(), Some("value3".to_string())),
+            ("test3".to_string(), Some("value3".to_string()))
         ];
 
         let expect_without_values: Vec<(String, Option<String>)> = vec![
             ("test1".to_string(), None),
             ("test2".to_string(), None),
-            ("test3".to_string(), None),
+            ("test3".to_string(), None)
         ];
 
         // With labels + and not keys_only
@@ -750,10 +725,7 @@ mod tests {
 
         let result = parse_query(labels).unwrap();
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap(),
-            ParsedQuery::LabelQuery((expect_with_values.clone(), true))
-        );
+        assert_eq!(result.unwrap(), ParsedQuery::LabelQuery((expect_with_values.clone(), true)));
 
         // With labels + and keys_only
         let labels = Some(LabelOrIdQuery {
@@ -767,10 +739,7 @@ mod tests {
 
         let result = parse_query(labels).unwrap();
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap(),
-            ParsedQuery::LabelQuery((expect_without_values, true))
-        );
+        assert_eq!(result.unwrap(), ParsedQuery::LabelQuery((expect_without_values, true)));
 
         // With labels or not keys_only
         let labels = Some(LabelOrIdQuery {
@@ -784,22 +753,12 @@ mod tests {
 
         let result = parse_query(labels).unwrap();
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap(),
-            ParsedQuery::LabelQuery((expect_with_values, false))
-        );
+        assert_eq!(result.unwrap(), ParsedQuery::LabelQuery((expect_with_values, false)));
 
         // Id section
 
-        let test_ids = vec![
-            uuid::Uuid::new_v4(),
-            uuid::Uuid::new_v4(),
-            uuid::Uuid::new_v4(),
-        ];
-        let test_ids_string = test_ids
-            .iter()
-            .map(uuid::Uuid::to_string)
-            .collect::<Vec<String>>();
+        let test_ids = vec![uuid::Uuid::new_v4(), uuid::Uuid::new_v4(), uuid::Uuid::new_v4()];
+        let test_ids_string = test_ids.iter().map(uuid::Uuid::to_string).collect::<Vec<String>>();
 
         // With ids
         let ids = Some(LabelOrIdQuery {
@@ -850,7 +809,7 @@ mod tests {
             ("test_key3", "test_value3"),
             ("test_key4", "test_value4"),
             ("test_key5", "test_value5"),
-            ("test_key6", "test_value6"),
+            ("test_key6", "test_value6")
         ];
 
         let mut coll_key_values = Vec::new();
@@ -881,7 +840,7 @@ mod tests {
         let targets_with_values = vec![
             ("test_key1".to_string(), Some("test_value1".to_string())),
             ("test_key2".to_string(), Some("test_value2".to_string())),
-            ("test_key3".to_string(), Some("test_value3".to_string())),
+            ("test_key3".to_string(), Some("test_value3".to_string()))
         ];
 
         let none_option: Option<Vec<CollectionKeyValue>> = None;
@@ -897,7 +856,7 @@ mod tests {
         let targets_without_values: Vec<(String, Option<String>)> = vec![
             ("test_key1".to_string(), None),
             ("test_key2".to_string(), None),
-            ("test_key3".to_string(), None),
+            ("test_key3".to_string(), None)
         ];
 
         let hits = check_all_for_db_kv(Some(coll_key_values.clone()), targets_without_values);
@@ -907,7 +866,7 @@ mod tests {
 
         let targets_both: Vec<(String, Option<String>)> = vec![
             ("test_key1".to_string(), Some("test_value1".to_string())),
-            ("test_key4".to_string(), Some("test_value4".to_string())),
+            ("test_key4".to_string(), Some("test_value4".to_string()))
         ];
 
         let hits = check_all_for_db_kv(Some(coll_key_values), targets_both);
