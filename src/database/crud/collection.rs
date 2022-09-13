@@ -80,23 +80,24 @@ impl Database {
     ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
+
         // Create new collection uuid
         let collection_uuid = uuid::Uuid::new_v4();
         // Create new "shared_version_uuid"
         let shared_version_uuid = uuid::Uuid::new_v4();
         // Convert request key_values to DB Keyvalue list
         let key_values =
-            to_key_values::<CollectionKeyValue>(request.labels, request.hooks, collection_uuid);
+            to_key_values::<CollectionKeyValue>(request.labels.clone(), request.hooks.clone(), collection_uuid);
         // Create collection DB struct
         let db_collection = models::collection::Collection {
             id: collection_uuid,
             shared_version_id: shared_version_uuid,
-            name: request.name,
-            description: request.description,
+            name: request.name.clone(),
+            description: request.description.clone(),
             created_by: creator,
             created_at: Local::now().naive_local(),
             version_id: None,
-            dataclass: None,
+            dataclass: Some(request.dataclass()).map(DBDataclass::from),
             project_id: uuid::Uuid::parse_str(&request.project_id)?,
         };
 
