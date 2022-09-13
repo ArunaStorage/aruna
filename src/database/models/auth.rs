@@ -11,7 +11,7 @@ pub struct IdentityProvider {
     pub idp_type: IdentityProviderType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
 pub struct User {
     pub id: uuid::Uuid,
     pub external_id: String,

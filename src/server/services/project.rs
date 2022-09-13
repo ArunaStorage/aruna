@@ -210,6 +210,34 @@ impl ProjectService for ProjectServiceImpl {
                 .remove_user_from_project(request.into_inner(), user_id)?,
         ))
     }
+    /// Get the user_permission of a specific user for the project.
+    /// Needs project admin permissions and the project
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetUserPermissionsForProjectRequest: contains project_id and user_id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<GetUserPermissionsForProjectResponse>, tonic::Status>: Contains the specific project_permission for a user
+    async fn get_user_permissions_for_project(
+        &self,
+        request: tonic::Request<GetUserPermissionsForProjectRequest>,
+    ) -> Result<tonic::Response<GetUserPermissionsForProjectResponse>, tonic::Status> {
+        // Parse the project Uuid
+        let parsed_project_id =
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        // Authorize user
+        let _admin_user = self
+            .authz
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
+            .await?;
+        // Execute request and return response
+        Ok(Response::new(
+            self.database
+                .get_userpermission_from_project(request.into_inner(), _admin_user)?,
+        ))
+    }
 
     /// EditUserPermissionsForProject updates the user permissions of a specific user
     /// Needs project admin permissions and the project

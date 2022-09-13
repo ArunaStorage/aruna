@@ -98,7 +98,7 @@ impl ToDbKeyValue for ObjectKeyValue {
         key: &str,
         value: &str,
         belongs_to: uuid::Uuid,
-        kv_type: KeyValueType
+        kv_type: KeyValueType,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4(),

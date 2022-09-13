@@ -13,12 +13,13 @@ use crate::api::aruna::api::storage::models::v1::{
     collection_overview::Version as CollectionVersiongRPC, CollectionOverview, CollectionStats,
     LabelOntology, Stats,
 };
-use crate::api::aruna::api::storage::models::v1::{ProjectOverview, Version};
+use crate::api::aruna::api::storage::models::v1::{ProjectOverview, ProjectPermission, Version};
 use crate::api::aruna::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
     EditUserPermissionsForProjectResponse, GetProjectCollectionsRequest,
     GetProjectCollectionsResponse, GetProjectRequest, GetProjectResponse,
+    GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
     RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
     UpdateProjectResponse,
 };
@@ -249,19 +250,16 @@ impl Database {
                     });
 
                     // Map statistics
-                    let map_stats = match stats {
-                        Some(stats) => Some(CollectionStats {
-                            object_stats: Some(Stats {
-                                count: stats.object_count,
-                                acc_size: stats.size,
-                            }),
-                            object_group_count: stats.object_group_count,
-                            last_updated: Some(
-                                naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
-                            ),
+                    let map_stats = stats.as_ref().map(|stats| CollectionStats {
+                        object_stats: Some(Stats {
+                            count: stats.object_count,
+                            acc_size: stats.size,
                         }),
-                        None => None
-                    };
+                        object_group_count: stats.object_group_count,
+                        last_updated: Some(
+                            naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
+                        ),
+                    });
 
                     // Map collection_version
                     let map_version = match vers {
@@ -569,6 +567,51 @@ impl Database {
 
         // Return empty response
         Ok(RemoveUserFromProjectResponse {})
+    }
+
+    /// Requests a specific user_permission for a project / user combination
+    /// This needs project admin permissions
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetUserPermissionsForProjectRequest: Which user + project
+    /// * _user_id: uuid::Uuid unused
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetUserPermissionsForProjectResponse, ArunaError>: Placeholder, currently empty
+    ///
+    pub fn get_userpermission_from_project(
+        &self,
+        request: GetUserPermissionsForProjectRequest,
+        _req_user_id: uuid::Uuid,
+    ) -> Result<GetUserPermissionsForProjectResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        // Get project_id
+        let p_id = uuid::Uuid::parse_str(&request.project_id)?;
+        let d_u_id = uuid::Uuid::parse_str(&request.user_id)?;
+
+        // Execute db query
+        let permissions = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<UserPermission>, diesel::result::Error, _>(|conn| {
+                user_permissions
+                    .filter(crate::database::schema::user_permissions::user_id.eq(d_u_id))
+                    .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
+                    .first::<UserPermission>(conn)
+                    .optional()
+            })?;
+
+        let resp = GetUserPermissionsForProjectResponse {
+            user_permission: permissions.map(|perm| ProjectPermission {
+                user_id: d_u_id.to_string(),
+                permission: map_permissions_rev(Some(perm.user_right)),
+            }),
+        };
+
+        // Return empty response
+        Ok(resp)
     }
 
     /// Modifies the permissions of specific user for a project

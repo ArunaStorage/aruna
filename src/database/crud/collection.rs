@@ -86,8 +86,11 @@ impl Database {
         // Create new "shared_version_uuid"
         let shared_version_uuid = uuid::Uuid::new_v4();
         // Convert request key_values to DB Keyvalue list
-        let key_values =
-            to_key_values::<CollectionKeyValue>(request.labels.clone(), request.hooks.clone(), collection_uuid);
+        let key_values = to_key_values::<CollectionKeyValue>(
+            request.labels.clone(),
+            request.hooks.clone(),
+            collection_uuid,
+        );
         // Create collection DB struct
         let db_collection = models::collection::Collection {
             id: collection_uuid,

@@ -305,22 +305,28 @@ impl UserService for UserServiceImpl {
     ///
     /// ## Arguments
     ///
-    /// * request: UserWhoAmIRequest: Placeholder (empty)
+    /// * request: GetUserRequest: Contains optional UserID -> Only available with global admin permissions
     ///
     /// ## Returns
     ///
-    /// * Result<tonic::Response<UserWhoAmIResponse>, tonic::Status>: UserInformation like, id, displayname, active status etc.
+    /// * Result<tonic::Response<GetUserResponse>, tonic::Status>: UserInformation like, id, displayname, active status and user_permissions for each project etc.
     ///
-    async fn user_who_am_i(
+    async fn get_user(
         &self,
-        request: tonic::Request<UserWhoAmIRequest>,
-    ) -> Result<tonic::Response<UserWhoAmIResponse>, tonic::Status> {
-        // Authenticate the user personally
-        let user_id = self.authz.personal_authorize(request.metadata()).await?;
+        request: tonic::Request<GetUserRequest>,
+    ) -> Result<tonic::Response<GetUserResponse>, tonic::Status> {
+        let user_id = if request.get_ref().user_id.is_empty() {
+            // Personal authorize
+            self.authz.personal_authorize(request.metadata()).await?
+        } else {
+            // Admin authorize if not personal user_id
+            let parsed_id = uuid::Uuid::parse_str(&request.get_ref().user_id)
+                .map_err(|_| ArunaError::InvalidRequest("Unable to parse user_uuid".to_string()))?;
+            self.authz.admin_authorize(request.metadata()).await?;
+            parsed_id
+        };
         // Get personal user info and return the gRPC repsonse
-        Ok(Response::new(
-            self.database.user_who_am_i(request.into_inner(), user_id)?,
-        ))
+        Ok(Response::new(self.database.get_user(user_id)?))
     }
 
     /// UpdateUserDisplayName request changed the display_name of the current user to a new value

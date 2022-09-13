@@ -1,17 +1,9 @@
 use aruna_server::{
-    database::{ self },
-    api::aruna::api::storage::{
-        services::v1::{
-            RegisterUserRequest,
-            ActivateUserRequest,
-            CreateApiTokenRequest,
-            GetApiTokenRequest,
-            GetApiTokensRequest,
-            DeleteApiTokenRequest,
-            DeleteApiTokensRequest,
-            UserWhoAmIRequest,
-        },
+    api::aruna::api::storage::services::v1::{
+        ActivateUserRequest, CreateApiTokenRequest, DeleteApiTokenRequest, DeleteApiTokensRequest,
+        GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
     },
+    database::{self},
 };
 use serial_test::serial;
 
@@ -46,7 +38,10 @@ fn get_pub_keys_test() {
             continue;
             // Panic otherwise -> unknown pubkey in db
         } else {
-            panic!("Expected pubkey_test_1 or pubkey_test_2, got: {:?}", key.pubkey);
+            panic!(
+                "Expected pubkey_test_1 or pubkey_test_2, got: {:?}",
+                key.pubkey
+            );
         }
     }
 }
@@ -72,9 +67,13 @@ fn register_user_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Build request for new user
-    let req = RegisterUserRequest { display_name: "test_user_1".to_string() };
+    let req = RegisterUserRequest {
+        display_name: "test_user_1".to_string(),
+    };
     // Create new user
-    let _resp = db.register_user(req, "test_user_1_oidc".to_string()).unwrap();
+    let _resp = db
+        .register_user(req, "test_user_1_oidc".to_string())
+        .unwrap();
 }
 
 #[test]
@@ -85,12 +84,18 @@ fn activate_user_test() {
 
     // Add another user
     // Build request for new user
-    let req_2 = RegisterUserRequest { display_name: "test_user_2".to_string() };
+    let req_2 = RegisterUserRequest {
+        display_name: "test_user_2".to_string(),
+    };
     // Create new user
-    let resp_2 = db.register_user(req_2, "test_user_2_oidc".to_string()).unwrap();
+    let resp_2 = db
+        .register_user(req_2, "test_user_2_oidc".to_string())
+        .unwrap();
 
     // Build request for new user
-    let req = ActivateUserRequest { user_id: resp_2.user_id };
+    let req = ActivateUserRequest {
+        user_id: resp_2.user_id,
+    };
 
     db.activate_user(req).unwrap();
 }
@@ -102,12 +107,18 @@ fn create_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_3".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_3_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_3".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_3_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
@@ -131,12 +142,18 @@ fn get_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_4".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
@@ -151,7 +168,9 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let initial_token = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let initial_token = db
+        .create_api_token(req.clone(), user_id, pubkey_result)
+        .unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
@@ -162,7 +181,10 @@ fn get_api_token_test() {
     assert_eq!(initial_token.name, get_token_by_id.token.unwrap().name);
 
     // Get the token by name
-    let get_api_token_req_name = GetApiTokenRequest { token_id: "".to_string(), name: req.name };
+    let get_api_token_req_name = GetApiTokenRequest {
+        token_id: "".to_string(),
+        name: req.name,
+    };
     let get_token_by_name = db.get_api_token(get_api_token_req_name, user_id).unwrap();
     assert_eq!(initial_token.name, get_token_by_name.token.unwrap().name);
 }
@@ -174,12 +196,18 @@ fn get_api_tokens_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_4".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
@@ -194,7 +222,7 @@ fn get_api_tokens_test() {
         permission: 1,
     };
     // Create a initial token
-    let _token_a = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let _token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -205,7 +233,7 @@ fn get_api_tokens_test() {
         permission: 2,
     };
     // Create a initial token
-    let _token_b = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let _token_b = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get all tokens
     let request = GetApiTokensRequest {};
@@ -230,12 +258,18 @@ fn delete_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_4".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
@@ -250,7 +284,7 @@ fn delete_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let token_a = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get all tokens
     let request = GetApiTokensRequest {};
@@ -259,7 +293,9 @@ fn delete_api_token_test() {
     // Should be 2
     assert!(tokens.token.len() == 1);
     // Delete token
-    let del_req = DeleteApiTokenRequest { token_id: token_a.id };
+    let del_req = DeleteApiTokenRequest {
+        token_id: token_a.id,
+    };
     let _res = db.delete_api_token(del_req, user_id).unwrap();
 
     // Get all tokens
@@ -267,7 +303,7 @@ fn delete_api_token_test() {
     let tokens = db.get_api_tokens(request, user_id).unwrap();
 
     // Should be 2
-    assert!(tokens.token.len() == 0);
+    assert!(tokens.token.is_empty());
 }
 
 #[test]
@@ -277,12 +313,18 @@ fn delete_api_tokens_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_4".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
@@ -297,7 +339,7 @@ fn delete_api_tokens_test() {
         permission: 1,
     };
     // Create a initial token
-    let _token_a = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let _token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -308,7 +350,7 @@ fn delete_api_tokens_test() {
         permission: 2,
     };
     // Create a initial token
-    let _token_b = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let _token_b = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get all tokens
     let request = GetApiTokensRequest {};
@@ -317,39 +359,52 @@ fn delete_api_tokens_test() {
     // Should be 2
     assert!(tokens.token.len() == 2);
     // Delete ALL tokens from this user
-    let del_req = DeleteApiTokensRequest { user_id: user_id.to_string() };
+    let del_req = DeleteApiTokensRequest {
+        user_id: user_id.to_string(),
+    };
     let _ret = db.delete_api_tokens(del_req, user_id).unwrap();
     // Get all tokens
     let request = GetApiTokensRequest {};
     let tokens = db.get_api_tokens(request, user_id).unwrap();
 
     // Should be 0
-    assert!(tokens.token.len() == 0);
+    assert!(tokens.token.is_empty());
 }
 
 #[test]
 #[ignore]
 #[serial(db)]
-fn who_am_i_test() {
+fn get_user_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create new user
-    let user_req = RegisterUserRequest { display_name: "test_user_4".to_string() };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id.to_string()).unwrap();
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
-    let req = ActivateUserRequest { user_id: user_resp.user_id };
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
     db.activate_user(req).unwrap();
 
     // Test who am i
-    let who_am_i_req = UserWhoAmIRequest {};
-    let user_info = db.user_who_am_i(who_am_i_req, user_id).unwrap();
+    let user_info = db.get_user(user_id).unwrap();
 
     println!("{:?}", user_info);
 
-    assert_eq!(user_info.clone().user.unwrap().active, true);
+    assert!(user_info.clone().user.unwrap().active);
     assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
-    assert_eq!(user_info.clone().user.unwrap().external_id, "test_user_4_oidc".to_string());
-    assert_eq!(user_info.user.unwrap().display_name, "test_user_4".to_string());
+    assert_eq!(
+        user_info.clone().user.unwrap().external_id,
+        "test_user_4_oidc".to_string()
+    );
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "test_user_4".to_string()
+    );
 }
