@@ -488,3 +488,56 @@ fn get_user_projects_test() {
         assert!(perm.project_id == proj_1.project_id || perm.project_id == _proj_2.project_id);
     }
 }
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_checked_user_id_from_token_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Create new user
+    let user_req = RegisterUserRequest {
+        display_name: "test_user_4".to_string(),
+    };
+    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+
+    // Activate the user
+    let req = ActivateUserRequest {
+        user_id: user_resp.user_id,
+    };
+    db.activate_user(req).unwrap();
+
+    // Create project as admin
+    let crt_proj_req = CreateProjectRequest {
+        name: "testproj_1".to_string(),
+        description: "".to_string(),
+    };
+    let proj_1 = db
+        .create_project(
+            crt_proj_req,
+            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        )
+        .unwrap();
+    // Add new user to the proj with permissions "Read"
+    let add_user_req = AddUserToProjectRequest {
+        project_id: proj_1.project_id.clone(),
+        user_permission: Some(ProjectPermission {
+            user_id: user_id.to_string(),
+            project_id: proj_1.clone().project_id,
+            permission: 2,
+        }),
+    };
+    db.add_user_to_project(add_user_req, user_id).unwrap();
+
+    // Create project as user -> Should be "admin"
+    let crt_proj_req_2 = CreateProjectRequest {
+        name: "testproj_2".to_string(),
+        description: "".to_string(),
+    };
+    // This should add the user automatically
+    let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();
+
+    // Create tokens with differing permissions:
+    let admin_token = uuid::Uuid::parse_str("").unwrap();
+}

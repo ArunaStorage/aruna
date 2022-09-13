@@ -325,3 +325,15 @@ VALUES (
         'ADMIN',
         '12345678-1111-1111-1111-111111111111'
     );
+INSERT INTO pub_keys (
+        -- This is a serial to make jwt tokens smaller
+        id,
+        pubkey
+    )
+VALUES('1', 'admin_key');
+INSERT INTO api_tokens (id, creator_user_id, pub_key)
+VALUES (
+        '12345678-8888-8888-8888-999999999999',
+        '12345678-1234-1234-1234-111111111111',
+        '1'
+    );
