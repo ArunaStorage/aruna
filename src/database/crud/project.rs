@@ -171,7 +171,7 @@ impl Database {
             Vec<(
                 Collection,
                 Option<Vec<CollectionKeyValue>>,
-                CollectionStat,
+                Option<CollectionStat>,
                 Option<Vec<RequiredLabel>>,
                 Option<CollectionVersion>,
             )>,
@@ -187,6 +187,7 @@ impl Database {
                 Some(coll) => {
                     // Create a new vector to return
                     let mut return_vec = Vec::new();
+
                     // Query db for each element
                     for elem in coll {
                         // Get all key_values (labels/hooks)
@@ -196,9 +197,10 @@ impl Database {
                                 .optional()?;
 
                         // Get collection stats from materialized view
-                        let stats = collection_stats
+                        let stats: Option<CollectionStat> = collection_stats
                             .filter(crate::database::schema::collection_stats::dsl::id.eq(elem.id))
-                            .first::<CollectionStat>(conn)?;
+                            .first::<CollectionStat>(conn)
+                            .optional()?;
 
                         // Get all required labels / ontology
                         let required_lbl = RequiredLabel::belonging_to(&elem)
@@ -247,16 +249,19 @@ impl Database {
                     });
 
                     // Map statistics
-                    let map_stats = Some(CollectionStats {
-                        object_stats: Some(Stats {
-                            count: stats.object_count,
-                            acc_size: stats.size,
+                    let map_stats = match stats {
+                        Some(stats) => Some(CollectionStats {
+                            object_stats: Some(Stats {
+                                count: stats.object_count,
+                                acc_size: stats.size,
+                            }),
+                            object_group_count: stats.object_group_count,
+                            last_updated: Some(
+                                naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
+                            ),
                         }),
-                        object_group_count: stats.object_group_count,
-                        last_updated: Some(
-                            naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
-                        ),
-                    });
+                        None => None
+                    };
 
                     // Map collection_version
                     let map_version = match vers {
@@ -296,6 +301,7 @@ impl Database {
             collection: to_collection_overview,
         })
     }
+
     /// Queries a project and returns basic information about it.
     ///
     /// ## Arguments
