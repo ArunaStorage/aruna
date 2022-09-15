@@ -33,6 +33,7 @@ use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
 
 use chrono::Utc;
+use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
 
 impl Database {
@@ -406,30 +407,39 @@ impl Database {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
+
         // Get project_id
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
 
         // Execute db query
         self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
-            // Check if a collection is still present
-            collections
+            match collections
                 .filter(crate::database::schema::collections::project_id.eq(p_id))
-                .first::<Collection>(conn)
-                .optional()?
-                .ok_or_else(||
-                    ArunaError::InvalidRequest(
-                        "Cannot delete non empty project, please delete/move all associated collections first".to_string()
-                    )
-                )?;
+                .first::<Collection>(conn) {
+                    Ok(_) =>
+                        Err(ArunaError::InvalidRequest(
+                            "Cannot delete non empty project, please delete/move all associated collections first".to_string()
+                        )),
+                    Err(err) => {
+                        match err {
+                            Error::NotFound => {
+                                // Delete project permissions
+                                delete(
+                                    user_permissions.filter(
+                                        crate::database::schema::user_permissions::project_id.eq(p_id)
+                                    )
+                                ).execute(conn)?;
 
-            // Delete user_permissions
-            delete(
-                user_permissions.filter(
-                    crate::database::schema::user_permissions::project_id.eq(p_id)
-                )
-            ).execute(conn)?;
-            // Delete project
-            delete(projects.filter(crate::database::schema::projects::id.eq(p_id))).execute(conn)?;
+                                // Delete project
+                                delete(projects.filter(crate::database::schema::projects::id.eq(p_id))).execute(conn)?;
+
+                                Ok(())
+                            }
+                            _ => Err(ArunaError::DieselError(err))
+                        }
+                    }
+                }?;
+
             Ok(())
         })?;
 

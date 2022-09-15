@@ -210,6 +210,7 @@ impl ProjectService for ProjectServiceImpl {
                 .remove_user_from_project(request.into_inner(), user_id)?,
         ))
     }
+
     /// Get the user_permission of a specific user for the project.
     /// Needs project admin permissions and the project
     ///
