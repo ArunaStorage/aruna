@@ -11,32 +11,50 @@
 use super::utils::*;
 use crate::api::aruna::api::storage::models::v1::DataClass;
 use crate::api::aruna::api::storage::models::v1::{
-    collection_overview, collection_overview::Version as CollectionVersiongRPC, CollectionOverview,
-    CollectionOverviews, CollectionStats, LabelOntology, Stats, Version,
+    collection_overview,
+    collection_overview::Version as CollectionVersiongRPC,
+    CollectionOverview,
+    CollectionOverviews,
+    CollectionStats,
+    LabelOntology,
+    Stats,
+    Version,
 };
 use crate::api::aruna::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateNewCollectionResponse, DeleteCollectionRequest,
-    DeleteCollectionResponse, GetCollectionByIdRequest, GetCollectionByIdResponse,
-    GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
-    PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
+    CreateNewCollectionRequest,
+    CreateNewCollectionResponse,
+    DeleteCollectionRequest,
+    DeleteCollectionResponse,
+    GetCollectionByIdRequest,
+    GetCollectionByIdResponse,
+    GetCollectionsRequest,
+    GetCollectionsResponse,
+    PinCollectionVersionRequest,
+    PinCollectionVersionResponse,
+    UpdateCollectionRequest,
+    UpdateCollectionResponse,
 };
 use crate::database::connection::Database;
 use crate::database::crud::object::clone_object;
 use crate::database::models;
 use crate::database::models::collection::{
-    Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
+    Collection,
+    CollectionKeyValue,
+    CollectionObject,
+    CollectionObjectGroup,
+    CollectionVersion,
     RequiredLabel,
 };
-use crate::database::models::enums::{Dataclass as DBDataclass, ObjectStatus};
+use crate::database::models::enums::{ Dataclass as DBDataclass, ObjectStatus };
 use crate::database::models::object::Object;
-use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
+use crate::database::models::object_group::{ ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject };
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
 use chrono::Local;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
-use diesel::{delete, prelude::*};
-use diesel::{insert_into, update};
+use diesel::{ delete, prelude::* };
+use diesel::{ insert_into, update };
 use r2d2::PooledConnection;
 use std::collections::HashMap;
 
@@ -76,7 +94,7 @@ impl Database {
     pub fn create_new_collection(
         &self,
         request: CreateNewCollectionRequest,
-        creator: uuid::Uuid,
+        creator: uuid::Uuid
     ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
@@ -89,7 +107,7 @@ impl Database {
         let key_values = to_key_values::<CollectionKeyValue>(
             request.labels.clone(),
             request.hooks.clone(),
-            collection_uuid,
+            collection_uuid
         );
         // Create collection DB struct
         let db_collection = models::collection::Collection {
@@ -105,19 +123,13 @@ impl Database {
         };
 
         // Insert in transaction
-        self.pg_connection
-            .get()?
-            .transaction::<_, Error, _>(|conn| {
-                // Insert collection
-                insert_into(collections)
-                    .values(db_collection)
-                    .execute(conn)?;
-                // Insert collection key values
-                insert_into(collection_key_value)
-                    .values(key_values)
-                    .execute(conn)?;
-                Ok(())
-            })?;
+        self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
+            // Insert collection
+            insert_into(collections).values(db_collection).execute(conn)?;
+            // Insert collection key values
+            insert_into(collection_key_value).values(key_values).execute(conn)?;
+            Ok(())
+        })?;
         // Create response and return
         Ok(CreateNewCollectionResponse {
             collection_id: collection_uuid.to_string(),
@@ -141,15 +153,14 @@ impl Database {
     ///
     pub fn get_collection_by_id(
         &self,
-        request: GetCollectionByIdRequest,
+        request: GetCollectionByIdRequest
     ) -> Result<GetCollectionByIdResponse, ArunaError> {
         use crate::database::schema::collections::dsl as col;
         use diesel::prelude::*;
         // Parse the collection_id to uuid
         let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute request and return CollectionOverviewDb
-        let ret_collection = self
-            .pg_connection
+        let ret_collection = self.pg_connection
             .get()?
             .transaction::<Option<CollectionOverviewDb>, Error, _>(|conn| {
                 // Query the collection overview
@@ -185,7 +196,7 @@ impl Database {
     ///
     pub fn get_collections(
         &self,
-        request: GetCollectionsRequest,
+        request: GetCollectionsRequest
     ) -> Result<GetCollectionsResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckv;
         use crate::database::schema::collections::dsl as col;
@@ -197,8 +208,7 @@ impl Database {
         // Get the project_id
         let project_id = uuid::Uuid::parse_str(&request.project_id)?;
         // Execute request
-        let ret_collections = self
-            .pg_connection
+        let ret_collections = self.pg_connection
             .get()?
             .transaction::<Option<Vec<CollectionOverviewDb>>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
@@ -213,7 +223,7 @@ impl Database {
                 }
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
-                    base_request = base_request.filter(col::id.ge(l_uid));
+                    base_request = base_request.filter(col::id.gt(l_uid));
                 }
                 // Add query if it exists
                 if let Some(p_query) = parsed_query {
@@ -229,11 +239,13 @@ impl Database {
                             if l_query.1 {
                                 // Add each key / value to label query
                                 for (key, value) in l_query.0.clone() {
-                                    // Always add keys
-                                    ckv_query = ckv_query.filter(ckv::key.eq(key));
                                     // Will be Some if keys only == false
                                     if let Some(val) = value {
-                                        ckv_query = ckv_query.filter(ckv::value.eq(val));
+                                        ckv_query = ckv_query.or_filter(
+                                            ckv::key.eq(key).and(ckv::value.eq(val))
+                                        );
+                                    } else {
+                                        ckv_query = ckv_query.or_filter(ckv::key.eq(key));
                                     }
                                 }
                                 // Execute request and get a list with all found key values
@@ -275,8 +287,9 @@ impl Database {
                 }
 
                 // Execute the preconfigured query
-                let query_collections: Option<Vec<Collection>> =
-                    base_request.load::<Collection>(conn).optional()?;
+                let query_collections: Option<Vec<Collection>> = base_request
+                    .load::<Collection>(conn)
+                    .optional()?;
                 // Query overviews for each collection
                 // TODO: This might be inefficient and can be optimized later
                 if let Some(q_colls) = query_collections {
@@ -324,14 +337,13 @@ impl Database {
     pub fn update_collection(
         &self,
         request: UpdateCollectionRequest,
-        user_id: uuid::Uuid,
+        user_id: uuid::Uuid
     ) -> Result<UpdateCollectionResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         // Query the old collection id that should be updated
         let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute request in transaction
-        let ret_collections = self
-            .pg_connection
+        let ret_collections = self.pg_connection
             .get()?
             .transaction::<Option<CollectionOverview>, ArunaError, _>(|conn| {
                 // Query the old collection
@@ -348,14 +360,15 @@ impl Database {
                     // Updates for "historic" versions are not allowed
                     if let Some(v) = &old_overview.coll_version {
                         if Version::from(v.clone()) >= request.version.clone().unwrap() {
-                            return Err(ArunaError::InvalidRequest(
-                                "New version must be greater than old one".to_string(),
-                            ));
+                            return Err(
+                                ArunaError::InvalidRequest(
+                                    "New version must be greater than old one".to_string()
+                                )
+                            );
                         }
                     }
                     // Create new "Version" database struct
-                    let new_version = request
-                        .version
+                    let new_version = request.version
                         .clone()
                         .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
                         .unwrap();
@@ -373,12 +386,20 @@ impl Database {
                         project_id: uuid::Uuid::parse_str(&request.project_id)?,
                     };
                     // Execute the pin request and return the collection overview
-                    Ok(Some(pin_collection_to_version(
-                        old_collection_id,
-                        user_id,
-                        transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
-                        conn,
-                    )?))
+                    Ok(
+                        Some(
+                            pin_collection_to_version(
+                                old_collection_id,
+                                user_id,
+                                transform_collection_overviewdb(
+                                    new_coll,
+                                    new_version,
+                                    Some(old_overview)
+                                )?,
+                                conn
+                            )?
+                        )
+                    )
                     // This is the update "in place" for collections without versions
                 } else {
                     // Create new collection info
@@ -397,9 +418,7 @@ impl Database {
                     update(collections).set(&update_col).execute(conn)?;
 
                     // return the new collectionoverview
-                    Ok(map_to_collection_overview(Some(query_overview(
-                        conn, update_col,
-                    )?))?)
+                    Ok(map_to_collection_overview(Some(query_overview(conn, update_col)?))?)
                 }
             })?;
 
@@ -422,14 +441,13 @@ impl Database {
     pub fn pin_collection_version(
         &self,
         request: PinCollectionVersionRequest,
-        user_id: uuid::Uuid,
+        user_id: uuid::Uuid
     ) -> Result<PinCollectionVersionResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         // Parse the old collection id
         let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute the database transaction
-        let ret_collections = self
-            .pg_connection
+        let ret_collections = self.pg_connection
             .get()?
             .transaction::<Option<CollectionOverview>, ArunaError, _>(|conn| {
                 // Query the old collection
@@ -446,15 +464,16 @@ impl Database {
                     // Updates for "historic" versions are not allowed
                     if let Some(v) = &old_overview.coll_version {
                         if Version::from(v.clone()) >= request.version.clone().unwrap() {
-                            return Err(ArunaError::InvalidRequest(
-                                "New version must be greater than old one".to_string(),
-                            ));
+                            return Err(
+                                ArunaError::InvalidRequest(
+                                    "New version must be greater than old one".to_string()
+                                )
+                            );
                         }
                     }
                 }
                 // Build the new version
-                let new_version = request
-                    .version
+                let new_version = request.version
                     .clone()
                     .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
                     .unwrap();
@@ -471,12 +490,20 @@ impl Database {
                     project_id: old_collection.project_id,
                 };
                 // Pin the collection and return the overview
-                Ok(Some(pin_collection_to_version(
-                    old_collection_id,
-                    user_id,
-                    transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
-                    conn,
-                )?))
+                Ok(
+                    Some(
+                        pin_collection_to_version(
+                            old_collection_id,
+                            user_id,
+                            transform_collection_overviewdb(
+                                new_coll,
+                                new_version,
+                                Some(old_overview)
+                            )?,
+                            conn
+                        )?
+                    )
+                )
             })?;
         // Return the collectionoverview to the grpc function
         Ok(PinCollectionVersionResponse {
@@ -500,7 +527,7 @@ impl Database {
     pub fn delete_collection(
         &self,
         request: DeleteCollectionRequest,
-        user_id: uuid::Uuid,
+        user_id: uuid::Uuid
     ) -> Result<DeleteCollectionResponse, ArunaError> {
         // Import of database structures
         use crate::database::schema::collection_key_value::dsl as colkv;
@@ -629,7 +656,7 @@ impl Database {
 ///
 fn query_overview(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    col: Collection,
+    col: Collection
 ) -> Result<CollectionOverviewDb, Error> {
     // Database imports
     use crate::database::schema::collection_key_value::dsl as ckv;
@@ -689,7 +716,7 @@ fn query_overview(
 /// * Result<Option<CollectionOverview>, ArunaError>: Returns an Option<CollectionOverview> (gRPC) or ArunaError
 ///
 fn map_to_collection_overview(
-    coll_infos: Option<CollectionOverviewDb>,
+    coll_infos: Option<CollectionOverviewDb>
 ) -> Result<Option<CollectionOverview>, ArunaError> {
     // If coll_infos is Some()
     if let Some(ret_coll) = coll_infos {
@@ -709,46 +736,46 @@ fn map_to_collection_overview(
         // Parse the timestamp
         let tstmpt = naivedatetime_to_prost_time(ret_coll.coll.created_at)?;
         // Parse the stats to gRPC format
-        let stats: Result<Option<CollectionStats>, ArunaError> =
-            if let Some(sts) = ret_coll.coll_stats {
-                let obj_stats = Stats {
-                    count: sts.object_count,
-                    acc_size: sts.size,
-                };
-
-                let coll_stats = CollectionStats {
-                    object_stats: Some(obj_stats),
-                    object_group_count: sts.object_group_count,
-                    last_updated: Some(naivedatetime_to_prost_time(sts.last_updated)?),
-                };
-
-                Ok(Some(coll_stats))
-            } else {
-                Ok(None)
+        let stats: Result<Option<CollectionStats>, ArunaError> = if
+            let Some(sts) = ret_coll.coll_stats
+        {
+            let obj_stats = Stats {
+                count: sts.object_count,
+                acc_size: sts.size,
             };
+
+            let coll_stats = CollectionStats {
+                object_stats: Some(obj_stats),
+                object_group_count: sts.object_group_count,
+                last_updated: Some(naivedatetime_to_prost_time(sts.last_updated)?),
+            };
+
+            Ok(Some(coll_stats))
+        } else {
+            Ok(None)
+        };
         // Check if collection is public
-        let is_public = matches!(
-            ret_coll.coll.dataclass,
-            Some(models::enums::Dataclass::PUBLIC)
-        );
+        let is_public = matches!(ret_coll.coll.dataclass, Some(models::enums::Dataclass::PUBLIC));
         // Map the collectionversion
         let mapped_version = match ret_coll.coll_version {
             Some(vers) => Some(collection_overview::Version::SemanticVersion(vers.into())),
             None => Some(collection_overview::Version::Latest(true)),
         };
         // Return gRPC collectionoverview
-        Ok(Some(CollectionOverview {
-            id: ret_coll.coll.id.to_string(),
-            name: ret_coll.coll.name,
-            description: ret_coll.coll.description,
-            labels,
-            hooks,
-            label_ontology: label_ont,
-            created: Some(tstmpt),
-            stats: stats?,
-            is_public,
-            version: mapped_version,
-        }))
+        Ok(
+            Some(CollectionOverview {
+                id: ret_coll.coll.id.to_string(),
+                name: ret_coll.coll.name,
+                description: ret_coll.coll.description,
+                labels,
+                hooks,
+                label_ontology: label_ont,
+                created: Some(tstmpt),
+                stats: stats?,
+                is_public,
+                version: mapped_version,
+            })
+        )
         // Return none if input was None
     } else {
         Ok(None)
@@ -771,7 +798,7 @@ fn map_to_collection_overview(
 fn transform_collection_overviewdb(
     new_coll: Collection,
     new_version: CollectionVersion,
-    coll_infos: Option<CollectionOverviewDb>,
+    coll_infos: Option<CollectionOverviewDb>
 ) -> Result<CollectionOverviewDb, ArunaError> {
     // If coll_infos is Some
     if let Some(cinfos) = coll_infos {
@@ -807,9 +834,7 @@ fn transform_collection_overviewdb(
         })
         // Return error if transformation failed
     } else {
-        Err(ArunaError::InvalidRequest(
-            "CollectionOverviewDb failed".to_string(),
-        ))
+        Err(ArunaError::InvalidRequest("CollectionOverviewDb failed".to_string()))
     }
 }
 
@@ -840,7 +865,7 @@ fn pin_collection_to_version(
     origin_collection: uuid::Uuid,
     creator_user: uuid::Uuid,
     new_collection_overview: CollectionOverviewDb,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
 ) -> Result<CollectionOverview, ArunaError> {
     // Imports for all collection related tables
     use crate::database::schema::collection_key_value::dsl as ckv;
@@ -886,26 +911,18 @@ fn pin_collection_to_version(
         .load::<ObjectGroupKeyValue>(conn)?;
     // Inserts for collection
     // First collection
-    insert_into(col::collections)
-        .values(&new_collection_overview.coll)
-        .execute(conn)?;
+    insert_into(col::collections).values(&new_collection_overview.coll).execute(conn)?;
     // Collection_key_values
     if let Some(kv) = &new_collection_overview.coll_key_value {
-        insert_into(ckv::collection_key_value)
-            .values(kv)
-            .execute(conn)?;
+        insert_into(ckv::collection_key_value).values(kv).execute(conn)?;
     }
     // Insert new version
     if let Some(vers) = &new_collection_overview.coll_version {
-        insert_into(clversion::collection_version)
-            .values(vers)
-            .execute(conn)?;
+        insert_into(clversion::collection_version).values(vers).execute(conn)?;
     }
     // Insert required labels
     if let Some(req_labels) = &new_collection_overview.coll_req_labels {
-        insert_into(rlbl::required_labels)
-            .values(req_labels)
-            .execute(conn)?;
+        insert_into(rlbl::required_labels).values(req_labels).execute(conn)?;
     }
     // List with new objectgroups
     let mut new_obj_groups = Vec::new();
@@ -928,7 +945,7 @@ fn pin_collection_to_version(
             conn,
             obj_id,
             origin_collection,
-            new_collection_overview.coll.id,
+            new_collection_overview.coll.id
         )?;
         object_mapping_table.insert(obj_id, uuid::Uuid::parse_str(&new_obj.id)?);
         new_objects.push(new_obj);
@@ -961,9 +978,7 @@ fn pin_collection_to_version(
     for obj_grp_kv in original_obj_grp_kv {
         new_object_group_kv.push(ObjectGroupKeyValue {
             id: uuid::Uuid::new_v4(),
-            object_group_id: *object_group_mappings
-                .get(&obj_grp_kv.object_group_id)
-                .unwrap(),
+            object_group_id: *object_group_mappings.get(&obj_grp_kv.object_group_id).unwrap(),
             key: obj_grp_kv.key,
             value: obj_grp_kv.value,
             key_value_type: obj_grp_kv.key_value_type,
@@ -973,24 +988,18 @@ fn pin_collection_to_version(
     for association in objectgrp_associations {
         new_obj_grp_objs.push(ObjectGroupObject {
             id: uuid::Uuid::new_v4(),
-            object_group_id: *object_group_mappings
-                .get(&association.object_group_id)
-                .unwrap(),
+            object_group_id: *object_group_mappings.get(&association.object_group_id).unwrap(),
             object_id: *object_mapping_table.get(&association.object_id).unwrap(),
             is_meta: association.is_meta,
         });
     }
     // Insert objectgroups
     if !new_obj_groups.is_empty() {
-        insert_into(objgrp::object_groups)
-            .values(&new_obj_groups)
-            .execute(conn)?;
+        insert_into(objgrp::object_groups).values(&new_obj_groups).execute(conn)?;
     }
     // Insert object_group key values
     if !new_object_group_kv.is_empty() {
-        insert_into(objgrpkv::object_group_key_value)
-            .values(&new_object_group_kv)
-            .execute(conn)?;
+        insert_into(objgrpkv::object_group_key_value).values(&new_object_group_kv).execute(conn)?;
     }
     // Insert collectionobjectgroups
     if !new_coll_obj_groups.is_empty() {
@@ -1000,9 +1009,7 @@ fn pin_collection_to_version(
     }
     // Insert objectgroupobjects
     if !new_obj_grp_objs.is_empty() {
-        insert_into(objgrpobj::object_group_objects)
-            .values(&new_obj_grp_objs)
-            .execute(conn)?;
+        insert_into(objgrpobj::object_group_objects).values(&new_obj_grp_objs).execute(conn)?;
     }
     // Parse labels / hooks for return
     let (labels, hooks) = if let Some(kv) = new_collection_overview.coll_key_value {
@@ -1011,19 +1018,16 @@ fn pin_collection_to_version(
         (Vec::new(), Vec::new())
     };
     // Map required labels for return
-    let mapped_req_labels =
-        new_collection_overview
-            .coll_req_labels
-            .map(|req_labels| LabelOntology {
-                required_label_keys: req_labels
-                    .iter()
-                    .map(|elem| elem.label_key.clone())
-                    .collect::<Vec<_>>(),
-            });
+    let mapped_req_labels = new_collection_overview.coll_req_labels.map(|req_labels| LabelOntology {
+        required_label_keys: req_labels
+            .iter()
+            .map(|elem| elem.label_key.clone())
+            .collect::<Vec<_>>(),
+    });
     // Map version for return
-    let mapped_version = new_collection_overview
-        .coll_version
-        .map(|v| CollectionVersiongRPC::SemanticVersion(v.into()));
+    let mapped_version = new_collection_overview.coll_version.map(|v|
+        CollectionVersiongRPC::SemanticVersion(v.into())
+    );
     // Construct collectionoverview and return it
     Ok(CollectionOverview {
         id: new_collection_overview.coll.id.to_string(),
