@@ -12,8 +12,6 @@ env:
   IMAGE_NAME: aruna-data-proxy
 jobs:
   push:
-    needs: test
-
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
 
