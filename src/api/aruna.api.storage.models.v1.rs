@@ -406,6 +406,8 @@ pub enum Status {
     Initializing = 1,
     Available = 2,
     Unavailable = 3,
+    Error = 4,
+    Trash = 5,
 }
 impl Status {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -418,6 +420,8 @@ impl Status {
             Status::Initializing => "STATUS_INITIALIZING",
             Status::Available => "STATUS_AVAILABLE",
             Status::Unavailable => "STATUS_UNAVAILABLE",
+            Status::Error => "STATUS_ERROR",
+            Status::Trash => "STATUS_TRASH",
         }
     }
 }
