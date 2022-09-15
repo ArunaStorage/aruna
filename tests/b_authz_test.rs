@@ -2,20 +2,13 @@ use aruna_server::{
     api::aruna::api::storage::{
         models::v1::ProjectPermission,
         services::v1::{
-            ActivateUserRequest,
-            AddUserToProjectRequest,
-            CreateApiTokenRequest,
-            CreateProjectRequest,
-            DeleteApiTokenRequest,
-            DeleteApiTokensRequest,
-            GetApiTokenRequest,
-            GetApiTokensRequest,
-            RegisterUserRequest,
+            ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
+            CreateNewCollectionRequest, CreateProjectRequest, DeleteApiTokenRequest,
+            DeleteApiTokensRequest, GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
             UpdateUserDisplayNameRequest,
-            CreateNewCollectionRequest,
         },
     },
-    database::{ self },
+    database::{self},
     server::services::authz::Context,
 };
 use serial_test::serial;
@@ -47,15 +40,17 @@ fn get_pub_keys_test() {
     // Iterate through keys
     for key in result {
         // Expect it to be either "pubkey_test_1" or "pub_key_test_2"
-        if
-            key.pubkey == *"pubkey_test_1" ||
-            key.pubkey == *"pubkey_test_2" ||
-            key.pubkey == *"admin_key"
+        if key.pubkey == *"pubkey_test_1"
+            || key.pubkey == *"pubkey_test_2"
+            || key.pubkey == *"admin_key"
         {
             continue;
             // Panic otherwise -> unknown pubkey in db
         } else {
-            panic!("Expected pubkey_test_1 or pubkey_test_2, got: {:?}", key.pubkey);
+            panic!(
+                "Expected pubkey_test_1 or pubkey_test_2, got: {:?}",
+                key.pubkey
+            );
         }
     }
 }
@@ -85,7 +80,9 @@ fn register_user_test() {
         display_name: "test_user_1".to_string(),
     };
     // Create new user
-    let _resp = db.register_user(req, "test_user_1_oidc".to_string()).unwrap();
+    let _resp = db
+        .register_user(req, "test_user_1_oidc".to_string())
+        .unwrap();
 }
 
 #[test]
@@ -100,7 +97,9 @@ fn activate_user_test() {
         display_name: "test_user_2".to_string(),
     };
     // Create new user
-    let resp_2 = db.register_user(req_2, "test_user_2_oidc".to_string()).unwrap();
+    let resp_2 = db
+        .register_user(req_2, "test_user_2_oidc".to_string())
+        .unwrap();
 
     // Build request for new user
     let req = ActivateUserRequest {
@@ -120,7 +119,9 @@ fn create_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_3".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_3_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_3_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -153,7 +154,9 @@ fn get_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -174,7 +177,9 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let initial_token = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let initial_token = db
+        .create_api_token(req.clone(), user_id, pubkey_result)
+        .unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
@@ -203,7 +208,9 @@ fn get_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -263,7 +270,9 @@ fn delete_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -316,7 +325,9 @@ fn delete_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -379,7 +390,9 @@ fn get_user_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -395,8 +408,14 @@ fn get_user_test() {
 
     assert!(user_info.clone().user.unwrap().active);
     assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
-    assert_eq!(user_info.clone().user.unwrap().external_id, "test_user_4_oidc".to_string());
-    assert_eq!(user_info.user.unwrap().display_name, "test_user_4".to_string());
+    assert_eq!(
+        user_info.clone().user.unwrap().external_id,
+        "test_user_4_oidc".to_string()
+    );
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "test_user_4".to_string()
+    );
 }
 
 #[test]
@@ -409,7 +428,9 @@ fn update_user_display_name_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -418,7 +439,10 @@ fn update_user_display_name_test() {
     };
     db.activate_user(req).unwrap();
     let user_info = db.get_user(user_id).unwrap();
-    assert_eq!(user_info.user.unwrap().display_name, "test_user_4".to_string());
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "test_user_4".to_string()
+    );
 
     let req = UpdateUserDisplayNameRequest {
         new_display_name: "new_name_1".to_string(),
@@ -432,8 +456,14 @@ fn update_user_display_name_test() {
 
     assert!(user_info.clone().user.unwrap().active);
     assert_eq!(user_info.clone().user.unwrap().id, user_id.to_string());
-    assert_eq!(user_info.clone().user.unwrap().external_id, "test_user_4_oidc".to_string());
-    assert_eq!(user_info.user.unwrap().display_name, "new_name_1".to_string());
+    assert_eq!(
+        user_info.clone().user.unwrap().external_id,
+        "test_user_4_oidc".to_string()
+    );
+    assert_eq!(
+        user_info.user.unwrap().display_name,
+        "new_name_1".to_string()
+    );
 }
 
 #[test]
@@ -446,7 +476,9 @@ fn get_user_projects_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -463,7 +495,7 @@ fn get_user_projects_test() {
     let proj_1 = db
         .create_project(
             crt_proj_req,
-            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
         )
         .unwrap();
     // Add new user to the proj
@@ -505,7 +537,9 @@ fn get_checked_user_id_from_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
     };
-    let user_resp = db.register_user(user_req, "test_user_4_oidc".to_string()).unwrap();
+    let user_resp = db
+        .register_user(user_req, "test_user_4_oidc".to_string())
+        .unwrap();
     let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
 
     // Activate the user
@@ -522,7 +556,7 @@ fn get_checked_user_id_from_token_test() {
     let proj_1 = db
         .create_project(
             crt_proj_req,
-            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
         )
         .unwrap();
     // Add new user to the proj with permissions "Read"
@@ -558,7 +592,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 3, // "APPEND permissions" -> Should be ignored
     };
     // Create a initial token
-    let regular_personal_token = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let regular_personal_token = db.create_api_token(req, user_id, pubkey_result).unwrap();
     // Admin token
     let admin_token = uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap();
     // Personal token with perm = 3
@@ -572,7 +606,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 2, // READ permissions
     };
     // Create a initial token
-    let project_token_with_read = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let project_token_with_read = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let project_token_with_read = uuid::Uuid::parse_str(&project_token_with_read.id).unwrap();
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
@@ -583,9 +617,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 5, // ADMIN permissions
     };
     // Create a initial token
-    let project_token_with_admin = db
-        .create_api_token(req.clone(), user_id, pubkey_result)
-        .unwrap();
+    let project_token_with_admin = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let project_token_with_admin = uuid::Uuid::parse_str(&project_token_with_admin.id).unwrap();
 
     // Create collection in proj_1 --> Admin
@@ -620,7 +652,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 2, // ADMIN permissions
     };
     // Create a initial token
-    let col_token_with_read = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let col_token_with_read = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let col_token_with_read = uuid::Uuid::parse_str(&col_token_with_read.id).unwrap();
     // Collection scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
@@ -631,7 +663,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 5, // ADMIN permissions
     };
     // Create a initial token
-    let col_token_with_admin = db.create_api_token(req.clone(), user_id, pubkey_result).unwrap();
+    let col_token_with_admin = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let col_token_with_admin = uuid::Uuid::parse_str(&col_token_with_admin.id).unwrap();
 
     // TEST all tokens / cases
@@ -646,10 +678,13 @@ fn get_checked_user_id_from_token_test() {
                 admin: true,
                 personal: false,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
-    assert_eq!(res.to_string(), "12345678-1234-1234-1234-111111111111".to_string());
+    assert_eq!(
+        res.to_string(),
+        "12345678-1234-1234-1234-111111111111".to_string()
+    );
     // Case 2. Non admin token / Requested admin context: SHOULD fail
     let res = db.get_checked_user_id_from_token(
         &col_token_with_admin,
@@ -660,7 +695,7 @@ fn get_checked_user_id_from_token_test() {
             admin: true,
             personal: false,
             oidc_context: false,
-        })
+        }),
     );
     assert!(res.is_err());
     // Case 3. Personal token in "ADMIN" project
@@ -674,7 +709,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
     assert_eq!(res, user_id);
@@ -689,7 +724,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
     assert_eq!(res, user_id);
@@ -704,7 +739,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
     assert_eq!(res, user_id);
@@ -719,7 +754,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: true,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
     assert_eq!(res, user_id);
@@ -733,7 +768,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: true,
             oidc_context: false,
-        })
+        }),
     );
     assert!(res.is_err());
     // Project token for collection
@@ -748,7 +783,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
+            }),
         )
         .unwrap();
     assert_eq!(res, user_id);
@@ -762,7 +797,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: false,
             oidc_context: false,
-        })
+        }),
     );
     assert!(res.is_err());
     // Project with read with "higher" permissions -> Should fail
@@ -775,7 +810,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: false,
             oidc_context: false,
-        })
+        }),
     );
     assert!(res.is_err());
 }

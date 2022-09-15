@@ -73,7 +73,7 @@ impl ToDbKeyValue for ObjectGroupKeyValue {
 #[diesel(table_name = object_group_objects)]
 pub struct ObjectGroupObject {
     pub id: uuid::Uuid,
-    pub object_group_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
+    pub object_group_id: uuid::Uuid,
     pub is_meta: bool,
 }

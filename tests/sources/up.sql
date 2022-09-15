@@ -337,3 +337,17 @@ VALUES (
         '12345678-1234-1234-1234-111111111111',
         '1'
     );
+INSERT INTO endpoints (
+        id,
+        endpoint_type,
+        name,
+        proxy_hostname,
+        internal_hostname
+    )
+VALUES (
+        '12345678-6666-6666-6666-999999999999',
+        'S3',
+        'demo_endpoint',
+        'url_prox_a',
+        'url_inter_b'
+    );

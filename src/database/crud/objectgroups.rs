@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use crate::{
     api::aruna::api::storage::services::v1::CreateObjectGroupRequest,
     api::aruna::api::storage::{
-        models::v1::{ KeyValue, Object as ProtoObject, ObjectGroupOverview },
+        models::v1::{KeyValue, Object as ProtoObject, ObjectGroupOverview},
         services::v1::CreateObjectGroupResponse,
     },
     database::{
         connection::Database,
         models::{
             collection::CollectionObjectGroup,
-            object_group::{ ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject },
+            object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
             views::ObjectGroupStat,
         },
     },
@@ -18,48 +18,34 @@ use crate::{
 };
 use crate::{
     api::aruna::api::storage::{
-        models::v1::{ ObjectGroupOverviews, ObjectGroupStats, Stats },
+        models::v1::{ObjectGroupOverviews, ObjectGroupStats, Stats},
         services::v1::{
-            DeleteObjectGroupRequest,
-            DeleteObjectGroupResponse,
-            GetObjectGroupByIdRequest,
-            GetObjectGroupByIdResponse,
-            GetObjectGroupHistoryRequest,
-            GetObjectGroupHistoryResponse,
-            GetObjectGroupObjectsRequest,
-            GetObjectGroupObjectsResponse,
-            GetObjectGroupsFromObjectRequest,
-            GetObjectGroupsFromObjectResponse,
-            GetObjectGroupsRequest,
-            GetObjectGroupsResponse,
-            ObjectGroupObject as ProtoObjectGroupObject,
-            UpdateObjectGroupRequest,
+            DeleteObjectGroupRequest, DeleteObjectGroupResponse, GetObjectGroupByIdRequest,
+            GetObjectGroupByIdResponse, GetObjectGroupHistoryRequest,
+            GetObjectGroupHistoryResponse, GetObjectGroupObjectsRequest,
+            GetObjectGroupObjectsResponse, GetObjectGroupsFromObjectRequest,
+            GetObjectGroupsFromObjectResponse, GetObjectGroupsRequest, GetObjectGroupsResponse,
+            ObjectGroupObject as ProtoObjectGroupObject, UpdateObjectGroupRequest,
             UpdateObjectGroupResponse,
         },
     },
     database::{
-        crud::utils::{ check_all_for_db_kv, ParsedQuery },
+        crud::utils::{check_all_for_db_kv, ParsedQuery},
         schema::{
-            collection_object_groups::dsl::*,
-            object_group_key_value::dsl::*,
-            object_group_objects::dsl::*,
-            object_group_stats::dsl::*,
-            object_groups::dsl::*,
+            collection_object_groups::dsl::*, object_group_key_value::dsl::*,
+            object_group_objects::dsl::*, object_group_stats::dsl::*, object_groups::dsl::*,
         },
     },
 };
 use chrono::Utc;
-use diesel::{ delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update };
+use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update};
 use itertools::Itertools;
 use r2d2::PooledConnection;
 
 use super::{
-    object::{ check_if_obj_in_coll, get_object, ObjectDto },
+    object::{check_if_obj_in_coll, get_object, ObjectDto},
     utils::{
-        from_key_values,
-        naivedatetime_to_prost_time,
-        parse_page_request,
-        parse_query,
+        from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query,
         to_key_values,
     },
 };
@@ -77,7 +63,7 @@ impl Database {
     pub fn create_object_group(
         &self,
         request: &CreateObjectGroupRequest,
-        creator: &uuid::Uuid
+        creator: &uuid::Uuid,
     ) -> Result<CreateObjectGroupResponse, ArunaError> {
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
@@ -103,10 +89,11 @@ impl Database {
         let key_values = to_key_values::<ObjectGroupKeyValue>(
             request.labels.clone(),
             request.hooks.clone(),
-            new_obj_grp_uuid
+            new_obj_grp_uuid,
         );
 
-        let objgrp_obs = request.object_ids
+        let objgrp_obs = request
+            .object_ids
             .iter()
             .map(|id_str| {
                 let obj_id = uuid::Uuid::parse_str(id_str)?;
@@ -117,17 +104,15 @@ impl Database {
                     is_meta: false,
                 })
             })
-            .chain(
-                request.meta_object_ids.iter().map(|id_str| {
-                    let obj_id = uuid::Uuid::parse_str(id_str)?;
-                    Ok(ObjectGroupObject {
-                        id: uuid::Uuid::new_v4(),
-                        object_group_id: new_obj_grp_uuid,
-                        object_id: obj_id,
-                        is_meta: true,
-                    })
+            .chain(request.meta_object_ids.iter().map(|id_str| {
+                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                Ok(ObjectGroupObject {
+                    id: uuid::Uuid::new_v4(),
+                    object_group_id: new_obj_grp_uuid,
+                    object_id: obj_id,
+                    is_meta: true,
                 })
-            )
+            }))
             .collect::<Result<Vec<ObjectGroupObject>, ArunaError>>()?;
 
         let obj_uuids = objgrp_obs
@@ -137,23 +122,31 @@ impl Database {
             .collect::<Vec<uuid::Uuid>>();
 
         //Insert all defined object_groups into the database
-        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
-            diesel::insert_into(object_groups).values(&database_obj_group).execute(conn)?;
-            diesel::insert_into(object_group_key_value).values(&key_values).execute(conn)?;
-            diesel
-                ::insert_into(collection_object_groups)
-                .values(&collection_object_group)
-                .execute(conn)?;
-            if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                return Err(diesel::result::Error::NotFound);
-            }
+        let overview = self
+            .pg_connection
+            .get()?
+            .transaction::<ObjectGroupDb, Error, _>(|conn| {
+                diesel::insert_into(object_groups)
+                    .values(&database_obj_group)
+                    .execute(conn)?;
+                diesel::insert_into(object_group_key_value)
+                    .values(&key_values)
+                    .execute(conn)?;
+                diesel::insert_into(collection_object_groups)
+                    .values(&collection_object_group)
+                    .execute(conn)?;
+                if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
+                    return Err(diesel::result::Error::NotFound);
+                }
 
-            diesel::insert_into(object_group_objects).values(&objgrp_obs).execute(conn)?;
+                diesel::insert_into(object_group_objects)
+                    .values(&objgrp_obs)
+                    .execute(conn)?;
 
-            let grp = query_object_group(new_obj_grp_uuid, conn)?;
+                let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-            grp.ok_or(diesel::NotFound)
-        })?;
+                grp.ok_or(diesel::NotFound)
+            })?;
 
         // Return already complete gRPC response
         Ok(CreateObjectGroupResponse {
@@ -163,7 +156,7 @@ impl Database {
     pub fn update_object_group(
         &self,
         request: &UpdateObjectGroupRequest,
-        creator: &uuid::Uuid
+        creator: &uuid::Uuid,
     ) -> Result<UpdateObjectGroupResponse, ArunaError> {
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
@@ -191,10 +184,11 @@ impl Database {
         let key_values = to_key_values::<ObjectGroupKeyValue>(
             request.labels.clone(),
             request.hooks.clone(),
-            new_obj_grp_uuid
+            new_obj_grp_uuid,
         );
 
-        let objgrp_obs = request.object_ids
+        let objgrp_obs = request
+            .object_ids
             .iter()
             .map(|id_str| {
                 let obj_id = uuid::Uuid::parse_str(id_str)?;
@@ -205,17 +199,15 @@ impl Database {
                     is_meta: false,
                 })
             })
-            .chain(
-                request.meta_object_ids.iter().map(|id_str| {
-                    let obj_id = uuid::Uuid::parse_str(id_str)?;
-                    Ok(ObjectGroupObject {
-                        id: uuid::Uuid::new_v4(),
-                        object_group_id: new_obj_grp_uuid,
-                        object_id: obj_id,
-                        is_meta: true,
-                    })
+            .chain(request.meta_object_ids.iter().map(|id_str| {
+                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                Ok(ObjectGroupObject {
+                    id: uuid::Uuid::new_v4(),
+                    object_group_id: new_obj_grp_uuid,
+                    object_id: obj_id,
+                    is_meta: true,
                 })
-            )
+            }))
             .collect::<Result<Vec<ObjectGroupObject>, ArunaError>>()?;
 
         let obj_uuids = objgrp_obs
@@ -225,30 +217,38 @@ impl Database {
             .collect::<Vec<uuid::Uuid>>();
 
         //Insert all defined object_groups into the database
-        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
-            let old_grp = object_groups
-                .filter(crate::database::schema::object_groups::id.eq(parsed_old_id))
-                .first::<ObjectGroup>(conn)?;
+        let overview = self
+            .pg_connection
+            .get()?
+            .transaction::<ObjectGroupDb, Error, _>(|conn| {
+                let old_grp = object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(parsed_old_id))
+                    .first::<ObjectGroup>(conn)?;
 
-            database_obj_group.shared_revision_id = old_grp.shared_revision_id;
-            database_obj_group.revision_number = old_grp.revision_number + 1;
+                database_obj_group.shared_revision_id = old_grp.shared_revision_id;
+                database_obj_group.revision_number = old_grp.revision_number + 1;
 
-            diesel::insert_into(object_groups).values(&database_obj_group).execute(conn)?;
-            diesel::insert_into(object_group_key_value).values(&key_values).execute(conn)?;
-            diesel
-                ::insert_into(collection_object_groups)
-                .values(&collection_object_group)
-                .execute(conn)?;
-            if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                return Err(diesel::result::Error::NotFound);
-            }
+                diesel::insert_into(object_groups)
+                    .values(&database_obj_group)
+                    .execute(conn)?;
+                diesel::insert_into(object_group_key_value)
+                    .values(&key_values)
+                    .execute(conn)?;
+                diesel::insert_into(collection_object_groups)
+                    .values(&collection_object_group)
+                    .execute(conn)?;
+                if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
+                    return Err(diesel::result::Error::NotFound);
+                }
 
-            diesel::insert_into(object_group_objects).values(&objgrp_obs).execute(conn)?;
+                diesel::insert_into(object_group_objects)
+                    .values(&objgrp_obs)
+                    .execute(conn)?;
 
-            let grp = query_object_group(new_obj_grp_uuid, conn)?;
+                let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-            grp.ok_or(diesel::NotFound)
-        })?;
+                grp.ok_or(diesel::NotFound)
+            })?;
 
         // Return already complete gRPC response
         Ok(UpdateObjectGroupResponse {
@@ -257,15 +257,18 @@ impl Database {
     }
     pub fn get_object_group_by_id(
         &self,
-        request: &GetObjectGroupByIdRequest
+        request: &GetObjectGroupByIdRequest,
     ) -> Result<GetObjectGroupByIdResponse, ArunaError> {
         let parsed_obj_id = uuid::Uuid::parse_str(&request.group_id)?;
 
         //Insert all defined object_groups into the database
-        let overview = self.pg_connection.get()?.transaction::<ObjectGroupDb, Error, _>(|conn| {
-            let grp = query_object_group(parsed_obj_id, conn)?;
-            grp.ok_or(diesel::NotFound)
-        })?;
+        let overview = self
+            .pg_connection
+            .get()?
+            .transaction::<ObjectGroupDb, Error, _>(|conn| {
+                let grp = query_object_group(parsed_obj_id, conn)?;
+                grp.ok_or(diesel::NotFound)
+            })?;
 
         // Return already complete gRPC response
         Ok(GetObjectGroupByIdResponse {
@@ -274,12 +277,13 @@ impl Database {
     }
     pub fn get_object_groups_from_object(
         &self,
-        request: &GetObjectGroupsFromObjectRequest
+        request: &GetObjectGroupsFromObjectRequest,
     ) -> Result<GetObjectGroupsFromObjectResponse, ArunaError> {
         let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
 
         //Insert all defined object_groups into the database
-        let overviews = self.pg_connection
+        let overviews = self
+            .pg_connection
             .get()?
             .transaction::<Vec<ObjectGroupDb>, Error, _>(|conn| {
                 let object_grp_ids = object_group_objects
@@ -309,7 +313,7 @@ impl Database {
     }
     pub fn get_object_groups(
         &self,
-        request: GetObjectGroupsRequest
+        request: GetObjectGroupsRequest,
     ) -> Result<GetObjectGroupsResponse, ArunaError> {
         // Parse the page_request and get pagesize / lastuuid
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
@@ -321,7 +325,8 @@ impl Database {
         use crate::database::schema::object_groups::dsl as ogrps;
         use diesel::prelude::*;
         //Insert all defined object_groups into the database
-        let overviews = self.pg_connection
+        let overviews = self
+            .pg_connection
             .get()?
             .transaction::<Option<Vec<ObjectGroupDb>>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
@@ -353,16 +358,15 @@ impl Database {
                                     // Will be Some if keys only == false
                                     if let Some(val) = obj_value {
                                         ckv_query = ckv_query.or_filter(
-                                            ogkv::key.eq(obj_key).and(ogkv::value.eq(val))
+                                            ogkv::key.eq(obj_key).and(ogkv::value.eq(val)),
                                         );
                                     } else {
                                         ckv_query = ckv_query.or_filter(ogkv::key.eq(obj_key));
                                     }
                                 }
                                 // Execute request and get a list with all found key values
-                                let found_obj_kv: Option<Vec<ObjectGroupKeyValue>> = ckv_query
-                                    .load::<ObjectGroupKeyValue>(conn)
-                                    .optional()?;
+                                let found_obj_kv: Option<Vec<ObjectGroupKeyValue>> =
+                                    ckv_query.load::<ObjectGroupKeyValue>(conn).optional()?;
                                 // Parse the returned key_values for the "all" constraint
                                 // and only return matching collection ids
                                 found_objs = check_all_for_db_kv(found_obj_kv, l_query.0);
@@ -399,9 +403,8 @@ impl Database {
                 }
 
                 // Execute the preconfigured query
-                let query_collections: Option<Vec<ObjectGroup>> = base_request
-                    .load::<ObjectGroup>(conn)
-                    .optional()?;
+                let query_collections: Option<Vec<ObjectGroup>> =
+                    base_request.load::<ObjectGroup>(conn).optional()?;
                 // Query overviews for each collection
                 // TODO: This might be inefficient and can be optimized later
                 if let Some(q_objs_grp) = query_collections {
@@ -433,12 +436,13 @@ impl Database {
     }
     pub fn get_object_group_history(
         &self,
-        request: GetObjectGroupHistoryRequest
+        request: GetObjectGroupHistoryRequest,
     ) -> Result<GetObjectGroupHistoryResponse, ArunaError> {
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         //Insert all defined object_groups into the database
-        let overviews = self.pg_connection
+        let overviews = self
+            .pg_connection
             .get()?
             .transaction::<Vec<ObjectGroupDb>, Error, _>(|conn| {
                 let base_group = object_groups
@@ -448,9 +452,8 @@ impl Database {
                 // First build a "boxed" base request to which additional parameters can be added later
                 let mut base_request = object_groups
                     .filter(
-                        crate::database::schema::object_groups::shared_revision_id.eq(
-                            base_group.shared_revision_id
-                        )
+                        crate::database::schema::object_groups::shared_revision_id
+                            .eq(base_group.shared_revision_id),
                     )
                     .into_boxed();
                 // If pagesize is not unlimited set it to pagesize or default = 20
@@ -459,21 +462,18 @@ impl Database {
                 }
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
-                    base_request = base_request.filter(
-                        crate::database::schema::object_groups::id.ge(l_uid)
-                    );
+                    base_request =
+                        base_request.filter(crate::database::schema::object_groups::id.ge(l_uid));
                 }
 
                 let all: Vec<uuid::Uuid> = base_request
                     .select(crate::database::schema::object_groups::id)
                     .load::<uuid::Uuid>(conn)?;
-                Ok(
-                    all
-                        .iter()
-                        .filter_map(|s_obj_grp| query_object_group(*s_obj_grp, conn).ok())
-                        .flatten()
-                        .collect::<Vec<ObjectGroupDb>>()
-                )
+                Ok(all
+                    .iter()
+                    .filter_map(|s_obj_grp| query_object_group(*s_obj_grp, conn).ok())
+                    .flatten()
+                    .collect::<Vec<ObjectGroupDb>>())
             })?;
 
         let ogoverview = ObjectGroupOverviews {
@@ -490,19 +490,20 @@ impl Database {
     }
     pub fn get_object_group_objects(
         &self,
-        request: GetObjectGroupObjectsRequest
+        request: GetObjectGroupObjectsRequest,
     ) -> Result<GetObjectGroupObjectsResponse, ArunaError> {
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         //Insert all defined object_groups into the database
-        let overviews = self.pg_connection
+        let overviews = self
+            .pg_connection
             .get()?
             .transaction::<Vec<(ObjectDto, bool)>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
                 let mut base_request = object_group_objects
                     .filter(
-                        crate::database::schema::object_group_objects::object_group_id.eq(grp_id)
+                        crate::database::schema::object_group_objects::object_group_id.eq(grp_id),
                     )
                     .into_boxed();
                 // If pagesize is not unlimited set it to pagesize or default = 20
@@ -511,16 +512,18 @@ impl Database {
                 }
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
-                    base_request = base_request.filter(
-                        crate::database::schema::object_group_objects::object_id.ge(l_uid)
-                    );
+                    base_request = base_request
+                        .filter(crate::database::schema::object_group_objects::object_id.ge(l_uid));
                 }
 
                 let all: Vec<ObjectGroupObject> = base_request.load::<ObjectGroupObject>(conn)?;
 
                 all.iter()
                     .map(|obj_grp_obj| {
-                        Ok((get_object(&obj_grp_obj.id, &col_id, conn)?, obj_grp_obj.is_meta))
+                        Ok((
+                            get_object(&obj_grp_obj.id, &col_id, conn)?,
+                            obj_grp_obj.is_meta,
+                        ))
                     })
                     .collect::<Result<Vec<(_, _)>, _>>()
             })?;
@@ -542,77 +545,81 @@ impl Database {
     }
     pub fn delete_object_group(
         &self,
-        request: DeleteObjectGroupRequest
+        request: DeleteObjectGroupRequest,
     ) -> Result<DeleteObjectGroupResponse, ArunaError> {
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         //Insert all defined object_groups into the database
-        self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
-            // Update object_group to name/description -> "DELETED"
-            // The group will not get deleted if revisions still exist
-            let queried_group = object_groups
-                .filter(crate::database::schema::object_groups::id.eq(grp_id))
-                .first::<ObjectGroup>(conn)?;
-
-            let others = object_groups
-                .filter(
-                    crate::database::schema::object_groups::shared_revision_id.eq(
-                        queried_group.shared_revision_id
-                    )
-                )
-                .load::<ObjectGroup>(conn)?;
-
-            // Delete key values
-            delete(object_group_key_value)
-                .filter(crate::database::schema::object_group_key_value::object_group_id.eq(grp_id))
-                .execute(conn)?;
-            // Delete collection_object_groups
-            delete(collection_object_groups)
-                .filter(
-                    crate::database::schema::collection_object_groups::object_group_id.eq(grp_id)
-                )
-                .execute(conn)?;
-            // Delete object_group_objects
-            delete(object_group_objects)
-                .filter(crate::database::schema::object_group_objects::object_group_id.eq(grp_id))
-                .execute(conn)?;
-
-            // All references are deleted -> Check if objectgroup should be deleted
-            let should_update = others
-                .iter()
-                .enumerate()
-                .fold(true, |acc, (index, ogroup)| {
-                    if index == 0 {
-                        false
-                    } else if acc {
-                        ogroup.name != Some("DELETED".to_string())
-                    } else {
-                        true
-                    }
-                });
-
-            if should_update {
-                update(object_groups)
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                // Update object_group to name/description -> "DELETED"
+                // The group will not get deleted if revisions still exist
+                let queried_group = object_groups
                     .filter(crate::database::schema::object_groups::id.eq(grp_id))
-                    .set((
-                        crate::database::schema::object_groups::name.eq("DELETED".to_string()),
-                        crate::database::schema::object_groups::description.eq(
-                            "DELETED".to_string()
-                        ),
-                    ))
-                    .execute(conn)?;
-            } else {
-                // All associated grps can be removed
-                delete(object_groups)
+                    .first::<ObjectGroup>(conn)?;
+
+                let others = object_groups
                     .filter(
-                        crate::database::schema::object_groups::shared_revision_id.eq(
-                            queried_group.shared_revision_id
-                        )
+                        crate::database::schema::object_groups::shared_revision_id
+                            .eq(queried_group.shared_revision_id),
+                    )
+                    .load::<ObjectGroup>(conn)?;
+
+                // Delete key values
+                delete(object_group_key_value)
+                    .filter(
+                        crate::database::schema::object_group_key_value::object_group_id.eq(grp_id),
                     )
                     .execute(conn)?;
-            }
+                // Delete collection_object_groups
+                delete(collection_object_groups)
+                    .filter(
+                        crate::database::schema::collection_object_groups::object_group_id
+                            .eq(grp_id),
+                    )
+                    .execute(conn)?;
+                // Delete object_group_objects
+                delete(object_group_objects)
+                    .filter(
+                        crate::database::schema::object_group_objects::object_group_id.eq(grp_id),
+                    )
+                    .execute(conn)?;
 
-            Ok(())
-        })?;
+                // All references are deleted -> Check if objectgroup should be deleted
+                let should_update = others
+                    .iter()
+                    .enumerate()
+                    .fold(true, |acc, (index, ogroup)| {
+                        if index == 0 {
+                            false
+                        } else if acc {
+                            ogroup.name != Some("DELETED".to_string())
+                        } else {
+                            true
+                        }
+                    });
+
+                if should_update {
+                    update(object_groups)
+                        .filter(crate::database::schema::object_groups::id.eq(grp_id))
+                        .set((
+                            crate::database::schema::object_groups::name.eq("DELETED".to_string()),
+                            crate::database::schema::object_groups::description
+                                .eq("DELETED".to_string()),
+                        ))
+                        .execute(conn)?;
+                } else {
+                    // All associated grps can be removed
+                    delete(object_groups)
+                        .filter(
+                            crate::database::schema::object_groups::shared_revision_id
+                                .eq(queried_group.shared_revision_id),
+                        )
+                        .execute(conn)?;
+                }
+
+                Ok(())
+            })?;
 
         // Return already complete gRPC response
         Ok(DeleteObjectGroupResponse {})
@@ -623,7 +630,7 @@ impl Database {
 
 pub fn query_object_group(
     ogroup_id: uuid::Uuid,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectGroupDb>, diesel::result::Error> {
     let object_group = object_groups
         .filter(crate::database::schema::object_groups::id.eq(&ogroup_id))
@@ -631,9 +638,8 @@ pub fn query_object_group(
         .optional()?;
 
     if let Some(ogroup) = object_group {
-        let object_key_values = ObjectGroupKeyValue::belonging_to(
-            &ogroup
-        ).load::<ObjectGroupKeyValue>(conn)?;
+        let object_key_values =
+            ObjectGroupKeyValue::belonging_to(&ogroup).load::<ObjectGroupKeyValue>(conn)?;
         let (labels, hooks) = from_key_values(object_key_values);
 
         let stats = object_group_stats
@@ -641,14 +647,12 @@ pub fn query_object_group(
             .first::<ObjectGroupStat>(conn)
             .optional()?;
 
-        Ok(
-            Some(ObjectGroupDb {
-                object_group: ogroup,
-                labels,
-                hooks,
-                stats,
-            })
-        )
+        Ok(Some(ObjectGroupDb {
+            object_group: ogroup,
+            labels,
+            hooks,
+            stats,
+        }))
     } else {
         Ok(None)
     }
@@ -673,7 +677,7 @@ pub fn query_object_group(
 pub fn bump_revisisions(
     objectgroups: &Vec<uuid::Uuid>,
     creator_id: &uuid::Uuid,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ObjectGroup>, diesel::result::Error> {
     use crate::database::schema::collection_object_groups::dsl as collobjgrps;
     use crate::database::schema::object_group_key_value::dsl as objgrpkv;
@@ -777,15 +781,19 @@ pub fn bump_revisisions(
         .values(&new_groups)
         .get_results::<ObjectGroup>(conn)?;
     // Insert key_values
-    insert_into(objgrpkv::object_group_key_value).values(&new_object_group_kv).execute(conn)?;
+    insert_into(objgrpkv::object_group_key_value)
+        .values(&new_object_group_kv)
+        .execute(conn)?;
     // New object_group objects
-    insert_into(objgrpobjs::object_group_objects).values(&new_object_group_obj).execute(conn)?;
+    insert_into(objgrpobjs::object_group_objects)
+        .values(&new_object_group_obj)
+        .execute(conn)?;
     // delete old collection object_groups
     delete(
-        collobjgrps::collection_object_groups.filter(
-            collobjgrps::id.eq_any(&old_coll_objectgroup_ids)
-        )
-    ).execute(conn)?;
+        collobjgrps::collection_object_groups
+            .filter(collobjgrps::id.eq_any(&old_coll_objectgroup_ids)),
+    )
+    .execute(conn)?;
     // Insert new coll obj grp
     insert_into(collobjgrps::collection_object_groups)
         .values(&new_collection_object_groups)
@@ -809,7 +817,7 @@ pub fn bump_revisisions(
 ///
 pub fn get_latest_objgrp(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_group_id: uuid::Uuid
+    ref_object_group_id: uuid::Uuid,
 ) -> Result<ObjectGroup, diesel::result::Error> {
     use crate::database::schema::object_groups::dsl as objgrps;
     let shared_id = objgrps::object_groups
@@ -833,14 +841,20 @@ impl From<ObjectGroupDb> for ObjectGroupOverview {
                 acc_size: ogstats.size,
             }),
             last_updated: Some(
-                naivedatetime_to_prost_time(ogstats.last_updated).unwrap_or_default()
+                naivedatetime_to_prost_time(ogstats.last_updated).unwrap_or_default(),
             ),
         });
 
         ObjectGroupOverview {
             id: ogroup_db.object_group.id.to_string(),
-            name: ogroup_db.object_group.name.unwrap_or_else(|| "".to_string()),
-            description: ogroup_db.object_group.description.unwrap_or_else(|| "".to_string()),
+            name: ogroup_db
+                .object_group
+                .name
+                .unwrap_or_else(|| "".to_string()),
+            description: ogroup_db
+                .object_group
+                .description
+                .unwrap_or_else(|| "".to_string()),
             labels: ogroup_db.labels,
             hooks: ogroup_db.hooks,
             stats,

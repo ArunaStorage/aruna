@@ -65,7 +65,7 @@ fn get_project_test() {
         name,
         description,
         ..
-    } = response.clone().project.unwrap();
+    } = response.project.unwrap();
 
     assert_eq!(project_id.to_string(), id);
     assert_eq!(project_name, name);
@@ -85,7 +85,7 @@ fn get_project_collections_test() {
         name: "".to_string(),
         description: "".to_string(),
     };
-    let create_response = db.create_project(create_request, creator.clone()).unwrap();
+    let create_response = db.create_project(create_request, creator).unwrap();
 
     // Validate creation
     let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
@@ -114,9 +114,7 @@ fn get_project_collections_test() {
         .unwrap();
 
     // Project contains one collection
-    let get_response = db
-        .get_project_collections(get_request.clone(), reader)
-        .unwrap();
+    let get_response = db.get_project_collections(get_request, reader).unwrap();
 
     assert_eq!(1, get_response.collection.len());
 }
@@ -147,7 +145,7 @@ fn update_project_test() {
         description: updated_description.to_string(),
     };
 
-    let update_response = db.update_project(update_request, creator.clone()).unwrap();
+    let update_response = db.update_project(update_request, creator).unwrap();
     let updated_project = update_response.project.unwrap();
 
     assert_eq!(project_id.to_string(), updated_project.id);
@@ -263,7 +261,7 @@ fn add_remove_project_user_test() {
         name: "".to_string(),
         description: "".to_string(),
     };
-    let create_response = db.create_project(create_request, creator.clone()).unwrap();
+    let create_response = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
     let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
@@ -281,18 +279,15 @@ fn add_remove_project_user_test() {
             }),
         };
 
-        db.add_user_to_project(user_add_request, creator.clone())
-            .unwrap();
+        db.add_user_to_project(user_add_request, creator).unwrap();
     }
 
     // Validate added users
     let get_request = GetProjectRequest {
         project_id: project_id.to_string(),
     };
-    let get_response = db
-        .get_project(get_request.clone(), creator.clone())
-        .unwrap();
-    let ProjectOverview { user_ids, .. } = get_response.clone().project.unwrap();
+    let get_response = db.get_project(get_request.clone(), creator).unwrap();
+    let ProjectOverview { user_ids, .. } = get_response.project.unwrap();
 
     assert_eq!(5, user_ids.len());
 
@@ -310,8 +305,8 @@ fn add_remove_project_user_test() {
     }
 
     // Validate removed users
-    let get_response = db.get_project(get_request, creator.clone()).unwrap();
-    let ProjectOverview { user_ids, .. } = get_response.clone().project.unwrap();
+    let get_response = db.get_project(get_request, creator).unwrap();
+    let ProjectOverview { user_ids, .. } = get_response.project.unwrap();
 
     assert_eq!(3, user_ids.len());
     for removed_id in removed_user_ids {
@@ -347,7 +342,7 @@ fn edit_project_user_permissions_test() {
         name: "".to_string(),
         description: "".to_string(),
     };
-    let create_response = db.create_project(create_request, creator.clone()).unwrap();
+    let create_response = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
     let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
@@ -363,8 +358,7 @@ fn edit_project_user_permissions_test() {
         project_id: project_id.to_string(),
         user_permission: Some(admin_permission.clone()),
     };
-    db.add_user_to_project(user_add_request, creator.clone())
-        .unwrap();
+    db.add_user_to_project(user_add_request, creator).unwrap();
 
     // Validate users project permission
     let get_user_response = db
