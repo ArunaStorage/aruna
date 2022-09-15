@@ -1,0 +1,32 @@
+version: '3.9'
+services:
+  data-proxy:
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      E2E_TEST_COMPOSE: "true"
+    depends_on:
+      - minioConf
+      - cockroach
+      - nats
+  minio:
+    image: minio/minio
+    command: server /data
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+  minioConf:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc rm -r --force myminio/test-bucket;
+      /usr/bin/mc mb myminio/test-bucket;
+      exit 0;
+      "
