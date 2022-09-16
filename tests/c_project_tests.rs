@@ -1,21 +1,31 @@
 extern crate core;
 
+mod common;
+
 use aruna_server::api::aruna::api::storage::services::v1::{
-    DestroyProjectRequest, EditUserPermissionsForProjectRequest,
+    DestroyProjectRequest,
+    EditUserPermissionsForProjectRequest,
 };
 use aruna_server::api::aruna::api::storage::{
-    models::v1::{ProjectOverview, ProjectPermission},
+    models::v1::{ ProjectOverview, ProjectPermission },
     services::v1::{
-        ActivateUserRequest, AddUserToProjectRequest, CreateNewCollectionRequest,
-        CreateProjectRequest, GetProjectCollectionsRequest, GetProjectRequest, RegisterUserRequest,
-        RemoveUserFromProjectRequest, UpdateProjectRequest,
+        ActivateUserRequest,
+        AddUserToProjectRequest,
+        CreateProjectRequest,
+        GetProjectCollectionsRequest,
+        GetProjectRequest,
+        RegisterUserRequest,
+        RemoveUserFromProjectRequest,
+        UpdateProjectRequest,
     },
 };
 use aruna_server::database;
 use rand::seq::IteratorRandom;
 use rand::Rng;
 use serial_test::serial;
-use std::io::{Error, ErrorKind};
+use std::io::{ Error, ErrorKind };
+
+use crate::common::common::{ create_collection, TCreateCollection };
 
 #[test]
 #[ignore]
@@ -39,37 +49,8 @@ fn create_project_test() {
 #[ignore]
 #[serial(db)]
 fn get_project_test() {
-    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-
-    let project_name = "Test Project 001";
-    let project_description = "Lorem Ipsum Dolor Description"; //Note: Should also be tested with special characters
-    let create_request = CreateProjectRequest {
-        name: project_name.to_owned(),
-        description: project_description.to_owned(),
-    };
-
-    let result = db.create_project(create_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&result.project_id).unwrap();
-
-    assert!(!project_id.is_nil());
-
-    let get_request = GetProjectRequest {
-        project_id: project_id.to_string(),
-    };
-    let response = db.get_project(get_request, creator).unwrap();
-
-    //Destructure response project
-    let ProjectOverview {
-        id,
-        name,
-        description,
-        ..
-    } = response.project.unwrap();
-
-    assert_eq!(project_id.to_string(), id);
-    assert_eq!(project_name, name);
-    assert_eq!(project_description, description);
+    // This function creates a project and returns an "project_overview"
+    let _created_project = common::common::create_project(None);
 }
 
 #[test]
@@ -78,17 +59,10 @@ fn get_project_test() {
 fn get_project_collections_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let reader = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    // Create project
-    let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
-    };
-    let create_response = db.create_project(create_request, creator).unwrap();
-
+    let _created_project = common::common::create_project(None);
     // Validate creation
-    let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
+    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());
 
     // Get collections of empty project
@@ -96,26 +70,16 @@ fn get_project_collections_test() {
         project_id: project_id.to_string(),
         page_request: None,
     };
-    let get_response = db
-        .get_project_collections(get_request.clone(), reader)
-        .unwrap();
+    let get_response = db.get_project_collections(get_request.clone(), creator).unwrap();
     assert_eq!(0, get_response.collection.len());
 
     // Create collection in project
-    let create_collection_request = CreateNewCollectionRequest {
-        name: "Project Collection 001".to_string(),
-        description: "Empty test collection.".to_string(),
+    create_collection(TCreateCollection {
         project_id: project_id.to_string(),
-        labels: vec![],
-        hooks: vec![],
-        dataclass: 1,
-    };
-    db.create_new_collection(create_collection_request, creator)
-        .unwrap();
-
+        ..Default::default()
+    });
     // Project contains one collection
-    let get_response = db.get_project_collections(get_request, reader).unwrap();
-
+    let get_response = db.get_project_collections(get_request, creator).unwrap();
     assert_eq!(1, get_response.collection.len());
 }
 
@@ -126,13 +90,8 @@ fn update_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
-    };
-
-    let result = db.create_project(request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&result.project_id).unwrap();
+    let _created_project = common::common::create_project(None);
+    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
 
     assert!(!project_id.is_nil());
 
@@ -160,14 +119,8 @@ fn destroy_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
-    };
-
-    let create_response = db.create_project(create_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
-
+    let _created_project = common::common::create_project(None);
+    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());
 
     // Destroy project
@@ -182,14 +135,12 @@ fn destroy_empty_project_test() {
     };
     let get_response = db.get_project(get_request, creator).unwrap();
 
-    match get_response.project {
-        Some(_) => Err(Error::new(
-            ErrorKind::Other,
-            "Deleted project still exists.",
-        )),
-        None => Ok(()),
-    }
-    .unwrap();
+    (
+        match get_response.project {
+            Some(_) => Err(Error::new(ErrorKind::Other, "Deleted project still exists.")),
+            None => Ok(()),
+        }
+    ).unwrap();
 }
 
 #[test]
@@ -200,27 +151,16 @@ fn destroy_non_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
-    };
-
-    let create_response = db.create_project(create_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
-
+    let _created_project = common::common::create_project(None);
+    // Validate creation
+    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());
 
     // Create collection in project
-    let create_collection_request = CreateNewCollectionRequest {
-        name: "Project Collection 001".to_string(),
-        description: "Empty test collection.".to_string(),
+    create_collection(TCreateCollection {
         project_id: project_id.to_string(),
-        labels: vec![],
-        hooks: vec![],
-        dataclass: 1,
-    };
-    db.create_new_collection(create_collection_request, creator)
-        .unwrap();
+        ..Default::default()
+    });
 
     // Try to destroy non-empty project which should fail
     let destroy_request = DestroyProjectRequest {
@@ -243,17 +183,12 @@ fn add_remove_project_user_test() {
             display_name: format!("Random User {}", num),
         };
         let user_id = db
-            .register_user(
-                register_user_request,
-                "Yep. It is a random user.".to_string(),
-            )
-            .unwrap()
-            .user_id;
+            .register_user(register_user_request, "Yep. It is a random user.".to_string())
+            .unwrap().user_id;
         db.activate_user(ActivateUserRequest {
             user_id: user_id.clone(),
-        })
-        .unwrap();
-        rnd_user_ids.push(user_id)
+        }).unwrap();
+        rnd_user_ids.push(user_id);
     }
 
     // Create project
@@ -299,8 +234,7 @@ fn add_remove_project_user_test() {
             project_id: project_id.to_string(),
             user_id: user_id.to_string(),
         };
-        db.remove_user_from_project(remove_user_request, creator)
-            .unwrap();
+        db.remove_user_from_project(remove_user_request, creator).unwrap();
         removed_user_ids.push(user_id);
     }
 
@@ -310,7 +244,7 @@ fn add_remove_project_user_test() {
 
     assert_eq!(3, user_ids.len());
     for removed_id in removed_user_ids {
-        assert!(!user_ids.contains(removed_id))
+        assert!(!user_ids.contains(removed_id));
     }
 }
 
@@ -326,16 +260,11 @@ fn edit_project_user_permissions_test() {
         display_name: "Random User".to_string(),
     };
     let user_id = db
-        .register_user(
-            register_user_request,
-            "Yep. It is a random user.".to_string(),
-        )
-        .unwrap()
-        .user_id;
+        .register_user(register_user_request, "Yep. It is a random user.".to_string())
+        .unwrap().user_id;
     db.activate_user(ActivateUserRequest {
         user_id: user_id.clone(),
-    })
-    .unwrap();
+    }).unwrap();
 
     // Create project
     let create_request = CreateProjectRequest {
@@ -361,12 +290,8 @@ fn edit_project_user_permissions_test() {
     db.add_user_to_project(user_add_request, creator).unwrap();
 
     // Validate users project permission
-    let get_user_response = db
-        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
-        .unwrap();
-    assert!(get_user_response
-        .project_permissions
-        .contains(&admin_permission));
+    let get_user_response = db.get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap()).unwrap();
+    assert!(get_user_response.project_permissions.contains(&admin_permission));
 
     // Update users project permission to read only
     let read_permission = ProjectPermission {
@@ -379,14 +304,9 @@ fn edit_project_user_permissions_test() {
         user_permission: Some(read_permission.clone()),
     };
 
-    db.edit_user_permissions_for_project(edit_permission_request, creator)
-        .unwrap();
+    db.edit_user_permissions_for_project(edit_permission_request, creator).unwrap();
 
     // Validate users updated project permission
-    let get_user_response = db
-        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
-        .unwrap();
-    assert!(get_user_response
-        .project_permissions
-        .contains(&read_permission));
+    let get_user_response = db.get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap()).unwrap();
+    assert!(get_user_response.project_permissions.contains(&read_permission));
 }

@@ -1,5 +1,5 @@
 ///  A key value pair for hooks and labels
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, ::prost::Message)]
 pub struct KeyValue {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
@@ -296,10 +296,8 @@ pub struct Collection {
 pub mod collection {
     #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
-        #[prost(message, tag = "12")]
-        SemanticVersion(super::Version),
-        #[prost(bool, tag = "13")]
-        Latest(bool),
+        #[prost(message, tag = "12")] SemanticVersion(super::Version),
+        #[prost(bool, tag = "13")] Latest(bool),
     }
 }
 ///  Multiple Collections
@@ -338,10 +336,8 @@ pub struct CollectionOverview {
 pub mod collection_overview {
     #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
-        #[prost(message, tag = "12")]
-        SemanticVersion(super::Version),
-        #[prost(bool, tag = "13")]
-        Latest(bool),
+        #[prost(message, tag = "12")] SemanticVersion(super::Version),
+        #[prost(bool, tag = "13")] Latest(bool),
     }
 }
 ///  Multiple CollectionOverviews
@@ -386,10 +382,8 @@ pub struct CollectionWithId {
 pub mod collection_with_id {
     #[derive(Clone, PartialEq, Eq, ::prost::Oneof)]
     pub enum Version {
-        #[prost(message, tag = "12")]
-        SemanticVersion(super::Version),
-        #[prost(bool, tag = "13")]
-        Latest(bool),
+        #[prost(message, tag = "12")] SemanticVersion(super::Version),
+        #[prost(bool, tag = "13")] Latest(bool),
     }
 }
 ///  Multiple CollectionWithIDs
