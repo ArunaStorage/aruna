@@ -2,7 +2,7 @@
 FROM rust:slim-buster AS builder
 WORKDIR /build
 RUN apt-get update && apt-get upgrade -y
-RUN apt-get install -y libpq-dev libssl-dev protobuf-compiler
+RUN apt-get install -y libpq-dev libssl-dev protobuf-compiler pkg-config
 COPY . .
 RUN cargo build --release
 
