@@ -25,7 +25,7 @@ use rand::Rng;
 use serial_test::serial;
 use std::io::{ Error, ErrorKind };
 
-use crate::common::common::{ create_collection, TCreateCollection };
+use crate::common::functions::{ create_collection, TCreateCollection };
 
 #[test]
 #[ignore]
@@ -50,7 +50,7 @@ fn create_project_test() {
 #[serial(db)]
 fn get_project_test() {
     // This function creates a project and returns an "project_overview"
-    let _created_project = common::common::create_project(None);
+    let _created_project = common::functions::create_project(None);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn get_project_collections_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let _created_project = common::common::create_project(None);
+    let _created_project = common::functions::create_project(None);
     // Validate creation
     let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());
@@ -90,7 +90,7 @@ fn update_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let _created_project = common::common::create_project(None);
+    let _created_project = common::functions::create_project(None);
     let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
 
     assert!(!project_id.is_nil());
@@ -119,7 +119,7 @@ fn destroy_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let _created_project = common::common::create_project(None);
+    let _created_project = common::functions::create_project(None);
     let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());
 
@@ -151,7 +151,7 @@ fn destroy_non_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let _created_project = common::common::create_project(None);
+    let _created_project = common::functions::create_project(None);
     // Validate creation
     let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
     assert!(!project_id.is_nil());

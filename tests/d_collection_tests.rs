@@ -10,7 +10,7 @@ use aruna_server::api::aruna::api::storage::models::v1::{
 };
 use aruna_server::api::aruna::api::storage::services::v1::*;
 use aruna_server::database;
-use common::common::{ create_collection, TCreateCollection };
+use common::functions::{ create_collection, TCreateCollection };
 use serial_test::serial;
 use std::str::FromStr;
 
@@ -18,7 +18,7 @@ use std::str::FromStr;
 #[ignore]
 #[serial(db)]
 fn create_new_collection_test() {
-    let created_project = common::common::create_project(None);
+    let created_project = common::functions::create_project(None);
     // Create collection in project
     create_collection(TCreateCollection {
         project_id: created_project.id,
@@ -32,7 +32,7 @@ fn create_new_collection_test() {
 fn get_collection_by_id_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let created_project = common::common::create_project(None);
+    let created_project = common::functions::create_project(None);
 
     let request = CreateNewCollectionRequest {
         name: "new_collection".to_owned(),
@@ -354,7 +354,7 @@ fn update_collection_test() {
 
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let created_project = common::common::create_project(None);
+    let created_project = common::functions::create_project(None);
     // Create collection in project
     let result = create_collection(TCreateCollection {
         project_id: created_project.id,

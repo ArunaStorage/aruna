@@ -7,7 +7,7 @@ use aruna_server::{
             CreateNewCollectionRequest,
             GetCollectionByIdRequest,
         },
-        models::v1::{ ProjectOverview, CollectionOverview, KeyValue, collection_overview, Object },
+        models::v1::{ ProjectOverview, CollectionOverview, KeyValue, collection_overview },
     },
 };
 use rand::{ thread_rng, distributions::Alphanumeric, Rng };
@@ -54,7 +54,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
 pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let project_id = uuid::Uuid::parse_str(&project_uuid).unwrap();
+    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
 
     let get_request = GetProjectRequest {
         project_id: project_id.to_string(),
@@ -129,8 +129,8 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         CollectionTest {
             name: col_name,
             col_description,
-            labels: labels,
-            hooks: hooks,
+            labels,
+            hooks,
             request: req,
         }
     };
@@ -155,8 +155,14 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         get_col_resp.label_ontology.clone().unwrap().required_label_keys.is_empty()
     );
     // Labels / Hooks should be the same
-    assert!(get_col_resp.labels.sort() == create_collection_request_test.labels.sort());
-    assert!(get_col_resp.hooks.sort() == create_collection_request_test.hooks.sort());
+    assert!({
+        get_col_resp.labels.sort();
+        ().eq(&create_collection_request_test.labels.sort())
+    });
+    assert!({
+        get_col_resp.hooks.sort();
+        ().eq(&create_collection_request_test.hooks.sort())
+    });
 
     get_col_resp
 }
@@ -171,58 +177,4 @@ pub fn get_collection(col_id: String) -> CollectionOverview {
     let q_col = db.get_collection_by_id(q_col_req).unwrap();
 
     q_col.collection.unwrap()
-}
-
-pub fn create_object() -> Object {
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
-
-    // Add some objects and an objectgroup
-    let new_obj_1 = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
-            content_len: 5,
-            source: None,
-            dataclass: 2,
-            labels: vec![KeyValue {
-                key: "obj_1_key".to_string(),
-                value: "obj_1_value".to_string(),
-            }],
-            hooks: Vec::new(),
-        }),
-        collection_id: col_id.to_string(),
-        preferred_endpoint_id: endpoint_uuid.to_string(),
-        multipart: false,
-        is_specification: false,
-    };
-    let obj_1_id = uuid::Uuid::new_v4();
-
-    let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id
-        )
-        .unwrap();
-    let f_obj_1_stage = FinishObjectStagingRequest {
-        object_id: obj_1_id.to_string(),
-        upload_id: "uid".to_string(),
-        collection_id: col_id.to_string(),
-        hash: None,
-        no_upload: false,
-        completed_parts: Vec::new(),
-        auto_update: true,
-    };
-
-    let _res_1 = db.finish_object_staging(&f_obj_1_stage, &creator).unwrap();
-
-    todo!()
 }
