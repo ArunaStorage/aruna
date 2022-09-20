@@ -148,7 +148,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     let get_col_resp = get_collection(res.collection_id);
     // Collection should not be public
     assert_eq!(
-        get_col_resp.clone().is_public,
+        get_col_resp.is_public,
         create_collection_request_test.request.dataclass == 1
     );
     // Collection should have this description
