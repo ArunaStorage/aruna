@@ -1,10 +1,8 @@
 # Build Stage
-FROM rust:1-alpine AS builder
-WORKDIR /usr/src/
-RUN apk update
-RUN apk upgrade
-RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc
-
+FROM rust:slim-buster AS builder
+WORKDIR /build
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get install -y libpq-dev libssl-dev protobuf-compiler
 COPY . .
 RUN cargo build --release
 
@@ -13,6 +11,6 @@ FROM alpine
 RUN apk update
 RUN apk upgrade
 RUN apk add ca-certificates openssl
-COPY --from=builder /usr/src/target/release/aruna_server .
+COPY --from=builder /build/target/release/aruna_server .
 COPY .env .
 CMD [ "./aruna_server" ]
