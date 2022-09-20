@@ -6,11 +6,15 @@ name: coverage
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin
-      options: --security-opt seccomp=unconfined
     steps:
       - uses: arduino/setup-protoc@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - name: Install tarpaulin
+        run: | 
+          cargo install cargo-tarpaulin
       - uses: actions/checkout@v2
         with:
           submodules: recursive
