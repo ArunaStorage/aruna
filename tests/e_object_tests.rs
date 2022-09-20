@@ -1,11 +1,8 @@
 use aruna_server::api::aruna::api::storage::internal::v1::Location;
-use aruna_server::api::aruna::api::storage::models::v1::{ EndpointType, Hash, KeyValue };
+use aruna_server::api::aruna::api::storage::models::v1::{EndpointType, Hash, KeyValue};
 use aruna_server::api::aruna::api::storage::services::v1::{
-    CreateNewCollectionRequest,
-    CreateProjectRequest,
-    FinishObjectStagingRequest,
-    InitializeNewObjectRequest,
-    StageObject,
+    CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
+    InitializeNewObjectRequest, StageObject,
 };
 use aruna_server::database;
 use aruna_server::database::models::enums::ObjectStatus;
@@ -84,12 +81,15 @@ fn create_object_test() {
             &location,
             upload_id.clone(),
             endpoint_id,
-            new_object_id
+            new_object_id,
         )
         .unwrap();
 
     assert_eq!(&init_object_response.object_id, &new_object_id.to_string());
-    assert_eq!(&init_object_response.collection_id, &collection_id.to_string());
+    assert_eq!(
+        &init_object_response.collection_id,
+        &collection_id.to_string()
+    );
     assert_eq!(&init_object_response.upload_id, &upload_id);
 
     // Finish object staging

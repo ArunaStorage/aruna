@@ -35,11 +35,8 @@ impl ServiceServer {
         let addr = "[::1]:50051".parse().unwrap();
         let authz = Arc::new(Authz::new(db_ref.clone()).await);
         let collection_service = CollectionServiceImpl::new(db_ref.clone(), authz.clone()).await;
-        let object_service = ObjectServiceImpl::new(
-            db_ref.clone(),
-            authz.clone(),
-            default_endpoint
-        ).await;
+        let object_service =
+            ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint).await;
         let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
         println!("ArunaServer listening on {}", addr);
@@ -48,7 +45,8 @@ impl ServiceServer {
             .add_service(CollectionServiceServer::new(collection_service))
             .add_service(ObjectServiceServer::new(object_service))
             .add_service(UserServiceServer::new(user_service))
-            .serve(addr).await
+            .serve(addr)
+            .await
             .unwrap();
     }
 }

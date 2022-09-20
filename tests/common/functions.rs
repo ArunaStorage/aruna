@@ -1,19 +1,21 @@
 use aruna_server::{
-    database,
     api::aruna::api::storage::{
+        models::v1::{collection_overview, CollectionOverview, KeyValue, ProjectOverview},
         services::v1::{
-            CreateProjectRequest,
+            CreateNewCollectionRequest, CreateProjectRequest, GetCollectionByIdRequest,
             GetProjectRequest,
-            CreateNewCollectionRequest,
-            GetCollectionByIdRequest,
         },
-        models::v1::{ ProjectOverview, CollectionOverview, KeyValue, collection_overview },
     },
+    database,
 };
-use rand::{ thread_rng, distributions::Alphanumeric, Rng };
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 fn rand_string(len: usize) -> String {
-    thread_rng().sample_iter(&Alphanumeric).take(len).map(char::from).collect()
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
 }
 
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
@@ -41,7 +43,12 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let response = get_project(&result.project_id);
 
     //Destructure response project
-    let ProjectOverview { id, name, description, .. } = response.clone();
+    let ProjectOverview {
+        id,
+        name,
+        description,
+        ..
+    } = response.clone();
 
     // Check if get == created
     assert_eq!(project_id.to_string(), id);
@@ -145,17 +152,29 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         create_collection_request_test.request.dataclass == 1
     );
     // Collection should have this description
-    assert_eq!(get_col_resp.description, create_collection_request_test.col_description);
+    assert_eq!(
+        get_col_resp.description,
+        create_collection_request_test.col_description
+    );
     // Collection should have the following name
     assert_eq!(get_col_resp.name, create_collection_request_test.name);
     // Collection should not have a version
     assert!(get_col_resp.version.clone().unwrap() == collection_overview::Version::Latest(true));
     assert!(
         // Should be empty vec
-        get_col_resp.label_ontology.clone().unwrap().required_label_keys.is_empty()
+        get_col_resp
+            .label_ontology
+            .clone()
+            .unwrap()
+            .required_label_keys
+            .is_empty()
     );
     // Labels / Hooks should be the same
-    assert!({ get_col_resp.labels.eq(&create_collection_request_test.labels) });
+    assert!({
+        get_col_resp
+            .labels
+            .eq(&create_collection_request_test.labels)
+    });
     assert!({ get_col_resp.hooks.eq(&create_collection_request_test.hooks) });
 
     get_col_resp

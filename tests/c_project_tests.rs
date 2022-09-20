@@ -3,29 +3,23 @@ extern crate core;
 mod common;
 
 use aruna_server::api::aruna::api::storage::services::v1::{
-    DestroyProjectRequest,
-    EditUserPermissionsForProjectRequest,
+    DestroyProjectRequest, EditUserPermissionsForProjectRequest,
 };
 use aruna_server::api::aruna::api::storage::{
-    models::v1::{ ProjectOverview, ProjectPermission },
+    models::v1::{ProjectOverview, ProjectPermission},
     services::v1::{
-        ActivateUserRequest,
-        AddUserToProjectRequest,
-        CreateProjectRequest,
-        GetProjectCollectionsRequest,
-        GetProjectRequest,
-        RegisterUserRequest,
-        RemoveUserFromProjectRequest,
-        UpdateProjectRequest,
+        ActivateUserRequest, AddUserToProjectRequest, CreateProjectRequest,
+        GetProjectCollectionsRequest, GetProjectRequest, RegisterUserRequest,
+        RemoveUserFromProjectRequest, UpdateProjectRequest,
     },
 };
 use aruna_server::database;
 use rand::seq::IteratorRandom;
 use rand::Rng;
 use serial_test::serial;
-use std::io::{ Error, ErrorKind };
+use std::io::{Error, ErrorKind};
 
-use crate::common::functions::{ create_collection, TCreateCollection };
+use crate::common::functions::{create_collection, TCreateCollection};
 
 #[test]
 #[ignore]
@@ -70,7 +64,9 @@ fn get_project_collections_test() {
         project_id: project_id.to_string(),
         page_request: None,
     };
-    let get_response = db.get_project_collections(get_request.clone(), creator).unwrap();
+    let get_response = db
+        .get_project_collections(get_request.clone(), creator)
+        .unwrap();
     assert_eq!(0, get_response.collection.len());
 
     // Create collection in project
@@ -135,12 +131,14 @@ fn destroy_empty_project_test() {
     };
     let get_response = db.get_project(get_request, creator).unwrap();
 
-    (
-        match get_response.project {
-            Some(_) => Err(Error::new(ErrorKind::Other, "Deleted project still exists.")),
-            None => Ok(()),
-        }
-    ).unwrap();
+    (match get_response.project {
+        Some(_) => Err(Error::new(
+            ErrorKind::Other,
+            "Deleted project still exists.",
+        )),
+        None => Ok(()),
+    })
+    .unwrap();
 }
 
 #[test]
@@ -183,11 +181,16 @@ fn add_remove_project_user_test() {
             display_name: format!("Random User {}", num),
         };
         let user_id = db
-            .register_user(register_user_request, "Yep. It is a random user.".to_string())
-            .unwrap().user_id;
+            .register_user(
+                register_user_request,
+                "Yep. It is a random user.".to_string(),
+            )
+            .unwrap()
+            .user_id;
         db.activate_user(ActivateUserRequest {
             user_id: user_id.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         rnd_user_ids.push(user_id);
     }
 
@@ -234,7 +237,8 @@ fn add_remove_project_user_test() {
             project_id: project_id.to_string(),
             user_id: user_id.to_string(),
         };
-        db.remove_user_from_project(remove_user_request, creator).unwrap();
+        db.remove_user_from_project(remove_user_request, creator)
+            .unwrap();
         removed_user_ids.push(user_id);
     }
 
@@ -260,11 +264,16 @@ fn edit_project_user_permissions_test() {
         display_name: "Random User".to_string(),
     };
     let user_id = db
-        .register_user(register_user_request, "Yep. It is a random user.".to_string())
-        .unwrap().user_id;
+        .register_user(
+            register_user_request,
+            "Yep. It is a random user.".to_string(),
+        )
+        .unwrap()
+        .user_id;
     db.activate_user(ActivateUserRequest {
         user_id: user_id.clone(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Create project
     let create_request = CreateProjectRequest {
@@ -290,8 +299,12 @@ fn edit_project_user_permissions_test() {
     db.add_user_to_project(user_add_request, creator).unwrap();
 
     // Validate users project permission
-    let get_user_response = db.get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap()).unwrap();
-    assert!(get_user_response.project_permissions.contains(&admin_permission));
+    let get_user_response = db
+        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
+        .unwrap();
+    assert!(get_user_response
+        .project_permissions
+        .contains(&admin_permission));
 
     // Update users project permission to read only
     let read_permission = ProjectPermission {
@@ -304,9 +317,14 @@ fn edit_project_user_permissions_test() {
         user_permission: Some(read_permission.clone()),
     };
 
-    db.edit_user_permissions_for_project(edit_permission_request, creator).unwrap();
+    db.edit_user_permissions_for_project(edit_permission_request, creator)
+        .unwrap();
 
     // Validate users updated project permission
-    let get_user_response = db.get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap()).unwrap();
-    assert!(get_user_response.project_permissions.contains(&read_permission));
+    let get_user_response = db
+        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
+        .unwrap();
+    assert!(get_user_response
+        .project_permissions
+        .contains(&read_permission));
 }

@@ -1,16 +1,11 @@
 mod common;
 use aruna_server::api::aruna::api::storage::internal::v1::Location;
 use aruna_server::api::aruna::api::storage::models::v1::{
-    collection_overview,
-    KeyValue,
-    LabelFilter,
-    LabelOrIdQuery,
-    PageRequest,
-    Version,
+    collection_overview, KeyValue, LabelFilter, LabelOrIdQuery, PageRequest, Version,
 };
 use aruna_server::api::aruna::api::storage::services::v1::*;
 use aruna_server::database;
-use common::functions::{ create_collection, TCreateCollection };
+use common::functions::{create_collection, TCreateCollection};
 use serial_test::serial;
 use std::str::FromStr;
 
@@ -71,29 +66,39 @@ fn get_collection_by_id_test() {
         "this_is_a_demo_collection".to_string()
     );
     // Collection should have the following name
-    assert_eq!(q_col.collection.clone().unwrap().name, "new_collection".to_string());
+    assert_eq!(
+        q_col.collection.clone().unwrap().name,
+        "new_collection".to_string()
+    );
     // Collection should not have a version
     assert!(
-        q_col.collection.clone().unwrap().version.unwrap() ==
-            collection_overview::Version::Latest(true)
+        q_col.collection.clone().unwrap().version.unwrap()
+            == collection_overview::Version::Latest(true)
     );
     // Collection should not have a version
     assert!(
         // Should be empty vec
-        q_col.collection.clone().unwrap().label_ontology.unwrap().required_label_keys.is_empty()
+        q_col
+            .collection
+            .clone()
+            .unwrap()
+            .label_ontology
+            .unwrap()
+            .required_label_keys
+            .is_empty()
     );
     assert!(q_col.collection.clone().unwrap().labels.len() == 1);
     assert!(q_col.collection.clone().unwrap().hooks.len() == 1);
     assert!(
-        q_col.collection.clone().unwrap().hooks[0] ==
-            KeyValue {
+        q_col.collection.clone().unwrap().hooks[0]
+            == KeyValue {
                 key: "hook_test_key".to_owned(),
                 value: "hook_test_value".to_owned(),
             }
     );
     assert!(
-        q_col.collection.unwrap().labels[0] ==
-            KeyValue {
+        q_col.collection.unwrap().labels[0]
+            == KeyValue {
                 key: "label_test_key".to_owned(),
                 value: "label_test_value".to_owned(),
             }
@@ -120,7 +125,7 @@ fn get_collections_test() {
             KeyValue {
                 key: "common_label".to_owned(),
                 value: "common_value".to_owned(),
-            }
+            },
         ],
         hooks: vec![KeyValue {
             key: "hook_test_key_1".to_owned(),
@@ -144,7 +149,7 @@ fn get_collections_test() {
             KeyValue {
                 key: "common_label".to_owned(),
                 value: "common_value".to_owned(),
-            }
+            },
         ],
         hooks: vec![KeyValue {
             key: "hook_test_key_2".to_owned(),
@@ -173,7 +178,7 @@ fn get_collections_test() {
             KeyValue {
                 key: "common_label".to_owned(),
                 value: "common_value".to_owned(),
-            }
+            },
         ],
         hooks: vec![KeyValue {
             key: "hook_test_key_2".to_owned(),
@@ -198,7 +203,15 @@ fn get_collections_test() {
     };
     // Expect result_2
     let quest_result = db.get_collections(q_col_req).unwrap();
-    assert!(quest_result.collections.clone().unwrap().collection_overviews.len() == 1);
+    assert!(
+        quest_result
+            .collections
+            .clone()
+            .unwrap()
+            .collection_overviews
+            .len()
+            == 1
+    );
     assert!(quest_result.collections.unwrap().collection_overviews[0].id == res_2_id);
 
     // 2. Label filter (2)
@@ -219,7 +232,15 @@ fn get_collections_test() {
     };
     // Expect result_1
     let quest_result = db.get_collections(q_col_req).unwrap();
-    assert!(quest_result.collections.clone().unwrap().collection_overviews.len() == 1);
+    assert!(
+        quest_result
+            .collections
+            .clone()
+            .unwrap()
+            .collection_overviews
+            .len()
+            == 1
+    );
     assert!(quest_result.collections.unwrap().collection_overviews[0].id == result_1.collection_id);
 
     // 2. Label filter (3)
@@ -255,7 +276,7 @@ fn get_collections_test() {
                     KeyValue {
                         key: "label_test_key_3_1".to_owned(),
                         value: "label_test_value_3_1".to_owned(),
-                    }
+                    },
                 ],
                 and_or_or: true,
                 keys_only: false,
@@ -266,7 +287,15 @@ fn get_collections_test() {
     };
     // Expect result_3
     let quest_result = db.get_collections(q_col_req).unwrap();
-    assert!(quest_result.collections.clone().unwrap().collection_overviews.len() == 1);
+    assert!(
+        quest_result
+            .collections
+            .clone()
+            .unwrap()
+            .collection_overviews
+            .len()
+            == 1
+    );
     assert!(quest_result.collections.unwrap().collection_overviews[0].id == result_3.collection_id);
 
     // 2. PageRequest (1)
@@ -290,7 +319,15 @@ fn get_collections_test() {
     };
     // Expect all
     let quest_result_1 = db.get_collections(q_col_req).unwrap();
-    assert!(quest_result_1.collections.clone().unwrap().collection_overviews.len() == 1);
+    assert!(
+        quest_result_1
+            .collections
+            .clone()
+            .unwrap()
+            .collection_overviews
+            .len()
+            == 1
+    );
 
     // 2. PageRequest (2) -> next
     let q_col_req = GetCollectionsRequest {
@@ -309,17 +346,33 @@ fn get_collections_test() {
         page_request: Some(PageRequest {
             last_uuid: quest_result_1
                 .clone()
-                .collections.unwrap()
-                .collection_overviews[0].clone().id,
+                .collections
+                .unwrap()
+                .collection_overviews[0]
+                .clone()
+                .id,
             page_size: 1,
         }),
     };
     // Expect only one
     let quest_result_2 = db.get_collections(q_col_req).unwrap();
-    assert!(quest_result_2.collections.as_ref().unwrap().collection_overviews.len() == 1);
     assert!(
-        quest_result_1.collections.as_ref().unwrap().collection_overviews[0].id !=
-            quest_result_2.collections.unwrap().collection_overviews[0].id
+        quest_result_2
+            .collections
+            .as_ref()
+            .unwrap()
+            .collection_overviews
+            .len()
+            == 1
+    );
+    assert!(
+        quest_result_1
+            .collections
+            .as_ref()
+            .unwrap()
+            .collection_overviews[0]
+            .id
+            != quest_result_2.collections.unwrap().collection_overviews[0].id
     );
 
     // INVALID
@@ -337,7 +390,9 @@ fn get_collections_test() {
             ids: vec![res_2_id],
         }),
         page_request: Some(PageRequest {
-            last_uuid: quest_result_1.collections.unwrap().collection_overviews[0].clone().id,
+            last_uuid: quest_result_1.collections.unwrap().collection_overviews[0]
+                .clone()
+                .id,
             page_size: 1,
         }),
     };
@@ -398,7 +453,7 @@ fn update_collection_test() {
             }),
             "uid".to_string(),
             endpoint_uuid,
-            obj_1_id
+            obj_1_id,
         )
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
@@ -447,7 +502,7 @@ fn update_collection_test() {
             }),
             "uid_2".to_string(),
             endpoint_uuid,
-            obj_2_id
+            obj_2_id,
         )
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
@@ -588,7 +643,7 @@ fn pin_collection_test() {
             }),
             "uid".to_string(),
             endpoint_uuid,
-            obj_1_id
+            obj_1_id,
         )
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
@@ -637,7 +692,7 @@ fn pin_collection_test() {
             }),
             "uid_2".to_string(),
             endpoint_uuid,
-            obj_2_id
+            obj_2_id,
         )
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
@@ -759,7 +814,7 @@ fn delete_collection_test() {
             }),
             "uid".to_string(),
             endpoint_uuid,
-            obj_1_id
+            obj_1_id,
         )
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
@@ -816,7 +871,7 @@ fn delete_collection_test() {
             }),
             "uid_2".to_string(),
             endpoint_uuid,
-            obj_2_id
+            obj_2_id,
         )
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
