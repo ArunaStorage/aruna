@@ -16,7 +16,7 @@ jobs:
           submodules: recursive
       - name: Generate code coverage
         run: |
-          cargo tarpaulin --verbose --all-features --timeout 120 --out Xml
+          cargo tarpaulin --ignored --verbose --all-features --timeout 120 --out Xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v2
         with:
