@@ -95,7 +95,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
     };
     // Create CollectionTest object containing the Request and expected values
-    let mut create_collection_request_test = if let Some(col_req) = tccol.col_override {
+    let create_collection_request_test = if let Some(col_req) = tccol.col_override {
         CollectionTest {
             name: col_req.name.clone(),
             col_description: col_req.description.clone(),
@@ -138,7 +138,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         .create_new_collection(create_collection_request_test.clone().request, creator)
         .unwrap();
 
-    let mut get_col_resp = get_collection(res.collection_id);
+    let get_col_resp = get_collection(res.collection_id);
     // Collection should not be public
     assert_eq!(
         get_col_resp.clone().is_public,
@@ -155,14 +155,8 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         get_col_resp.label_ontology.clone().unwrap().required_label_keys.is_empty()
     );
     // Labels / Hooks should be the same
-    assert!({
-        get_col_resp.labels.sort();
-        ().eq(&create_collection_request_test.labels.sort())
-    });
-    assert!({
-        get_col_resp.hooks.sort();
-        ().eq(&create_collection_request_test.hooks.sort())
-    });
+    assert!({ get_col_resp.labels.eq(&create_collection_request_test.labels) });
+    assert!({ get_col_resp.hooks.eq(&create_collection_request_test.hooks) });
 
     get_col_resp
 }

@@ -1,5 +1,5 @@
 ///  A key value pair for hooks and labels
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, ::prost::Message)]
 pub struct KeyValue {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
