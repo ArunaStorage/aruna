@@ -62,8 +62,8 @@ impl ArunaServerConfig {
     ///
     fn load_config_file() -> Result<Config, ArunaError> {
         // Read config file content
-        let content =
-            fs::read_to_string("./config.toml").map_err(|_| TypeConversionError::PARSECONFIG)?;
+        let content = fs::read_to_string("./config/config.toml")
+            .map_err(|_| TypeConversionError::PARSECONFIG)?;
 
         //Parse config file content
         toml::from_str(content.as_str())
