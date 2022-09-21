@@ -200,6 +200,7 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetApiTokenRequest>,
     ) -> Result<tonic::Response<GetApiTokenResponse>, tonic::Status> {
+        println!("Get ApiToken Request received");
         // Authenticate (personally) and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
         // Execute the request and return the gRPC response
