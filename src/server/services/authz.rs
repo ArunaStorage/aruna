@@ -200,7 +200,7 @@ impl Authz {
     /// If it returns an Error the authorization failed otherwise
     /// the uuid is the user_id of the user that owns the token
     /// this user_id will for example be used to specify the "created_by" field in the database
-    ///   
+    ///
     pub async fn authorize(
         &self,
         metadata: &MetadataMap,
@@ -218,14 +218,14 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            &Context {
+            &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
                 resource_id: uuid::Uuid::default(),
                 admin: false,
                 personal: true,
                 oidc_context: false,
-            },
+            }),
         )
         .await
     }
@@ -235,14 +235,14 @@ impl Authz {
     pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            &Context {
+            &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
                 resource_id: uuid::Uuid::default(),
                 admin: true,
                 personal: false,
                 oidc_context: false,
-            },
+            }),
         )
         .await
     }
@@ -257,14 +257,14 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            &Context {
+            &(Context {
                 user_right,
                 resource_type: Resources::COLLECTION,
                 resource_id: collection_id,
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            },
+            }),
         )
         .await
     }
@@ -279,14 +279,14 @@ impl Authz {
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
-            &Context {
+            &(Context {
                 user_right,
                 resource_type: Resources::PROJECT,
                 resource_id: project_id,
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            },
+            }),
         )
         .await
     }
@@ -296,7 +296,7 @@ impl Authz {
         metadata: &MetadataMap,
     ) -> Result<uuid::Uuid, ArunaError> {
         let token_string = metadata
-            .get("Bearer")
+            .get("grpc-metadata-accesstoken")
             .ok_or(ArunaError::GrpcNotFoundError(
                 GrpcNotFoundError::METADATATOKEN,
             ))?
@@ -310,11 +310,13 @@ impl Authz {
             let subject = self.validate_oidc_only(metadata).await?;
 
             match self.db.get_oidc_user(&subject)? {
-                Some(u) => return Ok(u),
+                Some(u) => {
+                    return Ok(u);
+                }
                 None => {
                     return Err(ArunaError::AuthorizationError(
                         AuthorizationError::UNREGISTERED,
-                    ))
+                    ));
                 }
             }
         }
@@ -337,13 +339,13 @@ impl Authz {
 
         let guard = hashmap.read().await;
 
-        let key = if option_key.is_some() {
+        let key = (if option_key.is_some() {
             Ok(option_key.unwrap())
         } else {
             guard
                 .get(&index)
                 .ok_or(AuthorizationError::PERMISSIONDENIED)
-        }?;
+        })?;
 
         let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
 
@@ -352,7 +354,7 @@ impl Authz {
 
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {
         let token_string = metadata
-            .get("Bearer")
+            .get("grpc-metadata-accesstoken")
             .ok_or(ArunaError::GrpcNotFoundError(
                 GrpcNotFoundError::METADATATOKEN,
             ))?
@@ -414,7 +416,7 @@ impl Authz {
             sub: token_id.to_string(),
             exp: if expires_at.is_none() {
                 // Add 10 years to token lifetime
-                Utc::now().second() as usize + 315360000
+                (Utc::now().second() as usize) + 315360000
             } else {
                 expires_at.unwrap().seconds as usize
             },
@@ -436,7 +438,7 @@ impl Authz {
     ///
     pub async fn is_oidc_from_metadata(metadata: &MetadataMap) -> Result<bool, ArunaError> {
         let token_string = metadata
-            .get("Bearer")
+            .get("grpc-metadata-accesstoken")
             .ok_or(ArunaError::GrpcNotFoundError(
                 GrpcNotFoundError::METADATATOKEN,
             ))?
