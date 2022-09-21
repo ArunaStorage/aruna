@@ -38,12 +38,15 @@ impl UserService for UserServiceImpl {
     ///
     async fn register_user(
         &self,
-        request: tonic::Request<RegisterUserRequest>
+        request: tonic::Request<RegisterUserRequest>,
     ) -> Result<tonic::Response<RegisterUserResponse>, tonic::Status> {
         // Get subject from OIDC context in metadata
         let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
         // Create user in db and return response
-        Ok(Response::new(self.database.register_user(request.into_inner(), subject_id)?))
+        Ok(Response::new(
+            self.database
+                .register_user(request.into_inner(), subject_id)?,
+        ))
     }
 
     /// Activate user activates a not activated but registered user
@@ -58,7 +61,7 @@ impl UserService for UserServiceImpl {
     ///
     async fn activate_user(
         &self,
-        request: tonic::Request<ActivateUserRequest>
+        request: tonic::Request<ActivateUserRequest>,
     ) -> Result<tonic::Response<ActivateUserResponse>, tonic::Status> {
         // For now only admins can activate "new" users
         self.authz.admin_authorize(request.metadata()).await?;
@@ -81,16 +84,18 @@ impl UserService for UserServiceImpl {
     ///
     async fn create_api_token(
         &self,
-        request: tonic::Request<CreateApiTokenRequest>
+        request: tonic::Request<CreateApiTokenRequest>,
     ) -> Result<tonic::Response<CreateApiTokenResponse>, tonic::Status> {
         // If the token is an oidc token
         if Authz::is_oidc_from_metadata(request.metadata()).await? {
             // Validate the token and query the subject
-            let user_subject = self.authz.validate_and_query_token(request.metadata()).await?;
+            let user_subject = self
+                .authz
+                .validate_and_query_token(request.metadata())
+                .await?;
 
-            if
-                !request.get_ref().project_id.is_empty() ||
-                !request.get_ref().collection_id.is_empty()
+            if !request.get_ref().project_id.is_empty()
+                || !request.get_ref().collection_id.is_empty()
             {
                 return Err(
                     tonic::Status::invalid_argument(
@@ -103,82 +108,80 @@ impl UserService for UserServiceImpl {
             let token_descr = self.database.create_api_token(
                 request.into_inner(),
                 user_subject,
-                self.authz.get_decoding_serial().await
+                self.authz.get_decoding_serial().await,
             )?;
 
             // Sign the token and create a new "secret" this
             // should be used to authenticate
             // Attention: This can not be regenerated, once issued this information is gone
             // Create a new token and delete the old one if the secret gets lost
-            let token_secret = self.authz.sign_new_token(
-                &token_descr.id,
-                token_descr.expires_at.clone()
-            ).await?;
+            let token_secret = self
+                .authz
+                .sign_new_token(&token_descr.id, token_descr.expires_at.clone())
+                .await?;
 
             // Convert to gRPC response and return
-            return Ok(
-                Response::new(CreateApiTokenResponse {
-                    token: Some(token_descr),
-                    token_secret,
-                })
-            );
+            return Ok(Response::new(CreateApiTokenResponse {
+                token: Some(token_descr),
+                token_secret,
+            }));
             // Second branch if the request is issued via an personal aruna token
         } else {
             // Query user_id
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
 
             if !request.get_ref().collection_id.is_empty() {
-                let col_id = uuid::Uuid
-                    ::parse_str(&request.get_ref().collection_id)
-                    .map_err(|_| {
+                let col_id =
+                    uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse collection_id".to_string())
                     })?;
-                self.authz.collection_authorize(
-                    request.metadata(),
-                    col_id,
-                    map_permissions(request.get_ref().permission()).ok_or_else(|| {
-                        ArunaError::InvalidRequest("Can not parse permissions".to_string())
-                    })?
-                ).await?;
+                self.authz
+                    .collection_authorize(
+                        request.metadata(),
+                        col_id,
+                        map_permissions(request.get_ref().permission()).ok_or_else(|| {
+                            ArunaError::InvalidRequest("Can not parse permissions".to_string())
+                        })?,
+                    )
+                    .await?;
             }
 
             if !request.get_ref().project_id.is_empty() {
-                let proj_id = uuid::Uuid
-                    ::parse_str(&request.get_ref().project_id)
-                    .map_err(|_| {
+                let proj_id =
+                    uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse project_id".to_string())
                     })?;
-                self.authz.project_authorize(
-                    request.metadata(),
-                    proj_id,
-                    map_permissions(request.get_ref().permission()).ok_or_else(|| {
-                        ArunaError::InvalidRequest("Can not parse permissions".to_string())
-                    })?
-                ).await?;
+                self.authz
+                    .project_authorize(
+                        request.metadata(),
+                        proj_id,
+                        map_permissions(request.get_ref().permission()).ok_or_else(|| {
+                            ArunaError::InvalidRequest("Can not parse permissions".to_string())
+                        })?,
+                    )
+                    .await?;
             }
 
             // Create token in database and return the description
             let token_descr = self.database.create_api_token(
                 request.into_inner(),
                 user_id,
-                self.authz.get_decoding_serial().await
+                self.authz.get_decoding_serial().await,
             )?;
 
             // Sign a new secret for this token
             // Attention: This can not be regenerated, once issued this information is gone
             // Create a new token and delete the old one if the secret gets lost
-            let token_secret = self.authz.sign_new_token(
-                &token_descr.id,
-                token_descr.expires_at.clone()
-            ).await?;
+            let token_secret = self
+                .authz
+                .sign_new_token(&token_descr.id, token_descr.expires_at.clone())
+                .await?;
 
             // Parse to gRPC response and return it
-            return Ok(
-                Response::new(CreateApiTokenResponse {
-                    token: Some(token_descr),
-                    token_secret,
-                })
-            );
+            return Ok(Response::new(CreateApiTokenResponse {
+                token: Some(token_descr),
+                token_secret,
+            }));
         }
     }
 
@@ -195,13 +198,15 @@ impl UserService for UserServiceImpl {
     ///
     async fn get_api_token(
         &self,
-        request: tonic::Request<GetApiTokenRequest>
+        request: tonic::Request<GetApiTokenRequest>,
     ) -> Result<tonic::Response<GetApiTokenResponse>, tonic::Status> {
         println!("Get ApiToken Request received");
         // Authenticate (personally) and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
         // Execute the request and return the gRPC response
-        Ok(Response::new(self.database.get_api_token(request.into_inner(), user_id)?))
+        Ok(Response::new(
+            self.database.get_api_token(request.into_inner(), user_id)?,
+        ))
     }
 
     /// Returns all API token for a specific user
@@ -217,12 +222,15 @@ impl UserService for UserServiceImpl {
     ///
     async fn get_api_tokens(
         &self,
-        request: tonic::Request<GetApiTokensRequest>
+        request: tonic::Request<GetApiTokensRequest>,
     ) -> Result<tonic::Response<GetApiTokensResponse>, tonic::Status> {
         // Authenticate (personally) the user and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
         // Execute the db request and directly return as gRPC response
-        Ok(Response::new(self.database.get_api_tokens(request.into_inner(), user_id)?))
+        Ok(Response::new(
+            self.database
+                .get_api_tokens(request.into_inner(), user_id)?,
+        ))
     }
 
     /// DeleteAPITokenRequest Deletes the specified API Token
@@ -237,12 +245,15 @@ impl UserService for UserServiceImpl {
     ///
     async fn delete_api_token(
         &self,
-        request: tonic::Request<DeleteApiTokenRequest>
+        request: tonic::Request<DeleteApiTokenRequest>,
     ) -> Result<tonic::Response<DeleteApiTokenResponse>, tonic::Status> {
         // Authenticate (personally) the user and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
         // Delete the token and return the (empty) response
-        Ok(Response::new(self.database.delete_api_token(request.into_inner(), user_id)?))
+        Ok(Response::new(
+            self.database
+                .delete_api_token(request.into_inner(), user_id)?,
+        ))
     }
 
     /// DeleteAPITokens deletes all API Tokens from a user
@@ -260,7 +271,7 @@ impl UserService for UserServiceImpl {
     ///
     async fn delete_api_tokens(
         &self,
-        request: tonic::Request<DeleteApiTokensRequest>
+        request: tonic::Request<DeleteApiTokensRequest>,
     ) -> Result<tonic::Response<DeleteApiTokensResponse>, tonic::Status> {
         // Check if user_id is empty
         if request.get_ref().user_id.is_empty() {
@@ -268,9 +279,10 @@ impl UserService for UserServiceImpl {
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
             // Execute the request in a personal context
             // Delete all tokens for the user
-            return Ok(
-                Response::new(self.database.delete_api_tokens(request.into_inner(), user_id)?)
-            );
+            return Ok(Response::new(
+                self.database
+                    .delete_api_tokens(request.into_inner(), user_id)?,
+            ));
             // This should only be used as admin
             // If a non admin issues this request for himself
             // this might fail with an unauthenticated error
@@ -279,16 +291,14 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the request body and get the user_id
-            let parsed_body_uid = uuid::Uuid
-                ::parse_str(&request.get_ref().user_id)
-                .map_err(ArunaError::from)?;
+            let parsed_body_uid =
+                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
 
             // Delete all tokens for this user and return response (empty)
-            return Ok(
-                Response::new(
-                    self.database.delete_api_tokens(request.into_inner(), parsed_body_uid)?
-                )
-            );
+            return Ok(Response::new(
+                self.database
+                    .delete_api_tokens(request.into_inner(), parsed_body_uid)?,
+            ));
         }
     }
 
@@ -304,15 +314,14 @@ impl UserService for UserServiceImpl {
     ///
     async fn get_user(
         &self,
-        request: tonic::Request<GetUserRequest>
+        request: tonic::Request<GetUserRequest>,
     ) -> Result<tonic::Response<GetUserResponse>, tonic::Status> {
         let user_id = if request.get_ref().user_id.is_empty() {
             // Personal authorize
             self.authz.personal_authorize(request.metadata()).await?
         } else {
             // Admin authorize if not personal user_id
-            let parsed_id = uuid::Uuid
-                ::parse_str(&request.get_ref().user_id)
+            let parsed_id = uuid::Uuid::parse_str(&request.get_ref().user_id)
                 .map_err(|_| ArunaError::InvalidRequest("Unable to parse user_uuid".to_string()))?;
             self.authz.admin_authorize(request.metadata()).await?;
             parsed_id
@@ -335,12 +344,15 @@ impl UserService for UserServiceImpl {
     ///
     async fn update_user_display_name(
         &self,
-        request: tonic::Request<UpdateUserDisplayNameRequest>
+        request: tonic::Request<UpdateUserDisplayNameRequest>,
     ) -> Result<tonic::Response<UpdateUserDisplayNameResponse>, tonic::Status> {
         // Authenticate the user personally
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
         // Update the display_name and return the new user_info
-        Ok(Response::new(self.database.update_user_display_name(request.into_inner(), user_id)?))
+        Ok(Response::new(
+            self.database
+                .update_user_display_name(request.into_inner(), user_id)?,
+        ))
     }
 
     /// Requests a list of all projects a user is member of
@@ -356,30 +368,29 @@ impl UserService for UserServiceImpl {
     ///
     async fn get_user_projects(
         &self,
-        request: tonic::Request<GetUserProjectsRequest>
+        request: tonic::Request<GetUserProjectsRequest>,
     ) -> Result<tonic::Response<GetUserProjectsResponse>, tonic::Status> {
         // Check if user_id is empty
         if request.get_ref().user_id.is_empty() {
             // Authenticate personally
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
             // Get all projects and return a list as gRPC response
-            return Ok(
-                Response::new(self.database.get_user_projects(request.into_inner(), user_id)?)
-            );
+            return Ok(Response::new(
+                self.database
+                    .get_user_projects(request.into_inner(), user_id)?,
+            ));
             // Otherwise this must be authenticated as admin
         } else {
             // Authenticate as admin
             self.authz.admin_authorize(request.metadata()).await?;
             // Parse the user_id from the request body
-            let parsed_body_uid = uuid::Uuid
-                ::parse_str(&request.get_ref().user_id)
-                .map_err(ArunaError::from)?;
+            let parsed_body_uid =
+                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
             // Get all projects for a user and return the list as gRPC response
-            return Ok(
-                Response::new(
-                    self.database.get_user_projects(request.into_inner(), parsed_body_uid)?
-                )
-            );
+            return Ok(Response::new(
+                self.database
+                    .get_user_projects(request.into_inner(), parsed_body_uid)?,
+            ));
         }
     }
 }

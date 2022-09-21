@@ -1,26 +1,19 @@
 use crate::database::connection::Database;
 use crate::database::models::auth::PubKey;
-use crate::database::models::enums::{ Resources, UserRights };
+use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
-use crate::error::{ ArunaError, AuthorizationError };
+use crate::error::{ArunaError, AuthorizationError};
 use chrono::prelude::*;
 use dotenv::dotenv;
 use jsonwebtoken::{
-    decode,
-    decode_header,
-    encode,
-    Algorithm,
-    DecodingKey,
-    EncodingKey,
-    Header,
-    Validation,
+    decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
 };
 use openssl::pkey::PKey;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env::{ self, VarError };
+use std::env::{self, VarError};
 use std::ops::Deref;
-use std::sync::{ Arc, Mutex };
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
 
@@ -104,9 +97,8 @@ impl Authz {
             Ok(key) => key.as_bytes().to_vec(),
             Err(err) => {
                 if err == VarError::NotPresent {
-                    let privatekey = PKey::generate_ed25519().expect(
-                        "Unable to generate new signing key"
-                    );
+                    let privatekey =
+                        PKey::generate_ed25519().expect("Unable to generate new signing key");
                     privatekey
                         .private_key_to_pem_pkcs8()
                         .expect("Unable to convert signing key to pem")
@@ -117,11 +109,12 @@ impl Authz {
         };
 
         // Parse the returned Vec<u8> (private) signing key to pem format
-        let priv_key_ossl = PKey::private_key_from_pem(&signing_key).expect(
-            "Unable to parse private key to pem"
-        );
+        let priv_key_ossl =
+            PKey::private_key_from_pem(&signing_key).expect("Unable to parse private key to pem");
         // Create an associated pubkey for this private key
-        let pubkey = priv_key_ossl.public_key_to_pem().expect("Cant convert pkey to pem");
+        let pubkey = priv_key_ossl
+            .public_key_to_pem()
+            .expect("Cant convert pkey to pem");
         // Convert the pubkey to string
         let pub_key_string = String::from_utf8_lossy(&pubkey).to_string();
         // Query the database for this pubkey, either return the queried id or add this pubkey as new key to the database
@@ -132,26 +125,26 @@ impl Authz {
         // Query databse for all existing pubkeys
         let keys = db.get_pub_keys().expect("Unable to query signing pubkeys");
         // Store them in a local hashmap cache
-        let result = Authz::convert_pubkey_to_decoding_key(keys).await.expect(
-            "Error in decoding pubkeys"
-        );
+        let result = Authz::convert_pubkey_to_decoding_key(keys)
+            .await
+            .expect("Error in decoding pubkeys");
 
-        let decoding_key = result.get(&serial).expect("Current decoding key not found").clone();
+        let decoding_key = result
+            .get(&serial)
+            .expect("Current decoding key not found")
+            .clone();
 
         // return the Authz struct
         Authz {
             pub_keys: Arc::new(RwLock::new(result)),
             db,
             oidc_realminfo: realminfo,
-            signing_key: Arc::new(
-                Mutex::new((
-                    serial,
-                    EncodingKey::from_ed_pem(&signing_key).expect(
-                        "Unable to create EncodingKey from pem"
-                    ),
-                    decoding_key,
-                ))
-            ),
+            signing_key: Arc::new(Mutex::new((
+                serial,
+                EncodingKey::from_ed_pem(&signing_key)
+                    .expect("Unable to create EncodingKey from pem"),
+                decoding_key,
+            ))),
         }
     }
     /// Converts a Database pubkey to the correct HashMap for the Authz struct.
@@ -165,17 +158,18 @@ impl Authz {
     /// * `Result<HashMap<i64, DecodingKey>, ArunaError>` Resulting Hashmap with key = pubkey serial and values = decoding key to validate JWT tokens
     ///
     async fn convert_pubkey_to_decoding_key(
-        pubkey: Vec<PubKey>
+        pubkey: Vec<PubKey>,
     ) -> Result<HashMap<i64, DecodingKey>, ArunaError> {
         pubkey
             .into_iter()
-            .map(|pubkey| {
-                match DecodingKey::from_ed_pem(pubkey.pubkey.as_bytes()) {
+            .map(
+                |pubkey| match DecodingKey::from_ed_pem(pubkey.pubkey.as_bytes()) {
                     Ok(e) => Ok((pubkey.id, e)),
-                    Err(_) =>
-                        Err(ArunaError::AuthorizationError(AuthorizationError::PERMISSIONDENIED)),
-                }
-            })
+                    Err(_) => Err(ArunaError::AuthorizationError(
+                        AuthorizationError::PERMISSIONDENIED,
+                    )),
+                },
+            )
             .collect::<Result<HashMap<_, _>, _>>()
     }
     /// Renews the internal pubkey struct. It is okay if this happens infrequently.
@@ -210,7 +204,7 @@ impl Authz {
     pub async fn authorize(
         &self,
         metadata: &MetadataMap,
-        context: &Context
+        context: &Context,
     ) -> Result<uuid::Uuid, ArunaError> {
         let token = self.validate_and_query_token(metadata).await?;
         self.db.get_checked_user_id_from_token(&token, context)
@@ -220,7 +214,7 @@ impl Authz {
     /// a convenience function if this request is `personal` scoped
     pub async fn personal_authorize(
         &self,
-        metadata: &MetadataMap
+        metadata: &MetadataMap,
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
@@ -231,8 +225,9 @@ impl Authz {
                 admin: false,
                 personal: true,
                 oidc_context: false,
-            })
-        ).await
+            }),
+        )
+        .await
     }
 
     /// This is a wrapper that runs the authorize function with an `admin` context
@@ -247,8 +242,9 @@ impl Authz {
                 admin: true,
                 personal: false,
                 oidc_context: false,
-            })
-        ).await
+            }),
+        )
+        .await
     }
 
     /// This is a wrapper that runs the authorize function with an `collection` context
@@ -257,7 +253,7 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
         collection_id: uuid::Uuid,
-        user_right: UserRights
+        user_right: UserRights,
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
@@ -268,8 +264,9 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
-        ).await
+            }),
+        )
+        .await
     }
 
     /// This is a wrapper that runs the authorize function with an `project` context
@@ -278,7 +275,7 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
         project_id: uuid::Uuid,
-        user_right: UserRights
+        user_right: UserRights,
     ) -> Result<uuid::Uuid, ArunaError> {
         self.authorize(
             metadata,
@@ -289,17 +286,20 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
-            })
-        ).await
+            }),
+        )
+        .await
     }
 
     pub async fn validate_and_query_token(
         &self,
-        metadata: &MetadataMap
+        metadata: &MetadataMap,
     ) -> Result<uuid::Uuid, ArunaError> {
         let token_string = metadata
             .get("grpc-metadata-accesstoken")
-            .ok_or(ArunaError::GrpcNotFoundError(GrpcNotFoundError::METADATATOKEN))?
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
             .to_str()?;
 
         let header = decode_header(token_string)?;
@@ -314,7 +314,9 @@ impl Authz {
                     return Ok(u);
                 }
                 None => {
-                    return Err(ArunaError::AuthorizationError(AuthorizationError::UNREGISTERED));
+                    return Err(ArunaError::AuthorizationError(
+                        AuthorizationError::UNREGISTERED,
+                    ));
                 }
             }
         }
@@ -322,7 +324,9 @@ impl Authz {
         // --------------- This section only applies if the token is an "aruna" token -------------------------
 
         let hashmap = self.pub_keys.clone();
-        let index = kid.parse::<i64>().map_err(|_| AuthorizationError::PERMISSIONDENIED)?;
+        let index = kid
+            .parse::<i64>()
+            .map_err(|_| AuthorizationError::PERMISSIONDENIED)?;
         let guard = hashmap.read().await;
 
         let dec_map = guard.clone();
@@ -338,7 +342,9 @@ impl Authz {
         let key = (if option_key.is_some() {
             Ok(option_key.unwrap())
         } else {
-            guard.get(&index).ok_or(AuthorizationError::PERMISSIONDENIED)
+            guard
+                .get(&index)
+                .ok_or(AuthorizationError::PERMISSIONDENIED)
         })?;
 
         let token_data = decode::<Claims>(token_string, key, &Validation::new(Algorithm::EdDSA))?;
@@ -349,7 +355,9 @@ impl Authz {
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {
         let token_string = metadata
             .get("grpc-metadata-accesstoken")
-            .ok_or(ArunaError::GrpcNotFoundError(GrpcNotFoundError::METADATATOKEN))?
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
             .to_str()?;
 
         let header = decode_header(token_string)?;
@@ -362,7 +370,7 @@ impl Authz {
         let token_data = decode::<Claims>(
             token_string,
             &DecodingKey::from_rsa_pem(pem_token.as_bytes())?,
-            &Validation::new(header.alg)
+            &Validation::new(header.alg),
         )?;
 
         let subject = token_data.claims.sub;
@@ -370,20 +378,19 @@ impl Authz {
     }
 
     async fn get_token_realminfo(&self) -> Result<String, ArunaError> {
-        let resp = reqwest
-            ::get(&self.oidc_realminfo).await?
-            .json::<HashMap<String, String>>().await?;
+        let resp = reqwest::get(&self.oidc_realminfo)
+            .await?
+            .json::<HashMap<String, String>>()
+            .await?;
 
-        let pub_key = resp.get("public_key").ok_or(AuthorizationError::AUTHFLOWERROR)?;
+        let pub_key = resp
+            .get("public_key")
+            .ok_or(AuthorizationError::AUTHFLOWERROR)?;
 
-        Ok(
-            format!(
-                "{}{}{}",
-                "-----BEGIN RSA PUBLIC KEY-----\n",
-                pub_key,
-                "\n-----END RSA PUBLIC KEY-----"
-            )
-        )
+        Ok(format!(
+            "{}{}{}",
+            "-----BEGIN RSA PUBLIC KEY-----\n", pub_key, "\n-----END RSA PUBLIC KEY-----"
+        ))
     }
 
     pub async fn get_decoding_key(&self) -> DecodingKey {
@@ -399,7 +406,7 @@ impl Authz {
     pub async fn sign_new_token(
         &self,
         token_id: &str,
-        expires_at: Option<prost_types::Timestamp>
+        expires_at: Option<prost_types::Timestamp>,
     ) -> Result<String, ArunaError> {
         // Gets the signing key / mutex -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
@@ -432,7 +439,9 @@ impl Authz {
     pub async fn is_oidc_from_metadata(metadata: &MetadataMap) -> Result<bool, ArunaError> {
         let token_string = metadata
             .get("grpc-metadata-accesstoken")
-            .ok_or(ArunaError::GrpcNotFoundError(GrpcNotFoundError::METADATATOKEN))?
+            .ok_or(ArunaError::GrpcNotFoundError(
+                GrpcNotFoundError::METADATATOKEN,
+            ))?
             .to_str()?;
 
         let header = decode_header(token_string)?;
