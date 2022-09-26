@@ -15,6 +15,7 @@ use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::crud::utils::map_permissions;
 use crate::error::ArunaError;
+use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use std::sync::Arc;
 use tonic::Response;
 
@@ -40,13 +41,21 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<RegisterUserRequest>,
     ) -> Result<tonic::Response<RegisterUserResponse>, tonic::Status> {
+        log::info!("Received RegisterUserRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Get subject from OIDC context in metadata
         let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
+
         // Create user in db and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .register_user(request.into_inner(), subject_id)?,
-        ))
+        );
+
+        log::info!("Sending RegisterUserResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// Activate user activates a not activated but registered user
@@ -63,6 +72,9 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<ActivateUserRequest>,
     ) -> Result<tonic::Response<ActivateUserResponse>, tonic::Status> {
+        log::info!("Received ActivateUserRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // For now only admins can activate "new" users
         self.authz.admin_authorize(request.metadata()).await?;
         todo!()
@@ -86,6 +98,9 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<CreateApiTokenRequest>,
     ) -> Result<tonic::Response<CreateApiTokenResponse>, tonic::Status> {
+        log::info!("Received CreateApiTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // If the token is an oidc token
         if Authz::is_oidc_from_metadata(request.metadata()).await? {
             // Validate the token and query the subject
@@ -121,10 +136,14 @@ impl UserService for UserServiceImpl {
                 .await?;
 
             // Convert to gRPC response and return
-            return Ok(Response::new(CreateApiTokenResponse {
+            let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
-            }));
+            });
+
+            log::info!("Sending CreateApiTokenResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
             // Second branch if the request is issued via an personal aruna token
         } else {
             // Query user_id
@@ -178,10 +197,14 @@ impl UserService for UserServiceImpl {
                 .await?;
 
             // Parse to gRPC response and return it
-            return Ok(Response::new(CreateApiTokenResponse {
+            let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
-            }));
+            });
+
+            log::info!("Sending CreateApiTokenResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
         }
     }
 
@@ -200,13 +223,18 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetApiTokenRequest>,
     ) -> Result<tonic::Response<GetApiTokenResponse>, tonic::Status> {
-        println!("Get ApiToken Request received");
+        log::info!("Received GetApiTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authenticate (personally) and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
         // Execute the request and return the gRPC response
-        Ok(Response::new(
-            self.database.get_api_token(request.into_inner(), user_id)?,
-        ))
+        let response = Response::new(self.database.get_api_token(request.into_inner(), user_id)?);
+
+        log::info!("Sending GetApiTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// Returns all API token for a specific user
@@ -224,13 +252,21 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetApiTokensRequest>,
     ) -> Result<tonic::Response<GetApiTokensResponse>, tonic::Status> {
+        log::info!("Received GetApiTokensRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authenticate (personally) the user and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
         // Execute the db request and directly return as gRPC response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .get_api_tokens(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending GetApiTokensResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// DeleteAPITokenRequest Deletes the specified API Token
@@ -247,13 +283,21 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<DeleteApiTokenRequest>,
     ) -> Result<tonic::Response<DeleteApiTokenResponse>, tonic::Status> {
+        log::info!("Received DeleteApiTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authenticate (personally) the user and get the user_id
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
         // Delete the token and return the (empty) response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .delete_api_token(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending DeleteApiTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// DeleteAPITokens deletes all API Tokens from a user
@@ -273,16 +317,24 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<DeleteApiTokensRequest>,
     ) -> Result<tonic::Response<DeleteApiTokensResponse>, tonic::Status> {
+        log::info!("Received DeleteApiTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user_id is empty
         if request.get_ref().user_id.is_empty() {
             // Authenticate personally
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
             // Execute the request in a personal context
             // Delete all tokens for the user
-            return Ok(Response::new(
+            let response = Response::new(
                 self.database
                     .delete_api_tokens(request.into_inner(), user_id)?,
-            ));
+            );
+
+            log::info!("Sending DeleteApiTokensResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
             // This should only be used as admin
             // If a non admin issues this request for himself
             // this might fail with an unauthenticated error
@@ -295,10 +347,14 @@ impl UserService for UserServiceImpl {
                 uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
 
             // Delete all tokens for this user and return response (empty)
-            return Ok(Response::new(
+            let response = Response::new(
                 self.database
                     .delete_api_tokens(request.into_inner(), parsed_body_uid)?,
-            ));
+            );
+
+            log::info!("Sending DeleteApiTokensResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
         }
     }
 
@@ -316,6 +372,9 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetUserRequest>,
     ) -> Result<tonic::Response<GetUserResponse>, tonic::Status> {
+        log::info!("Received GetUserRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let user_id = if request.get_ref().user_id.is_empty() {
             // Personal authorize
             self.authz.personal_authorize(request.metadata()).await?
@@ -326,8 +385,13 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
             parsed_id
         };
+
         // Get personal user info and return the gRPC repsonse
-        Ok(Response::new(self.database.get_user(user_id)?))
+        let response = Response::new(self.database.get_user(user_id)?);
+
+        log::info!("Sending GetUserResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// UpdateUserDisplayName request changed the display_name of the current user to a new value
@@ -346,13 +410,21 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<UpdateUserDisplayNameRequest>,
     ) -> Result<tonic::Response<UpdateUserDisplayNameResponse>, tonic::Status> {
+        log::info!("Received UpdateUserDisplayNameRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authenticate the user personally
         let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
         // Update the display_name and return the new user_info
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .update_user_display_name(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending UpdateUserDisplayNameResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// Requests a list of all projects a user is member of
@@ -370,27 +442,41 @@ impl UserService for UserServiceImpl {
         &self,
         request: tonic::Request<GetUserProjectsRequest>,
     ) -> Result<tonic::Response<GetUserProjectsResponse>, tonic::Status> {
+        log::info!("Received GetUserProjectsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user_id is empty
         if request.get_ref().user_id.is_empty() {
             // Authenticate personally
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
             // Get all projects and return a list as gRPC response
-            return Ok(Response::new(
+            let response = Response::new(
                 self.database
                     .get_user_projects(request.into_inner(), user_id)?,
-            ));
+            );
+
+            log::info!("Sending GetUserProjectsResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
             // Otherwise this must be authenticated as admin
         } else {
             // Authenticate as admin
             self.authz.admin_authorize(request.metadata()).await?;
+
             // Parse the user_id from the request body
             let parsed_body_uid =
                 uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
+
             // Get all projects for a user and return the list as gRPC response
-            return Ok(Response::new(
+            let response = Response::new(
                 self.database
                     .get_user_projects(request.into_inner(), parsed_body_uid)?,
-            ));
+            );
+
+            log::info!("Sending GetUserProjectsResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            return Ok(response);
         }
     }
 }
