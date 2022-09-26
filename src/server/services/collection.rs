@@ -7,6 +7,7 @@ use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::TypeConversionError;
+use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use crate::{
     api::aruna::api::storage::services::v1::collection_service_server::CollectionService,
     error::ArunaError,
@@ -41,24 +42,32 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<CreateNewCollectionRequest>,
     ) -> Result<tonic::Response<CreateNewCollectionResponse>, tonic::Status> {
+        log::info!("Received CreateNewCollectionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the uuid
         let project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize the request
         let creator_id = self
             .authz
             .project_authorize(request.metadata(), project_id, UserRights::WRITE)
             .await?;
-        // Clone db ARC for spawn_blocking
-        let db = self.database.clone();
+
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || {
                 db.create_new_collection(request.get_ref().to_owned(), creator_id)
             })
             .await
             .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending CreateNewCollectionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// GetCollectionById queries a single collection via its uuid.
@@ -84,6 +93,9 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<GetCollectionByIdRequest>,
     ) -> Result<tonic::Response<GetCollectionByIdResponse>, tonic::Status> {
+        log::info!("Received GetCollectionByIdRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authorize collection - READ
         self.authz
             .collection_authorize(
@@ -93,14 +105,18 @@ impl CollectionService for CollectionServiceImpl {
                 UserRights::READ,
             )
             .await?;
-        // Clone db ARC for blocking move
-        let db = self.database.clone();
+
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || db.get_collection_by_id(request.get_ref().to_owned()))
                 .await
                 .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending GetCollectionByIdResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// GetCollections queries multiple collections via either multiple uuids or a specific set of label filters.
@@ -136,6 +152,9 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<GetCollectionsRequest>,
     ) -> Result<tonic::Response<GetCollectionsResponse>, tonic::Status> {
+        log::info!("Received GetCollectionsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authorize this needs project-level read permissions.
         self.authz
             .project_authorize(
@@ -146,13 +165,17 @@ impl CollectionService for CollectionServiceImpl {
             )
             .await?;
 
-        let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || db.get_collections(request.get_ref().to_owned()))
                 .await
                 .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending GetCollectionsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// UpdateCollection updates a specific collection and optional pins a new version.
@@ -184,6 +207,9 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<UpdateCollectionRequest>,
     ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
+        log::info!("Received UpdateCollectionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Query the user_permissions -> Needs collection "WRITE" permissions
         let user_id = self
             .authz
@@ -195,15 +221,19 @@ impl CollectionService for CollectionServiceImpl {
             )
             .await?;
 
-        let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || {
                 db.update_collection(request.get_ref().to_owned(), user_id)
             })
             .await
             .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending UpdateCollectionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// PinCollectionVersion creates a copy of the collection with a specific "pinned" version
@@ -230,6 +260,9 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<PinCollectionVersionRequest>,
     ) -> Result<tonic::Response<PinCollectionVersionResponse>, tonic::Status> {
+        log::info!("Received PinCollectionVersionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let user_id = self
             .authz
             .collection_authorize(
@@ -240,15 +273,19 @@ impl CollectionService for CollectionServiceImpl {
             )
             .await?;
 
-        let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || {
                 db.pin_collection_version(request.get_ref().to_owned(), user_id)
             })
             .await
             .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending PinCollectionVersionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// DeleteCollection will delete a specific collection including its contents.
@@ -279,6 +316,9 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: tonic::Request<DeleteCollectionRequest>,
     ) -> Result<tonic::Response<DeleteCollectionResponse>, tonic::Status> {
+        log::info!("Received DeleteCollectionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let user_id = if request.get_ref().force {
             self.authz
                 .project_authorize(
@@ -299,14 +339,18 @@ impl CollectionService for CollectionServiceImpl {
                 .await?
         };
 
-        let db = self.database.clone();
         // Execute request in spawn_blocking task to prevent blocking the API server
-        Ok(Response::new(
+        let db = self.database.clone();
+        let response = Response::new(
             task::spawn_blocking(move || {
                 db.delete_collection(request.get_ref().to_owned(), user_id)
             })
             .await
             .map_err(ArunaError::from)??,
-        ))
+        );
+
+        log::info!("Sending PinCollectionVersionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 }
