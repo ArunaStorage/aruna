@@ -114,6 +114,8 @@ impl From<Rqwerror> for ArunaError {
 
 impl From<ArunaError> for tonic::Status {
     fn from(aerror: ArunaError) -> Self {
+        log::warn!("{:?}", aerror);
+
         match aerror {
             ArunaError::ConnectionError(_) => tonic::Status::internal("internal server error"),
             ArunaError::DieselError(_) => tonic::Status::internal("internal server error"),
