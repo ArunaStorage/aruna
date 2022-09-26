@@ -389,7 +389,7 @@ impl Authz {
 
         Ok(format!(
             "{}{}{}",
-            "-----BEGIN RSA PUBLIC KEY-----\n", pub_key, "\n-----END RSA PUBLIC KEY-----"
+            "-----BEGIN PUBLIC KEY-----\n", pub_key, "\n-----END PUBLIC KEY-----"
         ))
     }
 
