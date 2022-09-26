@@ -11,13 +11,12 @@ use crate::api::aruna::api::storage::{
     internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
     services::v1::object_service_server::ObjectService, services::v1::*,
 };
-
 use crate::database::connection::Database;
 use crate::database::models::enums::{Resources, UserRights};
 use crate::database::models::object::Endpoint;
-
 use crate::error::ArunaError;
 use crate::server::services::authz::{Authz, Context};
+use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
@@ -154,6 +153,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<InitializeNewObjectRequest>,
     ) -> Result<Response<InitializeNewObjectResponse>, Status> {
+        log::info!("Received InitializeNewObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -193,27 +195,34 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let endpoint_id = self.default_endpoint.id;
-        let response = task::spawn_blocking(move || {
-            database_clone.create_object(
-                &inner_request,
-                &creator_id,
-                &location,
-                upload_id,
-                endpoint_id,
-                new_object_uuid,
-            )
-        })
-        .await
-        .map_err(ArunaError::from)??;
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.create_object(
+                    &inner_request,
+                    &creator_id,
+                    &location,
+                    upload_id,
+                    endpoint_id,
+                    new_object_uuid,
+                )
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending InitializeNewObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn get_upload_url(
         &self,
         request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>, Status> {
+        log::info!("Received GetUploadUrlRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to upload object data in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -249,15 +258,22 @@ impl ObjectService for ObjectServiceImpl {
             .into_inner()
             .url;
 
-        return Ok(Response::new(GetUploadUrlResponse {
+        let response = Response::new(GetUploadUrlResponse {
             url: Some(Url { url: upload_url }),
-        }));
+        });
+
+        log::info!("Sending GetUploadUrlResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     async fn finish_object_staging(
         &self,
         request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>, Status> {
+        log::info!("Received FinishObjectStagingRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the provided collection id (string) to UUID
         let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
             .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
@@ -319,19 +335,26 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         let database_clone = self.database.clone();
-        let response = task::spawn_blocking(move || {
-            database_clone.finish_object_staging(&request.into_inner(), &creator_id)
-        })
-        .await
-        .map_err(ArunaError::from)??;
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.finish_object_staging(&request.into_inner(), &creator_id)
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
 
-        Ok(Response::new(response))
+        log::info!("Sending FinishObjectStagingResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     async fn update_object(
         &self,
         request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>, Status> {
+        log::info!("Received UpdateObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -392,8 +415,13 @@ impl ObjectService for ObjectServiceImpl {
         if let Some(up_id) = upload_id {
             response.staging_id = up_id;
         }
+
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        let grpc_response = Response::new(response);
+
+        log::info!("Sending UpdateObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     /// Creates a reference to an object in another collection.
@@ -415,6 +443,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<CreateObjectReferenceRequest>,
     ) -> Result<Response<CreateObjectReferenceResponse>, Status> {
+        log::info!("Received CreateObjectReferenceRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let src_collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let dst_collection_id =
@@ -439,10 +470,12 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner();
 
         // Try to create object reference
-        let response = self.database.create_object_reference(inner_request)?;
+        let response = Response::new(self.database.create_object_reference(inner_request)?);
 
         // Return response if everything passed successfully
-        Ok(Response::new(response))
+        log::info!("Sending CreateObjectReferenceResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     ///ToDo: Rust Doc
@@ -450,6 +483,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetReferencesRequest>,
     ) -> Result<Response<GetReferencesResponse>, Status> {
+        log::info!("Received GetReferencesRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -464,19 +500,25 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response =
+        let response = Response::new(
             task::spawn_blocking(move || database_clone.get_references(request.get_ref()))
                 .await
-                .map_err(ArunaError::from)??;
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending GetReferencesResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn clone_object(
         &self,
         request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>, Status> {
+        log::info!("Received CloneObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -503,18 +545,25 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task::spawn_blocking(move || database_clone.clone_object(request.get_ref()))
-            .await
-            .map_err(ArunaError::from)??;
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.clone_object(request.get_ref()))
+                .await
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending CloneObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn delete_object(
         &self,
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>, Status> {
+        log::info!("Received DeleteObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let user: uuid::Uuid = if request.get_ref().force {
             // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
             self.authz.admin_authorize(request.metadata()).await?
@@ -533,13 +582,16 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response =
+        let response = Response::new(
             task::spawn_blocking(move || database_clone.delete_object(request.into_inner(), user))
                 .await
-                .map_err(ArunaError::from)??;
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending DeleteObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     /// This functions returns a fully populated Object from the database and depending
@@ -560,6 +612,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetObjectByIdRequest>,
     ) -> Result<Response<GetObjectByIdResponse>, Status> {
+        log::info!("Received GetObjectByIdRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -620,13 +675,19 @@ impl ObjectService for ObjectServiceImpl {
             },
         };
 
-        return Ok(Response::new(response));
+        let grpc_response = Response::new(response);
+        log::info!("Sending GetObjectByIdResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     async fn get_objects(
         &self,
         request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>, Status> {
+        log::info!("Received GetObjectsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -681,13 +742,20 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(GetObjectsResponse { objects: result }));
+        let grpc_response = Response::new(GetObjectsResponse { objects: result });
+
+        log::info!("Sending GetObjectsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     async fn get_object_revisions(
         &self,
         request: Request<GetObjectRevisionsRequest>,
     ) -> Result<Response<GetObjectRevisionsResponse>, Status> {
+        log::info!("Received GetObjectRevisionsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to create objects in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -740,15 +808,20 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(GetObjectRevisionsResponse {
-            objects: result,
-        }));
+        let grpc_response = Response::new(GetObjectRevisionsResponse { objects: result });
+
+        log::info!("Sending GetObjectRevisionsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     async fn get_latest_object_revision(
         &self,
         request: Request<GetLatestObjectRevisionRequest>,
     ) -> Result<Response<GetLatestObjectRevisionResponse>, Status> {
+        log::info!("Received GetLatestObjectRevisionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
@@ -761,20 +834,27 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = task::spawn_blocking(move || {
-            database_clone.get_latest_object_revision(request.into_inner())
-        })
-        .await
-        .map_err(ArunaError::from)??;
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_latest_object_revision(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending GetLatestObjectRevisionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn get_object_endpoints(
         &self,
         request: Request<GetObjectEndpointsRequest>,
     ) -> Result<Response<GetObjectEndpointsResponse>, Status> {
+        log::info!("Received GetObjectEndpointsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
@@ -787,19 +867,25 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response =
+        let response = Response::new(
             task::spawn_blocking(move || database_clone.get_object_endpoints(request.into_inner()))
                 .await
-                .map_err(ArunaError::from)??;
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending GetObjectEndpointsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn add_label_to_object(
         &self,
         request: Request<AddLabelToObjectRequest>,
     ) -> Result<Response<AddLabelToObjectResponse>, Status> {
+        log::info!("Received AddLabelToObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
@@ -812,19 +898,25 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response =
+        let response = Response::new(
             task::spawn_blocking(move || database_clone.add_label_to_object(request.into_inner()))
                 .await
-                .map_err(ArunaError::from)??;
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending AddLabelToObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     async fn set_hooks_of_object(
         &self,
         request: Request<SetHooksOfObjectRequest>,
     ) -> Result<Response<SetHooksOfObjectResponse>, Status> {
+        log::info!("Received SetHooksOfObjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
@@ -837,13 +929,16 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response =
+        let response = Response::new(
             task::spawn_blocking(move || database_clone.set_hooks_of_object(request.into_inner()))
                 .await
-                .map_err(ArunaError::from)??;
+                .map_err(ArunaError::from)??,
+        );
 
         // Return gRPC response after everything succeeded
-        return Ok(Response::new(response));
+        log::info!("Sending SetHooksOfObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     ///ToDo: Rust Doc
@@ -851,6 +946,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>, Status> {
+        log::info!("Received GetDownloadUrlRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Check if user is authorized to download object data in this collection
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
@@ -895,15 +993,23 @@ impl ObjectService for ObjectServiceImpl {
             .into_inner()
             .url;
 
-        Ok(Response::new(GetDownloadUrlResponse {
+        // Return gRPC response after everything succeeded
+        let response = Response::new(GetDownloadUrlResponse {
             url: Some(Url { url: download_url }),
-        }))
+        });
+
+        log::info!("Sending GetDownloadUrlResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     async fn get_download_links_batch(
         &self,
         request: Request<GetDownloadLinksBatchRequest>,
     ) -> Result<Response<GetDownloadLinksBatchResponse>, Status> {
+        log::info!("Received GetDownloadLinksBatchRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let mapped_uuids = request
             .get_ref()
             .objects
@@ -940,9 +1046,12 @@ impl ObjectService for ObjectServiceImpl {
             .map(|e| Url { url: e.to_string() })
             .collect::<Vec<_>>();
 
-        Ok(Response::new(GetDownloadLinksBatchResponse {
-            urls: mapped_urls,
-        }))
+        // Return gRPC response after everything succeeded
+        let response = Response::new(GetDownloadLinksBatchResponse { urls: mapped_urls });
+
+        log::info!("Sending GetDownloadLinksBatchResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     type CreateDownloadLinksStreamStream =
@@ -951,6 +1060,9 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<CreateDownloadLinksStreamRequest>,
     ) -> Result<Response<Self::CreateDownloadLinksStreamStream>, Status> {
+        log::info!("Received CreateDownloadLinksStreamRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         let (tx, rx) = mpsc::channel(4);
         let mapped_uuids = request
             .get_ref()
@@ -1002,7 +1114,12 @@ impl ObjectService for ObjectServiceImpl {
             }
         });
 
-        Ok(Response::new(ReceiverStream::new(rx)))
+        // Return gRPC response after everything succeeded
+        let response = Response::new(ReceiverStream::new(rx));
+
+        log::info!("Sending CreateDownloadLinksStreamStream back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 }
 
