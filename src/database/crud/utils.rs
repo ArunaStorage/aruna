@@ -21,7 +21,6 @@ use crate::error::ArunaError;
 ///
 /// * `Result<prost_types::Timestamp, prost_types::TimestampError>`
 ///
-
 pub fn naivedatetime_to_prost_time(
     ndt: chrono::NaiveDateTime,
 ) -> Result<prost_types::Timestamp, prost_types::TimestampError> {
