@@ -32,7 +32,7 @@ impl ServiceServer {
             .unwrap();
 
         // Upstart server
-        let addr = "[::1]:50051".parse().unwrap();
+        let addr = "0.0.0.0:50051".parse().unwrap();
         let authz = Arc::new(Authz::new(db_ref.clone()).await);
         let collection_service = CollectionServiceImpl::new(db_ref.clone(), authz.clone()).await;
         let object_service =
