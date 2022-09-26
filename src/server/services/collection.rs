@@ -349,7 +349,7 @@ impl CollectionService for CollectionServiceImpl {
             .map_err(ArunaError::from)??,
         );
 
-        log::info!("Sending PinCollectionVersionResponse back to client.");
+        log::info!("Sending DeleteCollectionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
     }

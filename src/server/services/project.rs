@@ -1,10 +1,12 @@
 use super::authz::Authz;
-use crate::api::aruna::api::storage::services::v1::project_service_server::ProjectService;
 
+use crate::api::aruna::api::storage::services::v1::project_service_server::ProjectService;
 use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
+use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+
 use std::sync::Arc;
 use tonic::Response;
 
@@ -27,13 +29,21 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<CreateProjectRequest>,
     ) -> Result<tonic::Response<CreateProjectResponse>, tonic::Status> {
+        log::info!("Received CreateProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Authorize as global admin
         let user_id = self.authz.admin_authorize(request.metadata()).await?;
+
         // Create new project and respond with overview
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .create_project(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending CreateProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// AddUserToProject adds a new user to the project. Only project_admins can add a user to project.
@@ -50,6 +60,9 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<AddUserToProjectRequest>,
     ) -> Result<tonic::Response<AddUserToProjectResponse>, tonic::Status> {
+        log::info!("Received AddUserToProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
@@ -61,11 +74,16 @@ impl ProjectService for ProjectServiceImpl {
             .await?;
 
         // Add user to project
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .add_user_to_project(request.into_inner(), _user_id)?,
-        ))
+        );
+
+        log::info!("Sending AddUserToProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
+
     /// GetProjectCollections queries all collections of a project
     ///
     /// ## Arguments
@@ -80,6 +98,9 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<GetProjectCollectionsRequest>,
     ) -> Result<tonic::Response<GetProjectCollectionsResponse>, tonic::Status> {
+        log::info!("Received GetProjectCollectionsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
@@ -89,10 +110,15 @@ impl ProjectService for ProjectServiceImpl {
             .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
 
-        Ok(Response::new(
+        // Get project collections and send response
+        let response = Response::new(
             self.database
                 .get_project_collections(request.into_inner(), _user_id)?,
-        ))
+        );
+
+        log::info!("Sending GetProjectCollectionsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// GetProject gets information about a project.
@@ -109,18 +135,25 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<GetProjectRequest>,
     ) -> Result<tonic::Response<GetProjectResponse>, tonic::Status> {
+        log::info!("Received GetProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let _user_id = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
-            self.database.get_project(request.into_inner(), _user_id)?,
-        ))
+        let response = Response::new(self.database.get_project(request.into_inner(), _user_id)?);
+
+        log::info!("Sending GetProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// DestroyProject deletes a project and all associated user_permissions.
@@ -138,19 +171,28 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<DestroyProjectRequest>,
     ) -> Result<tonic::Response<DestroyProjectResponse>, tonic::Status> {
+        log::info!("Received DestroyProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let _user_id = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .destroy_project(request.into_inner(), _user_id)?,
-        ))
+        );
+
+        log::info!("Sending DestroyProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// UpdateProject updates a project and all associated user_permissions.
@@ -167,19 +209,28 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<UpdateProjectRequest>,
     ) -> Result<tonic::Response<UpdateProjectResponse>, tonic::Status> {
+        log::info!("Received UpdateProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let user_id = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .update_project(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending UpdateProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// RemoveUserFromProject removes a specific user from the project
@@ -196,19 +247,28 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<RemoveUserFromProjectRequest>,
     ) -> Result<tonic::Response<RemoveUserFromProjectResponse>, tonic::Status> {
+        log::info!("Received RemoveUserFromProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let user_id = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .remove_user_from_project(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending RemoveUserFromProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// Get the user_permission of a specific user for the project.
@@ -225,19 +285,28 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<GetUserPermissionsForProjectRequest>,
     ) -> Result<tonic::Response<GetUserPermissionsForProjectResponse>, tonic::Status> {
+        log::info!("Received GetUserPermissionsForProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let _admin_user = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .get_userpermission_from_project(request.into_inner(), _admin_user)?,
-        ))
+        );
+
+        log::info!("Sending GetUserPermissionsForProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// EditUserPermissionsForProject updates the user permissions of a specific user
@@ -254,18 +323,27 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: tonic::Request<EditUserPermissionsForProjectRequest>,
     ) -> Result<tonic::Response<EditUserPermissionsForProjectResponse>, tonic::Status> {
+        log::info!("Received EditUserPermissionsForProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Parse the project Uuid
         let parsed_project_id =
             uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
         // Authorize user
         let user_id = self
             .authz
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
+
         // Execute request and return response
-        Ok(Response::new(
+        let response = Response::new(
             self.database
                 .edit_user_permissions_for_project(request.into_inner(), user_id)?,
-        ))
+        );
+
+        log::info!("Sending EditUserPermissionsForProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 }
