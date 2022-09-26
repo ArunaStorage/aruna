@@ -39,7 +39,7 @@ impl ServiceServer {
             ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint).await;
         let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
-        println!("ArunaServer listening on {}", addr);
+        log::info!("ArunaServer listening on {}", addr);
 
         Server::builder()
             .add_service(CollectionServiceServer::new(collection_service))
