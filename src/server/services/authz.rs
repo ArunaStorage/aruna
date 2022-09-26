@@ -378,12 +378,11 @@ impl Authz {
     }
 
     async fn get_token_realminfo(&self) -> Result<String, ArunaError> {
-        let resp = reqwest::get(&self.oidc_realminfo)
-            .await?
-            .json::<HashMap<String, String>>()
-            .await?;
-
-        let pub_key = resp
+        let resp = reqwest::get(&self.oidc_realminfo).await?;
+        log::debug!("Realm info response: {:#?}", resp);
+        let mapped = resp.json::<HashMap<String, String>>().await?;
+        log::debug!("HashMap: {:#?}", mapped);
+        let pub_key = mapped
             .get("public_key")
             .ok_or(AuthorizationError::AUTHFLOWERROR)?;
 
