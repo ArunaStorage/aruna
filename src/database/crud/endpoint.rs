@@ -1,13 +1,15 @@
+use diesel::insert_into;
 use diesel::prelude::*;
 use diesel::result::Error;
 
 use crate::api::aruna::api::storage::models::v1::Endpoint as ProtoEndpoint;
 use crate::api::aruna::api::storage::services::v1::{
-    GetObjectEndpointsRequest, GetObjectEndpointsResponse,
+    AddEndpointRequest, GetObjectEndpointsRequest, GetObjectEndpointsResponse,
 };
 use crate::config::DefaultEndpoint;
 use crate::database;
 use crate::database::connection::Database;
+use crate::database::models::enums::EndpointType;
 use crate::database::models::object::{Endpoint, ObjectLocation};
 use crate::database::schema::endpoints::dsl::*;
 use crate::database::schema::object_locations::dsl::*;
@@ -89,7 +91,55 @@ impl Database {
         }
     }
 
-    ///ToDo: Rust Doc
+    /// Add a new data proxy endpoint to the database.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request`: A gRPC request containing all the needed information to create a new endpoint.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<AddEndpointResponse>, Status>`:
+    ///   - **On success**: Database endpoint model
+    ///   - **On failure**: Aruna error with failure details
+    ///
+    pub fn add_endpoint(&self, request: &AddEndpointRequest) -> Result<Endpoint, ArunaError> {
+        let db_endpoint = Endpoint {
+            id: uuid::Uuid::new_v4(),
+            endpoint_type: EndpointType::from_i32(request.ep_type)?,
+            name: request.name.to_string(),
+            proxy_hostname: request.proxy_hostname.to_string(),
+            internal_hostname: request.internal_hostname.to_string(),
+            documentation_path: match request.documentation_path.is_empty() {
+                true => None,
+                false => Some(request.documentation_path.to_string()),
+            },
+            is_public: request.is_public,
+        };
+
+        self.pg_connection
+            .get()?
+            .transaction::<_, Error, _>(|conn| {
+                insert_into(endpoints).values(&db_endpoint).execute(conn)?;
+
+                Ok(())
+            })?;
+
+        Ok(db_endpoint)
+    }
+
+    /// Get a data proxy endpoint from the database specified by its id.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `endpoint_uuid`: The unique endpoint id
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<GetEndpointResponse>, Status>`:
+    ///   - **On success**: Database endpoint model
+    ///   - **On failure**: Aruna error with failure details
+    ///
     pub fn get_endpoint(&self, endpoint_uuid: &uuid::Uuid) -> Result<Endpoint, ArunaError> {
         let endpoint = self
             .pg_connection
@@ -105,7 +155,68 @@ impl Database {
         Ok(endpoint)
     }
 
-    ///ToDo: Rust Doc
+    /// Get all registered public endpoints from the database.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Vec<Endpoint>, Status>`:
+    ///   - **On success**: A vector of database endpoint models
+    ///   - **On failure**: Aruna error with failure details
+    ///
+    pub fn get_endpoints(&self) -> Result<Vec<Endpoint>, ArunaError> {
+        let pub_endpoints = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<Endpoint>, Error, _>(|conn| {
+                let pub_endpoints: Vec<Endpoint> = endpoints
+                    .filter(database::schema::endpoints::is_public.eq(true))
+                    .load::<Endpoint>(conn)?;
+
+                Ok(pub_endpoints)
+            })?;
+
+        Ok(pub_endpoints)
+    }
+
+    /// Get a data proxy endpoint from the database specified by its name.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `endpoint_name`: The endpoint name
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<Endpoint>, Status>`:
+    ///   - **On success**: Database endpoint model
+    ///   - **On failure**: Aruna error with failure details
+    ///
+    pub fn get_endpoint_by_name(&self, endpoint_name: &str) -> Result<Endpoint, ArunaError> {
+        let endpoint = self
+            .pg_connection
+            .get()?
+            .transaction::<Endpoint, Error, _>(|conn| {
+                let endpoint: Endpoint = endpoints
+                    .filter(database::schema::endpoints::name.eq(&endpoint_name))
+                    .first::<Endpoint>(conn)?;
+
+                Ok(endpoint)
+            })?;
+
+        Ok(endpoint)
+    }
+
+    /// Get the data proxy endpoint associated with a specific object location.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `location`: The object location associated with the endpoint
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<Endpoint>, Status>`:
+    ///   - **On success**: Database endpoint model
+    ///   - **On failure**: Aruna error with failure details
+    ///
     pub fn get_location_endpoint(&self, location: &ObjectLocation) -> Result<Endpoint, ArunaError> {
         let endpoint = self
             .pg_connection
@@ -121,7 +232,18 @@ impl Database {
         Ok(endpoint)
     }
 
-    /// ToDo: Rust Doc
+    /// Get all data proxy endpoints associated with a specific object.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request`: The request containing the specific object id.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<Endpoint>, Status>`:
+    ///   - **On success**: Response containing a vector of proto endpoints
+    ///   - **On failure**: Aruna error with failure details
+    ///
     pub fn get_object_endpoints(
         &self,
         request: GetObjectEndpointsRequest,
