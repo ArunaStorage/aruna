@@ -209,6 +209,7 @@ pub enum TypeConversionError {
     JWT,
     STRTOENDPOINTTYPE,
     PARSECONFIG,
+    PROTOCONVERSION,
 }
 
 impl Display for TypeConversionError {
@@ -223,6 +224,9 @@ impl Display for TypeConversionError {
                 write!(f, "Typeconversion for EndpointType failed",)
             }
             TypeConversionError::PARSECONFIG => write!(f, "Typeconversion for config failed",),
+            TypeConversionError::PROTOCONVERSION => {
+                write!(f, "Typeconversion from db model to proto model failed",)
+            }
         }
     }
 }
