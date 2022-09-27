@@ -49,6 +49,30 @@ struct Claims {
     exp: usize,
 }
 
+/// This is a helper struct to deserialize the JSON response from Keycloak
+/// Uses Serde and reqwest to deserialize the needed public_key
+#[derive(Deserialize, Debug)]
+struct KeyCloakResponse {
+    realm: String,
+    public_key: String,
+    #[serde(alias = "token-service")]
+    token_service: String,
+    #[serde(alias = "account-service")]
+    account_service: String,
+    #[serde(alias = "tokens-not-before")]
+    tokens_not_before: i64,
+}
+
+/// Format PublicKey to PEM format and return it as String
+impl KeyCloakResponse {
+    fn to_pem(&self) -> String {
+        format!(
+            "{}\n{}\n{}",
+            "-----BEGIN PUBLIC KEY-----", self.public_key, "-----END PUBLIC KEY-----"
+        )
+    }
+}
+
 /// This struct represents a request "Context" it is used to specify the
 /// accessed resource_type and id as well as the needed permissions
 pub struct Context {
@@ -380,16 +404,9 @@ impl Authz {
     async fn get_token_realminfo(&self) -> Result<String, ArunaError> {
         let resp = reqwest::get(&self.oidc_realminfo).await?;
         log::debug!("Realm info response: {:#?}", resp);
-        let mapped = resp.json::<HashMap<String, String>>().await?;
-        log::debug!("HashMap: {:#?}", mapped);
-        let pub_key = mapped
-            .get("public_key")
-            .ok_or(AuthorizationError::AUTHFLOWERROR)?;
-
-        Ok(format!(
-            "{}{}{}",
-            "-----BEGIN PUBLIC KEY-----\n", pub_key, "\n-----END PUBLIC KEY-----"
-        ))
+        let mapped = resp.json::<KeyCloakResponse>().await?;
+        log::debug!("KeyCloak response: {:#?}", mapped);
+        Ok(mapped.to_pem())
     }
 
     pub async fn get_decoding_key(&self) -> DecodingKey {
