@@ -23,6 +23,15 @@ pub enum EndpointType {
     S3,
     File,
 }
+impl EndpointType {
+    pub fn from_i32(value: i32) -> Result<EndpointType, Status> {
+        match value {
+            1 => Ok(EndpointType::S3),
+            2 => Ok(EndpointType::File),
+            _ => Err(Status::new(Code::InvalidArgument, "unknown endpoint type")),
+        }
+    }
+}
 impl FromStr for EndpointType {
     type Err = ArunaError;
 
