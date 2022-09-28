@@ -147,7 +147,7 @@ impl EndpointService for EndpointServiceImpl {
         // Transform database endpoints to proto endpoints
         let proto_endpoints: Vec<ProtoEndpoint> = db_endpoints
             .into_iter()
-            .map(|ep| ProtoEndpoint::try_from(ep))
+            .map(ProtoEndpoint::try_from)
             .collect::<Result<Vec<ProtoEndpoint>, _>>()?;
 
         // Return gRPC response after everything succeeded
@@ -233,9 +233,9 @@ impl TryFrom<Endpoint> for ProtoEndpoint {
             internal_hostname: db_endpoint.internal_hostname.to_string(),
             documentation_path: match db_endpoint.documentation_path {
                 None => "".to_string(),
-                Some(path) => path.to_string(),
+                Some(path) => path,
             },
-            is_public: db_endpoint.is_public.clone(),
+            is_public: db_endpoint.is_public,
             is_default: false, //ToDo: How to to know default from outside?
         })
     }
