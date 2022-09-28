@@ -49,6 +49,7 @@ fn main() {
             &[
                 "./protos".to_string(),
                 "protos/aruna/api/google".to_string(),
+                "protos/aruna/api/protoc-gen-openapiv2".to_string(),
             ],
         )
         .unwrap();

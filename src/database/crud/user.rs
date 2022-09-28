@@ -27,7 +27,7 @@ use crate::error::ArunaError;
 
 use chrono::Utc;
 use diesel::{delete, insert_into};
-use diesel::{prelude::*, update};
+use diesel::{prelude::*, sql_query, sql_types::Uuid, update};
 
 impl Database {
     /// Registers a new (unregistered) user by its oidc `external_id`
@@ -463,25 +463,39 @@ impl Database {
         use diesel::result::Error as dError;
 
         // Query the user information
-        let (user_info, perm) = self
-            .pg_connection
-            .get()?
-            .transaction::<(Option<User>, Vec<UserPermission>), dError, _>(|conn| {
-                let user = users
-                    .filter(crate::database::schema::users::id.eq(req_user_id))
-                    .first::<User>(conn)
-                    .optional()?;
-                if let Some(u) = user {
-                    let uperm = user_permissions
-                        .filter(crate::database::schema::user_permissions::user_id.eq(u.id))
-                        .load::<UserPermission>(conn)
+        let (user_info, perm, is_admin) =
+            self.pg_connection
+                .get()?
+                .transaction::<(Option<User>, Vec<UserPermission>, bool), dError, _>(|conn| {
+                    let user = users
+                        .filter(crate::database::schema::users::id.eq(req_user_id))
+                        .first::<User>(conn)
                         .optional()?;
-                    let perm_vec = uperm.unwrap_or_default();
-                    Ok((Some(u), perm_vec))
-                } else {
-                    Ok((None, Vec::new()))
-                }
-            })?;
+                    if let Some(u) = user {
+                        let uperm = user_permissions
+                            .filter(crate::database::schema::user_permissions::user_id.eq(u.id))
+                            .load::<UserPermission>(conn)
+                            .optional()?;
+                        let perm_vec = uperm.unwrap_or_default();
+
+                        let admin_user_perm = sql_query(
+                            "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
+                           FROM user_permissions AS uperm 
+                           JOIN projects AS p 
+                           ON p.id = uperm.project_id 
+                           WHERE uperm.user_id = $1
+                           AND p.flag & 1 = 1
+                           LIMIT 1",
+                        )
+                        .bind::<Uuid, _>(u.id)
+                        .get_result::<UserPermission>(conn)
+                        .optional()?;
+
+                        Ok((Some(u), perm_vec, admin_user_perm.is_some()))
+                    } else {
+                        Ok((None, Vec::new(), false))
+                    }
+                })?;
 
         // Convert information to gRPC format
         Ok(GetUserResponse {
@@ -490,6 +504,7 @@ impl Database {
                 display_name: u.display_name,
                 external_id: u.external_id,
                 active: u.active,
+                is_admin,
             }),
             project_permissions: perm
                 .iter()
@@ -531,13 +546,26 @@ impl Database {
         use diesel::result::Error as dError;
 
         // Update user display_name in Database return "new" name
-        let user = self
+        let (user, is_admin) = self
             .pg_connection
             .get()?
-            .transaction::<User, dError, _>(|conn| {
-                update(users.filter(id.eq(user_id)))
+            .transaction::<(User, bool), dError, _>(|conn| {
+                let admin_user_perm = sql_query(
+                    "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
+                       FROM user_permissions AS uperm 
+                       JOIN projects AS p 
+                       ON p.id = uperm.project_id 
+                       WHERE uperm.user_id = $1
+                       AND p.flag & 1 = 1
+                       LIMIT 1",
+                )
+                .bind::<Uuid, _>(user_id)
+                .get_result::<UserPermission>(conn)
+                .optional()?;
+                let update_ret = update(users.filter(id.eq(user_id)))
                     .set(display_name.eq(request.new_display_name))
-                    .get_result(conn)
+                    .get_result(conn)?;
+                Ok((update_ret, admin_user_perm.is_some()))
             })?;
 
         // Parse to gRPC format and return
@@ -547,6 +575,7 @@ impl Database {
                 display_name: user.display_name,
                 external_id: user.external_id,
                 active: user.active,
+                is_admin,
             }),
         })
     }

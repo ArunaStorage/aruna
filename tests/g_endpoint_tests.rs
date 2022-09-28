@@ -26,9 +26,15 @@ fn init_default_endpoint_test() {
     // Validate default endpoint creation
     assert!(matches!(db_endpoint.endpoint_type, EndpointType::S3));
     assert_eq!(db_endpoint.name, default_endpoint.endpoint_name);
-    assert_eq!(db_endpoint.internal_hostname, default_endpoint.endpoint_host);
+    assert_eq!(
+        db_endpoint.internal_hostname,
+        default_endpoint.endpoint_host
+    );
     assert_eq!(db_endpoint.proxy_hostname, default_endpoint.endpoint_proxy);
-    assert_eq!(db_endpoint.documentation_path, default_endpoint.endpoint_docu);
+    assert_eq!(
+        db_endpoint.documentation_path,
+        default_endpoint.endpoint_docu
+    );
     assert_eq!(db_endpoint.is_public, default_endpoint.endpoint_public);
 
     // Try to add default endpoint again
@@ -36,11 +42,23 @@ fn init_default_endpoint_test() {
 
     // Validate that the endpoint is the same
     assert_eq!(db_endpoint.id, another_db_endpoint.id);
-    assert_eq!(db_endpoint.endpoint_type as i32, another_db_endpoint.endpoint_type as i32);
+    assert_eq!(
+        db_endpoint.endpoint_type as i32,
+        another_db_endpoint.endpoint_type as i32
+    );
     assert_eq!(db_endpoint.name, another_db_endpoint.name);
-    assert_eq!(db_endpoint.proxy_hostname, another_db_endpoint.proxy_hostname);
-    assert_eq!(db_endpoint.internal_hostname, another_db_endpoint.internal_hostname);
-    assert_eq!(db_endpoint.documentation_path, another_db_endpoint.documentation_path);
+    assert_eq!(
+        db_endpoint.proxy_hostname,
+        another_db_endpoint.proxy_hostname
+    );
+    assert_eq!(
+        db_endpoint.internal_hostname,
+        another_db_endpoint.internal_hostname
+    );
+    assert_eq!(
+        db_endpoint.documentation_path,
+        another_db_endpoint.documentation_path
+    );
     assert_eq!(db_endpoint.is_public, another_db_endpoint.is_public);
 }
 
