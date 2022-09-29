@@ -259,6 +259,7 @@ pub enum AuthorizationError {
     NOTACTIVATED,
     UNREGISTERED,
     AUTHFLOWERROR,
+    TOKENEXPIRED,
 }
 
 impl Display for AuthorizationError {
@@ -268,6 +269,7 @@ impl Display for AuthorizationError {
                 write!(f, "Missing or malformed authorization token")
             }
             AuthorizationError::NOTACTIVATED => write!(f, "User is not activated"),
+            AuthorizationError::TOKENEXPIRED => write!(f, "Token expired"),
             AuthorizationError::PERMISSIONDENIED => write!(f, "Permission denied"),
             AuthorizationError::UNREGISTERED => write!(f, "Not registered, please register first!"),
             AuthorizationError::AUTHFLOWERROR => write!(f, "Error during auth flow"),

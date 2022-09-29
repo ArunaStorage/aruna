@@ -385,7 +385,11 @@ impl Authz {
                 .ok_or(AuthorizationError::PERMISSIONDENIED)
         })?;
 
-        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))?;
+        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))
+            .map_err(|e| match e.into_kind() {
+            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthorizationError::TOKENEXPIRED,
+            _ => AuthorizationError::PERMISSIONDENIED,
+        })?;
 
         Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
     }
@@ -441,7 +445,7 @@ impl Authz {
             sub: token_id.to_string(),
             exp: if expires_at.is_none() {
                 // Add 10 years to token lifetime
-                (Utc::now().second() as usize) + 315360000
+                (Utc::now().timestamp() as usize) + 315360000
             } else {
                 expires_at.unwrap().seconds as usize
             },
