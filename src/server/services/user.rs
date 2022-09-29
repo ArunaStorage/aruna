@@ -44,18 +44,24 @@ impl UserService for UserServiceImpl {
         log::info!("Received RegisterUserRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // Get subject from OIDC context in metadata
-        let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
+        if Authz::is_oidc_from_metadata(request.metadata()).await? {
+            // Get subject from OIDC context in metadata
+            let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
 
-        // Create user in db and return response
-        let response = Response::new(
-            self.database
-                .register_user(request.into_inner(), subject_id)?,
-        );
+            // Create user in db and return response
+            let response = Response::new(
+                self.database
+                    .register_user(request.into_inner(), subject_id)?,
+            );
 
-        log::info!("Sending RegisterUserResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+            log::info!("Sending RegisterUserResponse back to client.");
+            log::debug!("{}", format_grpc_response(&response));
+            Ok(response)
+        } else {
+            Err(tonic::Status::invalid_argument(
+                "ArunaToken not allowed, use OIDC Token.",
+            ))
+        }
     }
 
     /// Activate user activates a not activated but registered user
