@@ -39,7 +39,7 @@ CREATE TABLE identity_providers (
 -- Table with users imported from some aai
 CREATE TABLE users (
     id UUID PRIMARY KEY,
-    external_id TEXT NOT NULL,
+    external_id TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
 );

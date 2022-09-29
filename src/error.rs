@@ -118,7 +118,7 @@ impl From<ArunaError> for tonic::Status {
 
         match aerror {
             ArunaError::ConnectionError(_) => tonic::Status::internal("internal server error"),
-            ArunaError::DieselError(_) => tonic::Status::internal("internal server error"),
+            ArunaError::DieselError(dberror) => tonic::Status::internal(dberror.to_string()),
             ArunaError::DataProxyError(_) => tonic::Status::internal("internal data proxy error"),
             ArunaError::TimestampError(_) => tonic::Status::internal("internal server error"),
             ArunaError::TypeConversionError(e) => tonic::Status::invalid_argument(e.to_string()),

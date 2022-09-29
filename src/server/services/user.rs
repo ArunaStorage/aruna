@@ -109,10 +109,7 @@ impl UserService for UserServiceImpl {
         // If the token is an oidc token
         if Authz::is_oidc_from_metadata(request.metadata()).await? {
             // Validate the token and query the subject
-            let user_subject = self
-                .authz
-                .validate_and_query_token(request.metadata())
-                .await?;
+            let user_id = self.authz.personal_authorize(request.metadata()).await?;
 
             if !request.get_ref().project_id.is_empty()
                 || !request.get_ref().collection_id.is_empty()
@@ -127,7 +124,7 @@ impl UserService for UserServiceImpl {
             // Create the API token in the database
             let token_descr = self.database.create_api_token(
                 request.into_inner(),
-                user_subject,
+                user_id,
                 self.authz.get_decoding_serial().await,
             )?;
 
