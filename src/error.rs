@@ -215,17 +215,17 @@ pub enum TypeConversionError {
 impl Display for TypeConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeConversionError::UUID => write!(f, "Typeconversion for UUID failed",),
+            TypeConversionError::UUID => write!(f, "Typeconversion for UUID failed"),
             TypeConversionError::TONICMETADATATOSTR => {
                 write!(f, "Typeconversion for gRPC metadata 'to_str' failed")
             }
-            TypeConversionError::JWT => write!(f, "Typeconversion for JWT failed",),
+            TypeConversionError::JWT => write!(f, "Typeconversion for JWT failed"),
             TypeConversionError::STRTOENDPOINTTYPE => {
-                write!(f, "Typeconversion for EndpointType failed",)
+                write!(f, "Typeconversion for EndpointType failed")
             }
-            TypeConversionError::PARSECONFIG => write!(f, "Typeconversion for config failed",),
+            TypeConversionError::PARSECONFIG => write!(f, "Typeconversion for config failed"),
             TypeConversionError::PROTOCONVERSION => {
-                write!(f, "Typeconversion from db model to proto model failed",)
+                write!(f, "Typeconversion from db model to proto model failed")
             }
         }
     }
@@ -242,7 +242,7 @@ pub enum GrpcNotFoundError {
 impl Display for GrpcNotFoundError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GrpcNotFoundError::METADATATOKEN => write!(f, "Missing Token in Metadata",),
+            GrpcNotFoundError::METADATATOKEN => write!(f, "Missing Token in Metadata"),
             GrpcNotFoundError::PROJECTID => {
                 write!(f, "Missing ProjectId in Request")
             }
@@ -256,6 +256,7 @@ impl Display for GrpcNotFoundError {
 pub enum AuthorizationError {
     UNAUTHORIZED,
     PERMISSIONDENIED,
+    NOTACTIVATED,
     UNREGISTERED,
     AUTHFLOWERROR,
 }
@@ -266,6 +267,7 @@ impl Display for AuthorizationError {
             AuthorizationError::UNAUTHORIZED => {
                 write!(f, "Missing or malformed authorization token")
             }
+            AuthorizationError::NOTACTIVATED => write!(f, "User is not activated"),
             AuthorizationError::PERMISSIONDENIED => write!(f, "Permission denied"),
             AuthorizationError::UNREGISTERED => write!(f, "Not registered, please register first!"),
             AuthorizationError::AUTHFLOWERROR => write!(f, "Error during auth flow"),

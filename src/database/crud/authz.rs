@@ -345,8 +345,8 @@ impl Database {
         match result {
             Some(u) => {
                 if !u.active {
-                    Err(ArunaError::InvalidRequest(
-                        "User is not activated".to_string(),
+                    Err(ArunaError::AuthorizationError(
+                        AuthorizationError::NOTACTIVATED,
                     ))
                 } else {
                     Ok(Some(u.id))
