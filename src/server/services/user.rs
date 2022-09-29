@@ -77,7 +77,12 @@ impl UserService for UserServiceImpl {
 
         // For now only admins can activate "new" users
         self.authz.admin_authorize(request.metadata()).await?;
-        todo!()
+        // Activate the user
+        let response = Response::new(self.database.activate_user(request.into_inner())?);
+
+        log::info!("Sending ActivateUserRequest back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 
     /// CreateAPIToken creates a new API token, users must use a token for all requests except this one and register_user
@@ -478,5 +483,36 @@ impl UserService for UserServiceImpl {
             log::debug!("{}", format_grpc_response(&response));
             return Ok(response);
         }
+    }
+
+    /// GetUsersUnregisters returns all users that have not been activated yet.
+    /// TODO: Rename request to e.g. "GetUsersNotActivated"
+    ///
+    ///  ## Arguments
+    ///
+    /// * request: ActivateUserRequest: gRPC request, that contains the user_id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<ActivateUserResponse>, tonic::Status>: Placeholder, currently empty
+    ///
+    async fn get_users_unregistered(
+        &self,
+        request: tonic::Request<GetUsersUnregisteredRequest>,
+    ) -> Result<tonic::Response<GetUsersUnregisteredResponse>, tonic::Status> {
+        log::info!("Received GetUsersUnregisteredRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // For now only admins can activate "new" users
+        let _user_id = self.authz.admin_authorize(request.metadata()).await?;
+        // Create user in db and return response
+        let response = Response::new(
+            self.database
+                .get_users_unregistered(request.into_inner(), _user_id)?,
+        );
+
+        log::info!("Sending GetUsersUnregisteredResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
 }

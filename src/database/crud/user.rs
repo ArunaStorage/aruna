@@ -16,7 +16,8 @@ use crate::api::aruna::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
     DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
     GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetUserProjectsRequest,
-    GetUserProjectsResponse, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+    GetUserProjectsResponse, GetUserResponse, GetUsersUnregisteredRequest,
+    GetUsersUnregisteredResponse, RegisterUserRequest, RegisterUserResponse,
     UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject,
 };
 use crate::database::connection::Database;
@@ -626,5 +627,54 @@ impl Database {
         Ok(GetUserProjectsResponse {
             projects: user_proj,
         })
+    }
+
+    /// Returns all users that are not yet activated.
+    ///
+    /// ## Arguments
+    ///
+    /// * _request: GetUsersUnregisteredRequest: Placeholder, currently not in use.
+    /// * _user_grpc_id: String: user_id validated by personal aruna_token or user_id specified by an admin
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetUsersUnregisteredResponse, ArunaError>: Contains a list of all users that are not yet activated
+    ///
+    pub fn get_users_unregistered(
+        &self,
+        _request: GetUsersUnregisteredRequest,
+        _user_grpc_id: uuid::Uuid,
+    ) -> Result<GetUsersUnregisteredResponse, ArunaError> {
+        use crate::database::schema::users::dsl::*;
+        use diesel::result::Error as dError;
+
+        // Get all projects of a user based on the join of user_permissions and projects
+        let ret_users = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<Vec<User>>, dError, _>(|conn| {
+                users
+                    .filter(active.eq(false))
+                    .get_results::<User>(conn)
+                    .optional()
+            })?;
+
+        // Parse the information into a shortened gRPC user_project info
+        let grpc_users = match ret_users {
+            Some(u) => u
+                .iter()
+                .map(|us| gRPCUser {
+                    id: us.id.to_string(),
+                    external_id: us.external_id.to_string(),
+                    display_name: us.display_name.to_string(),
+                    active: us.active,
+                    is_admin: us.active,
+                })
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+
+        // Return the gRPC response
+        Ok(GetUsersUnregisteredResponse { users: grpc_users })
     }
 }
