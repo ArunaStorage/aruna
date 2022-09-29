@@ -231,8 +231,23 @@ impl Authz {
         metadata: &MetadataMap,
         context: &Context,
     ) -> Result<uuid::Uuid, ArunaError> {
-        let token = self.validate_and_query_token(metadata).await?;
-        self.db.get_checked_user_id_from_token(&token, context)
+        let oidc_user = self.check_if_oidc(metadata).await?;
+
+        match oidc_user {
+            Some(u) => {
+                if context.personal {
+                    Ok(u)
+                } else {
+                    Err(ArunaError::AuthorizationError(
+                        AuthorizationError::PERMISSIONDENIED,
+                    ))
+                }
+            }
+            None => {
+                let token = self.validate_and_query_token(metadata).await?;
+                self.db.get_checked_user_id_from_token(&token, context)
+            }
+        }
     }
 
     /// This is a wrapper that runs the authorize function with a `personal` context
@@ -316,6 +331,26 @@ impl Authz {
         .await
     }
 
+    pub async fn check_if_oidc(
+        &self,
+        metadata: &MetadataMap,
+    ) -> Result<Option<uuid::Uuid>, ArunaError> {
+        // If this token is OIDC
+        if Authz::is_oidc_from_metadata(metadata).await? {
+            let subject = self.validate_oidc_only(metadata).await?;
+
+            match self.db.get_oidc_user(&subject)? {
+                Some(u) => Ok(Some(u)),
+                None => Err(ArunaError::AuthorizationError(
+                    AuthorizationError::UNREGISTERED,
+                )),
+            }
+            // Could be an arunatoken
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn validate_and_query_token(
         &self,
         metadata: &MetadataMap,
@@ -325,23 +360,6 @@ impl Authz {
         let header = decode_header(&token_string)?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
-
-        if Authz::is_oidc_from_metadata(metadata).await? {
-            let subject = self.validate_oidc_only(metadata).await?;
-
-            match self.db.get_oidc_user(&subject)? {
-                Some(u) => {
-                    return Ok(u);
-                }
-                None => {
-                    return Err(ArunaError::AuthorizationError(
-                        AuthorizationError::UNREGISTERED,
-                    ));
-                }
-            }
-        }
-
-        // --------------- This section only applies if the token is an "aruna" token -------------------------
 
         let hashmap = self.pub_keys.clone();
         let index = kid
