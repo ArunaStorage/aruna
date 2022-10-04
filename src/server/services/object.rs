@@ -308,7 +308,7 @@ impl ObjectService for ObjectServiceImpl {
                 .collect::<Vec<_>>();
 
             // If finished parts is not empty --> multipart upload
-            if finished_parts.is_empty() {
+            if !finished_parts.is_empty() {
                 // Create multipart upload finish request for data proxy
                 let finished_presigned = FinishPresignedUploadRequest {
                     upload_id: request.get_ref().upload_id.to_string(),
