@@ -296,15 +296,6 @@ impl ObjectService for ObjectServiceImpl {
         // Only finish the upload if no_upload == false
         // This will otherwise skip the data proxy finish routine
         if !request.get_ref().no_upload {
-            // Get the data_proxy
-            let (mut data_proxy, _location) = self
-                .try_connect_object_endpoint(
-                    &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
-                        Status::invalid_argument("Unable to parse object_id to uuid")
-                    })?,
-                )
-                .await?;
-
             // Create the finished parts vec from request
             let finished_parts = request
                 .get_ref()
@@ -316,26 +307,36 @@ impl ObjectService for ObjectServiceImpl {
                 })
                 .collect::<Vec<_>>();
 
-            let is_empty = &finished_parts.is_empty();
+            // If finished parts is not empty --> multipart upload
+            if finished_parts.is_empty() {
+                // Create multipart upload finish request for data proxy
+                let finished_presigned = FinishPresignedUploadRequest {
+                    upload_id: request.get_ref().upload_id.to_string(),
+                    bucket: collection_id.to_string(),
+                    key: request.get_ref().object_id.to_string(),
+                    part_etags: finished_parts,
+                    multipart: true, //multipart: *is_empty,
+                };
 
-            // Create Finish request for Dataproxy
-            let finished_presigned = FinishPresignedUploadRequest {
-                upload_id: request.get_ref().upload_id.to_string(),
-                bucket: collection_id.to_string(),
-                key: request.get_ref().object_id.to_string(),
-                part_etags: finished_parts,
-                multipart: *is_empty, // If finished parts is not empty --> multipart
-            };
+                // Get the data_proxy
+                let (mut data_proxy, _location) = self
+                    .try_connect_object_endpoint(
+                        &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
+                            Status::invalid_argument("Unable to parse object_id to uuid")
+                        })?,
+                    )
+                    .await?;
 
-            // Execute the proxy request and get the result
-            let proxy_result = data_proxy
-                .finish_presigned_upload(finished_presigned)
-                .await?
-                .into_inner();
+                // Execute the proxy request and get the result
+                let proxy_result = data_proxy
+                    .finish_presigned_upload(finished_presigned)
+                    .await?
+                    .into_inner();
 
-            // Only proceed when proxy did not fail
-            if !proxy_result.ok {
-                return Err(Status::aborted("Proxy failed to finish object"));
+                // Only proceed when proxy did not fail
+                if !proxy_result.ok {
+                    return Err(Status::aborted("Proxy failed to finish object"));
+                }
             }
         }
 
