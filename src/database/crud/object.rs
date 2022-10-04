@@ -122,7 +122,7 @@ impl Database {
             filename: staging_object.filename.clone(),
             created_at: Local::now().naive_local(),
             created_by: *creator,
-            content_len: 0,
+            content_len: staging_object.content_len,
             object_status: ObjectStatus::INITIALIZING,
             dataclass: parse_dataclass(&staging_object.dataclass),
             source_id: source.as_ref().map(|src| src.id),
