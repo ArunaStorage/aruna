@@ -55,7 +55,7 @@ async fn main() {
     };
     let signer_arc = Arc::new(signer);
 
-    let data_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    let data_socket = "0.0.0.0:8080".parse().unwrap();
 
     let data_server = DataServer::new(s3_client_arc.clone(), signer_arc.clone(), data_socket)
         .await
@@ -64,13 +64,14 @@ async fn main() {
     let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone(), signer_arc)
         .await
         .unwrap();
-    let internal_proxy_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8081);
+    let internal_proxy_socket = "0.0.0.0:8081".parse().unwrap();
 
     let internal_proxy_server =
         ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
             .await
             .unwrap();
 
+    log::info!("Server started!");
     let _end = match try_join!(data_server.serve(), internal_proxy_server.serve()) {
         Ok(value) => value,
         Err(err) => {
