@@ -408,7 +408,11 @@ impl Authz {
             &token_string,
             &DecodingKey::from_rsa_pem(pem_token.as_bytes())?,
             &Validation::new(header.alg),
-        )?;
+        )
+        .map_err(|e| match e.into_kind() {
+            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthorizationError::TOKENEXPIRED,
+            _ => AuthorizationError::PERMISSIONDENIED,
+        })?;
 
         let subject = token_data.claims.sub;
         Ok(subject)
