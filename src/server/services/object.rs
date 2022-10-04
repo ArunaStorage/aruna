@@ -38,10 +38,13 @@ impl ObjectServiceImpl {
         &self,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Evaluate endpoint url
+        /*
         let endpoint_url = match &self.default_endpoint.is_public {
             true => &self.default_endpoint.proxy_hostname,
             false => &self.default_endpoint.internal_hostname,
         };
+        */
+        let endpoint_url = &self.default_endpoint.internal_hostname;
 
         // Try to establish connection to endpoint
         let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
@@ -75,13 +78,13 @@ impl ObjectServiceImpl {
         endpoint_uuid: uuid::Uuid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
-        let endpoint = self.database.get_endpoint(&endpoint_uuid)?;
-
-        // Evaluate endpoint url
-        let endpoint_url = match &endpoint.is_public {
+        /*
+        let endpoint_url = match &self.default_endpoint.is_public {
             true => &self.default_endpoint.proxy_hostname,
             false => &self.default_endpoint.internal_hostname,
         };
+        */
+        let endpoint_url = &self.default_endpoint.internal_hostname;
 
         // Try to establish connection to endpoint
         let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
@@ -120,11 +123,13 @@ impl ObjectServiceImpl {
             .database
             .get_primary_object_location_with_endpoint(object_uuid)?;
 
-        // Evaluate endpoint url
-        let endpoint_url = match &endpoint.is_public {
-            true => &endpoint.proxy_hostname,
-            false => &endpoint.internal_hostname,
+        /*
+        let endpoint_url = match &self.default_endpoint.is_public {
+            true => &self.default_endpoint.proxy_hostname,
+            false => &self.default_endpoint.internal_hostname,
         };
+        */
+        let endpoint_url = &self.default_endpoint.internal_hostname;
 
         // Try to establish connection to endpoint
         let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
