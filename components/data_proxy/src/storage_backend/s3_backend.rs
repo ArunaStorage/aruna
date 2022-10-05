@@ -1,10 +1,10 @@
 use std::{env, str::FromStr};
 
 use async_channel::{Receiver, Sender};
-use async_trait::async_trait;
 use aws_sdk_s3::{
+    error::CreateBucketError,
     model::{CompletedMultipartUpload, CompletedPart},
-    types::ByteStream,
+    types::{ByteStream, SdkError},
     Client, Endpoint, Region,
 };
 use http::Uri;
@@ -12,9 +12,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use std::convert::TryFrom;
 
-use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag, Range};
-
-use super::storage_backend::StorageBackend;
+use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag};
 
 const DOWNLOAD_CHUNK_SIZE: usize = 500000;
 const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
@@ -53,17 +51,20 @@ impl StorageBackend for S3Backend {
     async fn upload_object(
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
-        location: Location,
+        bucket: String,
+        key: String,
         content_len: i64,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        self.check_and_create_bucket(bucket.clone()).await?;
+
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
         match self
             .s3_client
             .put_object()
-            .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_bucket(Some(bucket))
+            .set_key(Some(key))
             .set_content_length(Some(content_len))
             .body(bytestream)
             .send()
@@ -74,7 +75,7 @@ impl StorageBackend for S3Backend {
                 log::error!("{}", err);
                 return Err(Box::new(err));
             }
-        };
+        }
 
         Ok(())
     }
@@ -82,18 +83,12 @@ impl StorageBackend for S3Backend {
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
     // The chunks are then transfered into the sender.
-    async fn download(
-        &self,
-        location: Location,
-        ranges: Option<Vec<Range>>,
-        chunk_size: u32,
-        sender: Sender<bytes::Bytes>,
-    ) {
+    pub async fn download(&self, bucket: String, key: String, sender: Sender<bytes::Bytes>) {
         let object = self
             .s3_client
             .get_object()
-            .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_bucket(Some(bucket))
+            .set_key(Some(key))
             .send()
             .await
             .unwrap();
@@ -115,14 +110,14 @@ impl StorageBackend for S3Backend {
                         log::error!("{}", err);
                         break;
                     }
-                };
+                }
 
                 buf_len
             };
 
             if consumed_len == 0 {
                 break;
-            };
+            }
 
             buf_reader.consume(consumed_len);
         }
@@ -133,6 +128,9 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        self.check_and_create_bucket(location.bucket.clone())
+            .await?;
+
         let multipart = self
             .s3_client
             .create_multipart_upload()
@@ -175,6 +173,8 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         parts: Vec<PartETag>,
+        bucket: String,
+        key: String,
         upload_id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut completed_parts = Vec::new();
@@ -211,12 +211,30 @@ impl StorageBackend for S3Backend {
         &self,
         bucket: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        match self.s3_client.create_bucket().bucket(bucket).send().await {
-            Ok(_) => return Ok(()),
-            Err(err) => {
-                log::error!("{}", err);
-                return Err(Box::new(err));
-            }
-        };
+        self.check_and_create_bucket(bucket).await
+    }
+
+    pub async fn check_and_create_bucket(
+        &self,
+        bucket: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        match self
+            .s3_client
+            .get_bucket_location()
+            .bucket(bucket.clone())
+            .send()
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(_) => match self.s3_client.create_bucket().bucket(bucket).send().await {
+                Ok(_) => {
+                    return Ok(());
+                }
+                Err(err) => {
+                    log::error!("{}", err);
+                    return Err(Box::new(err));
+                }
+            },
+        }
     }
 }
