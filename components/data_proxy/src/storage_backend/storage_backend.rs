@@ -35,7 +35,7 @@ pub trait StorageBackend: Debug + Send + Sync {
         location: Location,
         range: Option<Range>,
         sender: Sender<bytes::Bytes>,
-    );
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     /// Initiates a multipart upload.
     /// Returns the UploadID of the multipart upload

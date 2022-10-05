@@ -90,7 +90,7 @@ impl StorageBackend for S3Backend {
         location: Location,
         range: Option<Range>,
         sender: Sender<bytes::Bytes>,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut object = self
             .s3_client
             .get_object()
@@ -105,7 +105,13 @@ impl StorageBackend for S3Backend {
             None => {}
         }
 
-        let object_request = object.send().await.unwrap();
+        let object_request = match object.send().await {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("{}", err);
+                return Err(Box::new(err));
+            }
+        };
 
         let body_reader = object_request.body.into_async_read();
 
@@ -114,7 +120,7 @@ impl StorageBackend for S3Backend {
         loop {
             let consumed_len = {
                 let buffer_result = buf_reader.fill_buf().await;
-                let buf = buffer_result.unwrap();
+                let buf = buffer_result?;
                 let buf_len = buf.len().clone();
                 let bytes_buf = bytes::Bytes::copy_from_slice(buf);
 
@@ -122,7 +128,7 @@ impl StorageBackend for S3Backend {
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("{}", err);
-                        break;
+                        return Err(Box::new(err));
                     }
                 }
 
@@ -135,6 +141,8 @@ impl StorageBackend for S3Backend {
 
             buf_reader.consume(consumed_len);
         }
+
+        return Ok(());
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
@@ -151,8 +159,7 @@ impl StorageBackend for S3Backend {
             .set_bucket(Some(location.bucket))
             .set_key(Some(location.path))
             .send()
-            .await
-            .unwrap();
+            .await?;
 
         return Ok(multipart.upload_id().unwrap().to_string());
     }
