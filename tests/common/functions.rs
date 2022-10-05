@@ -1,13 +1,11 @@
-use aruna_server::{
-    api::aruna::api::storage::{
-        models::v1::{collection_overview, CollectionOverview, KeyValue, ProjectOverview},
-        services::v1::{
-            CreateNewCollectionRequest, CreateProjectRequest, GetCollectionByIdRequest,
-            GetProjectRequest,
-        },
+use aruna_rust_api::api::storage::{
+    models::v1::{collection_overview, CollectionOverview, KeyValue, ProjectOverview},
+    services::v1::{
+        CreateNewCollectionRequest, CreateProjectRequest, GetCollectionByIdRequest,
+        GetProjectRequest,
     },
-    database,
 };
+use aruna_server::database;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 fn rand_string(len: usize) -> String {

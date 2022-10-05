@@ -1,6 +1,6 @@
-use aruna_server::api::aruna::api::storage::internal::v1::Location;
-use aruna_server::api::aruna::api::storage::models::v1::{EndpointType, Hash, KeyValue};
-use aruna_server::api::aruna::api::storage::services::v1::{
+use aruna_rust_api::api::storage::internal::v1::Location;
+use aruna_rust_api::api::storage::models::v1::{EndpointType, Hash, KeyValue};
+use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
     InitializeNewObjectRequest, StageObject,
 };

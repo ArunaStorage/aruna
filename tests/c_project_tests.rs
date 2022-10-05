@@ -2,10 +2,10 @@ extern crate core;
 
 mod common;
 
-use aruna_server::api::aruna::api::storage::services::v1::{
+use aruna_rust_api::api::storage::services::v1::{
     DestroyProjectRequest, EditUserPermissionsForProjectRequest,
 };
-use aruna_server::api::aruna::api::storage::{
+use aruna_rust_api::api::storage::{
     models::v1::{ProjectOverview, ProjectPermission},
     services::v1::{
         ActivateUserRequest, AddUserToProjectRequest, CreateProjectRequest,

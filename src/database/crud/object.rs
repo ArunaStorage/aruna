@@ -8,11 +8,13 @@ use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
 use r2d2::PooledConnection;
 
-use crate::api::aruna::api::storage::services::v1::{
+use crate::database::models::object_group::ObjectGroupObject;
+use crate::error::{ArunaError, GrpcNotFoundError};
+use aruna_rust_api::api::storage::services::v1::{
     AddLabelToObjectRequest, AddLabelToObjectResponse, GetReferencesRequest, GetReferencesResponse,
     ObjectReference, SetHooksOfObjectRequest, SetHooksOfObjectResponse,
 };
-use crate::api::aruna::api::storage::{
+use aruna_rust_api::api::storage::{
     internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
         Hash as ProtoHash, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
@@ -27,8 +29,6 @@ use crate::api::aruna::api::storage::{
         UpdateObjectRequest, UpdateObjectResponse,
     },
 };
-use crate::database::models::object_group::ObjectGroupObject;
-use crate::error::{ArunaError, GrpcNotFoundError};
 
 use crate::database;
 use crate::database::connection::Database;
@@ -1307,7 +1307,7 @@ impl Database {
 ///
 /// ## Resturns:
 ///
-/// `Result<use crate::api::aruna::api::storage::models::Object, Error>` -
+/// `Result<use aruna_rust_api::api::storage::models::Object, Error>` -
 /// The Object contains the newly created object clone in its gRPC proto format
 ///
 pub fn clone_object(
@@ -1415,7 +1415,7 @@ pub fn clone_object(
 ///
 /// ## Resturns:
 ///
-/// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
+/// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
 /// The latest database object or error if the request failed.
 ///
 pub fn get_latest_obj(
@@ -1539,7 +1539,7 @@ pub fn get_all_references(
 ///
 /// ## Resturns:
 ///
-/// `Result<use crate::api::aruna::api::storage::models::Object, ArunaError>` -
+/// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
 /// Database representation of an object
 ///
 pub fn get_object(

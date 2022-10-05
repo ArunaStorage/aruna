@@ -9,10 +9,12 @@
 //! - Get all projects a user is member of
 //!
 use super::utils::*;
-use crate::api::aruna::api::storage::models::v1::{
+use crate::database::connection::Database;
+use crate::database::models::auth::{ApiToken, Project as ProjectDB, User, UserPermission};
+use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
-use crate::api::aruna::api::storage::services::v1::{
+use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
     DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
     GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetUserProjectsRequest,
@@ -20,8 +22,6 @@ use crate::api::aruna::api::storage::services::v1::{
     GetUsersUnregisteredResponse, RegisterUserRequest, RegisterUserResponse,
     UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject,
 };
-use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, Project as ProjectDB, User, UserPermission};
 
 use crate::database::models::enums::UserRights;
 use crate::error::ArunaError;

@@ -1,17 +1,14 @@
 use std::sync::Arc;
 
-use tokio::task;
-use tonic::Response;
-
-use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
+use crate::error::ArunaError;
 use crate::error::TypeConversionError;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
-use crate::{
-    api::aruna::api::storage::services::v1::collection_service_server::CollectionService,
-    error::ArunaError,
-};
+use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
+use aruna_rust_api::api::storage::services::v1::*;
+use tokio::task;
+use tonic::Response;
 
 use super::authz::Authz;
 

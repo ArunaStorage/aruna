@@ -10,12 +10,12 @@
 //! - Get all projects a user is member of
 //!
 use super::authz::Authz;
-use crate::api::aruna::api::storage::services::v1::user_service_server::UserService;
-use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::crud::utils::map_permissions;
 use crate::error::ArunaError;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
+use aruna_rust_api::api::storage::services::v1::*;
 use std::sync::Arc;
 use tonic::Response;
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest, Status};
+use aruna_rust_api::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest, Status};
 
 use crate::database::models::enums::{Dataclass, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
@@ -144,15 +144,15 @@ where
 /// * `Option<UserRights>` - Optional user_rights
 //
 pub fn map_permissions(
-    perm: crate::api::aruna::api::storage::models::v1::Permission,
+    perm: aruna_rust_api::api::storage::models::v1::Permission,
 ) -> Option<UserRights> {
     match perm {
-        crate::api::aruna::api::storage::models::v1::Permission::Unspecified => None,
-        crate::api::aruna::api::storage::models::v1::Permission::None => None,
-        crate::api::aruna::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
-        crate::api::aruna::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
-        crate::api::aruna::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
-        crate::api::aruna::api::storage::models::v1::Permission::Admin => Some(UserRights::ADMIN),
+        aruna_rust_api::api::storage::models::v1::Permission::Unspecified => None,
+        aruna_rust_api::api::storage::models::v1::Permission::None => None,
+        aruna_rust_api::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
+        aruna_rust_api::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
+        aruna_rust_api::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
+        aruna_rust_api::api::storage::models::v1::Permission::Admin => Some(UserRights::ADMIN),
     }
 }
 
@@ -427,11 +427,11 @@ pub fn db_to_grpc_object_status(db_status: ObjectStatus) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::aruna::api::storage::models::v1::KeyValue;
-    use crate::api::aruna::api::storage::models::v1::LabelFilter;
-    use crate::api::aruna::api::storage::models::v1::Permission;
     use crate::database::models::collection::CollectionKeyValue;
     use crate::database::models::object::ObjectKeyValue;
+    use aruna_rust_api::api::storage::models::v1::KeyValue;
+    use aruna_rust_api::api::storage::models::v1::LabelFilter;
+    use aruna_rust_api::api::storage::models::v1::Permission;
     use std::any::type_name;
 
     #[test]

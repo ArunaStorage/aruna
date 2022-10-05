@@ -2,10 +2,6 @@ use diesel::insert_into;
 use diesel::prelude::*;
 use diesel::result::Error;
 
-use crate::api::aruna::api::storage::models::v1::Endpoint as ProtoEndpoint;
-use crate::api::aruna::api::storage::services::v1::{
-    AddEndpointRequest, GetObjectEndpointsRequest, GetObjectEndpointsResponse,
-};
 use crate::config::DefaultEndpoint;
 use crate::database;
 use crate::database::connection::Database;
@@ -14,6 +10,10 @@ use crate::database::models::object::{Endpoint, ObjectLocation};
 use crate::database::schema::endpoints::dsl::*;
 use crate::database::schema::object_locations::dsl::*;
 use crate::error::ArunaError;
+use aruna_rust_api::api::storage::models::v1::Endpoint as ProtoEndpoint;
+use aruna_rust_api::api::storage::services::v1::{
+    AddEndpointRequest, GetObjectEndpointsRequest, GetObjectEndpointsResponse,
+};
 
 impl Database {
     /// This is a helper method to ensure that at least the endpoint defined in the config exists in the

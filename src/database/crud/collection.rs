@@ -9,17 +9,6 @@
 //! - PinCollectionVersion
 //! - DeleteCollection
 use super::utils::*;
-use crate::api::aruna::api::storage::models::v1::DataClass;
-use crate::api::aruna::api::storage::models::v1::{
-    collection_overview, collection_overview::Version as CollectionVersiongRPC, CollectionOverview,
-    CollectionOverviews, CollectionStats, LabelOntology, Stats, Version,
-};
-use crate::api::aruna::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateNewCollectionResponse, DeleteCollectionRequest,
-    DeleteCollectionResponse, GetCollectionByIdRequest, GetCollectionByIdResponse,
-    GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
-    PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
-};
 use crate::database::connection::Database;
 use crate::database::crud::object::clone_object;
 use crate::database::models;
@@ -32,6 +21,17 @@ use crate::database::models::object::Object;
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
+use aruna_rust_api::api::storage::models::v1::DataClass;
+use aruna_rust_api::api::storage::models::v1::{
+    collection_overview, collection_overview::Version as CollectionVersiongRPC, CollectionOverview,
+    CollectionOverviews, CollectionStats, LabelOntology, Stats, Version,
+};
+use aruna_rust_api::api::storage::services::v1::{
+    CreateNewCollectionRequest, CreateNewCollectionResponse, DeleteCollectionRequest,
+    DeleteCollectionResponse, GetCollectionByIdRequest, GetCollectionByIdResponse,
+    GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
+    PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
+};
 use chrono::Local;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
@@ -358,7 +358,7 @@ impl Database {
                     let new_version = request
                         .version
                         .clone()
-                        .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
+                        .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
                         .unwrap();
 
                     // Put together the new collection info
@@ -457,7 +457,7 @@ impl Database {
                 let new_version = request
                     .version
                     .clone()
-                    .map(|v| v.into_collection_version(uuid::Uuid::new_v4()))
+                    .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
                     .unwrap();
                 // Create new collection database struct
                 let new_coll = Collection {
@@ -1054,36 +1054,15 @@ impl From<CollectionVersion> for Version {
         }
     }
 }
-/// Implement partial ord for gRPC version
-/// This allows us to compare versions with `<`, `>` etc.
-impl PartialOrd for Version {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.major.partial_cmp(&other.major) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => {
-                return ord;
-            }
-        }
-        match self.minor.partial_cmp(&other.minor) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => {
-                return ord;
-            }
-        }
-        self.patch.partial_cmp(&other.patch)
-    }
-}
 
 /// Function that converts a gRPC version to a database collection version
 /// This function needs a uuid to correctly map
-impl Version {
-    fn into_collection_version(self, version_id: uuid::Uuid) -> CollectionVersion {
-        CollectionVersion {
-            id: version_id,
-            major: self.major.into(),
-            minor: self.minor.into(),
-            patch: self.patch.into(),
-        }
+fn from_grpc_version(grpc_version: Version, version_id: uuid::Uuid) -> CollectionVersion {
+    CollectionVersion {
+        id: version_id,
+        major: grpc_version.major.into(),
+        minor: grpc_version.minor.into(),
+        patch: grpc_version.patch.into(),
     }
 }
 

@@ -9,20 +9,6 @@
 //! - Destroy / Delete Project
 //!
 use super::utils::*;
-use crate::api::aruna::api::storage::models::v1::{
-    collection_overview::Version as CollectionVersiongRPC, CollectionOverview, CollectionStats,
-    LabelOntology, Stats,
-};
-use crate::api::aruna::api::storage::models::v1::{ProjectOverview, ProjectPermission, Version};
-use crate::api::aruna::api::storage::services::v1::{
-    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
-    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
-    EditUserPermissionsForProjectResponse, GetProjectCollectionsRequest,
-    GetProjectCollectionsResponse, GetProjectRequest, GetProjectResponse,
-    GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
-    RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
-    UpdateProjectResponse,
-};
 use crate::database::connection::Database;
 use crate::database::models::auth::{Project, UserPermission};
 use crate::database::models::collection::{
@@ -31,6 +17,20 @@ use crate::database::models::collection::{
 use crate::database::models::enums::Dataclass;
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
+use aruna_rust_api::api::storage::models::v1::{
+    collection_overview::Version as CollectionVersiongRPC, CollectionOverview, CollectionStats,
+    LabelOntology, Stats,
+};
+use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermission, Version};
+use aruna_rust_api::api::storage::services::v1::{
+    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
+    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
+    EditUserPermissionsForProjectResponse, GetProjectCollectionsRequest,
+    GetProjectCollectionsResponse, GetProjectRequest, GetProjectResponse,
+    GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
+    RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
+    UpdateProjectResponse,
+};
 
 use chrono::Utc;
 use diesel::result::Error;
@@ -413,32 +413,38 @@ impl Database {
 
         // Execute db query
         self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
-            match collections
-                .filter(crate::database::schema::collections::project_id.eq(p_id))
-                .first::<Collection>(conn) {
-                    Ok(_) =>
-                        Err(ArunaError::InvalidRequest(
+            (match
+                collections
+                    .filter(crate::database::schema::collections::project_id.eq(p_id))
+                    .first::<Collection>(conn)
+            {
+                Ok(_) =>
+                    Err(
+                        ArunaError::InvalidRequest(
                             "Cannot delete non empty project, please delete/move all associated collections first".to_string()
-                        )),
-                    Err(err) => {
-                        match err {
-                            Error::NotFound => {
-                                // Delete project permissions
-                                delete(
-                                    user_permissions.filter(
-                                        crate::database::schema::user_permissions::project_id.eq(p_id)
-                                    )
-                                ).execute(conn)?;
+                        )
+                    ),
+                Err(err) => {
+                    match err {
+                        Error::NotFound => {
+                            // Delete project permissions
+                            delete(
+                                user_permissions.filter(
+                                    crate::database::schema::user_permissions::project_id.eq(p_id)
+                                )
+                            ).execute(conn)?;
 
-                                // Delete project
-                                delete(projects.filter(crate::database::schema::projects::id.eq(p_id))).execute(conn)?;
+                            // Delete project
+                            delete(
+                                projects.filter(crate::database::schema::projects::id.eq(p_id))
+                            ).execute(conn)?;
 
-                                Ok(())
-                            }
-                            _ => Err(ArunaError::DieselError(err))
+                            Ok(())
                         }
+                        _ => Err(ArunaError::DieselError(err)),
                     }
-                }?;
+                }
+            })?;
 
             Ok(())
         })?;

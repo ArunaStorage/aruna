@@ -1,9 +1,9 @@
 mod common;
-use aruna_server::api::aruna::api::storage::internal::v1::Location;
-use aruna_server::api::aruna::api::storage::models::v1::{
+use aruna_rust_api::api::storage::internal::v1::Location;
+use aruna_rust_api::api::storage::models::v1::{
     collection_overview, KeyValue, LabelFilter, LabelOrIdQuery, PageRequest, Version,
 };
-use aruna_server::api::aruna::api::storage::services::v1::*;
+use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
 use common::functions::{create_collection, TCreateCollection};
 use serial_test::serial;

@@ -6,8 +6,8 @@ use diesel::r2d2::{self, ConnectionManager, Pool};
 use diesel::PgConnection;
 use dotenv::dotenv;
 
-//use crate::api::aruna::api::storage::models::v1::Collection;
-//use crate::api::aruna::api::storage::services::v1::CreateNewCollectionRequest;
+//use aruna_rust_api::api::storage::models::v1::Collection;
+//use aruna_rust_api::api::storage::services::v1::CreateNewCollectionRequest;
 //use crate::database::models::{self, CollectionLabel, Label};
 //use crate::database::util;
 

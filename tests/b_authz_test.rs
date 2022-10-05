@@ -1,13 +1,14 @@
-use aruna_server::{
-    api::aruna::api::storage::{
-        models::v1::ProjectPermission,
-        services::v1::{
-            ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
-            CreateNewCollectionRequest, CreateProjectRequest, DeleteApiTokenRequest,
-            DeleteApiTokensRequest, GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
-            UpdateUserDisplayNameRequest,
-        },
+use aruna_rust_api::api::storage::{
+    models::v1::ProjectPermission,
+    services::v1::{
+        ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
+        CreateNewCollectionRequest, CreateProjectRequest, DeleteApiTokenRequest,
+        DeleteApiTokensRequest, GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
+        UpdateUserDisplayNameRequest,
     },
+};
+
+use aruna_server::{
     database::{self},
     server::services::authz::Context,
 };

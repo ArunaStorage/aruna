@@ -3,18 +3,17 @@ use tonic::{Code, Request, Response, Status};
 
 use super::authz::Authz;
 
-use crate::api::aruna;
-use crate::api::aruna::api::storage::models::v1::Endpoint as ProtoEndpoint;
-use crate::api::aruna::api::storage::services::v1::endpoint_service_server::EndpointService;
-use crate::api::aruna::api::storage::services::v1::{
-    AddEndpointRequest, AddEndpointResponse, DeleteEndpointRequest, DeleteEndpointResponse,
-    GetDefaultEndpointRequest, GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse,
-    GetEndpointsRequest, GetEndpointsResponse,
-};
 use crate::database::connection::Database;
 use crate::database::models::object::Endpoint;
 use crate::error::{ArunaError, TypeConversionError};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::storage::models::v1::Endpoint as ProtoEndpoint;
+use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointService;
+use aruna_rust_api::api::storage::services::v1::{
+    AddEndpointRequest, AddEndpointResponse, DeleteEndpointRequest, DeleteEndpointResponse,
+    GetDefaultEndpointRequest, GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse,
+    GetEndpointsRequest, GetEndpointsResponse,
+};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(EndpointServiceImpl, default_endpoint: Endpoint);
@@ -86,23 +85,28 @@ impl EndpointService for EndpointServiceImpl {
 
         // Get Endpoint from database
         let inner_request = request.into_inner();
-        let endpoint = match inner_request.endpoint {
-            None => Err(ArunaError::InvalidRequest(
-                "endpoint info in request cannot be empty.".to_string(),
-            )),
-            Some(ep_info) => match ep_info {
-                aruna::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointName(
-                    ep_name,
-                ) => self.database.get_endpoint_by_name(ep_name.as_str()),
-                aruna::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointId(
-                    ep_id,
-                ) => {
-                    let ep_uuid =
-                        uuid::Uuid::parse_str(ep_id.as_str()).map_err(ArunaError::from)?;
-                    self.database.get_endpoint(&ep_uuid)
+        let endpoint = (match inner_request.endpoint {
+            None =>
+                Err(
+                    ArunaError::InvalidRequest(
+                        "endpoint info in request cannot be empty.".to_string()
+                    )
+                ),
+            Some(ep_info) =>
+                match ep_info {
+                    aruna_rust_api::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointName(
+                        ep_name,
+                    ) => self.database.get_endpoint_by_name(ep_name.as_str()),
+                    aruna_rust_api::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointId(
+                        ep_id,
+                    ) => {
+                        let ep_uuid = uuid::Uuid
+                            ::parse_str(ep_id.as_str())
+                            .map_err(ArunaError::from)?;
+                        self.database.get_endpoint(&ep_uuid)
+                    }
                 }
-            },
-        }?;
+        })?;
 
         // Transform database Endpoint to proto Endpoint
         let mut proto_endpoint = ProtoEndpoint::try_from(endpoint)

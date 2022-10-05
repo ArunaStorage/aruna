@@ -6,17 +6,17 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tonic::{Code, Request, Response, Status};
 
-use crate::api::aruna::api::storage::models::v1::Object;
-use crate::api::aruna::api::storage::{
-    internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
-    services::v1::object_service_server::ObjectService, services::v1::*,
-};
 use crate::database::connection::Database;
 use crate::database::models::enums::{Resources, UserRights};
 use crate::database::models::object::Endpoint;
 use crate::error::ArunaError;
 use crate::server::services::authz::{Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::storage::models::v1::Object;
+use aruna_rust_api::api::storage::{
+    internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
+    services::v1::object_service_server::ObjectService, services::v1::*,
+};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
@@ -75,7 +75,7 @@ impl ObjectServiceImpl {
     ///
     async fn _try_connect_endpoint(
         &self,
-        endpoint_uuid: uuid::Uuid,
+        _endpoint_uuid: uuid::Uuid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
         /*

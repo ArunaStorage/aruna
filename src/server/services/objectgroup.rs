@@ -4,12 +4,12 @@ use tokio::task;
 use tonic::Response;
 
 use super::authz::Authz;
-use crate::api::aruna::api::storage::services::v1::object_group_service_server::ObjectGroupService;
-use crate::api::aruna::api::storage::services::v1::*;
 use crate::database::connection::Database;
 use crate::database::models::enums::UserRights;
 use crate::error::ArunaError;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
+use aruna_rust_api::api::storage::services::v1::*;
 
 // This automatically creates the ObjectGroupServiceImpl struct and ::new methods
 crate::impl_grpc_server!(ObjectGroupServiceImpl);

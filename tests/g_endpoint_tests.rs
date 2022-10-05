@@ -1,5 +1,5 @@
-use aruna_server::api::aruna::api::storage::models::v1::EndpointType as ProtoEndpointType;
-use aruna_server::api::aruna::api::storage::services::v1::AddEndpointRequest;
+use aruna_rust_api::api::storage::models::v1::EndpointType as ProtoEndpointType;
+use aruna_rust_api::api::storage::services::v1::AddEndpointRequest;
 use aruna_server::config::DefaultEndpoint;
 use aruna_server::database;
 use aruna_server::database::models::enums::EndpointType;

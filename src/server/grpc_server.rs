@@ -1,22 +1,19 @@
 use std::sync::Arc;
 
-use tonic::transport::Server;
-
-use crate::api::aruna::api::storage::services::v1::endpoint_service_server::EndpointServiceServer;
-use crate::api::aruna::api::storage::services::v1::object_group_service_server::ObjectGroupServiceServer;
-use crate::api::aruna::api::storage::services::v1::object_service_server::ObjectServiceServer;
-use crate::api::aruna::api::storage::services::v1::project_service_server::ProjectServiceServer;
-use crate::api::aruna::api::storage::services::v1::user_service_server::UserServiceServer;
 use crate::config::ArunaServerConfig;
+use crate::database::connection::Database;
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
 use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::user::UserServiceImpl;
-use crate::{
-    api::aruna::api::storage::services::v1::collection_service_server::CollectionServiceServer,
-    database::connection::Database,
-};
+use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
+use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointServiceServer;
+use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupServiceServer;
+use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectServiceServer;
+use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectServiceServer;
+use aruna_rust_api::api::storage::services::v1::user_service_server::UserServiceServer;
+use tonic::transport::Server;
 
 use super::services::collection::CollectionServiceImpl;
 use super::services::object::ObjectServiceImpl;

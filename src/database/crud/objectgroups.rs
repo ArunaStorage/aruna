@@ -1,40 +1,26 @@
 use std::collections::HashMap;
 
-use crate::{
-    api::aruna::api::storage::services::v1::CreateObjectGroupRequest,
-    api::aruna::api::storage::{
-        models::v1::{KeyValue, Object as ProtoObject, ObjectGroupOverview},
-        services::v1::CreateObjectGroupResponse,
-    },
-    database::{
-        connection::Database,
-        models::{
-            collection::CollectionObjectGroup,
-            object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
-            views::ObjectGroupStat,
-        },
-    },
-    error::ArunaError,
+use crate::database::connection::Database;
+use crate::database::crud::utils::{check_all_for_db_kv, ParsedQuery};
+use crate::database::models::{
+    collection::CollectionObjectGroup,
+    object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
+    views::ObjectGroupStat,
 };
-use crate::{
-    api::aruna::api::storage::{
-        models::v1::{ObjectGroupOverviews, ObjectGroupStats, Stats},
-        services::v1::{
-            DeleteObjectGroupRequest, DeleteObjectGroupResponse, GetObjectGroupByIdRequest,
-            GetObjectGroupByIdResponse, GetObjectGroupHistoryRequest,
-            GetObjectGroupHistoryResponse, GetObjectGroupObjectsRequest,
-            GetObjectGroupObjectsResponse, GetObjectGroupsFromObjectRequest,
-            GetObjectGroupsFromObjectResponse, GetObjectGroupsRequest, GetObjectGroupsResponse,
-            ObjectGroupObject as ProtoObjectGroupObject, UpdateObjectGroupRequest,
-            UpdateObjectGroupResponse,
-        },
+use crate::error::ArunaError;
+use aruna_rust_api::api::storage::{
+    models::v1::{
+        KeyValue, Object as ProtoObject, ObjectGroupOverview, ObjectGroupOverviews,
+        ObjectGroupStats, Stats,
     },
-    database::{
-        crud::utils::{check_all_for_db_kv, ParsedQuery},
-        schema::{
-            collection_object_groups::dsl::*, object_group_key_value::dsl::*,
-            object_group_objects::dsl::*, object_group_stats::dsl::*, object_groups::dsl::*,
-        },
+    services::v1::{
+        CreateObjectGroupRequest, CreateObjectGroupResponse, DeleteObjectGroupRequest,
+        DeleteObjectGroupResponse, GetObjectGroupByIdRequest, GetObjectGroupByIdResponse,
+        GetObjectGroupHistoryRequest, GetObjectGroupHistoryResponse, GetObjectGroupObjectsRequest,
+        GetObjectGroupObjectsResponse, GetObjectGroupsFromObjectRequest,
+        GetObjectGroupsFromObjectResponse, GetObjectGroupsRequest, GetObjectGroupsResponse,
+        ObjectGroupObject as ProtoObjectGroupObject, UpdateObjectGroupRequest,
+        UpdateObjectGroupResponse,
     },
 };
 use chrono::Utc;
@@ -65,6 +51,11 @@ impl Database {
         request: &CreateObjectGroupRequest,
         creator: &uuid::Uuid,
     ) -> Result<CreateObjectGroupResponse, ArunaError> {
+        use crate::database::schema::collection_object_groups::dsl::*;
+        use crate::database::schema::object_group_key_value::dsl::*;
+        use crate::database::schema::object_group_objects::dsl::*;
+        use crate::database::schema::object_groups::dsl::*;
+
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         let new_obj_grp_uuid = uuid::Uuid::new_v4();
@@ -158,6 +149,11 @@ impl Database {
         request: &UpdateObjectGroupRequest,
         creator: &uuid::Uuid,
     ) -> Result<UpdateObjectGroupResponse, ArunaError> {
+        use crate::database::schema::collection_object_groups::dsl::*;
+        use crate::database::schema::object_group_key_value::dsl::*;
+        use crate::database::schema::object_group_objects::dsl::*;
+        use crate::database::schema::object_groups::dsl::*;
+
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         let parsed_old_id = uuid::Uuid::parse_str(&request.group_id)?;
@@ -279,6 +275,8 @@ impl Database {
         &self,
         request: &GetObjectGroupsFromObjectRequest,
     ) -> Result<GetObjectGroupsFromObjectResponse, ArunaError> {
+        use crate::database::schema::object_group_objects::dsl::*;
+
         let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
 
         //Insert all defined object_groups into the database
@@ -438,6 +436,8 @@ impl Database {
         &self,
         request: GetObjectGroupHistoryRequest,
     ) -> Result<GetObjectGroupHistoryResponse, ArunaError> {
+        use crate::database::schema::object_groups::dsl::*;
+
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         //Insert all defined object_groups into the database
@@ -492,6 +492,8 @@ impl Database {
         &self,
         request: GetObjectGroupObjectsRequest,
     ) -> Result<GetObjectGroupObjectsResponse, ArunaError> {
+        use crate::database::schema::object_group_objects::dsl::*;
+
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
@@ -547,6 +549,11 @@ impl Database {
         &self,
         request: DeleteObjectGroupRequest,
     ) -> Result<DeleteObjectGroupResponse, ArunaError> {
+        use crate::database::schema::collection_object_groups::dsl::*;
+        use crate::database::schema::object_group_key_value::dsl::*;
+        use crate::database::schema::object_group_objects::dsl::*;
+        use crate::database::schema::object_groups::dsl::*;
+
         let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
         //Insert all defined object_groups into the database
         self.pg_connection
@@ -632,6 +639,9 @@ pub fn query_object_group(
     ogroup_id: uuid::Uuid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectGroupDb>, diesel::result::Error> {
+    use crate::database::schema::object_group_stats::dsl::*;
+    use crate::database::schema::object_groups::dsl::*;
+
     let object_group = object_groups
         .filter(crate::database::schema::object_groups::id.eq(&ogroup_id))
         .first::<ObjectGroup>(conn)
@@ -812,7 +822,7 @@ pub fn bump_revisisions(
 ///
 /// ## Resturns:
 ///
-/// `Result<use crate::api::aruna::api::storage::models::ObjectGroup, ArunaError>` -
+/// `Result<use aruna_rust_api::api::storage::models::ObjectGroup, ArunaError>` -
 /// The latest database object_group or error if the request failed.
 ///
 pub fn get_latest_objgrp(
