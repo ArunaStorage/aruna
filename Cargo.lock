@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "aruna_server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aruna-rust-api",
  "chrono",
