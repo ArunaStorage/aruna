@@ -5,8 +5,8 @@ use aruna_server::api::aruna::api::storage::services::v1::{
     InitializeNewObjectRequest, StageObject,
 };
 use aruna_server::database;
-use aruna_server::database::models::enums::ObjectStatus;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
+use aruna_server::database::models::enums::ObjectStatus;
 use serial_test::serial;
 
 #[test]
@@ -112,7 +112,10 @@ fn create_object_test() {
     let finished_object = finish_response.object.unwrap();
 
     assert_eq!(finished_object.id, new_object_id.to_string());
-    assert!(matches!(grpc_to_db_object_status(&finished_object.status), ObjectStatus::AVAILABLE));
+    assert!(matches!(
+        grpc_to_db_object_status(&finished_object.status),
+        ObjectStatus::AVAILABLE
+    ));
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, "File.file".to_string());
     assert_eq!(finished_object.content_len, 1234);
