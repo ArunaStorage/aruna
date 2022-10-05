@@ -1,6 +1,7 @@
 use std::{env, str::FromStr};
 
 use async_channel::{Receiver, Sender};
+use async_trait::async_trait;
 use aws_sdk_s3::{
     model::{CompletedMultipartUpload, CompletedPart},
     types::ByteStream,
@@ -11,17 +12,18 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use std::convert::TryFrom;
 
-use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag};
+use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag, Range};
+
+use super::storage_backend::StorageBackend;
 
 const DOWNLOAD_CHUNK_SIZE: usize = 500000;
 const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct S3Backend {
     pub s3_client: Client,
 }
 
-// Data backend for an S3 based storage.
 impl S3Backend {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let endpoint =
@@ -40,15 +42,18 @@ impl S3Backend {
         };
         return Ok(handler);
     }
+}
 
+// Data backend for an S3 based storage.
+#[async_trait]
+impl StorageBackend for S3Backend {
     // Uploads a single object in chunks
     // Objects are uploaded in chunks that come from a channel to allow modification in the data middleware
     // The receiver can directly will be wrapped and will then be directly passed into the s3 client
-    pub async fn upload_object(
+    async fn upload_object(
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
-        bucket: String,
-        key: String,
+        location: Location,
         content_len: i64,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let hyper_body = hyper::Body::wrap_stream(recv);
@@ -57,8 +62,8 @@ impl S3Backend {
         match self
             .s3_client
             .put_object()
-            .set_bucket(Some(bucket))
-            .set_key(Some(key))
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.path))
             .set_content_length(Some(content_len))
             .body(bytestream)
             .send()
@@ -77,12 +82,18 @@ impl S3Backend {
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
     // The chunks are then transfered into the sender.
-    pub async fn download(&self, bucket: String, key: String, sender: Sender<bytes::Bytes>) {
+    async fn download(
+        &self,
+        location: Location,
+        ranges: Option<Vec<Range>>,
+        chunk_size: u32,
+        sender: Sender<bytes::Bytes>,
+    ) {
         let object = self
             .s3_client
             .get_object()
-            .set_bucket(Some(bucket))
-            .set_key(Some(key))
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.path))
             .send()
             .await
             .unwrap();
@@ -118,7 +129,7 @@ impl S3Backend {
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
-    pub async fn init_multipart_upload(
+    async fn init_multipart_upload(
         &self,
         location: Location,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -134,11 +145,10 @@ impl S3Backend {
         return Ok(multipart.upload_id().unwrap().to_string());
     }
 
-    pub async fn upload_multi_object(
+    async fn upload_multi_object(
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
-        bucket: String,
-        key: String,
+        location: Location,
         upload_id: String,
         content_len: i64,
         part_number: i32,
@@ -149,8 +159,8 @@ impl S3Backend {
         let upload = self
             .s3_client
             .upload_part()
-            .set_bucket(Some(bucket))
-            .set_key(Some(key))
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.path))
             .set_part_number(Some(part_number))
             .set_content_length(Some(content_len))
             .set_upload_id(Some(upload_id))
@@ -161,11 +171,10 @@ impl S3Backend {
         return Ok(upload.e_tag().unwrap().to_string());
     }
 
-    pub async fn finish_multipart_upload(
+    async fn finish_multipart_upload(
         &self,
+        location: Location,
         parts: Vec<PartETag>,
-        bucket: String,
-        key: String,
         upload_id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut completed_parts = Vec::new();
@@ -184,8 +193,8 @@ impl S3Backend {
 
         self.s3_client
             .complete_multipart_upload()
-            .bucket(bucket)
-            .key(key)
+            .bucket(location.bucket)
+            .key(location.path)
             .upload_id(upload_id)
             .multipart_upload(
                 CompletedMultipartUpload::builder()
@@ -198,7 +207,7 @@ impl S3Backend {
         return Ok(());
     }
 
-    pub async fn create_bucket(
+    async fn create_bucket(
         &self,
         bucket: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {

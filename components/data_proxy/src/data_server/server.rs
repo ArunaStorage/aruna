@@ -2,10 +2,11 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use crate::api::aruna::api::internal::proxy::v1::{Location, LocationType};
 use crate::data_middleware::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
 use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
 use crate::presign_handler::signer::PresignHandler;
-use crate::storage_backend::s3_backend::S3Backend;
+use crate::storage_backend::storage_backend::StorageBackend;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, put, web, App, HttpRequest, HttpResponse, HttpServer};
@@ -32,24 +33,24 @@ pub struct SignedParamsQuery {
 /// All data will be handled in chunks
 /// An additional middleware can be added to transform (e.g. encrypt) the incoming and outgoing data streams
 pub struct DataServer {
-    s3_client: Arc<S3Backend>,
+    storage_backend: Arc<Box<dyn StorageBackend>>,
     signer: Arc<PresignHandler>,
     socket_addr: SocketAddr,
 }
 
 pub struct ServerState {
-    s3_client: Arc<S3Backend>,
+    storage_backend: Arc<Box<dyn StorageBackend>>,
     signer: Arc<PresignHandler>,
 }
 
 impl DataServer {
     pub async fn new(
-        s3_client: Arc<S3Backend>,
+        storage_backend: Arc<Box<dyn StorageBackend>>,
         signer: Arc<PresignHandler>,
         socket_addr: SocketAddr,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         return Ok(DataServer {
-            s3_client: s3_client,
+            storage_backend: storage_backend,
             signer: signer,
             socket_addr: socket_addr,
         });
@@ -58,7 +59,7 @@ impl DataServer {
     /// Starts the DataServer to serve the actual data requests
     pub async fn serve(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let server_state = ServerState {
-            s3_client: self.s3_client.clone(),
+            storage_backend: self.storage_backend.clone(),
             signer: self.signer.clone(),
         };
         let server: Data<ServerState> = Data::new(server_state);
@@ -121,11 +122,22 @@ async fn download(
 
     };
 
+    let location = Location {
+        bucket: bucket,
+        path: key,
+        r#type: LocationType::Unspecified as i32,
+    };
+
     let cloned_server = server.clone();
     tokio::spawn(async move {
         cloned_server
-            .s3_client
-            .download(bucket, key, payload_sender.clone())
+            .storage_backend
+            .download(
+                location,
+                None,
+                UPLOAD_CHUNK_SIZE as u32,
+                payload_sender.clone(),
+            )
             .await;
     });
 
@@ -178,12 +190,17 @@ async fn single_upload(
     let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
     let payload_handler = handle_payload(payload, payload_sender);
     let middleware_handler = middleware.handle_stream();
-    let s3_handler = server.s3_client.upload_object(
-        object_handler_recv,
-        path.0.to_string(),
-        path.1.to_string(),
-        content_len,
-    );
+
+    let location = Location {
+        bucket: path.0.to_string(),
+        path: path.1.to_string(),
+        r#type: LocationType::Unspecified as i32,
+    };
+
+    let s3_handler =
+        server
+            .storage_backend
+            .upload_object(object_handler_recv, location, content_len);
 
     if let Err(err) = try_join!(payload_handler, middleware_handler, s3_handler) {
         log::error!("{}", err);
@@ -247,10 +264,16 @@ async fn multi_upload(
     let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
     let payload_handler = handle_payload(payload, payload_sender);
     let middleware_handler = middleware.handle_stream();
-    let s3_handler = server.s3_client.upload_multi_object(
+
+    let location = Location {
+        bucket: path.0.to_string(),
+        path: path.1.to_string(),
+        r#type: LocationType::Unspecified as i32,
+    };
+
+    let s3_handler = server.storage_backend.upload_multi_object(
         object_handler_recv,
-        path.1.to_string(),
-        path.2.to_string(),
+        location,
         upload_id,
         content_len,
         path.0,

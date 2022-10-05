@@ -9,7 +9,7 @@ use futures::try_join;
 use presign_handler::signer::PresignHandler;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
-use storage_backend::s3_backend::S3Backend;
+use storage_backend::{s3_backend::S3Backend, storage_backend::StorageBackend};
 
 mod api;
 mod data_middleware;
@@ -44,7 +44,7 @@ async fn main() {
             return;
         }
     };
-    let s3_client_arc = Arc::new(s3_client);
+    let s3_client_arc: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
     let signer = match PresignHandler::new() {
         Ok(value) => value,

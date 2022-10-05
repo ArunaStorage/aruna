@@ -9,9 +9,10 @@ use crate::{
         CreatePresignedDownloadResponse, CreatePresignedUploadUrlRequest,
         CreatePresignedUploadUrlResponse, FinishPresignedUploadRequest,
         FinishPresignedUploadResponse, InitPresignedUploadRequest, InitPresignedUploadResponse,
+        Location, LocationType,
     },
     presign_handler::signer::PresignHandler,
-    storage_backend::s3_backend::S3Backend,
+    storage_backend::storage_backend::StorageBackend,
 };
 use async_trait::async_trait;
 use tonic::{Code, Response, Status};
@@ -19,7 +20,7 @@ use tonic::{Code, Response, Status};
 /// Implements the API for the internal proxy that handles presigned URL generation to access and upload stored objects
 #[derive(Debug, Clone)]
 pub struct InternalServerImpl {
-    pub data_client: Arc<S3Backend>,
+    pub data_client: Arc<Box<dyn StorageBackend>>,
     pub signer: Arc<PresignHandler>,
     pub data_proxy_hostname: String,
 }
@@ -60,7 +61,7 @@ impl ProxyServer {
 
 impl InternalServerImpl {
     pub async fn new(
-        data_client: Arc<S3Backend>,
+        data_client: Arc<Box<dyn StorageBackend>>,
         presign_handler: Arc<PresignHandler>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let proxy_data_host = match env::var("PROXY_DATA_HOST") {
@@ -145,14 +146,15 @@ impl InternalProxyService for InternalServerImpl {
     ) -> Result<tonic::Response<FinishPresignedUploadResponse>, tonic::Status> {
         let inner_request = request.into_inner();
 
+        let location = Location {
+            bucket: inner_request.bucket,
+            path: inner_request.key,
+            r#type: LocationType::Unspecified as i32,
+        };
+
         match self
             .data_client
-            .finish_multipart_upload(
-                inner_request.part_etags,
-                inner_request.bucket,
-                inner_request.key,
-                inner_request.upload_id,
-            )
+            .finish_multipart_upload(location, inner_request.part_etags, inner_request.upload_id)
             .await
         {
             Ok(_) => {}
