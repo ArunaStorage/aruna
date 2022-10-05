@@ -8,6 +8,7 @@ version = "0.1.0"
 [dependencies]
 actix-web = "4"
 anyhow = "1.0"
+aruna-rust-api = "0.4.1-alpha.5"
 async-channel = "1.6"
 async-stream = "0.3"
 async-trait = "0.1"

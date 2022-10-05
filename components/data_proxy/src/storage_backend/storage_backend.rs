@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 
-use crate::api::aruna::api::internal::proxy::v1::{Location, PartETag, Range};
+use aruna_rust_api::api::storage::internal::v1::{Location, PartETag, Range};
 
 /// A generic backend API for storing and retrieving objects
 /// Represents a very simple object storage API
@@ -33,8 +33,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn download(
         &self,
         location: Location,
-        ranges: Option<Vec<Range>>,
-        chunk_size: u32,
+        range: Option<Range>,
         sender: Sender<bytes::Bytes>,
     );
 

@@ -3,7 +3,7 @@
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use crate::{
-    api::aruna::api::internal::proxy::v1::{
+    aruna_rust_api::api::storage::internal::v1::{
         internal_proxy_service_server::{InternalProxyService, InternalProxyServiceServer},
         CreateBucketRequest, CreateBucketResponse, CreatePresignedDownloadRequest,
         CreatePresignedDownloadResponse, CreatePresignedUploadUrlRequest,

@@ -2,7 +2,6 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::api::aruna::api::internal::proxy::v1::{Location, LocationType};
 use crate::data_middleware::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
 use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
 use crate::presign_handler::signer::PresignHandler;
@@ -10,6 +9,7 @@ use crate::storage_backend::storage_backend::StorageBackend;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, put, web, App, HttpRequest, HttpResponse, HttpServer};
+use aruna_rust_api::api::storage::internal::v1::{Location, LocationType};
 use async_channel::Sender;
 use async_stream::stream;
 use futures::{try_join, StreamExt};
@@ -132,12 +132,7 @@ async fn download(
     tokio::spawn(async move {
         cloned_server
             .storage_backend
-            .download(
-                location,
-                None,
-                UPLOAD_CHUNK_SIZE as u32,
-                payload_sender.clone(),
-            )
+            .download(location, None, payload_sender.clone())
             .await;
     });
 

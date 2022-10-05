@@ -1,8 +1,6 @@
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+use std::sync::Arc;
 
+use aruna_rust_api;
 use data_server::server::DataServer;
 use dotenv;
 use futures::try_join;
@@ -11,7 +9,6 @@ use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
 use storage_backend::{s3_backend::S3Backend, storage_backend::StorageBackend};
 
-mod api;
 mod data_middleware;
 mod data_server;
 mod presign_handler;
