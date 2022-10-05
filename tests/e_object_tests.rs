@@ -6,6 +6,7 @@ use aruna_server::api::aruna::api::storage::services::v1::{
 };
 use aruna_server::database;
 use aruna_server::database::models::enums::ObjectStatus;
+use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use serial_test::serial;
 
 #[test]
@@ -56,7 +57,7 @@ fn create_object_test() {
             filename: "File.file".to_string(),
             description: "This is a mock file.".to_string(),
             collection_id: collection_id.to_string(),
-            content_len: 0,
+            content_len: 1234,
             source: None,
             dataclass: 1,
             labels: vec![KeyValue {
@@ -111,10 +112,10 @@ fn create_object_test() {
     let finished_object = finish_response.object.unwrap();
 
     assert_eq!(finished_object.id, new_object_id.to_string());
-    assert_eq!(finished_object.status, ObjectStatus::AVAILABLE as i32);
+    assert!(matches!(grpc_to_db_object_status(&finished_object.status), ObjectStatus::AVAILABLE));
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, "File.file".to_string());
-    assert_eq!(finished_object.content_len, 0);
+    assert_eq!(finished_object.content_len, 1234);
     assert_eq!(finished_object.hash.unwrap(), finish_hash);
     assert!(finished_object.auto_update);
 }

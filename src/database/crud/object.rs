@@ -33,8 +33,8 @@ use crate::error::{ArunaError, GrpcNotFoundError};
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
-    check_all_for_db_kv, from_key_values, naivedatetime_to_prost_time, parse_page_request,
-    parse_query, to_key_values,
+    check_all_for_db_kv, db_to_grpc_object_status, from_key_values, naivedatetime_to_prost_time,
+    parse_page_request, parse_query, to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
@@ -50,7 +50,7 @@ use crate::database::schema::{
 };
 
 use super::objectgroups::bump_revisisions;
-use super::utils::{parse_dataclass, ParsedQuery};
+use super::utils::{grpc_to_db_dataclass, ParsedQuery};
 
 // Struct to hold the database objects
 #[derive(Debug, Clone)]
@@ -124,7 +124,7 @@ impl Database {
             created_by: *creator,
             content_len: staging_object.content_len,
             object_status: ObjectStatus::INITIALIZING,
-            dataclass: parse_dataclass(&staging_object.dataclass),
+            dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
             source_id: source.as_ref().map(|src| src.id),
             origin_id: Some(object_uuid),
         };
@@ -368,7 +368,7 @@ impl Database {
                         created_by: *creator_uuid,
                         content_len: sobj.content_len,
                         object_status: ObjectStatus::UNAVAILABLE, // Is a staging object
-                        dataclass: parse_dataclass(&sobj.dataclass),
+                        dataclass: grpc_to_db_dataclass(&sobj.dataclass),
                         source_id: source.as_ref().map(|source| source.id),
                         origin_id: Some(parsed_old_id),
                     };
@@ -1638,7 +1638,7 @@ impl TryFrom<ObjectDto> for ProtoObject {
             hooks: object_dto.hooks,
             created: Some(timestamp),
             content_len: object_dto.object.content_len,
-            status: object_dto.object.object_status as i32,
+            status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
             origin: proto_origin,
             data_class: object_dto.object.dataclass as i32,
             hash: Some(proto_hash),

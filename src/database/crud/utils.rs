@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest};
+use crate::api::aruna::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest, Status};
 
-use crate::database::models::enums::{Dataclass, KeyValueType, UserRights};
+use crate::database::models::enums::{Dataclass, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::ArunaError;
 
@@ -391,7 +391,7 @@ where
     }
 }
 
-pub fn parse_dataclass(grpcdclass: &i32) -> Dataclass {
+pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
     match grpcdclass {
         0 => Dataclass::PRIVATE, // Unspecified
         1 => Dataclass::PUBLIC,
@@ -399,6 +399,28 @@ pub fn parse_dataclass(grpcdclass: &i32) -> Dataclass {
         3 => Dataclass::CONFIDENTIAL,
         4 => Dataclass::PROTECTED,
         _ => Dataclass::PRIVATE, // Default
+    }
+}
+
+pub fn grpc_to_db_object_status(grpc_status: &i32) -> ObjectStatus {
+    match grpc_status {
+        0 => ObjectStatus::ERROR, // Unspecified is not good
+        1 => ObjectStatus::INITIALIZING,
+        2 => ObjectStatus::AVAILABLE,
+        3 => ObjectStatus::UNAVAILABLE,
+        4 => ObjectStatus::ERROR,
+        5 => ObjectStatus::TRASH,
+        _ => ObjectStatus::ERROR // Something went very wrong
+    }
+}
+
+pub fn db_to_grpc_object_status(db_status: ObjectStatus) -> Status {
+    match db_status {
+        ObjectStatus::INITIALIZING => Status::Initializing,
+        ObjectStatus::AVAILABLE => Status::Available,
+        ObjectStatus::UNAVAILABLE => Status::Unavailable,
+        ObjectStatus::ERROR => Status::Error,
+        ObjectStatus::TRASH => Status::Trash,
     }
 }
 
