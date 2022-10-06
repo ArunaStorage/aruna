@@ -80,6 +80,7 @@ impl Database {
     ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::required_labels::dsl::*;
 
         // Create new collection uuid
         let collection_uuid = uuid::Uuid::new_v4();
@@ -105,7 +106,7 @@ impl Database {
         };
 
         // Map ontology TODO add LabelOntology to createCollection request
-        // let req_labels = from_ontology_todb(request., collection_uuid);
+        let req_labels = from_ontology_todb(request.label_ontology, collection_uuid);
 
         // Insert in transaction
         self.pg_connection
@@ -113,12 +114,18 @@ impl Database {
             .transaction::<_, Error, _>(|conn| {
                 // Insert collection
                 insert_into(collections)
-                    .values(db_collection)
+                    .values(&db_collection)
                     .execute(conn)?;
                 // Insert collection key values
                 insert_into(collection_key_value)
-                    .values(key_values)
+                    .values(&key_values)
                     .execute(conn)?;
+
+                if !req_labels.is_empty() {
+                    insert_into(required_labels)
+                        .values(&req_labels)
+                        .execute(conn)?;
+                }
                 Ok(())
             })?;
         // Create response and return
@@ -332,6 +339,7 @@ impl Database {
     ) -> Result<UpdateCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::required_labels::dsl as reqlbl;
         // Query the old collection id that should be updated
         let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute request in transaction
@@ -376,8 +384,6 @@ impl Database {
                         request.hooks.clone(),
                         new_coll_uuid,
                     );
-                    // Label ontology
-                    //let new_ontology = request.label_ontology
 
                     // Modify "old" key_value to include new values
                     old_overview.coll_key_value = Some(new_key_values);
@@ -394,12 +400,29 @@ impl Database {
                         project_id: uuid::Uuid::parse_str(&request.project_id)?,
                     };
                     // Execute the pin request and return the collection overview
-                    Ok(Some(pin_collection_to_version(
+
+                    let new_overview = pin_collection_to_version(
                         old_collection_id,
                         user_id,
                         transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
                         conn,
-                    )?))
+                    )?;
+
+                    // Parse the uuid
+                    let new_uuid_parsed = uuid::Uuid::parse_str(&new_overview.id)?;
+                    // Update ontology
+                    // Delete old required labels
+                    delete(reqlbl::required_labels)
+                        .filter(reqlbl::collection_id.eq(new_uuid_parsed))
+                        .execute(conn)?;
+
+                    if request.label_ontology.is_some() {
+                        insert_into(reqlbl::required_labels)
+                            .values(&from_ontology_todb(request.label_ontology, new_uuid_parsed))
+                            .execute(conn)?;
+                    }
+
+                    Ok(Some(new_overview))
                     // This is the update "in place" for collections without versions
                 } else {
                     // Create new collection info
@@ -429,6 +452,20 @@ impl Database {
                     insert_into(ckvdsl::collection_key_value)
                         .values(new_key_values)
                         .execute(conn)?;
+
+                    // Delete old required labels
+                    delete(reqlbl::required_labels)
+                        .filter(reqlbl::collection_id.eq(old_collection.id))
+                        .execute(conn)?;
+
+                    if request.label_ontology.is_some() {
+                        insert_into(reqlbl::required_labels)
+                            .values(&from_ontology_todb(
+                                request.label_ontology,
+                                old_collection.id,
+                            ))
+                            .execute(conn)?;
+                    }
 
                     // Update the collection "in place"
                     update(collections).set(&update_col).execute(conn)?;
@@ -1200,13 +1237,20 @@ impl From<DataClass> for DBDataclass {
 }
 
 // Helper function that converts gRPC labelOntology to the database required label object
-fn _from_ontology_todb(onto: LabelOntology, collection_id: uuid::Uuid) -> Vec<RequiredLabel> {
-    onto.required_label_keys
-        .iter()
-        .map(|label| RequiredLabel {
-            id: uuid::Uuid::new_v4(),
-            collection_id,
-            label_key: label.to_string(),
-        })
-        .collect::<Vec<_>>()
+fn from_ontology_todb(
+    onto: Option<LabelOntology>,
+    collection_id: uuid::Uuid,
+) -> Vec<RequiredLabel> {
+    match onto {
+        Some(ont) => ont
+            .required_label_keys
+            .iter()
+            .map(|label| RequiredLabel {
+                id: uuid::Uuid::new_v4(),
+                collection_id,
+                label_key: label.to_string(),
+            })
+            .collect::<Vec<_>>(),
+        None => Vec::new(),
+    }
 }

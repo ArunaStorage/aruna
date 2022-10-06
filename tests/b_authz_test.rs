@@ -178,9 +178,7 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let initial_token = db
-        .create_api_token(req, user_id, pubkey_result)
-        .unwrap();
+    let initial_token = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
