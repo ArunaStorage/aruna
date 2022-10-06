@@ -327,6 +327,7 @@ impl Database {
         request: UpdateCollectionRequest,
         user_id: uuid::Uuid,
     ) -> Result<UpdateCollectionResponse, ArunaError> {
+        use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collections::dsl::*;
         // Query the old collection id that should be updated
         let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
@@ -343,7 +344,7 @@ impl Database {
                 // If the old collection or the update creates a new "versioned" collection
                 // -> This needs to perform a pin
                 if old_collection.version_id.is_some() || request.version.is_some() {
-                    let old_overview = query_overview(conn, old_collection.clone())?;
+                    let mut old_overview = query_overview(conn, old_collection.clone())?;
                     // Return error if old_version is >= new_version
                     // Updates must increase the semver
                     // Updates for "historic" versions are not allowed
@@ -361,9 +362,19 @@ impl Database {
                         .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
                         .unwrap();
 
+                    // Create new Uuid for collection
+                    let new_coll_uuid = uuid::Uuid::new_v4();
+                    // Create new key_values
+                    let new_key_values = to_key_values::<CollectionKeyValue>(
+                        request.labels.clone(),
+                        request.hooks.clone(),
+                        new_coll_uuid,
+                    );
+                    // Modify "old" key_value to include new values
+                    old_overview.coll_key_value = Some(new_key_values);
                     // Put together the new collection info
                     let new_coll = Collection {
-                        id: uuid::Uuid::new_v4(),
+                        id: new_coll_uuid,
                         shared_version_id: old_collection.shared_version_id,
                         name: request.name.clone(),
                         description: request.description.clone(),
@@ -394,6 +405,22 @@ impl Database {
                         dataclass: old_collection.dataclass,
                         project_id: old_collection.project_id,
                     };
+
+                    // Delete all old keyvalues
+                    delete(ckvdsl::collection_key_value)
+                        .filter(ckvdsl::collection_id.eq(old_collection.id))
+                        .execute(conn)?;
+                    // Create new key_values
+                    let new_key_values = to_key_values::<CollectionKeyValue>(
+                        request.labels.clone(),
+                        request.hooks.clone(),
+                        old_collection.id,
+                    );
+                    // Insert new key_values
+                    insert_into(ckvdsl::collection_key_value)
+                        .values(new_key_values)
+                        .execute(conn)?;
+
                     // Update the collection "in place"
                     update(collections).set(&update_col).execute(conn)?;
 
