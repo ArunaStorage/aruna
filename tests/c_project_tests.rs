@@ -8,9 +8,8 @@ use aruna_rust_api::api::storage::services::v1::{
 use aruna_rust_api::api::storage::{
     models::v1::{ProjectOverview, ProjectPermission},
     services::v1::{
-        ActivateUserRequest, AddUserToProjectRequest, CreateProjectRequest,
-        GetProjectCollectionsRequest, GetProjectRequest, RegisterUserRequest,
-        RemoveUserFromProjectRequest, UpdateProjectRequest,
+        ActivateUserRequest, AddUserToProjectRequest, CreateProjectRequest, GetProjectRequest,
+        RegisterUserRequest, RemoveUserFromProjectRequest, UpdateProjectRequest,
     },
 };
 use aruna_server::database;
@@ -45,38 +44,6 @@ fn create_project_test() {
 fn get_project_test() {
     // This function creates a project and returns an "project_overview"
     let _created_project = common::functions::create_project(None);
-}
-
-#[test]
-#[ignore]
-#[serial(db)]
-fn get_project_collections_test() {
-    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-
-    let _created_project = common::functions::create_project(None);
-    // Validate creation
-    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
-    assert!(!project_id.is_nil());
-
-    // Get collections of empty project
-    let get_request = GetProjectCollectionsRequest {
-        project_id: project_id.to_string(),
-        page_request: None,
-    };
-    let get_response = db
-        .get_project_collections(get_request.clone(), creator)
-        .unwrap();
-    assert_eq!(0, get_response.collection.len());
-
-    // Create collection in project
-    create_collection(TCreateCollection {
-        project_id: project_id.to_string(),
-        ..Default::default()
-    });
-    // Project contains one collection
-    let get_response = db.get_project_collections(get_request, creator).unwrap();
-    assert_eq!(1, get_response.collection.len());
 }
 
 #[test]

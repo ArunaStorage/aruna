@@ -179,24 +179,15 @@ fn get_api_token_test() {
     };
     // Create a initial token
     let initial_token = db
-        .create_api_token(req.clone(), user_id, pubkey_result)
+        .create_api_token(req, user_id, pubkey_result)
         .unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
         token_id: initial_token.id,
-        name: "".to_string(),
     };
     let get_token_by_id = db.get_api_token(get_api_token_req_id, user_id).unwrap();
     assert_eq!(initial_token.name, get_token_by_id.token.unwrap().name);
-
-    // Get the token by name
-    let get_api_token_req_name = GetApiTokenRequest {
-        token_id: "".to_string(),
-        name: req.name,
-    };
-    let get_token_by_name = db.get_api_token(get_api_token_req_name, user_id).unwrap();
-    assert_eq!(initial_token.name, get_token_by_name.token.unwrap().name);
 }
 
 #[test]
@@ -625,6 +616,7 @@ fn get_checked_user_id_from_token_test() {
     let ccoll_1_req = CreateNewCollectionRequest {
         name: "test_col_1".to_string(),
         description: "".to_string(),
+        label_ontology: None,
         project_id: proj_1.project_id.clone(),
         labels: Vec::new(),
         hooks: Vec::new(),
@@ -636,6 +628,7 @@ fn get_checked_user_id_from_token_test() {
     let ccoll_2_req = CreateNewCollectionRequest {
         name: "test_col_2".to_string(),
         description: "".to_string(),
+        label_ontology: None,
         project_id: _proj_2.clone().project_id,
         labels: Vec::new(),
         hooks: Vec::new(),

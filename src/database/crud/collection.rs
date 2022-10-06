@@ -1157,9 +1157,7 @@ fn check_label_ontology(
             }
         }
         // If the collection has no objects -> Return
-        None => {
-            Ok(())
-        }
+        None => Ok(()),
     }
 }
 

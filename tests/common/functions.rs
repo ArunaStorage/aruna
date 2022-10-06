@@ -126,6 +126,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         let req = CreateNewCollectionRequest {
             name: col_name.clone(),
             description: col_description.clone(),
+            label_ontology: None,
             project_id: tccol.project_id,
             labels: labels.clone(),
             hooks: hooks.clone(),

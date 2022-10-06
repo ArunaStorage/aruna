@@ -33,6 +33,7 @@ fn get_collection_by_id_test() {
         name: "new_collection".to_owned(),
         description: "this_is_a_demo_collection".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![KeyValue {
             key: "label_test_key".to_owned(),
             value: "label_test_value".to_owned(),
@@ -117,6 +118,7 @@ fn get_collections_test() {
         name: "new_collection_1".to_owned(),
         description: "this_is_a_demo_collection_1".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![
             KeyValue {
                 key: "label_test_key_1".to_owned(),
@@ -141,6 +143,7 @@ fn get_collections_test() {
         name: "new_collection_2".to_owned(),
         description: "this_is_a_demo_collection_2".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![
             KeyValue {
                 key: "label_test_key_2".to_owned(),
@@ -166,6 +169,7 @@ fn get_collections_test() {
         name: "new_collection_3".to_owned(),
         description: "this_is_a_demo_collection_3".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![
             KeyValue {
                 key: "label_test_key_3_1".to_owned(),
@@ -545,7 +549,7 @@ fn update_collection_test() {
             key: "test_key".to_owned(),
             value: "test_value".to_owned(),
         }],
-        label_ontology: Vec::new(),
+        label_ontology: None,
         dataclass: 2,
         version: None,
     };
@@ -567,7 +571,7 @@ fn update_collection_test() {
             key: "test_key_2".to_owned(),
             value: "test_value_2".to_owned(),
         }],
-        label_ontology: Vec::new(),
+        label_ontology: None,
         dataclass: 2,
         version: Some(Version {
             major: 1,
@@ -593,6 +597,7 @@ fn pin_collection_test() {
         name: "new_collection_update".to_owned(),
         description: "this_is_a_demo_collection_update".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
             value: "test_value".to_owned(),
@@ -747,6 +752,7 @@ fn delete_collection_test() {
         name: "new_collection_update_delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
             value: "delete_test_value".to_owned(),
@@ -764,6 +770,7 @@ fn delete_collection_test() {
         name: "new_collection_update_delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
             value: "delete_test_value".to_owned(),

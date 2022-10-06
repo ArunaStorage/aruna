@@ -32,6 +32,7 @@ fn create_object_test() {
     let create_collection_request = CreateNewCollectionRequest {
         name: "Object creation test project collection".to_string(),
         description: "Test collection used in object creation test.".to_string(),
+        label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],
         hooks: vec![],
