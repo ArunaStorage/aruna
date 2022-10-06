@@ -84,6 +84,19 @@ pub enum HashType {
     MURMUR3A32,
     XXHASH32,
 }
+impl HashType {
+    pub fn from_grpc(value: i32) -> HashType {
+        match value {
+            1 => HashType::MD5,
+            2 => HashType::SHA1,
+            3 => HashType::SHA256,
+            4 => HashType::SHA512,
+            5 => HashType::MURMUR3A32,
+            6 => HashType::XXHASH32,
+            _ => HashType::MD5, // Default
+        }
+    }
+}
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq)]
 #[DieselTypePath = "sql_types::KeyValueType"]

@@ -17,7 +17,7 @@ use aruna_rust_api::api::storage::services::v1::{
 use aruna_rust_api::api::storage::{
     internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
-        Hash as ProtoHash, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
+        Hash as ProtoHash, Hashalgorithm, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
         Source as ProtoSource,
     },
     services::v1::{
@@ -222,6 +222,22 @@ impl Database {
                 )
                 .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                 .get_result::<Object>(conn)?;
+
+                // Update hash if (re-)upload and request contains hash
+                if !request.no_upload && request.hash.is_some() {
+                    match &request.hash {
+                        None => {} // Do nothing. Should raise Error but DieselErrors are meaningless in this context.
+                        Some(req_hash) => {
+                            diesel::update(Hash::belonging_to(&returned_obj))
+                                .set((
+                                    database::schema::hashes::hash.eq(&req_hash.hash),
+                                    database::schema::hashes::hash_type
+                                        .eq(HashType::from_grpc(req_hash.alg)),
+                                ))
+                                .execute(conn)?;
+                        }
+                    }
+                }
 
                 // Check if the origin id is different from uuid
                 // This indicates an "updated" object and not a new one
@@ -1626,7 +1642,15 @@ impl TryFrom<ObjectDto> for ProtoObject {
 
         // Transform db Hash to proto Hash
         let proto_hash = ProtoHash {
-            alg: object_dto.hash.hash_type as i32,
+            //alg: object_dto.hash.hash_type as i32,
+            alg: match object_dto.hash.hash_type {
+                HashType::MD5 => Hashalgorithm::Md5 as i32,
+                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
+                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
+                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
+                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+            },
             hash: object_dto.hash.hash,
         };
 

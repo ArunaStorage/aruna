@@ -1,5 +1,5 @@
 use aruna_rust_api::api::storage::internal::v1::Location;
-use aruna_rust_api::api::storage::models::v1::{EndpointType, Hash, KeyValue};
+use aruna_rust_api::api::storage::models::v1::{EndpointType, Hash, Hashalgorithm, KeyValue};
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
     InitializeNewObjectRequest, StageObject,
@@ -95,15 +95,15 @@ fn create_object_test() {
 
     // Finish object staging
     let finish_hash = Hash {
-        alg: 0,
-        hash: "".to_string(),
+        alg: Hashalgorithm::Sha256 as i32,
+        hash: "f60b102aa455f085df91ffff53b3c0acd45c10f02782b953759ab10973707a92".to_string(),
     };
     let finish_request = FinishObjectStagingRequest {
         object_id: new_object_id.to_string(),
         upload_id,
         collection_id: collection_id.to_string(),
         hash: Some(finish_hash.clone()),
-        no_upload: true,
+        no_upload: false,
         completed_parts: vec![],
         auto_update: true,
     };
