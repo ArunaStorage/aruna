@@ -64,7 +64,7 @@ pub struct Hash {
     pub hash_type: HashType,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
 #[diesel(table_name = object_key_value)]
 #[diesel(belongs_to(Object))]
 pub struct ObjectKeyValue {

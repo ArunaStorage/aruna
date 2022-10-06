@@ -499,10 +499,10 @@ impl UserService for UserServiceImpl {
     ///
     /// * Result<tonic::Response<ActivateUserResponse>, tonic::Status>: Placeholder, currently empty
     ///
-    async fn get_users_unregistered(
+    async fn get_not_activated_users(
         &self,
-        request: tonic::Request<GetUsersUnregisteredRequest>,
-    ) -> Result<tonic::Response<GetUsersUnregisteredResponse>, tonic::Status> {
+        request: tonic::Request<GetNotActivatedUsersRequest>,
+    ) -> Result<tonic::Response<GetNotActivatedUsersResponse>, tonic::Status> {
         log::info!("Received GetUsersUnregisteredRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -511,7 +511,7 @@ impl UserService for UserServiceImpl {
         // Create user in db and return response
         let response = Response::new(
             self.database
-                .get_users_unregistered(request.into_inner(), _user_id)?,
+                .get_not_activated_users(request.into_inner(), _user_id)?,
         );
 
         log::info!("Sending GetUsersUnregisteredResponse back to client.");

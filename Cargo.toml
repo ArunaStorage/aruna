@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "aruna_server"
-version = "0.5.0-alpha.2"
+version = "0.5.0-alpha.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -29,7 +29,7 @@ serde_json = "1.0"
 reqwest = {version = "0.11.11", features = ["json"] }
 openssl = "0.10.41"
 toml = "0.5.9"
-aruna-rust-api = "0.5.0-alpha.2"
+aruna-rust-api = "0.5.0-alpha.3"
 
 [dev-dependencies]
 serial_test = "0.9.0"

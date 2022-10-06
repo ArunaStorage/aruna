@@ -84,43 +84,6 @@ impl ProjectService for ProjectServiceImpl {
         Ok(response)
     }
 
-    /// GetProjectCollections queries all collections of a project
-    ///
-    /// ## Arguments
-    ///
-    /// * request: GetProjectCollectionsRequest: Contains the project_id
-    ///
-    /// ## Returns
-    ///
-    /// * Result<tonic::Response<GetProjectCollectionsResponse>, tonic::Status>: Returns a list with all collections that belong to this project.
-    ///
-    async fn get_project_collections(
-        &self,
-        request: tonic::Request<GetProjectCollectionsRequest>,
-    ) -> Result<tonic::Response<GetProjectCollectionsResponse>, tonic::Status> {
-        log::info!("Received GetProjectCollectionsRequest.");
-        log::debug!("{}", format_grpc_request(&request));
-
-        // Parse the project Uuid
-        let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
-
-        let _user_id = self
-            .authz
-            .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
-            .await?;
-
-        // Get project collections and send response
-        let response = Response::new(
-            self.database
-                .get_project_collections(request.into_inner(), _user_id)?,
-        );
-
-        log::info!("Sending GetProjectCollectionsResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
-    }
-
     /// GetProject gets information about a project.
     ///
     /// ## Arguments

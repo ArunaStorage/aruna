@@ -11,22 +11,13 @@
 use super::utils::*;
 use crate::database::connection::Database;
 use crate::database::models::auth::{Project, UserPermission};
-use crate::database::models::collection::{
-    Collection, CollectionKeyValue, CollectionVersion, RequiredLabel,
-};
-use crate::database::models::enums::Dataclass;
-use crate::database::models::views::CollectionStat;
+use crate::database::models::collection::Collection;
 use crate::error::ArunaError;
-use aruna_rust_api::api::storage::models::v1::{
-    collection_overview::Version as CollectionVersiongRPC, CollectionOverview, CollectionStats,
-    LabelOntology, Stats,
-};
-use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermission, Version};
+use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermission};
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
-    EditUserPermissionsForProjectResponse, GetProjectCollectionsRequest,
-    GetProjectCollectionsResponse, GetProjectRequest, GetProjectResponse,
+    EditUserPermissionsForProjectResponse, GetProjectRequest, GetProjectResponse,
     GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
     RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
     UpdateProjectResponse,
@@ -142,163 +133,6 @@ impl Database {
 
         // Return empty response
         Ok(AddUserToProjectResponse {})
-    }
-
-    /// Get all collections from project
-    ///
-    /// ## Arguments
-    ///
-    /// * request: GetProjectCollectionsRequest: Includes project_id to query
-    /// * user_id: uuid::Uuid : Not used
-    ///
-    /// ## Returns
-    ///
-    /// * Result<GetProjectCollectionsResponse, ArunaError>: List with all collections from project
-    ///
-    pub fn get_project_collections(
-        &self,
-        request: GetProjectCollectionsRequest,
-        _user_id: uuid::Uuid,
-    ) -> Result<GetProjectCollectionsResponse, ArunaError> {
-        use crate::database::schema::collection_stats::dsl::*;
-        use crate::database::schema::collection_version::dsl::*;
-        use crate::database::schema::collections::dsl::*;
-        use diesel::result::Error as dError;
-
-        // Parse the project_id
-        let parsed_project_id = uuid::Uuid::parse_str(&request.project_id)?;
-
-        // Execute db query
-        let result = self.pg_connection.get()?.transaction::<Option<
-            Vec<(
-                Collection,
-                Option<Vec<CollectionKeyValue>>,
-                Option<CollectionStat>,
-                Option<Vec<RequiredLabel>>,
-                Option<CollectionVersion>,
-            )>,
-        >, dError, _>(|conn| {
-            // Query collections
-            let colls = collections
-                .filter(project_id.eq(parsed_project_id))
-                .load::<Collection>(conn)
-                .optional()?;
-
-            // Check if collections is Some()
-            match colls {
-                Some(coll) => {
-                    // Create a new vector to return
-                    let mut return_vec = Vec::new();
-
-                    // Query db for each element
-                    for elem in coll {
-                        // Get all key_values (labels/hooks)
-                        let key_value: Option<Vec<CollectionKeyValue>> =
-                            CollectionKeyValue::belonging_to(&elem)
-                                .load::<CollectionKeyValue>(conn)
-                                .optional()?;
-
-                        // Get collection stats from materialized view
-                        let stats: Option<CollectionStat> = collection_stats
-                            .filter(crate::database::schema::collection_stats::dsl::id.eq(elem.id))
-                            .first::<CollectionStat>(conn)
-                            .optional()?;
-
-                        // Get all required labels / ontology
-                        let required_lbl = RequiredLabel::belonging_to(&elem)
-                            .load::<RequiredLabel>(conn)
-                            .optional()?;
-
-                        // Check if a version exists
-                        let version = match elem.version_id {
-                            Some(vid) => collection_version
-                                .filter(
-                                    crate::database::schema::collection_version::dsl::id.eq(vid),
-                                )
-                                .first::<CollectionVersion>(conn)
-                                .optional()?,
-                            None => None,
-                        };
-
-                        // Add all above to return vector
-                        return_vec.push((elem, key_value, stats, required_lbl, version));
-                    }
-                    // Return the vector
-                    Ok(Some(return_vec))
-                }
-                // If isNone -> Return None
-                None => Ok(None),
-            }
-        })?;
-
-        // Map db result to collection overview
-        let to_collection_overview = match result {
-            Some(elements) => elements
-                .iter()
-                .map(|(coll, keyvalue, stats, req_label, vers)| {
-                    // Map labels / hooks
-                    let (label, hook) = match keyvalue {
-                        Some(kv) => from_key_values(kv.to_vec()),
-                        None => (Vec::new(), Vec::new()),
-                    };
-
-                    // Map ontology
-                    let map_req_label = req_label.as_ref().map(|rlbl| LabelOntology {
-                        required_label_keys: rlbl
-                            .iter()
-                            .map(|rq_lbl| rq_lbl.label_key.clone())
-                            .collect::<Vec<_>>(),
-                    });
-
-                    // Map statistics
-                    let map_stats = stats.as_ref().map(|stats| CollectionStats {
-                        object_stats: Some(Stats {
-                            count: stats.object_count,
-                            acc_size: stats.size,
-                        }),
-                        object_group_count: stats.object_group_count,
-                        last_updated: Some(
-                            naivedatetime_to_prost_time(stats.last_updated).unwrap_or_default(),
-                        ),
-                    });
-
-                    // Map collection_version
-                    let map_version = match vers {
-                        Some(v) => Some(CollectionVersiongRPC::SemanticVersion(Version {
-                            major: v.major as i32,
-                            minor: v.minor as i32,
-                            patch: v.patch as i32,
-                        })),
-                        None => Some(CollectionVersiongRPC::Latest(true)),
-                    };
-
-                    // Construct the final return construct
-                    CollectionOverview {
-                        id: coll.id.to_string(),
-                        name: coll.name.clone(),
-                        description: coll.description.clone(),
-                        labels: label,
-                        hooks: hook,
-                        label_ontology: map_req_label,
-                        created: Some(
-                            naivedatetime_to_prost_time(coll.created_at).unwrap_or_default(),
-                        ),
-                        stats: map_stats,
-                        is_public: match coll.dataclass {
-                            Some(dclass) => dclass == Dataclass::PUBLIC,
-                            None => false,
-                        },
-                        version: map_version,
-                    }
-                })
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
-        };
-
-        // Return the list with collection overviews
-        Ok(GetProjectCollectionsResponse {
-            collection: to_collection_overview,
-        })
     }
 
     /// Queries a project and returns basic information about it.

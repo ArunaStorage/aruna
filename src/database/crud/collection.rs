@@ -16,8 +16,8 @@ use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
     RequiredLabel,
 };
-use crate::database::models::enums::{Dataclass as DBDataclass, ObjectStatus};
-use crate::database::models::object::Object;
+use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, ObjectStatus};
+use crate::database::models::object::{Object, ObjectKeyValue};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::error::ArunaError;
@@ -103,6 +103,9 @@ impl Database {
             dataclass: Some(request.dataclass()).map(DBDataclass::from),
             project_id: uuid::Uuid::parse_str(&request.project_id)?,
         };
+
+        // Map ontology TODO add LabelOntology to createCollection request
+        // let req_labels = from_ontology_todb(request., collection_uuid);
 
         // Insert in transaction
         self.pg_connection
@@ -341,6 +344,9 @@ impl Database {
                     .filter(id.eq(old_collection_id))
                     .first::<Collection>(conn)?;
 
+                // Check if label ontology update will succeed
+                check_label_ontology(old_collection_id, request.label_ontology.clone(), conn)?;
+
                 // If the old collection or the update creates a new "versioned" collection
                 // -> This needs to perform a pin
                 if old_collection.version_id.is_some() || request.version.is_some() {
@@ -370,6 +376,9 @@ impl Database {
                         request.hooks.clone(),
                         new_coll_uuid,
                     );
+                    // Label ontology
+                    //let new_ontology = request.label_ontology
+
                     // Modify "old" key_value to include new values
                     old_overview.coll_key_value = Some(new_key_values);
                     // Put together the new collection info
@@ -413,7 +422,7 @@ impl Database {
                     // Create new key_values
                     let new_key_values = to_key_values::<CollectionKeyValue>(
                         request.labels.clone(),
-                        request.hooks.clone(),
+                        request.hooks,
                         old_collection.id,
                     );
                     // Insert new key_values
@@ -1070,6 +1079,92 @@ fn pin_collection_to_version(
     })
 }
 
+/// Helper function that checks if the "new" label ontology is fullfilled by the existing collection
+///
+/// ## Behaviour
+/// All existing objects in the collection MUST contain all requested labels.
+///
+/// ## Arguments
+///
+/// * collection_uuid: uuid::Uuid, The existing collection_uuid
+/// * required_labels: gRPC LabelOntology -> All labels that should be updated
+/// * new_collection_overview: CollectionOverviewDb, The CollectionOverviewDb that describes the basic attributes of the new collection
+///
+/// ## Returns
+///
+/// * Result<(()), ArunaError>: Returns either nothing --> success or an error to signal a failed constraint
+///
+fn check_label_ontology(
+    collection_uuid: uuid::Uuid,
+    required_labels: Option<LabelOntology>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), ArunaError> {
+    // Imports for all collection related tables
+    use crate::database::schema::collection_objects::dsl as colobj;
+    use crate::database::schema::object_key_value::dsl as objkv;
+
+    let all_objects = colobj::collection_objects
+        .filter(colobj::collection_id.eq(collection_uuid))
+        .load::<CollectionObject>(conn)
+        .optional()?;
+
+    if required_labels.is_none() {
+        return Ok(());
+    }
+
+    match all_objects {
+        // All objects
+        Some(objects) => {
+            let obj_id = objects.iter().map(|cbj| cbj.object_id).collect::<Vec<_>>();
+            let all_kv: Option<Vec<ObjectKeyValue>> = objkv::object_key_value
+                .filter(objkv::object_id.eq_any(&obj_id))
+                .filter(objkv::key_value_type.eq(KeyValueType::LABEL))
+                .load::<ObjectKeyValue>(conn)
+                .optional()?;
+
+            match all_kv {
+                Some(akv) => {
+                    for obj in obj_id {
+                        let mut matched = Vec::new();
+
+                        for kv in akv.clone() {
+                            if kv.object_id == obj
+                                && required_labels
+                                    .clone()
+                                    .unwrap()
+                                    .required_label_keys
+                                    .contains(&kv.key)
+                            {
+                                matched.push(kv.key);
+                            }
+                        }
+
+                        if matched.len()
+                            != required_labels.as_ref().unwrap().required_label_keys.len()
+                        {
+                            return Err(ArunaError::InvalidRequest(format!(
+                                "Missing required label(s) for {:#?}",
+                                obj
+                            )));
+                        }
+                    }
+                    Ok(())
+                }
+                None => Err(ArunaError::InvalidRequest(format!(
+                    "Missing required label(s) for {:#?}",
+                    obj_id
+                ))),
+            }
+        }
+        // If the collection has no objects -> Return
+        None => {
+            Ok(())
+        }
+    }
+}
+
+// ----------- Helper / convert function section -----------------------
+
 /// Implement `from` CollectionVersion for gRPC "Version"
 /// This makes it easier to convert gRPC to database version types
 impl From<CollectionVersion> for Version {
@@ -1104,4 +1199,16 @@ impl From<DataClass> for DBDataclass {
             DataClass::Protected => DBDataclass::PROTECTED,
         }
     }
+}
+
+// Helper function that converts gRPC labelOntology to the database required label object
+fn _from_ontology_todb(onto: LabelOntology, collection_id: uuid::Uuid) -> Vec<RequiredLabel> {
+    onto.required_label_keys
+        .iter()
+        .map(|label| RequiredLabel {
+            id: uuid::Uuid::new_v4(),
+            collection_id,
+            label_key: label.to_string(),
+        })
+        .collect::<Vec<_>>()
 }

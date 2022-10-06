@@ -17,10 +17,10 @@ use aruna_rust_api::api::storage::models::v1::{
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
     DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
-    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetUserProjectsRequest,
-    GetUserProjectsResponse, GetUserResponse, GetUsersUnregisteredRequest,
-    GetUsersUnregisteredResponse, RegisterUserRequest, RegisterUserResponse,
-    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject,
+    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetNotActivatedUsersRequest,
+    GetNotActivatedUsersResponse, GetUserProjectsRequest, GetUserProjectsResponse, GetUserResponse,
+    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
+    UpdateUserDisplayNameResponse, UserProject,
 };
 
 use crate::database::models::enums::UserRights;
@@ -239,18 +239,11 @@ impl Database {
             None
         };
 
-        // Parse the token_name from the request
-        let token_name = if !request.name.is_empty() {
-            Some(request.name)
-        } else {
-            None
-        };
-
         // Either the token_id or the token_name has to be specified
-        if token_id.is_none() && token_name.is_none() {
+        if token_id.is_none() {
             return Err(
                 ArunaError::InvalidRequest(
-                    "token_id or name for the token must be specified use: get_api_tokens for a list of all tokens".to_string()
+                    "token_id for the token must be specified use: get_api_tokens for a list of all tokens".to_string()
                 )
             );
         }
@@ -263,11 +256,6 @@ impl Database {
                 if token_id.is_some() {
                     api_tokens
                         .filter(id.eq(token_id.unwrap_or_default()))
-                        .filter(creator_user_id.eq(user_id))
-                        .first::<ApiToken>(conn)
-                } else if token_name.is_some() {
-                    api_tokens
-                        .filter(name.eq(token_name.unwrap_or_default()))
                         .filter(creator_user_id.eq(user_id))
                         .first::<ApiToken>(conn)
                 } else {
@@ -633,18 +621,18 @@ impl Database {
     ///
     /// ## Arguments
     ///
-    /// * _request: GetUsersUnregisteredRequest: Placeholder, currently not in use.
+    /// * _request: GetNotActivatedUsersRequest: Placeholder, currently not in use.
     /// * _user_grpc_id: String: user_id validated by personal aruna_token or user_id specified by an admin
     ///
     /// ## Returns
     ///
-    /// * Result<GetUsersUnregisteredResponse, ArunaError>: Contains a list of all users that are not yet activated
+    /// * Result<GetNotActivatedUsersResponse, ArunaError>: Contains a list of all users that are not yet activated
     ///
-    pub fn get_users_unregistered(
+    pub fn get_not_activated_users(
         &self,
-        _request: GetUsersUnregisteredRequest,
+        _request: GetNotActivatedUsersRequest,
         _user_grpc_id: uuid::Uuid,
-    ) -> Result<GetUsersUnregisteredResponse, ArunaError> {
+    ) -> Result<GetNotActivatedUsersResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
 
@@ -675,6 +663,6 @@ impl Database {
         };
 
         // Return the gRPC response
-        Ok(GetUsersUnregisteredResponse { users: grpc_users })
+        Ok(GetNotActivatedUsersResponse { users: grpc_users })
     }
 }

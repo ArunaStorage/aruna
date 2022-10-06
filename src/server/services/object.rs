@@ -656,6 +656,7 @@ impl ObjectService for ObjectServiceImpl {
                 let data_proxy_request = CreatePresignedDownloadRequest {
                     location: Some(location),
                     is_public: false,
+                    filename: proto_object.filename.clone(),
                     range: Some(Range {
                         start: 0,
                         end: proto_object.content_len,
@@ -726,6 +727,7 @@ impl ObjectService for ObjectServiceImpl {
                         .create_presigned_download(CreatePresignedDownloadRequest {
                             location: Some(location),
                             is_public: false,
+                            filename: objdto.object.filename.clone(),
                             range: Some(Range {
                                 start: 0,
                                 end: objdto.object.content_len,
@@ -794,6 +796,7 @@ impl ObjectService for ObjectServiceImpl {
                         .create_presigned_download(CreatePresignedDownloadRequest {
                             location: Some(location),
                             is_public: false,
+                            filename: objdto.object.filename.clone(),
                             range: Some(Range {
                                 start: 0,
                                 end: objdto.object.content_len,
@@ -990,6 +993,7 @@ impl ObjectService for ObjectServiceImpl {
             .create_presigned_download(CreatePresignedDownloadRequest {
                 location: Some(location),
                 is_public: false,
+                filename: object.filename,
                 range: Some(Range {
                     start: 0,
                     end: object.content_len,
@@ -1036,6 +1040,7 @@ impl ObjectService for ObjectServiceImpl {
                     .create_presigned_download(CreatePresignedDownloadRequest {
                         location: Some(location),
                         is_public: false,
+                        filename: object.filename,
                         range: Some(Range {
                             start: 0,
                             end: object.content_len,
@@ -1096,6 +1101,7 @@ impl ObjectService for ObjectServiceImpl {
                                         .create_presigned_download(CreatePresignedDownloadRequest {
                                             location: Some(location),
                                             is_public: false,
+                                            filename: obj_elem.filename,
                                             range: Some(Range {
                                                 start: 0,
                                                 end: obj_elem.content_len,
