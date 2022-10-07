@@ -1,19 +1,19 @@
-use std::io::{Error, ErrorKind};
+use std::io::{ Error, ErrorKind };
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use crate::data_middleware::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
-use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
+use crate::data_middleware::data_middlware::{ DownloadDataMiddleware, UploadDataMiddleware };
+use crate::data_middleware::empty_middleware::{ EmptyMiddlewareDownload, EmptyMiddlewareUpload };
 use crate::presign_handler::signer::PresignHandler;
-use crate::storage_backend::storage_backend::StorageBackend;
-use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
+use crate::backends::storage_backend::StorageBackend;
+use actix_web::http::header::{ ContentDisposition, DispositionParam, DispositionType };
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
-use actix_web::{get, put, web, App, HttpRequest, HttpResponse, HttpServer};
-use aruna_rust_api::api::storage::internal::v1::{Location, LocationType};
+use actix_web::{ get, put, web, App, HttpRequest, HttpResponse, HttpServer };
+use aruna_rust_api::api::storage::internal::v1::{ Location, LocationType };
 use async_channel::Sender;
 use async_stream::stream;
-use futures::{try_join, StreamExt};
+use futures::{ try_join, StreamExt };
 use serde::Deserialize;
 use tokio::fs::File;
 
@@ -49,13 +49,13 @@ impl DataServer {
     pub async fn new(
         storage_backend: Arc<Box<dyn StorageBackend>>,
         signer: Arc<PresignHandler>,
-        socket_addr: SocketAddr,
+        socket_addr: SocketAddr
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        return Ok(DataServer {
-            storage_backend: storage_backend,
-            signer: signer,
-            socket_addr: socket_addr,
-        });
+        Ok(DataServer {
+            storage_backend,
+            signer,
+            socket_addr,
+        })
     }
 
     /// Starts the DataServer to serve the actual data requests
@@ -74,9 +74,8 @@ impl DataServer {
                 .app_data(server.clone())
                 .wrap(Logger::default())
         })
-        .bind(self.socket_addr)?
-        .run()
-        .await?;
+            .bind(self.socket_addr)?
+            .run().await?;
 
         Ok(())
     }
@@ -88,10 +87,9 @@ async fn download(
     req: HttpRequest,
     server: web::Data<ServerState>,
     path: web::Path<(String, String)>,
-    sign_query: web::Query<SignedParamsQuery>,
+    sign_query: web::Query<SignedParamsQuery>
 ) -> Result<HttpResponse, Error> {
-    let verified = server
-        .signer
+    let verified = server.signer
         .verify_sign_url(sign_query.0.clone(), req.path().to_string())
         .unwrap();
     if !verified {
@@ -104,16 +102,17 @@ async fn download(
     let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
     let (data_middleware_sender, mut object_handler_recv) = async_channel::bounded(10);
 
-    let downloader_middleware =
-        EmptyMiddlewareDownload::new(data_middleware_sender.clone(), data_middleware_recv.clone())
-            .await;
+    let downloader_middleware = EmptyMiddlewareDownload::new(
+        data_middleware_sender.clone(),
+        data_middleware_recv.clone()
+    ).await;
 
     let stream = stream! {
         while let Some(value) = object_handler_recv.next().await {
             yield Ok(value);
         }
         //Type annotation of stream is ugly, therefor a pseudoerror is yielded, this should never be executed.
-        if !true {
+        if false {
             match File::open("foo").await {
                 Ok(_) => todo!(),
                 Err(e) => {
@@ -124,17 +123,14 @@ async fn download(
     };
 
     let location = Location {
-        bucket: bucket,
+        bucket,
         path: key,
         r#type: LocationType::Unspecified as i32,
     };
 
     let cloned_server = server.clone();
     tokio::spawn(async move {
-        cloned_server
-            .storage_backend
-            .download(location, None, payload_sender.clone())
-            .await?;
+        cloned_server.storage_backend.download(location, None, payload_sender.clone()).await?;
         Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
     });
 
@@ -143,13 +139,13 @@ async fn download(
     let response = HttpResponse::Ok()
         .append_header(ContentDisposition {
             disposition: DispositionType::Attachment,
-            parameters: vec![DispositionParam::Filename(String::from(
-                sign_query.0.filename.unwrap_or("".to_string()),
-            ))],
+            parameters: vec![
+                DispositionParam::Filename(sign_query.0.filename.unwrap_or_else(|| "".to_string()))
+            ],
         })
         .streaming(stream);
 
-    return Ok(response);
+    Ok(response)
 }
 
 /// Endpoint to upload the requested object in one piece
@@ -159,12 +155,9 @@ async fn single_upload(
     server: web::Data<ServerState>,
     payload: web::Payload,
     path: web::Path<(String, String)>,
-    sign_query: web::Query<SignedParamsQuery>,
+    sign_query: web::Query<SignedParamsQuery>
 ) -> Result<HttpResponse, Error> {
-    let verified = server
-        .signer
-        .verify_sign_url(sign_query.0, req.path().to_string())
-        .unwrap();
+    let verified = server.signer.verify_sign_url(sign_query.0, req.path().to_string()).unwrap();
     if !verified {
         return Ok(HttpResponse::Unauthorized().finish());
     }
@@ -203,17 +196,18 @@ async fn single_upload(
         r#type: LocationType::Unspecified as i32,
     };
 
-    let s3_handler =
-        server
-            .storage_backend
-            .upload_object(object_handler_recv, location, content_len);
+    let s3_handler = server.storage_backend.upload_object(
+        object_handler_recv,
+        location,
+        content_len
+    );
 
     if let Err(err) = try_join!(payload_handler, middleware_handler, s3_handler) {
         log::error!("{}", err);
         return Ok(HttpResponse::InternalServerError().finish());
     }
 
-    return Ok(HttpResponse::Ok().finish());
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Endpoint to upload the requested object in one piece
@@ -223,10 +217,9 @@ async fn multi_upload(
     server: web::Data<ServerState>,
     payload: web::Payload,
     path: web::Path<(i32, String, String)>,
-    sign_query: web::Query<SignedParamsQuery>,
+    sign_query: web::Query<SignedParamsQuery>
 ) -> Result<HttpResponse, Error> {
-    let verified = server
-        .signer
+    let verified = server.signer
         .verify_sign_url(sign_query.0.clone(), req.path().to_string())
         .unwrap();
     if !verified {
@@ -257,10 +250,9 @@ async fn multi_upload(
     let upload_id = match sign_query.0.upload_id.clone() {
         Some(value) => value,
         None => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "upload id required in multipart upload",
-            ));
+            return Err(
+                Error::new(ErrorKind::InvalidInput, "upload id required in multipart upload")
+            );
         }
     };
 
@@ -282,7 +274,7 @@ async fn multi_upload(
         location,
         upload_id,
         content_len,
-        path.0,
+        path.0
     );
 
     let (_, _, etag) = match try_join!(payload_handler, middleware_handler, s3_handler) {
@@ -294,22 +286,22 @@ async fn multi_upload(
     };
 
     let response = HttpResponse::Ok().append_header(("ETag", etag)).finish();
-    return Ok(response);
+    Ok(response)
 }
 
 async fn handle_payload(
     mut payload: web::Payload,
-    sender: Sender<bytes::Bytes>,
+    sender: Sender<bytes::Bytes>
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let mut count = 0;
-    let mut count_2 = 0;
+    let mut _count = 0;
+    let mut _count_2 = 0;
     let mut bytes = web::BytesMut::new();
     while let Some(item) = payload.next().await {
-        count = count + 1;
+        _count += 1;
         let item = item.unwrap();
         bytes.extend_from_slice(&item);
         if bytes.len() > UPLOAD_CHUNK_SIZE {
-            count_2 = count_2 + 1;
+            _count_2 += 1;
             let bytes_for_send = bytes::Bytes::from(bytes);
 
             sender.send(bytes_for_send).await?;

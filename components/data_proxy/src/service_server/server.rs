@@ -18,10 +18,7 @@ use aruna_rust_api::api::storage::internal::v1::{
     LocationType,
 };
 
-use crate::{
-    presign_handler::signer::PresignHandler,
-    storage_backend::storage_backend::StorageBackend,
-};
+use crate::{ presign_handler::signer::PresignHandler, backends::storage_backend::StorageBackend };
 use async_trait::async_trait;
 use tonic::{ Code, Response, Status };
 
@@ -47,11 +44,11 @@ impl ProxyServer {
         internal_api: Arc<InternalServerImpl>,
         addr: SocketAddr
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        return Ok(ProxyServer {
-            addr: addr,
+        Ok(ProxyServer {
+            addr,
             data_proxy_hostname: internal_api.data_proxy_hostname.clone(),
-            internal_api: internal_api,
-        });
+            internal_api,
+        })
     }
 
     pub async fn serve(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -83,7 +80,7 @@ impl InternalServerImpl {
         };
 
         Ok(InternalServerImpl {
-            data_client: data_client,
+            data_client,
             data_proxy_hostname: proxy_data_host,
             signer: presign_handler,
         })
@@ -114,7 +111,7 @@ impl InternalProxyService for InternalServerImpl {
 
         return Ok(
             Response::new(InitPresignedUploadResponse {
-                upload_id: upload_id,
+                upload_id,
             })
         );
     }
@@ -130,13 +127,12 @@ impl InternalProxyService for InternalServerImpl {
 
         let bucket = location.bucket;
         let key = location.path;
-        let resource: String;
-        if inner_request.multipart {
+        let resource = if inner_request.multipart {
             let part = inner_request.part_number;
-            resource = format!("/objects/upload/multi/{part}/{bucket}/{key}");
+            format!("/objects/upload/multi/{part}/{bucket}/{key}")
         } else {
-            resource = format!("/objects/upload/single/{bucket}/{key}");
-        }
+            format!("/objects/upload/single/{bucket}/{key}")
+        };
         let duration = Duration::new(15 * 60, 0);
         url.set_path(resource.as_str());
         let signed_url = self.signer

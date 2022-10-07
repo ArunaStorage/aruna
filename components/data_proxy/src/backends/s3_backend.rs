@@ -1,18 +1,20 @@
-use std::{env, str::FromStr};
+use std::{ env, str::FromStr };
 
-use async_channel::{Receiver, Sender};
+use async_channel::{ Receiver, Sender };
 use async_trait::async_trait;
 use aws_sdk_s3::{
-    model::{CompletedMultipartUpload, CompletedPart},
+    model::{ CompletedMultipartUpload, CompletedPart },
     types::ByteStream,
-    Client, Endpoint, Region,
+    Client,
+    Endpoint,
+    Region,
 };
 use http::Uri;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{ AsyncBufReadExt, BufReader };
 
 use std::convert::TryFrom;
 
-use aruna_rust_api::api::storage::internal::v1::{Location, PartETag, Range};
+use aruna_rust_api::api::storage::internal::v1::{ Location, PartETag, Range };
 
 use super::storage_backend::StorageBackend;
 
@@ -26,11 +28,13 @@ pub struct S3Backend {
 
 impl S3Backend {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let endpoint =
-            env::var(S3_ENDPOINT_HOST_ENV_VAR).unwrap_or("http://localhost:9000".to_string());
+        let endpoint = env
+            ::var(S3_ENDPOINT_HOST_ENV_VAR)
+            .unwrap_or_else(|_| "http://localhost:9000".to_string());
 
         let config = aws_config::load_from_env().await;
-        let s3_config = aws_sdk_s3::config::Builder::from(&config)
+        let s3_config = aws_sdk_s3::config::Builder
+            ::from(&config)
             .region(Region::new("RegionOne"))
             .endpoint_resolver(Endpoint::immutable(Uri::from_str(endpoint.as_str())?))
             .build();
@@ -38,9 +42,9 @@ impl S3Backend {
         let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
         let handler = S3Backend {
-            s3_client: s3_client,
+            s3_client,
         };
-        return Ok(handler);
+        Ok(handler)
     }
 }
 
@@ -54,23 +58,21 @@ impl StorageBackend for S3Backend {
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         location: Location,
-        content_len: i64,
+        content_len: i64
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        self.check_and_create_bucket(location.bucket.clone())
-            .await?;
+        self.check_and_create_bucket(location.bucket.clone()).await?;
 
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
-        match self
-            .s3_client
-            .put_object()
-            .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
-            .set_content_length(Some(content_len))
-            .body(bytestream)
-            .send()
-            .await
+        match
+            self.s3_client
+                .put_object()
+                .set_bucket(Some(location.bucket))
+                .set_key(Some(location.path))
+                .set_content_length(Some(content_len))
+                .body(bytestream)
+                .send().await
         {
             Ok(_) => {}
             Err(err) => {
@@ -89,10 +91,9 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         range: Option<Range>,
-        sender: Sender<bytes::Bytes>,
+        sender: Sender<bytes::Bytes>
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let mut object = self
-            .s3_client
+        let mut object = self.s3_client
             .get_object()
             .set_bucket(Some(location.bucket))
             .set_key(Some(location.path));
@@ -121,7 +122,7 @@ impl StorageBackend for S3Backend {
             let consumed_len = {
                 let buffer_result = buf_reader.fill_buf().await;
                 let buf = buffer_result?;
-                let buf_len = buf.len().clone();
+                let buf_len = buf.len();
                 let bytes_buf = bytes::Bytes::copy_from_slice(buf);
 
                 match sender.send(bytes_buf).await {
@@ -148,18 +149,15 @@ impl StorageBackend for S3Backend {
     // Initiates a multipart upload in s3 and returns the associated upload id.
     async fn init_multipart_upload(
         &self,
-        location: Location,
+        location: Location
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        self.check_and_create_bucket(location.bucket.clone())
-            .await?;
+        self.check_and_create_bucket(location.bucket.clone()).await?;
 
-        let multipart = self
-            .s3_client
+        let multipart = self.s3_client
             .create_multipart_upload()
             .set_bucket(Some(location.bucket))
             .set_key(Some(location.path))
-            .send()
-            .await?;
+            .send().await?;
 
         return Ok(multipart.upload_id().unwrap().to_string());
     }
@@ -170,13 +168,12 @@ impl StorageBackend for S3Backend {
         location: Location,
         upload_id: String,
         content_len: i64,
-        part_number: i32,
+        part_number: i32
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
-        let upload = self
-            .s3_client
+        let upload = self.s3_client
             .upload_part()
             .set_bucket(Some(location.bucket))
             .set_key(Some(location.path))
@@ -184,8 +181,7 @@ impl StorageBackend for S3Backend {
             .set_content_length(Some(content_len))
             .set_upload_id(Some(upload_id))
             .body(bytestream)
-            .send()
-            .await?;
+            .send().await?;
 
         return Ok(upload.e_tag().unwrap().to_string());
     }
@@ -194,7 +190,7 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         parts: Vec<PartETag>,
-        upload_id: String,
+        upload_id: String
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut completed_parts = Vec::new();
         for etag in parts {
@@ -216,19 +212,16 @@ impl StorageBackend for S3Backend {
             .key(location.path)
             .upload_id(upload_id)
             .multipart_upload(
-                CompletedMultipartUpload::builder()
-                    .set_parts(Some(completed_parts))
-                    .build(),
+                CompletedMultipartUpload::builder().set_parts(Some(completed_parts)).build()
             )
-            .send()
-            .await?;
+            .send().await?;
 
         return Ok(());
     }
 
     async fn create_bucket(
         &self,
-        bucket: String,
+        bucket: String
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         self.check_and_create_bucket(bucket).await
     }
@@ -237,25 +230,18 @@ impl StorageBackend for S3Backend {
 impl S3Backend {
     pub async fn check_and_create_bucket(
         &self,
-        bucket: String,
+        bucket: String
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        match self
-            .s3_client
-            .get_bucket_location()
-            .bucket(bucket.clone())
-            .send()
-            .await
-        {
+        match self.s3_client.get_bucket_location().bucket(bucket.clone()).send().await {
             Ok(_) => Ok(()),
-            Err(_) => match self.s3_client.create_bucket().bucket(bucket).send().await {
-                Ok(_) => {
-                    return Ok(());
+            Err(_) =>
+                match self.s3_client.create_bucket().bucket(bucket).send().await {
+                    Ok(_) => { Ok(()) }
+                    Err(err) => {
+                        log::error!("{}", err);
+                        Err(Box::new(err))
+                    }
                 }
-                Err(err) => {
-                    log::error!("{}", err);
-                    return Err(Box::new(err));
-                }
-            },
         }
     }
 }

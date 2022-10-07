@@ -1,25 +1,25 @@
 use std::sync::Arc;
 
-use aruna_rust_api;
 use data_server::server::DataServer;
-use dotenv;
+
 use futures::try_join;
 use presign_handler::signer::PresignHandler;
-use service_server::server::{InternalServerImpl, ProxyServer};
+use service_server::server::{ InternalServerImpl, ProxyServer };
 use std::io::Write;
-use storage_backend::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use backends::{ s3_backend::S3Backend, storage_backend::StorageBackend };
 
 mod data_middleware;
 mod data_server;
 mod presign_handler;
 mod service_server;
-mod storage_backend;
+mod backends;
 
 #[tokio::main]
 async fn main() {
     dotenv::from_filename(".env").ok();
 
-    env_logger::Builder::new()
+    env_logger::Builder
+        ::new()
         .format(|buf, record| {
             writeln!(
                 buf,
@@ -54,19 +54,22 @@ async fn main() {
 
     let data_socket = "0.0.0.0:8080".parse().unwrap();
 
-    let data_server = DataServer::new(s3_client_arc.clone(), signer_arc.clone(), data_socket)
-        .await
-        .unwrap();
+    let data_server = DataServer::new(
+        s3_client_arc.clone(),
+        signer_arc.clone(),
+        data_socket
+    ).await.unwrap();
 
-    let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone(), signer_arc)
-        .await
-        .unwrap();
+    let internal_proxy_server = InternalServerImpl::new(
+        s3_client_arc.clone(),
+        signer_arc
+    ).await.unwrap();
     let internal_proxy_socket = "0.0.0.0:8081".parse().unwrap();
 
-    let internal_proxy_server =
-        ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
-            .await
-            .unwrap();
+    let internal_proxy_server = ProxyServer::new(
+        Arc::new(internal_proxy_server),
+        internal_proxy_socket
+    ).await.unwrap();
 
     log::info!("Server started!");
     let _end = match try_join!(data_server.serve(), internal_proxy_server.serve()) {

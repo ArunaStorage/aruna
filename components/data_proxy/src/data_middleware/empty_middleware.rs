@@ -18,10 +18,10 @@ impl EmptyMiddlewareUpload {
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         recv: Receiver<bytes::Bytes>
     ) -> Self {
-        return EmptyMiddlewareUpload {
+        EmptyMiddlewareUpload {
             recv,
             sender,
-        };
+        }
     }
 }
 
@@ -48,10 +48,10 @@ impl UploadDataMiddleware for EmptyMiddlewareUpload {
 
 impl EmptyMiddlewareDownload {
     pub async fn new(sender: Sender<bytes::Bytes>, recv: Receiver<bytes::Bytes>) -> Self {
-        return EmptyMiddlewareDownload {
-            recv: recv,
-            sender: sender,
-        };
+        EmptyMiddlewareDownload {
+            recv,
+            sender,
+        }
     }
 }
 

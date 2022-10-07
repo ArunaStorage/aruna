@@ -1,10 +1,10 @@
 use std::time::SystemTime;
-use std::{env, time::Duration};
+use std::{ env, time::Duration };
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 
-use hmac::{Hmac, Mac};
+use hmac::{ Hmac, Mac };
 use rand::Rng;
 use sha2::Sha256;
 
@@ -24,16 +24,15 @@ pub struct PresignHandler {
 
 impl PresignHandler {
     pub fn new() -> Result<PresignHandler, Box<dyn std::error::Error + Send + Sync>> {
-        let sign_secret = env::var(SECRET_ENV_VAR).context(format!(
-            "could not find required env var: {}",
-            SECRET_ENV_VAR
-        ))?;
+        let sign_secret = env
+            ::var(SECRET_ENV_VAR)
+            .context(format!("could not find required env var: {}", SECRET_ENV_VAR))?;
 
         let handler = PresignHandler {
             secret: sign_secret,
         };
 
-        return Ok(handler);
+        Ok(handler)
     }
 
     /// Signs a url
@@ -42,7 +41,7 @@ impl PresignHandler {
         duration: Duration,
         upload_id: Option<String>,
         filename: Option<String>,
-        mut url: url::Url,
+        mut url: url::Url
     ) -> Result<url::Url, Box<dyn std::error::Error>> {
         let expiry_data = SystemTime::now().checked_add(duration).unwrap();
         let expiry_data: DateTime<Utc> = expiry_data.into();
@@ -59,8 +58,10 @@ impl PresignHandler {
             filename: filename.clone(),
         };
 
-        let query_signature =
-            self.query_signature_string(sign_query_params, url.path().to_string());
+        let query_signature = self.query_signature_string(
+            sign_query_params,
+            url.path().to_string()
+        );
 
         let mut mac = HmacSha256::new_from_slice(self.secret.as_bytes()).unwrap();
         mac.update(query_signature.as_bytes());
@@ -68,33 +69,28 @@ impl PresignHandler {
         let signature = result.into_bytes();
         let signature_base64 = base64::encode(signature);
 
-        url.query_pairs_mut()
-            .append_pair("salt", base_64_salt.as_str());
+        url.query_pairs_mut().append_pair("salt", base_64_salt.as_str());
 
-        url.query_pairs_mut()
-            .append_pair("expiry", expiry_data_rfc3339.as_str());
+        url.query_pairs_mut().append_pair("expiry", expiry_data_rfc3339.as_str());
 
-        url.query_pairs_mut()
-            .append_pair("signature", signature_base64.as_str());
+        url.query_pairs_mut().append_pair("signature", signature_base64.as_str());
 
         if let Some(upload_id) = upload_id {
-            url.query_pairs_mut()
-                .append_pair("upload_id", upload_id.as_str());
+            url.query_pairs_mut().append_pair("upload_id", upload_id.as_str());
         }
 
         if let Some(filename) = filename {
-            url.query_pairs_mut()
-                .append_pair("filename", filename.as_str());
+            url.query_pairs_mut().append_pair("filename", filename.as_str());
         }
 
-        return Ok(url);
+        Ok(url)
     }
 
     /// Verfies a signed url
     pub fn verify_sign_url(
         &self,
         sign_query_params: SignedParamsQuery,
-        path: String,
+        path: String
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let query_signature = self.query_signature_string(sign_query_params.clone(), path);
 
@@ -110,12 +106,8 @@ impl PresignHandler {
         mac.update(query_signature.as_bytes());
 
         match mac.verify_slice(signature_hmac_key.as_slice()) {
-            Ok(_) => {
-                return Ok(true);
-            }
-            Err(_) => {
-                return Ok(false);
-            }
+            Ok(_) => { Ok(true) }
+            Err(_) => { Ok(false) }
         }
     }
 
@@ -125,19 +117,17 @@ impl PresignHandler {
             params.push(upload_id);
         }
 
-        let query_signature = params.join("|");
-
-        return query_signature;
+        params.join("|")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{env, str::FromStr, time::Duration};
+    use std::{ env, str::FromStr, time::Duration };
 
     use crate::data_server::server::SignedParamsQuery;
 
-    use super::{PresignHandler, SECRET_ENV_VAR};
+    use super::{ PresignHandler, SECRET_ENV_VAR };
 
     #[test]
     fn test_signer() {
@@ -169,15 +159,11 @@ mod tests {
             }
         }
 
-        let is_valid = signer
-            .verify_sign_url(query_sign_params.clone(), path)
-            .unwrap();
-        assert_eq!(is_valid, true);
+        let is_valid = signer.verify_sign_url(query_sign_params.clone(), path).unwrap();
+        assert!(is_valid);
 
         let bad_path = "/test/path/2/3".to_string();
-        let is_valid = signer
-            .verify_sign_url(query_sign_params.clone(), bad_path)
-            .unwrap();
-        assert_eq!(is_valid, false);
+        let is_valid = signer.verify_sign_url(query_sign_params, bad_path).unwrap();
+        assert!(!is_valid);
     }
 }
