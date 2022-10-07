@@ -110,16 +110,17 @@ async fn download(
 
     let stream = stream! {
         while let Some(value) = object_handler_recv.next().await {
-            yield Ok(value)
+            yield Ok(value);
         }
         //Type annotation of stream is ugly, therefor a pseudoerror is yielded, this should never be executed.
         if !true {
             match File::open("foo").await {
                 Ok(_) => todo!(),
-                Err(e) => yield Err(e),
-            };
+                Err(e) => {
+                    yield Err(e);
+                }
+            }
         }
-
     };
 
     let location = Location {
@@ -133,7 +134,8 @@ async fn download(
         cloned_server
             .storage_backend
             .download(location, None, payload_sender.clone())
-            .await;
+            .await?;
+        Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
     });
 
     tokio::spawn(async move { downloader_middleware.handle_stream().await });
@@ -200,7 +202,7 @@ async fn single_upload(
     if let Err(err) = try_join!(payload_handler, middleware_handler, s3_handler) {
         log::error!("{}", err);
         return Ok(HttpResponse::InternalServerError().finish());
-    };
+    }
 
     return Ok(HttpResponse::Ok().finish());
 }
@@ -249,7 +251,7 @@ async fn multi_upload(
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "upload id required in multipart upload",
-            ))
+            ));
         }
     };
 
