@@ -6,6 +6,7 @@ use crate::data_middleware::data_middlware::{DownloadDataMiddleware, UploadDataM
 use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
 use crate::presign_handler::signer::PresignHandler;
 use crate::storage_backend::storage_backend::StorageBackend;
+use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{get, put, web, App, HttpRequest, HttpResponse, HttpServer};
@@ -25,6 +26,7 @@ pub struct SignedParamsQuery {
     pub salt: String,
     pub expiry: String,
     pub upload_id: Option<String>,
+    pub filename: Option<String>,
 }
 
 /// The DataServer handle the incoming and outcoming data streams
@@ -90,7 +92,7 @@ async fn download(
 ) -> Result<HttpResponse, Error> {
     let verified = server
         .signer
-        .verify_sign_url(sign_query.0, req.path().to_string())
+        .verify_sign_url(sign_query.0.clone(), req.path().to_string())
         .unwrap();
     if !verified {
         return Ok(HttpResponse::Unauthorized().finish());
@@ -105,8 +107,6 @@ async fn download(
     let downloader_middleware =
         EmptyMiddlewareDownload::new(data_middleware_sender.clone(), data_middleware_recv.clone())
             .await;
-
-    let mut response = HttpResponse::Ok();
 
     let stream = stream! {
         while let Some(value) = object_handler_recv.next().await {
@@ -140,7 +140,16 @@ async fn download(
 
     tokio::spawn(async move { downloader_middleware.handle_stream().await });
 
-    return Ok(response.streaming(stream));
+    let response = HttpResponse::Ok()
+        .append_header(ContentDisposition {
+            disposition: DispositionType::Attachment,
+            parameters: vec![DispositionParam::Filename(String::from(
+                sign_query.0.filename.unwrap_or("".to_string()),
+            ))],
+        })
+        .streaming(stream);
+
+    return Ok(response);
 }
 
 /// Endpoint to upload the requested object in one piece

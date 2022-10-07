@@ -1,7 +1,7 @@
-use async_channel::{Receiver, Sender};
+use async_channel::{ Receiver, Sender };
 use async_trait::async_trait;
 
-use super::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
+use super::data_middlware::{ DownloadDataMiddleware, UploadDataMiddleware };
 
 pub struct EmptyMiddlewareUpload {
     sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
@@ -16,11 +16,11 @@ pub struct EmptyMiddlewareDownload {
 impl EmptyMiddlewareUpload {
     pub async fn new(
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
-        recv: Receiver<bytes::Bytes>,
+        recv: Receiver<bytes::Bytes>
     ) -> Self {
         return EmptyMiddlewareUpload {
-            recv: recv,
-            sender: sender,
+            recv,
+            sender,
         };
     }
 }
@@ -28,7 +28,7 @@ impl EmptyMiddlewareUpload {
 #[async_trait]
 impl UploadDataMiddleware for EmptyMiddlewareUpload {
     async fn get_sender(
-        &self,
+        &self
     ) -> Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>> {
         return self.sender.clone();
     }
@@ -36,7 +36,7 @@ impl UploadDataMiddleware for EmptyMiddlewareUpload {
         return self.recv.clone();
     }
     async fn handle_stream(
-        &self,
+        &self
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         while let Ok(data) = self.recv.recv().await {
             self.sender.send(Ok(data)).await.unwrap();
@@ -58,7 +58,7 @@ impl EmptyMiddlewareDownload {
 #[async_trait]
 impl DownloadDataMiddleware for EmptyMiddlewareDownload {
     async fn handle_stream(
-        &self,
+        &self
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         while let Ok(data) = self.recv.recv().await {
             match self.sender.send(data).await {
@@ -67,7 +67,7 @@ impl DownloadDataMiddleware for EmptyMiddlewareDownload {
                     log::error!("{}", err);
                     break;
                 }
-            };
+            }
         }
 
         Ok(())

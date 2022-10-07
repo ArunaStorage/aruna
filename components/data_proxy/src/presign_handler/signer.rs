@@ -41,6 +41,7 @@ impl PresignHandler {
         &self,
         duration: Duration,
         upload_id: Option<String>,
+        filename: Option<String>,
         mut url: url::Url,
     ) -> Result<url::Url, Box<dyn std::error::Error>> {
         let expiry_data = SystemTime::now().checked_add(duration).unwrap();
@@ -55,6 +56,7 @@ impl PresignHandler {
             salt: base_64_salt.clone(),
             expiry: expiry_data_rfc3339.clone(),
             upload_id: upload_id.clone(),
+            filename: filename.clone(),
         };
 
         let query_signature =
@@ -80,6 +82,11 @@ impl PresignHandler {
                 .append_pair("upload_id", upload_id.as_str());
         }
 
+        if let Some(filename) = filename {
+            url.query_pairs_mut()
+                .append_pair("filename", filename.as_str());
+        }
+
         return Ok(url);
     }
 
@@ -103,8 +110,12 @@ impl PresignHandler {
         mac.update(query_signature.as_bytes());
 
         match mac.verify_slice(signature_hmac_key.as_slice()) {
-            Ok(_) => return Ok(true),
-            Err(_) => return Ok(false),
+            Ok(_) => {
+                return Ok(true);
+            }
+            Err(_) => {
+                return Ok(false);
+            }
         }
     }
 
@@ -138,16 +149,22 @@ mod tests {
 
         let url = url::Url::from_str(format!("{}{}", "http://example.com", path).as_str()).unwrap();
 
-        let url = signer.sign_url(duration, None, url).unwrap();
+        let url = signer.sign_url(duration, None, None, url).unwrap();
 
         let mut query_sign_params = SignedParamsQuery {
             ..Default::default()
         };
         for (key, value) in url.query_pairs() {
             match key.to_string().as_str() {
-                "expiry" => query_sign_params.expiry = value.to_string(),
-                "salt" => query_sign_params.salt = value.to_string(),
-                "signature" => query_sign_params.signature = value.to_string(),
+                "expiry" => {
+                    query_sign_params.expiry = value.to_string();
+                }
+                "salt" => {
+                    query_sign_params.salt = value.to_string();
+                }
+                "signature" => {
+                    query_sign_params.signature = value.to_string();
+                }
                 _ => {}
             }
         }

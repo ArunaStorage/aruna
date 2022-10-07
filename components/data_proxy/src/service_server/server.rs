@@ -130,7 +130,7 @@ impl InternalProxyService for InternalServerImpl {
         url.set_path(resource.as_str());
         let signed_url = self
             .signer
-            .sign_url(duration, Some(inner_request.upload_id), url)
+            .sign_url(duration, Some(inner_request.upload_id), None, url)
             .unwrap();
 
         let response = CreatePresignedUploadUrlResponse {
@@ -162,7 +162,7 @@ impl InternalProxyService for InternalServerImpl {
                 return Err(Status::new(
                     Code::Internal,
                     format!("could not create new bucket: {}", err),
-                ))
+                ));
             }
         }
 
@@ -183,7 +183,10 @@ impl InternalProxyService for InternalServerImpl {
         let mut url = url::Url::parse(self.data_proxy_hostname.as_str()).unwrap();
         url.set_path(path.as_str());
 
-        let signed_url = self.signer.sign_url(duration, None, url).unwrap();
+        let signed_url = self
+            .signer
+            .sign_url(duration, None, Some(inner_request.filename), url)
+            .unwrap();
 
         let url = signed_url.as_str();
 
@@ -203,8 +206,10 @@ impl InternalProxyService for InternalServerImpl {
             .await
         {
             Ok(_) => {}
-            Err(_) => return Err(Status::new(Code::Internal, "could not create bucket")),
-        };
+            Err(_) => {
+                return Err(Status::new(Code::Internal, "could not create bucket"));
+            }
+        }
 
         return Ok(Response::new(CreateBucketResponse {}));
     }
