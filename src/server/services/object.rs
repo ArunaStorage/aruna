@@ -646,6 +646,13 @@ impl ObjectService for ObjectServiceImpl {
             .await
             .map_err(ArunaError::from)??;
 
+        let proto_object = match proto_object {
+            Some(p) => p,
+            None => {
+                return Err(tonic::Status::invalid_argument("object not found"));
+            }
+        };
+
         //Note: Only request url from data proxy if request.with_url == true
         let response = match &inner_request.with_url {
             true => {

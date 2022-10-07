@@ -148,7 +148,7 @@ fn update_object_test() {
 
     // Create Object
     let new_object_id = uuid::Uuid::new_v4();
-    println!("Initial Object Id: {}", new_object_id.to_string());
+    println!("Initial Object Id: {}", new_object_id);
     let upload_id = uuid::Uuid::new_v4(); // Dummy id to mock data proxy usage
 
     let location = Location {
@@ -199,8 +199,8 @@ fn update_object_test() {
     let finish_request = FinishObjectStagingRequest {
         object_id: init_object_response.object_id.to_string(),
         upload_id: upload_id.to_string(),
-        collection_id: init_object_response.collection_id.to_string(),
-        hash: Some(finish_hash.clone()),
+        collection_id: init_object_response.collection_id,
+        hash: Some(finish_hash),
         no_upload: false,
         completed_parts: vec![],
         auto_update: true,
@@ -211,7 +211,7 @@ fn update_object_test() {
 
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_001.to_string());
+    println!("Updated Object Id: {}", updated_object_id_001);
     let updated_upload_id = uuid::Uuid::new_v4();
     let updated_location = Location {
         r#type: EndpointType::S3 as i32,
@@ -219,7 +219,7 @@ fn update_object_test() {
         path: updated_object_id_001.to_string(),
     };
     let update_request = UpdateObjectRequest {
-        object_id: finished_object.id.to_string(),
+        object_id: finished_object.id,
         collection_id: rand_collection.id.to_string(),
         object: Some(StageObject {
             filename: "File.update".to_string(),
@@ -242,8 +242,8 @@ fn update_object_test() {
             &update_request,
             &Some(updated_location),
             &creator,
-            endpoint_id.clone(),
-            updated_object_id_001.clone(),
+            endpoint_id,
+            updated_object_id_001,
         )
         .unwrap();
 
@@ -255,7 +255,7 @@ fn update_object_test() {
     let updated_finish_request = FinishObjectStagingRequest {
         object_id: update_response.object_id.to_string(),
         upload_id: updated_upload_id.to_string(),
-        collection_id: update_response.collection_id.to_string(),
+        collection_id: update_response.collection_id,
         hash: Some(updated_hash.clone()),
         no_upload: false,
         completed_parts: vec![],
@@ -281,7 +281,7 @@ fn update_object_test() {
 
     // Update Object again
     let updated_object_id_002 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_002.to_string());
+    println!("Updated Object Id: {}", updated_object_id_002);
     let updated_upload_id_002 = uuid::Uuid::new_v4();
     let updated_location_002 = Location {
         r#type: EndpointType::S3 as i32,
@@ -289,12 +289,12 @@ fn update_object_test() {
         path: updated_object_id_002.to_string(),
     };
     let update_request_002 = UpdateObjectRequest {
-        object_id: updated_object.id.to_string(),
+        object_id: updated_object.id,
         collection_id: rand_collection.id.to_string(),
         object: Some(StageObject {
             filename: "File.next.update".to_string(),
             description: "Update to File.update".to_string(),
-            collection_id: rand_collection.id.to_string(),
+            collection_id: rand_collection.id,
             content_len: 123456,
             source: None,
             dataclass: 2,
@@ -312,8 +312,8 @@ fn update_object_test() {
             &update_request_002,
             &Some(updated_location_002),
             &creator,
-            endpoint_id.clone(),
-            updated_object_id_002.clone(),
+            endpoint_id,
+            updated_object_id_002,
         )
         .unwrap();
 
@@ -325,7 +325,7 @@ fn update_object_test() {
     let updated_finish_request_002 = FinishObjectStagingRequest {
         object_id: update_response_002.object_id.to_string(),
         upload_id: updated_upload_id_002.to_string(),
-        collection_id: update_response_002.collection_id.to_string(),
+        collection_id: update_response_002.collection_id,
         hash: Some(updated_hash_002.clone()),
         no_upload: false,
         completed_parts: vec![],

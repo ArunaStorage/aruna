@@ -521,11 +521,11 @@ impl Database {
                 let all: Vec<ObjectGroupObject> = base_request.load::<ObjectGroupObject>(conn)?;
 
                 all.iter()
-                    .map(|obj_grp_obj| {
-                        Ok((
-                            get_object(&obj_grp_obj.id, &col_id, conn)?,
-                            obj_grp_obj.is_meta,
-                        ))
+                    .filter_map(|obj_grp_obj| {
+                        match get_object(&obj_grp_obj.id, &col_id, true, conn) {
+                            Ok(opt) => opt.map(|s| Ok((s, obj_grp_obj.is_meta))),
+                            Err(e) => Some(Err(e)),
+                        }
                     })
                     .collect::<Result<Vec<(_, _)>, _>>()
             })?;
