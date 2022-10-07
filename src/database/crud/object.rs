@@ -211,9 +211,8 @@ impl Database {
         let object_dto = self
             .pg_connection
             .get()?
-            .transaction::<ObjectDto, Error, _>(|conn| {
+            .transaction::<ObjectDto, ArunaError, _>(|conn| {
                 let latest = get_latest_obj(conn, req_object_uuid)?;
-
                 let is_still_latest = latest.id == req_object_uuid;
 
                 // Update the object itself to be available
@@ -226,24 +225,24 @@ impl Database {
                 // Update hash if (re-)upload and request contains hash
                 if !request.no_upload && request.hash.is_some() {
                     match &request.hash {
-                        None => {} // Do nothing. Should raise Error but DieselErrors are meaningless in this context.
-                        Some(req_hash) => {
+                        None => return Err(ArunaError::InvalidRequest("Missing hash after re-upload.".to_string())),
+                        Some(req_hash) =>
                             diesel::update(Hash::belonging_to(&returned_obj))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type
                                         .eq(HashType::from_grpc(req_hash.alg)),
                                 ))
-                                .execute(conn)?;
-                        }
-                    }
-                }
+                                .execute(conn)
+                    }?;
+                };
 
                 // Check if the origin id is different from uuid
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
                 if let Some(orig_id) = returned_obj.origin_id {
+                    // origin_id != object_id => Update
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
                         let all_revisions = get_all_revisions(conn, req_object_uuid)?;
@@ -253,47 +252,77 @@ impl Database {
 
                         // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
                         // Set all auto_updates and is_latest to be false
-                        let auto_updating_coll_obj = update(
-                            collection_objects
-                                .filter(
-                                    database::schema::collection_objects::object_id
-                                        .eq_any(all_rev_ids),
-                                )
-                                .filter(database::schema::collection_objects::auto_update.eq(true)),
-                        )
-                        .set((
-                            database::schema::collection_objects::auto_update.eq(false),
-                            database::schema::collection_objects::is_latest.eq(false),
-                        ))
-                        .get_results::<CollectionObject>(conn)?;
+                        let auto_updating_coll_obj: Vec<CollectionObject> = collection_objects
+                            .filter(database::schema::collection_objects::object_id.eq_any(&all_rev_ids))
+                            .filter(database::schema::collection_objects::auto_update.eq(true))
+                            .load::<CollectionObject>(conn)
+                            .optional()?
+                            .unwrap_or(Vec::new());
 
+                        let auto_update_collection_references = auto_updating_coll_obj
+                            .iter()
+                            .filter(|elem| elem.collection_id == req_coll_uuid)
+                            .collect::<Vec<_>>();
+
+                        let (auto_update_collection_reference, auto_update_collection_reference_id): (Option<CollectionObject>, uuid::Uuid) = match auto_update_collection_references.len() {
+                            0 => (None, uuid::Uuid::default()),
+                            1 => (Some(auto_update_collection_references[0].clone()), auto_update_collection_references[0].clone().id),
+                            _ => return Err(ArunaError::InvalidRequest("More than one revision with auto_update == true".to_string()))
+                        };
+
+                        // object ids inside references
                         let auto_updating_obj_id = auto_updating_coll_obj
                             .iter()
+                            .filter(|elem| elem.id != auto_update_collection_reference_id)
                             .map(|elem| elem.object_id)
                             .collect::<Vec<_>>();
 
+                        // collection_object ids
                         let auto_updating_coll_obj_id = auto_updating_coll_obj
                             .iter()
+                            .filter(|elem| elem.id != auto_update_collection_reference_id)
                             .map(|elem| elem.id)
                             .collect::<Vec<_>>();
 
-                        // Only proceed if the list is not empty, if it is empty no updates need to be performed
 
-                        if !auto_updating_coll_obj.is_empty() {
+                        // Only proceed if the list () is not empty, if it is empty no updates need to be performed
+                        // Update ObjectGroups and Objects reference in other collections
+                        if !auto_updating_coll_obj_id.is_empty() {
                             // Query the affected object_groups
-                            let affected_object_groups = object_group_objects
+                            let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
                                 .filter(
                                     database::schema::object_group_objects::object_id
                                         .eq_any(&auto_updating_obj_id),
                                 )
                                 .select(database::schema::object_group_objects::object_group_id)
-                                .load::<uuid::Uuid>(conn)?;
-                            // Bump all revisions for object_groups
-                            let new_ogroups =
-                                bump_revisisions(&affected_object_groups, user_id, conn)?;
-                            let new_group_ids =
-                                new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
-                            // Update Collectionobjects to use the new object_id
+                                .load::<uuid::Uuid>(conn)
+                                .optional()?;
+
+                            match affected_object_groups {
+                                None => {},
+                                Some(obj_grp_ids) => {
+                                    // Bump all revisions for object_groups
+                                    let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
+                                    let new_group_ids = new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                                    // Update object_group references
+                                    update(object_group_objects)
+                                        .filter(
+                                            database::schema::object_group_objects::object_group_id
+                                                .eq_any(&new_group_ids),
+                                        )
+                                        .filter(
+                                            database::schema::object_group_objects::object_id.eq(orig_id),
+                                        )
+                                        .set(
+                                            database::schema::object_group_objects::object_id
+                                                .eq(req_object_uuid),
+                                        )
+                                        .execute(conn)?;
+                                }
+                            };
+
+                            // Update Collection_Objects to use the new object_id
                             update(
                                 collection_objects.filter(
                                     database::schema::collection_objects::id
@@ -302,44 +331,102 @@ impl Database {
                             )
                             .set((
                                 database::schema::collection_objects::object_id.eq(req_object_uuid),
-                                database::schema::collection_objects::is_latest.eq(true),
-                                database::schema::collection_objects::auto_update.eq(true),
                             ))
                             .execute(conn)?;
-                            // Update object_group references
-                            update(object_group_objects)
-                                .filter(
-                                    database::schema::object_group_objects::object_group_id
-                                        .eq_any(&new_group_ids),
-                                )
-                                .filter(
-                                    database::schema::object_group_objects::object_id.eq(orig_id),
-                                )
-                                .set(
-                                    database::schema::object_group_objects::object_id
-                                        .eq(req_object_uuid),
-                                )
-                                .execute(conn)?;
                         }
+
+                        // Query the affected object_groups
+                        let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
+                            .filter(
+                                database::schema::object_group_objects::object_id
+                                    .eq(&returned_obj.origin_id.unwrap_or_default()),
+                            )
+                            .select(database::schema::object_group_objects::object_group_id)
+                            .load::<uuid::Uuid>(conn)
+                            .optional()?;
+
+                        match affected_object_groups {
+                            None => {},
+                            Some(obj_grp_ids) => {
+                                // Bump all revisions for object_groups
+                                let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
+                                let new_group_ids = new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                                // Update object_group references
+                                update(object_group_objects)
+                                    .filter(
+                                        database::schema::object_group_objects::object_group_id
+                                            .eq_any(&new_group_ids),
+                                    )
+                                    .filter(
+                                        database::schema::object_group_objects::object_id.eq(orig_id),
+                                    )
+                                    .set(
+                                        database::schema::object_group_objects::object_id
+                                            .eq(req_object_uuid),
+                                    )
+                                    .execute(conn)?;
+                            }
+                        };
+
+                        // Update inside collection of update object
+                        match auto_update_collection_reference {
+                            None => {
+                                // Update latest reference
+                                update(collection_objects)
+                                    .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                    .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                    .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
+                                    .set((
+                                        database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                        database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                        database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                        database::schema::collection_objects::auto_update.eq(request.auto_update),
+                                    ))
+                                    .execute(conn)?;
+                            }
+                            Some(reference) => {
+                                // Delete staging reference
+                                delete(collection_objects)
+                                    .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                    .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                    .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
+                                    .execute(conn)?;
+
+                                // Update latest reference
+                                update(collection_objects)
+                                    .filter(database::schema::collection_objects::id.eq(&reference.id))
+                                    .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                    .set((
+                                        database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                        database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                        database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                        database::schema::collection_objects::auto_update.eq(request.auto_update && is_still_latest),
+                                    ))
+                                    .execute(conn)?;
+                            }
+                        };
+                    // origin_id == object_id => Initialize
+                    } else {
+                        // Update the collection objects
+                        // - Status
+                        // - is_latest
+                        // - auto_update
+                        diesel::update(
+                            collection_objects.filter(
+                                database::schema::collection_objects::object_id.eq(req_object_uuid),
+                            ),
+                        )
+                            .set((
+                                database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                database::schema::collection_objects::auto_update.eq(request.auto_update),
+                            ))
+                            .execute(conn)?;
                     }
                 }
 
-                // Update the collection objects
-                // - Status
-                // - is_latest
-                // - auto_update
-                diesel::update(
-                    collection_objects.filter(
-                        database::schema::collection_objects::object_id.eq(req_object_uuid),
-                    ),
-                )
-                .set((
-                    database::schema::collection_objects::is_latest.eq(is_still_latest),
-                    database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
-                    database::schema::collection_objects::auto_update.eq(request.auto_update),
-                ))
-                .execute(conn)?;
-                get_object(&req_object_uuid, &req_coll_uuid, conn)
+                Ok(get_object(&req_object_uuid, &req_coll_uuid, conn)?)
             })?;
 
         Ok(FinishObjectStagingResponse {
@@ -363,6 +450,7 @@ impl Database {
             self.pg_connection
                 .get()?
                 .transaction::<_, ArunaError, _>(|conn| {
+                    // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
 
                     //Define source object from updated request; None if empty
@@ -375,6 +463,7 @@ impl Database {
                         _ => None,
                     };
 
+                    // Define new Object with updated values
                     let new_object = Object {
                         id: new_obj_id,
                         shared_revision_id: latest.shared_revision_id,
@@ -388,7 +477,8 @@ impl Database {
                         source_id: source.as_ref().map(|source| source.id),
                         origin_id: Some(parsed_old_id),
                     };
-                    // Define the join table entry collection <--> object
+
+                    // Define temporary STAGING join table entry collection <-->  staging object
                     let collection_object = CollectionObject {
                         id: uuid::Uuid::new_v4(),
                         collection_id: parsed_col_id,
@@ -397,8 +487,34 @@ impl Database {
                         object_id: new_obj_id,
                         auto_update: false, //Note: Finally set with FinishObjectStagingRequest
                         is_specification: request.is_specification,
-                        writeable: true, //Note: Original object is initially always writeable
+                        writeable: true,
                     };
+
+                    // Convert the object's labels and hooks to their database representation
+                    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
+                    let key_value_pairs = to_key_values::<ObjectKeyValue>(
+                        sobj.labels.clone(),
+                        sobj.hooks.clone(),
+                        new_obj_id,
+                    );
+
+                    // Insert entities which are always created on update
+                    diesel::insert_into(objects)
+                        .values(&new_object)
+                        .execute(conn)?;
+                    diesel::insert_into(object_key_value)
+                        .values(&key_value_pairs)
+                        .execute(conn)?;
+                    diesel::insert_into(collection_objects)
+                        .values(&collection_object)
+                        .execute(conn)?;
+
+                    // Insert Source only if it exists in request
+                    if source.is_some() {
+                        diesel::insert_into(sources).values(&source).execute(conn)?;
+                    }
+
+                    // Insert updated object location and hash if data re-upload
                     if request.reupload {
                         if let Some(loc) = location {
                             // Check if preferred endpoint is specified
@@ -412,7 +528,7 @@ impl Database {
                                 bucket: loc.bucket.clone(),
                                 path: loc.path.clone(),
                                 endpoint_id: endpoint_uuid,
-                                object_id: new_obj_id,
+                                object_id: new_obj_id.clone(),
                                 is_primary: true,
                             };
 
@@ -420,36 +536,38 @@ impl Database {
                             let empty_hash = Hash {
                                 id: uuid::Uuid::new_v4(),
                                 hash: "".to_string(), //Note: Empty hash will be updated later
-                                object_id: new_obj_id,
+                                object_id: new_obj_id.clone(),
                                 hash_type: HashType::MD5, //Note: Default. Will be updated later
                             };
                             diesel::insert_into(object_locations)
                                 .values(&object_location)
                                 .execute(conn)?;
-                            diesel::insert_into(sources).values(&source).execute(conn)?;
                             diesel::insert_into(hashes)
                                 .values(&empty_hash)
                                 .execute(conn)?;
                         }
-                    }
-                    // Define the initial object location
-                    // Convert the object's labels and hooks to their database representation
-                    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
-                    let key_value_pairs = to_key_values::<ObjectKeyValue>(
-                        sobj.labels.clone(),
-                        sobj.hooks.clone(),
-                        new_obj_id,
-                    );
+                    } else {
+                        // Clone old location for new Object
+                        let old_object = objects
+                            .filter(database::schema::objects::id.eq(&parsed_old_id))
+                            .first::<Object>(conn)?;
+                        let old_location: ObjectLocation =
+                            ObjectLocation::belonging_to(&old_object)
+                                .first::<ObjectLocation>(conn)?;
 
-                    diesel::insert_into(objects)
-                        .values(&new_object)
-                        .execute(conn)?;
-                    diesel::insert_into(object_key_value)
-                        .values(&key_value_pairs)
-                        .execute(conn)?;
-                    diesel::insert_into(collection_objects)
-                        .values(&collection_object)
-                        .execute(conn)?;
+                        let new_location = ObjectLocation {
+                            id: uuid::Uuid::new_v4(),
+                            bucket: old_location.bucket,
+                            path: old_location.path,
+                            endpoint_id: old_location.endpoint_id,
+                            object_id: new_obj_id.clone(),
+                            is_primary: old_location.is_primary,
+                        };
+
+                        diesel::insert_into(object_locations)
+                            .values(&new_location)
+                            .execute(conn)?;
+                    }
 
                     Ok(())
                 })?;
@@ -882,6 +1000,28 @@ impl Database {
 
         // Empty response signals success
         Ok(GetReferencesResponse { references })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn get_reference_status(
+        &self,
+        object_uuid: &uuid::Uuid,
+        collection_uuid: &uuid::Uuid,
+    ) -> Result<ReferenceStatus, ArunaError> {
+        // Read specific object reference for collection from database
+        let object_reference = self
+            .pg_connection
+            .get()?
+            .transaction::<CollectionObject, Error, _>(|conn| {
+                collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
+                    .filter(
+                        database::schema::collection_objects::collection_id.eq(&collection_uuid),
+                    )
+                    .first::<CollectionObject>(conn) // Only one reference per collection can exist
+            })?;
+
+        Ok(object_reference.reference_status)
     }
 
     /// This clones a specific revision of an object into another collection.

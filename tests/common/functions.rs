@@ -73,7 +73,10 @@ pub fn get_project(project_uuid: &str) -> ProjectOverview {
 /// By deriving default you can just use the parameter as in
 /// to auto populate all other values
 /// ```
-/// TCreateCollection{project_id: "asdasdasdasd".to_string(), ..Default::default()};
+/// TCreateCollection {
+///   project_id: "asdasdasdasd".to_string(),
+///   ..Default::default()
+/// };
 /// ```
 #[derive(Default)]
 pub struct TCreateCollection {
