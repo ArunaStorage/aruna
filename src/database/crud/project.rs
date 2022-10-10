@@ -18,9 +18,9 @@ use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
     EditUserPermissionsForProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
-    RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
-    UpdateProjectResponse,
+    GetProjectsRequest, GetProjectsResponse, GetUserPermissionsForProjectRequest,
+    GetUserPermissionsForProjectResponse, RemoveUserFromProjectRequest,
+    RemoveUserFromProjectResponse, UpdateProjectRequest, UpdateProjectResponse,
 };
 
 use chrono::Utc;
@@ -144,7 +144,7 @@ impl Database {
     ///
     /// ## Returns
     ///
-    /// * Result<AddUserToProjectResponse, ArunaError>: Placeholder, currently empty
+    /// * Result<GetProjectResponse, ArunaError>: Overview for a specific project
     ///
     pub fn get_project(
         &self,
@@ -218,6 +218,99 @@ impl Database {
         // Return empty response
         Ok(GetProjectResponse {
             project: map_project,
+        })
+    }
+
+    /// Queries all projects and returns basic information about them.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetProjectsRequest: Which user should be added, which permissions should this user have ?
+    /// * user_id: uuid::Uuid : who added the user ?
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetProjectsResponse, ArunaError>: List of all available projects
+    ///
+    pub fn get_projects(
+        &self,
+        _request: GetProjectsRequest,
+        _user_id: uuid::Uuid,
+    ) -> Result<GetProjectsResponse, ArunaError> {
+        use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::projects::dsl::*;
+        use crate::database::schema::user_permissions::dsl::*;
+        use diesel::result::Error as dError;
+
+        // Execute db query
+        let project_infos =
+            self.pg_connection
+                .get()?
+                .transaction::<Vec<(Project, Vec<uuid::Uuid>, Vec<uuid::Uuid>)>, dError, _>(
+                    |conn| {
+                        // Query project from database
+                        let project_infos = projects.load::<Project>(conn).optional()?;
+
+                        // Check if project_info is some
+                        match project_infos {
+                            // If is_some
+                            Some(p_infos) => {
+                                // Query all collection_ids
+                                let all_colls = collections.load::<Collection>(conn).optional()?;
+                                // Query all user_ids
+                                let usrs =
+                                    user_permissions.load::<UserPermission>(conn).optional()?;
+
+                                Ok(p_infos
+                                    .iter()
+                                    .map(|project| {
+                                        let pcols_ids = if let Some(acoll) = &all_colls {
+                                            let mut retvec = Vec::new();
+                                            for col in acoll {
+                                                if col.project_id == project.id {
+                                                    retvec.push(col.id);
+                                                }
+                                            }
+                                            retvec
+                                        } else {
+                                            Vec::new()
+                                        };
+
+                                        let userperm = if let Some(uperm) = &usrs {
+                                            let mut retvec = Vec::new();
+                                            for perm in uperm {
+                                                if perm.project_id == project.id {
+                                                    retvec.push(perm.user_id);
+                                                }
+                                            }
+                                            retvec
+                                        } else {
+                                            Vec::new()
+                                        };
+                                        (project.clone(), pcols_ids, userperm)
+                                    })
+                                    .collect::<Vec<_>>())
+                            }
+                            // If is_none return none
+                            None => Ok(Vec::new()),
+                        }
+                    },
+                )?;
+
+        // Map result to Project_overview
+        let map_projects = project_infos
+            .iter()
+            .map(|pinfo| ProjectOverview {
+                id: pinfo.0.id.to_string(),
+                name: pinfo.0.name.to_string(),
+                description: pinfo.0.description.to_string(),
+                collection_ids: pinfo.1.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+                user_ids: pinfo.2.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+            })
+            .collect::<Vec<_>>();
+        // Return empty response
+        Ok(GetProjectsResponse {
+            projects: map_projects,
         })
     }
 

@@ -119,6 +119,34 @@ impl ProjectService for ProjectServiceImpl {
         Ok(response)
     }
 
+    /// GetProject gets information about a project.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetProjectRequest: project_id.
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<GetProjectResponse>, tonic::Status>: Returns a ProjectOverview that contains basic information about a project
+    ///
+    async fn get_projects(
+        &self,
+        request: tonic::Request<GetProjectsRequest>,
+    ) -> Result<tonic::Response<GetProjectsResponse>, tonic::Status> {
+        log::info!("Received GetProjectsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Authorize user
+        let _user_id = self.authz.admin_authorize(request.metadata()).await?;
+
+        // Execute request and return response
+        let response = Response::new(self.database.get_projects(request.into_inner(), _user_id)?);
+
+        log::info!("Sending GetProjectsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
+    }
+
     /// DestroyProject deletes a project and all associated user_permissions.
     /// Needs admin permissions and the project must be empty -> 0 collections must be associated.
     ///

@@ -29,7 +29,9 @@ pub struct ExternalUserId {
     pub idp_id: uuid::Uuid,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug)]
+#[derive(
+    Associations, Queryable, Insertable, Identifiable, Selectable, QueryableByName, Debug, Clone,
+)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name = projects)]
 pub struct Project {
