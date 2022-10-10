@@ -60,6 +60,7 @@ impl StorageBackend for S3Backend {
         location: Location,
         content_len: i64
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        log::info!("Submitted content-length was: {:#?}", content_len);
         self.check_and_create_bucket(location.bucket.clone()).await?;
 
         let hyper_body = hyper::Body::wrap_stream(recv);
@@ -170,6 +171,7 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        log::info!("Submitted content-length was: {:#?}", content_len);
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
