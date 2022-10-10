@@ -140,9 +140,7 @@ impl Database {
                     // Check if Token is "personal" and if the request is admin scoped
                     // Check if the user has admin permissions and return
 
-                    if api_token.collection_id.is_none()
-                            && api_token.project_id.is_none()
-                    {
+                    if api_token.collection_id.is_none() && api_token.project_id.is_none() {
                         let admin_user_perm = sql_query(
                             "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
                                FROM user_permissions AS uperm 
