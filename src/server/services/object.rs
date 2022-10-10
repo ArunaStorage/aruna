@@ -251,6 +251,12 @@ impl ObjectService for ObjectServiceImpl {
         // Try to connect to one of the objects data proxy endpoints (currently only primary location endpoint)
         let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_id).await?;
 
+        if inner_request.part_number < 1 {
+            return Err(tonic::Status::invalid_argument(
+                "Invalid part number, must be greater or equal 1",
+            ));
+        }
+
         // Get upload url through data proxy
         let upload_url = data_proxy
             .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
