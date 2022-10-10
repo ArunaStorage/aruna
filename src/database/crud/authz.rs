@@ -141,8 +141,7 @@ impl Database {
                     // Check if the user has admin permissions and return
 
                     if api_token.collection_id.is_none()
-                        && api_token.project_id.is_none()
-                        && req_ctx.admin
+                            && api_token.project_id.is_none()
                     {
                         let admin_user_perm = sql_query(
                             "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
