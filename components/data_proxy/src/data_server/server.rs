@@ -264,8 +264,8 @@ async fn multi_upload(
     let middleware_handler = middleware.handle_stream();
 
     let location = Location {
-        bucket: path.0.to_string(),
-        path: path.1.to_string(),
+        bucket: path.1.to_string(),
+        path: path.2.to_string(),
         r#type: LocationType::Unspecified as i32,
     };
 
