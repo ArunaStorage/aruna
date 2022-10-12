@@ -1,11 +1,17 @@
 use aruna_rust_api::api::storage::{
-    models::v1::{collection_overview, CollectionOverview, KeyValue, ProjectOverview},
+    internal::v1::{Location, LocationType},
+    models::v1::{
+        collection_overview, CollectionOverview, DataClass, Hash, Hashalgorithm, KeyValue, Object,
+        ProjectOverview,
+    },
     services::v1::{
-        CreateNewCollectionRequest, CreateProjectRequest, GetCollectionByIdRequest,
-        GetProjectRequest,
+        CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
+        GetCollectionByIdRequest, GetProjectRequest, InitializeNewObjectRequest, StageObject,
     },
 };
 use aruna_server::database;
+use aruna_server::database::crud::utils::grpc_to_db_object_status;
+use aruna_server::database::models::enums::ObjectStatus;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 fn rand_string(len: usize) -> String {
@@ -184,12 +190,126 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
 
 pub fn get_collection(col_id: String) -> CollectionOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    // Get collection by ID
 
+    // Get collection by ID
     let q_col_req = GetCollectionByIdRequest {
         collection_id: col_id,
     };
     let q_col = db.get_collection_by_id(q_col_req).unwrap();
 
     q_col.collection.unwrap()
+}
+
+#[derive(Default)]
+pub struct TCreateObject {
+    pub creator_id: Option<String>,
+    pub collection_id: String,
+    pub default_endpoint_id: Option<String>,
+    pub num_labels: i64,
+    pub num_hooks: i64,
+}
+
+/// Creates an Object in the specified Collection.
+/// Fills everything with random values.
+pub fn create_object(object_info: &TCreateObject) -> Object {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator_id = if let Some(c_id) = &object_info.creator_id {
+        uuid::Uuid::parse_str(&c_id).unwrap()
+    } else {
+        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+    };
+    let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
+    let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
+        uuid::Uuid::parse_str(&e_id).unwrap()
+    } else {
+        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+    };
+
+    // Initialize Object with random values
+    let object_id = uuid::Uuid::new_v4();
+    let object_filename = format!("DummyFile.{}", rand_string(5));
+    let object_description = rand_string(30);
+    let object_length = thread_rng().gen_range(1, 1073741824);
+    let upload_id = uuid::Uuid::new_v4();
+    let dummy_labels = (0..object_info.num_labels)
+        .map(|num| KeyValue {
+            key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("label_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+    let dummy_hooks = (0..object_info.num_hooks)
+        .map(|num| KeyValue {
+            key: format!("hook_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("hook_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+
+    let init_request = InitializeNewObjectRequest {
+        object: Some(StageObject {
+            filename: object_filename.to_string(),
+            description: object_description.to_string(),
+            collection_id: collection_id.to_string(),
+            content_len: object_length,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: dummy_labels.clone(),
+            hooks: dummy_hooks.clone(),
+        }),
+        collection_id: object_info.collection_id.to_string(),
+        preferred_endpoint_id: endpoint_id.to_string(),
+        multipart: false,
+        is_specification: false,
+    };
+
+    let dummy_location = Location {
+        r#type: LocationType::S3 as i32,
+        bucket: collection_id.to_string(),
+        path: object_id.to_string(),
+    };
+    let _init_response = db
+        .create_object(
+            &init_request,
+            &creator_id,
+            &dummy_location,
+            upload_id.to_string(),
+            endpoint_id,
+            object_id,
+        )
+        .unwrap();
+
+    //Note: Skipping the data upload part.
+    //      Maybe will be integrated later but is also tested in the data proxy repo.
+
+    let dummy_hash = Hash {
+        alg: Hashalgorithm::Sha256 as i32,
+        hash: rand_string(64),
+    };
+    let finish_request = FinishObjectStagingRequest {
+        object_id: object_id.to_string(),
+        upload_id: upload_id.to_string(),
+        collection_id: collection_id.to_string(),
+        hash: Some(dummy_hash.clone()),
+        no_upload: false,
+        completed_parts: vec![],
+        auto_update: true,
+    };
+
+    let finish_response = db
+        .finish_object_staging(&finish_request, &creator_id)
+        .unwrap();
+    let finished_object = finish_response.object.unwrap();
+
+    // Validate Object creation
+    assert_eq!(finished_object.id, object_id.to_string());
+    assert!(matches!(
+        grpc_to_db_object_status(&finished_object.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(finished_object.rev_number, 0);
+    assert_eq!(finished_object.filename, object_filename.to_string());
+    assert_eq!(finished_object.content_len, object_length);
+    assert_eq!(finished_object.hash.clone().unwrap(), dummy_hash);
+    assert!(finished_object.auto_update);
+
+    finished_object
 }
