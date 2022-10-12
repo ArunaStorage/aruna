@@ -348,6 +348,6 @@ VALUES (
         '12345678-6666-6666-6666-999999999999',
         'S3',
         'demo_endpoint',
-        'url_prox_a',
-        'url_inter_b'
+        'https://proxy.example.com',
+        'http://localhost:8081'
     );

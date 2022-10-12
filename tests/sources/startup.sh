@@ -18,7 +18,7 @@ $Runtime run -d -p 9000:9000 -p 9001:9001 --net=$Network --name minio\
 
 # Start the DataProxy
 
-$Runtime run -d -p 8080:8080 --net=$Network --name dataproxy stanni/aruna_demo_proxy:v0.0.1
+$Runtime run -d -p 8080:8080 -p 8081:8081 --net=$Network --name dataproxy harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:initial
 
 # Start cockroach if not exists
 $Runtime run -d \
