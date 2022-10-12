@@ -1,3 +1,4 @@
+use aruna_rust_api::api::storage::services::v1::GetObjectByIdRequest;
 use aruna_rust_api::api::storage::{
     internal::v1::{Location, LocationType},
     models::v1::{
@@ -312,4 +313,19 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     assert!(finished_object.auto_update);
 
     finished_object
+}
+
+/// GetObjectById wrapper for simplified use in tests.
+pub fn get_object(collection_id: String, object_id: String) -> Object {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Get Object by its unique id
+    let get_request = GetObjectByIdRequest {
+        collection_id,
+        object_id,
+        with_url: false,
+    };
+    let object = db.get_object(&get_request).unwrap();
+
+    object.unwrap()
 }
