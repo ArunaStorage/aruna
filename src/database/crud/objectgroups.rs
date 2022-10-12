@@ -508,6 +508,11 @@ impl Database {
                         crate::database::schema::object_group_objects::object_group_id.eq(grp_id),
                     )
                     .into_boxed();
+                // If meta_only filter for is_meta == true
+                if request.meta_only {
+                    base_request = base_request
+                        .filter(crate::database::schema::object_group_objects::is_meta.eq(true));
+                }
                 // If pagesize is not unlimited set it to pagesize or default = 20
                 if let Some(pg_size) = pagesize {
                     base_request = base_request.limit(pg_size);
@@ -522,7 +527,7 @@ impl Database {
 
                 all.iter()
                     .filter_map(|obj_grp_obj| {
-                        match get_object(&obj_grp_obj.id, &col_id, true, conn) {
+                        match get_object(&obj_grp_obj.object_id, &col_id, true, conn) {
                             Ok(opt) => opt.map(|s| Ok((s, obj_grp_obj.is_meta))),
                             Err(e) => Some(Err(e)),
                         }
