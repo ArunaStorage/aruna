@@ -27,6 +27,7 @@ use chrono::Utc;
 use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update};
 use itertools::Itertools;
 use r2d2::PooledConnection;
+use uuid::Uuid;
 
 use super::{
     object::{check_if_obj_in_coll, get_object, ObjectDto},
@@ -315,30 +316,56 @@ impl Database {
     ) -> Result<GetObjectGroupsResponse, ArunaError> {
         // Parse the page_request and get pagesize / lastuuid
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
+
         // Parse the query to a `ParsedQuery`
         let parsed_query = parse_query(request.label_id_filter)?;
-        // Collection context
 
+        // Parse the collection-id of the request
+        let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        // ObjectGroup context
+        use crate::database::schema::collection_object_groups::dsl as cogrps;
         use crate::database::schema::object_group_key_value::dsl as ogkv;
         use crate::database::schema::object_groups::dsl as ogrps;
         use diesel::prelude::*;
-        //Insert all defined object_groups into the database
+
+        //Get object_groups of collection with filters
         let overviews = self
             .pg_connection
             .get()?
             .transaction::<Option<Vec<ObjectGroupDb>>, Error, _>(|conn| {
+                // Get all collection object group ids of collection object group references for filter
+                let ids: Option<Vec<Uuid>> = cogrps::collection_object_groups
+                    .select(cogrps::object_group_id)
+                    .filter(cogrps::collection_id.eq(&collection_uuid))
+                    .load::<uuid::Uuid>(conn)
+                    .optional()?;
+
                 // First build a "boxed" base request to which additional parameters can be added later
-                let mut base_request = ogrps::object_groups.into_boxed();
+                let mut base_request = ogrps::object_groups
+                    .filter(ogrps::name.ne("DELETED")) // Exclude ObjectGroups with name == "DELETED"
+                    .into_boxed();
+
+                // Filter for valid ids in collection
+                if let Some(valid_ids) = ids {
+                    base_request = base_request.filter(ogrps::id.eq_any(valid_ids));
+                } else {
+                    base_request = base_request.filter(ogrps::id.eq_any(Vec::<Uuid>::new()));
+                }
+
                 // Create returnvector of CollectionOverviewsDb
                 let mut return_vec: Vec<ObjectGroupDb> = Vec::new();
+
                 // If pagesize is not unlimited set it to pagesize or default = 20
                 if let Some(pg_size) = pagesize {
                     base_request = base_request.limit(pg_size);
                 }
+
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
                     base_request = base_request.filter(ogrps::id.gt(l_uid));
                 }
+
                 // Add query if it exists
                 if let Some(p_query) = parsed_query {
                     // Check if query exists
@@ -401,11 +428,12 @@ impl Database {
                 }
 
                 // Execute the preconfigured query
-                let query_collections: Option<Vec<ObjectGroup>> =
+                let query_object_groups: Option<Vec<ObjectGroup>> =
                     base_request.load::<ObjectGroup>(conn).optional()?;
-                // Query overviews for each collection
+
+                // Query overviews for each object group
                 // TODO: This might be inefficient and can be optimized later
-                if let Some(q_objs_grp) = query_collections {
+                if let Some(q_objs_grp) = query_object_groups {
                     for s_obj_grp in q_objs_grp {
                         if let Some(ogdb) = query_object_group(s_obj_grp.id, conn)? {
                             return_vec.push(ogdb);
