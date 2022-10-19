@@ -212,16 +212,16 @@ pub struct TCreateObject {
 
 /// Creates an Object in the specified Collection.
 /// Fills everything with random values.
-pub fn create_object(object_info: &TCreateObject) -> Object {
+pub fn _create_object(object_info: &TCreateObject) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator_id = if let Some(c_id) = &object_info.creator_id {
-        uuid::Uuid::parse_str(&c_id).unwrap()
+        uuid::Uuid::parse_str(c_id).unwrap()
     } else {
         uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
     };
     let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
-        uuid::Uuid::parse_str(&e_id).unwrap()
+        uuid::Uuid::parse_str(e_id).unwrap()
     } else {
         uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
     };
@@ -248,13 +248,13 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let init_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: object_filename.to_string(),
-            description: object_description.to_string(),
+            description: object_description,
             collection_id: collection_id.to_string(),
             content_len: object_length,
             source: None,
             dataclass: DataClass::Private as i32,
-            labels: dummy_labels.clone(),
-            hooks: dummy_hooks.clone(),
+            labels: dummy_labels,
+            hooks: dummy_hooks,
         }),
         collection_id: object_info.collection_id.to_string(),
         preferred_endpoint_id: endpoint_id.to_string(),
@@ -307,7 +307,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         ObjectStatus::AVAILABLE
     ));
     assert_eq!(finished_object.rev_number, 0);
-    assert_eq!(finished_object.filename, object_filename.to_string());
+    assert_eq!(finished_object.filename, object_filename);
     assert_eq!(finished_object.content_len, object_length);
     assert_eq!(finished_object.hash.clone().unwrap(), dummy_hash);
     assert!(finished_object.auto_update);
@@ -316,7 +316,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
 }
 
 /// GetObjectById wrapper for simplified use in tests.
-pub fn get_object(collection_id: String, object_id: String) -> Object {
+pub fn _get_object(collection_id: String, object_id: String) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Get Object by its unique id
