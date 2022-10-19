@@ -1,27 +1,19 @@
 mod common;
 
 use crate::common::functions::{
-    create_collection,
-    create_project,
-    _create_object,
-    TCreateCollection,
-    TCreateObject,
+    create_collection, create_project, TCreateCollection, TCreateObject, _create_object,
 };
 
 use aruna_rust_api::api::storage::models::v1::KeyValue;
 use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectGroupRequest,
-    DeleteObjectGroupRequest,
-    GetObjectGroupByIdRequest,
-    GetObjectGroupObjectsRequest,
-    GetObjectGroupsRequest,
-    UpdateObjectGroupRequest,
+    CreateObjectGroupRequest, DeleteObjectGroupRequest, GetObjectGroupByIdRequest,
+    GetObjectGroupObjectsRequest, GetObjectGroupsRequest, UpdateObjectGroupRequest,
 };
 use aruna_server::database;
 use aruna_server::error::ArunaError;
 use diesel::result::Error;
 use rand::seq::SliceRandom;
-use rand::{ thread_rng, Rng };
+use rand::{thread_rng, Rng};
 use serial_test::serial;
 
 #[test]
@@ -53,8 +45,9 @@ fn create_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0, 4),
                     num_hooks: thread_rng().gen_range(0, 4),
-                })
-            ).id
+                }),
+            )
+            .id
         })
         .collect::<Vec<_>>();
 
@@ -80,7 +73,10 @@ fn create_object_group_test() {
 
     // Validate Object Group Creation
     assert_eq!(object_group.name, object_group_name.to_string());
-    assert_eq!(object_group.description, object_group_description.to_string());
+    assert_eq!(
+        object_group.description,
+        object_group_description.to_string()
+    );
     assert_eq!(object_group.rev_number, 0);
     assert_eq!(object_group.labels, vec!());
     assert_eq!(object_group.hooks, vec!());
@@ -96,7 +92,10 @@ fn create_object_group_test() {
 
     // Validate ObjectGroup metadata
     assert_eq!(group_overview.name, object_group_name.to_string());
-    assert_eq!(group_overview.description, object_group_description.to_string());
+    assert_eq!(
+        group_overview.description,
+        object_group_description.to_string()
+    );
     assert_eq!(group_overview.rev_number, 0);
     assert_eq!(group_overview.labels, vec!());
     assert_eq!(group_overview.hooks, vec!());
@@ -122,7 +121,8 @@ fn create_object_group_test() {
     assert_eq!(all_object_group_objects.object_group_objects.len(), 5);
     assert_eq!(meta_object_group_objects.object_group_objects.len(), 1);
 
-    let all_object_ids = all_object_group_objects.object_group_objects
+    let all_object_ids = all_object_group_objects
+        .object_group_objects
         .iter()
         .filter(|o| !o.is_metadata)
         .map(|o| o.object.clone().unwrap().id)
@@ -167,8 +167,9 @@ fn update_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0, 4),
                     num_hooks: thread_rng().gen_range(0, 4),
-                })
-            ).id
+                }),
+            )
+            .id
         })
         .collect::<Vec<_>>();
 
@@ -204,12 +205,17 @@ fn update_object_group_test() {
         labels: vec![],
         hooks: vec![],
     };
-    let first_update_response = db.update_object_group(&first_update_request, &creator).unwrap();
+    let first_update_response = db
+        .update_object_group(&first_update_request, &creator)
+        .unwrap();
     let object_group_rev_1 = first_update_response.object_group.unwrap();
 
     // Validate first ObjectGroup Update
     assert_eq!(object_group_rev_1.name, object_group_name.to_string());
-    assert_eq!(object_group_rev_1.description, updated_description.to_string());
+    assert_eq!(
+        object_group_rev_1.description,
+        updated_description.to_string()
+    );
     assert_eq!(object_group_rev_1.rev_number, 1);
     assert_eq!(object_group_rev_1.labels, vec!());
     assert_eq!(object_group_rev_1.hooks, vec!());
@@ -229,12 +235,17 @@ fn update_object_group_test() {
         labels: updated_labels.clone(),
         hooks: vec![],
     };
-    let second_update_response = db.update_object_group(&second_update_request, &creator).unwrap();
+    let second_update_response = db
+        .update_object_group(&second_update_request, &creator)
+        .unwrap();
     let object_group_rev_2 = second_update_response.object_group.unwrap();
 
     // Validate second Object Group Update
     assert_eq!(object_group_rev_2.name, object_group_name.to_string());
-    assert_eq!(object_group_rev_2.description, updated_description.to_string());
+    assert_eq!(
+        object_group_rev_2.description,
+        updated_description.to_string()
+    );
     assert_eq!(object_group_rev_2.rev_number, 2);
     assert_eq!(object_group_rev_2.labels, updated_labels);
     assert_eq!(object_group_rev_2.hooks, vec!());
@@ -253,12 +264,17 @@ fn update_object_group_test() {
         labels: updated_labels.clone(),
         hooks: vec![],
     };
-    let third_update_response = db.update_object_group(&third_update_request, &creator).unwrap();
+    let third_update_response = db
+        .update_object_group(&third_update_request, &creator)
+        .unwrap();
     let object_group_rev_3 = third_update_response.object_group.unwrap();
 
     // Validate third Object Group Update
     assert_eq!(object_group_rev_3.name, object_group_name.to_string());
-    assert_eq!(object_group_rev_3.description, updated_description.to_string());
+    assert_eq!(
+        object_group_rev_3.description,
+        updated_description.to_string()
+    );
     assert_eq!(object_group_rev_3.rev_number, 3);
     assert_eq!(object_group_rev_3.labels, updated_labels);
     assert_eq!(object_group_rev_3.hooks, vec!());
@@ -284,7 +300,8 @@ fn update_object_group_test() {
     assert_eq!(all_object_group_objects.object_group_objects.len(), 4);
     assert_eq!(meta_object_group_objects.object_group_objects.len(), 1);
 
-    let all_object_ids = all_object_group_objects.object_group_objects
+    let all_object_ids = all_object_group_objects
+        .object_group_objects
         .iter()
         .filter(|o| !o.is_metadata)
         .map(|o| o.object.clone().unwrap().id)
@@ -328,8 +345,9 @@ fn delete_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0, 4),
                     num_hooks: thread_rng().gen_range(0, 4),
-                })
-            ).id
+                }),
+            )
+            .id
         })
         .collect::<Vec<_>>();
 
@@ -373,14 +391,17 @@ fn delete_object_group_test() {
         labels: object_group_label,
         hooks: object_group_hook,
     };
-    let first_update_response = db.update_object_group(&first_update_request, &creator).unwrap();
+    let first_update_response = db
+        .update_object_group(&first_update_request, &creator)
+        .unwrap();
     let object_group_rev_1 = first_update_response.object_group.unwrap();
 
     // Delete ObjectGroup revision 0
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_0.id.to_string(),
         collection_id: random_collection.id.to_string(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Validate deletion of revision 0
     let get_rev_0_response = db
@@ -388,7 +409,7 @@ fn delete_object_group_test() {
             &(GetObjectGroupByIdRequest {
                 group_id: object_group_rev_0.id.to_string(),
                 collection_id: random_collection.id.to_string(),
-            })
+            }),
         )
         .unwrap();
     let deleted_object_group_rev_0 = get_rev_0_response.object_group.unwrap();
@@ -414,29 +435,25 @@ fn delete_object_group_test() {
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_1.id.to_string(),
         collection_id: random_collection.id.to_string(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Validate permanent deletion of revision 0
     let get_deleted_rev_0_response = db.get_object_group_by_id(
         &(GetObjectGroupByIdRequest {
             group_id: object_group_rev_0.id,
             collection_id: random_collection.id.to_string(),
-        })
+        }),
     );
 
     match get_deleted_rev_0_response {
         Ok(_) => panic!("ObjectGroup revision 0 should have been removed from database."),
         Err(err) => {
-            (
-                match &err {
-                    ArunaError::DieselError(diesel_err) =>
-                        match diesel_err {
-                            Error::NotFound => Ok(()),
-                            _ => Err(err),
-                        }
-                    _ => Err(err),
-                }
-            ).unwrap();
+            (match &err {
+                ArunaError::DieselError(Error::NotFound) => Ok(()),
+                _ => Err(err),
+            })
+            .unwrap();
         }
     }
 
@@ -445,22 +462,17 @@ fn delete_object_group_test() {
         &(GetObjectGroupByIdRequest {
             group_id: object_group_rev_1.id,
             collection_id: random_collection.id,
-        })
+        }),
     );
 
     match get_deleted_rev_1_response {
         Ok(_) => panic!("ObjectGroup revision 1 should have been removed from database."),
         Err(err) => {
-            (
-                match &err {
-                    ArunaError::DieselError(diesel_err) =>
-                        match diesel_err {
-                            Error::NotFound => Ok(()),
-                            _ => Err(err),
-                        }
-                    _ => Err(err),
-                }
-            ).unwrap();
+            (match &err {
+                ArunaError::DieselError(Error::NotFound) => Ok(()),
+                _ => Err(err),
+            })
+            .unwrap();
         }
     }
 }
