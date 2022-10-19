@@ -4,33 +4,21 @@ on:
   push:
     branches:
       - main
+      - initial
     tags:
       - v*
 
 env:
   IMAGE_NAME: aruna-data-proxy
 jobs:
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
   push:
-    needs: test
-
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: recursive
 
       - name: Build image
         run: docker build . --file Dockerfile --tag $IMAGE_NAME
@@ -51,7 +39,7 @@ jobs:
 
           echo "${{ secrets.HARBORPW }}" | docker login harbor.computational.bio.uni-giessen.de -u '${{ secrets.HARBORUSER }}' --password-stdin
 
-          HARBOR_IMAGE_ID=harbor.computational.bio.uni-giessen.de/aruna/ArunaDataProxy
+          HARBOR_IMAGE_ID=harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy
 
           docker tag $IMAGE_NAME $HARBOR_IMAGE_ID:$VERSION
           docker push $HARBOR_IMAGE_ID:$VERSION
