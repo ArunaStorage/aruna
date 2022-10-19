@@ -510,6 +510,15 @@ impl Database {
                         .to_string(),
                     project_id: elem.project_id.to_string(),
                     permission: map_permissions_rev(Some(elem.user_right)),
+                    display_name: user_info
+                        .clone()
+                        .unwrap_or_else(|| User {
+                            id: uuid::Uuid::default(),
+                            external_id: String::default(),
+                            display_name: String::default(),
+                            active: false,
+                        })
+                        .display_name,
                 })
                 .collect::<Vec<_>>(),
         })

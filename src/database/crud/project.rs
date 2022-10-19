@@ -530,6 +530,7 @@ impl Database {
         _req_user_id: uuid::Uuid,
     ) -> Result<GetUserPermissionsForProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
         // Get project_id
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
         let d_u_id = uuid::Uuid::parse_str(&request.user_id)?;
@@ -538,19 +539,30 @@ impl Database {
         let permissions = self
             .pg_connection
             .get()?
-            .transaction::<Option<UserPermission>, diesel::result::Error, _>(|conn| {
-                user_permissions
-                    .filter(crate::database::schema::user_permissions::user_id.eq(d_u_id))
-                    .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
-                    .first::<UserPermission>(conn)
-                    .optional()
-            })?;
+            .transaction::<(Option<UserPermission>, Option<String>), diesel::result::Error, _>(
+                |conn| {
+                    let user_name = users
+                        .filter(crate::database::schema::users::id.eq(d_u_id))
+                        .select(crate::database::schema::users::display_name)
+                        .first::<String>(conn)
+                        .optional()?;
+
+                    let perm = user_permissions
+                        .filter(crate::database::schema::user_permissions::user_id.eq(d_u_id))
+                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
+                        .first::<UserPermission>(conn)
+                        .optional()?;
+
+                    Ok((perm, user_name))
+                },
+            )?;
 
         let resp = GetUserPermissionsForProjectResponse {
-            user_permission: permissions.map(|perm| ProjectPermission {
+            user_permission: permissions.0.map(|perm| ProjectPermission {
                 user_id: d_u_id.to_string(),
                 project_id: p_id.to_string(),
                 permission: map_permissions_rev(Some(perm.user_right)),
+                display_name: permissions.1.unwrap_or_default(),
             }),
         };
 

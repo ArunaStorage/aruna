@@ -181,6 +181,7 @@ fn add_remove_project_user_test() {
                 user_id: user_id.to_string(),
                 project_id: project_id.to_string(),
                 permission: rng.gen_range(2, 5),
+                display_name: "Test".to_string(),
             }),
         };
 
@@ -258,6 +259,7 @@ fn edit_project_user_permissions_test() {
         user_id: user_id.to_string(),
         project_id: project_id.to_string(),
         permission: 5,
+        display_name: "Test".to_string(),
     };
     let user_add_request = AddUserToProjectRequest {
         project_id: project_id.to_string(),
@@ -278,6 +280,7 @@ fn edit_project_user_permissions_test() {
         user_id: user_id.to_string(),
         project_id: project_id.to_string(),
         permission: 2,
+        display_name: "Test".to_string(),
     };
     let edit_permission_request = EditUserPermissionsForProjectRequest {
         project_id: project_id.to_string(),
