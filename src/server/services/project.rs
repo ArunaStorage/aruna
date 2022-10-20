@@ -286,7 +286,7 @@ impl ProjectService for ProjectServiceImpl {
         // Authorize user
         let _admin_user = self
             .authz
-            .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
+            .project_authorize(request.metadata(), parsed_project_id, UserRights::READ)
             .await?;
 
         // Execute request and return response
