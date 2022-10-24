@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 
-use aruna_rust_api::api::storage::internal::v1::{Location, PartETag, Range};
+use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
 
 /// A generic backend API for storing and retrieving objects
 /// Represents a very simple object storage API

@@ -1,14 +1,14 @@
 [package]
 edition = "2021"
 name = "aos_data_proxy"
-version = "0.1.0"
+version = "0.5.0-beta.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 actix-web = "4"
 anyhow = "1.0"
-aruna-rust-api = "0.5.0-alpha.3"
+aruna-rust-api = "0.5.0-beta.3"
 async-channel = "1.6"
 async-stream = "0.3"
 async-trait = "0.1"
@@ -28,8 +28,6 @@ hmac = "0.12"
 http = "0"
 hyper = {version = "0.14", features = ["full"]}
 log = "0.4"
-prost = "0"
-prost-types = "0"
 rand = "0.8"
 reqwest = "0"
 serde = {version = "1.0", features = ["derive"]}
