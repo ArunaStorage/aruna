@@ -1,5 +1,5 @@
 mod common;
-use aruna_rust_api::api::storage::internal::v1::Location;
+use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
     collection_overview, KeyValue, LabelFilter, LabelOrIdQuery, PageRequest, Version,
 };

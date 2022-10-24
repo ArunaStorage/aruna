@@ -10,12 +10,12 @@ use r2d2::PooledConnection;
 
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
+use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelToObjectRequest, AddLabelToObjectResponse, GetReferencesRequest, GetReferencesResponse,
     ObjectReference, SetHooksOfObjectRequest, SetHooksOfObjectResponse,
 };
 use aruna_rust_api::api::storage::{
-    internal::v1::{Location as ProtoLocation, LocationType},
     models::v1::{
         Hash as ProtoHash, Hashalgorithm, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
         Source as ProtoSource,

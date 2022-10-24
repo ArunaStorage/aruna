@@ -1,6 +1,6 @@
+use aruna_rust_api::api::internal::v1::{Location, LocationType};
 use aruna_rust_api::api::storage::services::v1::GetObjectByIdRequest;
 use aruna_rust_api::api::storage::{
-    internal::v1::{Location, LocationType},
     models::v1::{
         collection_overview, CollectionOverview, DataClass, Hash, Hashalgorithm, KeyValue, Object,
         ProjectOverview,

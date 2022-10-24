@@ -13,7 +13,7 @@ use crate::database::connection::Database;
 use crate::database::models::auth::{Project, UserPermission};
 use crate::database::models::collection::Collection;
 use crate::error::ArunaError;
-use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermission};
+use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermissionDisplayName};
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
@@ -558,7 +558,7 @@ impl Database {
             )?;
 
         let resp = GetUserPermissionsForProjectResponse {
-            user_permission: permissions.0.map(|perm| ProjectPermission {
+            user_permission: permissions.0.map(|perm| ProjectPermissionDisplayName {
                 user_id: d_u_id.to_string(),
                 project_id: p_id.to_string(),
                 permission: map_permissions_rev(Some(perm.user_right)),

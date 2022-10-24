@@ -12,9 +12,10 @@ use crate::database::models::object::Endpoint;
 use crate::error::ArunaError;
 use crate::server::services::authz::{Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
+use aruna_rust_api::api::internal::v1::*;
 use aruna_rust_api::api::storage::models::v1::Object;
 use aruna_rust_api::api::storage::{
-    internal::v1::internal_proxy_service_client::InternalProxyServiceClient, internal::v1::*,
     services::v1::object_service_server::ObjectService, services::v1::*,
 };
 

@@ -1,7 +1,7 @@
 mod common;
 
 use crate::common::functions::TCreateCollection;
-use aruna_rust_api::api::storage::internal::v1::Location;
+use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{EndpointType, Hash, Hashalgorithm, KeyValue};
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
