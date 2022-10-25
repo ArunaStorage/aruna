@@ -1275,7 +1275,7 @@ impl Database {
                         break;
                     }
                 }
-                if !deletable && !request.force {
+                if !deletable && !request.force && all_other_refs.len() > 1 {
                     return Err(
                         ArunaError::InvalidRequest(
                             "Can not delete object because it is the last writable reference, please transfer ownership or use force".to_string()

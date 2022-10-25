@@ -331,6 +331,30 @@ impl Authz {
         .await
     }
 
+    /// This is a wrapper that runs the authorize function with an `project` context
+    /// a convenience function if this request is `project` scoped
+    /// this uses a collection_id to determine the associated project
+    pub async fn project_authorize_by_collectionid(
+        &self,
+        metadata: &MetadataMap,
+        collection_id: uuid::Uuid,
+        user_right: UserRights,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        let response = self.db.get_collection_by_id(request);
+        self.authorize(
+            metadata,
+            &(Context {
+                user_right,
+                resource_type: Resources::PROJECT,
+                resource_id: project_id,
+                admin: false,
+                personal: false,
+                oidc_context: false,
+            }),
+        )
+        .await
+    }
+
     pub async fn check_if_oidc(
         &self,
         metadata: &MetadataMap,
