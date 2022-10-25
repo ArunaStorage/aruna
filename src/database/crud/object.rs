@@ -1269,7 +1269,7 @@ impl Database {
                     )
                     .load::<CollectionObject>(conn)?;
                 let mut deletable = false;
-                for obj_ref in all_other_refs {
+                for obj_ref in all_other_refs.clone() {
                     if obj_ref != object_ref && obj_ref.writeable {
                         deletable = true;
                         break;

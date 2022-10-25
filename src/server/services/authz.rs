@@ -340,7 +340,7 @@ impl Authz {
         collection_id: uuid::Uuid,
         user_right: UserRights,
     ) -> Result<uuid::Uuid, ArunaError> {
-        let response = self.db.get_collection_by_id(request);
+        let project_id = self.db.get_project_id_by_collection_id(collection_id)?;
         self.authorize(
             metadata,
             &(Context {

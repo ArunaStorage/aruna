@@ -578,8 +578,16 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let user: uuid::Uuid = if request.get_ref().force {
-            // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
-            self.authz.admin_authorize(request.metadata()).await?
+            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
+            // Authorize "TARGET"
+            self.authz
+                .project_authorize_by_collectionid(
+                    request.metadata(),
+                    target_collection_uuid, // This is the collection uuid which the project_id will be based
+                    UserRights::ADMIN, // User needs at least append permission to create an object
+                )
+                .await?
         } else {
             let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
