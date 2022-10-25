@@ -10,22 +10,34 @@
 //!
 use super::utils::*;
 use crate::database::connection::Database;
-use crate::database::models::auth::{Project, UserPermission};
+use crate::database::models::auth::{ Project, UserPermission };
 use crate::database::models::collection::Collection;
 use crate::error::ArunaError;
-use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermissionDisplayName};
+use aruna_rust_api::api::storage::models::v1::{ ProjectOverview, ProjectPermissionDisplayName };
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
-    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
-    EditUserPermissionsForProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetProjectsRequest, GetProjectsResponse, GetUserPermissionsForProjectRequest,
-    GetUserPermissionsForProjectResponse, RemoveUserFromProjectRequest,
-    RemoveUserFromProjectResponse, UpdateProjectRequest, UpdateProjectResponse,
+    AddUserToProjectRequest,
+    AddUserToProjectResponse,
+    CreateProjectRequest,
+    CreateProjectResponse,
+    DestroyProjectRequest,
+    DestroyProjectResponse,
+    EditUserPermissionsForProjectRequest,
+    EditUserPermissionsForProjectResponse,
+    GetProjectRequest,
+    GetProjectResponse,
+    GetProjectsRequest,
+    GetProjectsResponse,
+    GetUserPermissionsForProjectRequest,
+    GetUserPermissionsForProjectResponse,
+    RemoveUserFromProjectRequest,
+    RemoveUserFromProjectResponse,
+    UpdateProjectRequest,
+    UpdateProjectResponse,
 };
 
 use chrono::Utc;
 use diesel::result::Error;
-use diesel::{delete, insert_into, prelude::*, update};
+use diesel::{ delete, insert_into, prelude::*, update };
 
 impl Database {
     /// Creates a new project in the database. Adds the creating user to the project with admin permissions.
@@ -43,7 +55,7 @@ impl Database {
     pub fn create_project(
         &self,
         request: CreateProjectRequest,
-        user_id: uuid::Uuid,
+        user_id: uuid::Uuid
     ) -> Result<CreateProjectResponse, ArunaError> {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl as user_perm;
@@ -72,14 +84,10 @@ impl Database {
         };
 
         // Execute db insert_into
-        self.pg_connection
-            .get()?
-            .transaction::<_, dError, _>(|conn| {
-                insert_into(projects).values(&project).execute(conn)?;
-                insert_into(user_perm::user_permissions)
-                    .values(&user_permission)
-                    .execute(conn)
-            })?;
+        self.pg_connection.get()?.transaction::<_, dError, _>(|conn| {
+            insert_into(projects).values(&project).execute(conn)?;
+            insert_into(user_perm::user_permissions).values(&user_permission).execute(conn)
+        })?;
 
         Ok(CreateProjectResponse {
             project_id: project_id.to_string(),
@@ -100,14 +108,14 @@ impl Database {
     pub fn add_user_to_project(
         &self,
         request: AddUserToProjectRequest,
-        _user_id: uuid::Uuid,
+        _user_id: uuid::Uuid
     ) -> Result<AddUserToProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
         // Map grpc_perm because it is an Option by default
         let grpc_perm = request.user_permission.ok_or_else(|| {
             ArunaError::InvalidRequest(
-                "Project permissions are required to add a user to project".to_string(),
+                "Project permissions are required to add a user to project".to_string()
             )
         })?;
         // Create new uuid for permission
@@ -126,9 +134,7 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, dError, _>(|conn| {
-                insert_into(user_permissions)
-                    .values(&user_permission)
-                    .execute(conn)
+                insert_into(user_permissions).values(&user_permission).execute(conn)
             })?;
 
         // Return empty response
@@ -149,7 +155,7 @@ impl Database {
     pub fn get_project(
         &self,
         request: GetProjectRequest,
-        _user_id: uuid::Uuid,
+        _user_id: uuid::Uuid
     ) -> Result<GetProjectResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl::*;
@@ -159,45 +165,51 @@ impl Database {
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
 
         // Execute db query
-        let project_info = self.pg_connection.get()?.transaction::<Option<(
-            Project,
-            Option<Vec<uuid::Uuid>>,
-            Vec<uuid::Uuid>,
-        )>, dError, _>(|conn| {
-            // Query project from database
-            let project_info = projects
-                .filter(crate::database::schema::projects::id.eq(p_id))
-                .first::<Project>(conn)
-                .optional()?;
-
-            // Check if project_info is some
-            match project_info {
-                // If is_some
-                Some(p_info) => {
-                    // Query collection_ids
-                    let colls = collections
-                        .filter(crate::database::schema::collections::project_id.eq(p_id))
-                        .select(crate::database::schema::collections::id)
-                        .load::<uuid::Uuid>(conn)
+        let project_info = self.pg_connection
+            .get()?
+            .transaction::<Option<(Project, Option<Vec<uuid::Uuid>>, Vec<uuid::Uuid>)>, dError, _>(
+                |conn| {
+                    // Query project from database
+                    let project_info = projects
+                        .filter(crate::database::schema::projects::id.eq(p_id))
+                        .first::<Project>(conn)
                         .optional()?;
-                    // Query user_ids -> Should not be optional, every project should have at least one user_permission
-                    let usrs = user_permissions
-                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
-                        .select(crate::database::schema::user_permissions::user_id)
-                        .load::<uuid::Uuid>(conn)?;
-                    Ok(Some((p_info, colls, usrs)))
+
+                    // Check if project_info is some
+                    match project_info {
+                        // If is_some
+                        Some(p_info) => {
+                            // Query collection_ids
+                            let colls = collections
+                                .filter(crate::database::schema::collections::project_id.eq(p_id))
+                                .select(crate::database::schema::collections::id)
+                                .load::<uuid::Uuid>(conn)
+                                .optional()?;
+                            // Query user_ids -> Should not be optional, every project should have at least one user_permission
+                            let usrs = user_permissions
+                                .filter(
+                                    crate::database::schema::user_permissions::project_id.eq(p_id)
+                                )
+                                .select(crate::database::schema::user_permissions::user_id)
+                                .load::<uuid::Uuid>(conn)?;
+                            Ok(Some((p_info, colls, usrs)))
+                        }
+                        // If is_none return none
+                        None => Ok(None),
+                    }
                 }
-                // If is_none return none
-                None => Ok(None),
-            }
-        })?;
+            )?;
 
         // Map result to Project_overview
         let map_project = match project_info {
             // If project_info is some
             Some((project_info, coll_ids, user_ids)) => {
                 let mapped_col_ids = match coll_ids {
-                    Some(c_id) => c_id.iter().map(|elem| elem.to_string()).collect::<Vec<_>>(),
+                    Some(c_id) =>
+                        c_id
+                            .iter()
+                            .map(|elem| elem.to_string())
+                            .collect::<Vec<_>>(),
                     None => Vec::new(),
                 };
                 Some(ProjectOverview {
@@ -221,6 +233,38 @@ impl Database {
         })
     }
 
+    /// Queries a project_id by collection_id
+    ///
+    /// ## Arguments
+    ///
+    /// * collection_id: uuid::Uuid : who added the user ?
+    ///
+    /// ## Returns
+    ///
+    /// * Result<uuid::Uuid, ArunaError>: ProjectUUID
+    ///
+    pub fn get_project_by_collection_id(
+        &self,
+        collection_id: String
+    ) -> Result<uuid::Uuid, ArunaError> {
+        use crate::database::schema::collections::dsl::*;
+        use diesel::result::Error as dError;
+        // Get project_id
+        let collection_uuid = uuid::Uuid::parse_str(&collection_id)?;
+
+        // Execute db query
+        Ok(
+            self.pg_connection.get()?.transaction::<uuid::Uuid, dError, _>(|conn| {
+                // Query project from database
+                Ok(
+                    collections
+                        .filter(crate::database::schema::collections::id.eq(collection_uuid))
+                        .first::<Collection>(conn)?.project_id
+                )
+            })?
+        )
+    }
+
     /// Queries all projects and returns basic information about them.
     ///
     /// ## Arguments
@@ -235,7 +279,7 @@ impl Database {
     pub fn get_projects(
         &self,
         _request: GetProjectsRequest,
-        _user_id: uuid::Uuid,
+        _user_id: uuid::Uuid
     ) -> Result<GetProjectsResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl::*;
@@ -243,59 +287,57 @@ impl Database {
         use diesel::result::Error as dError;
 
         // Execute db query
-        let project_infos =
-            self.pg_connection
-                .get()?
-                .transaction::<Vec<(Project, Vec<uuid::Uuid>, Vec<uuid::Uuid>)>, dError, _>(
-                    |conn| {
-                        // Query project from database
-                        let project_infos = projects.load::<Project>(conn).optional()?;
+        let project_infos = self.pg_connection
+            .get()?
+            .transaction::<Vec<(Project, Vec<uuid::Uuid>, Vec<uuid::Uuid>)>, dError, _>(|conn| {
+                // Query project from database
+                let project_infos = projects.load::<Project>(conn).optional()?;
 
-                        // Check if project_info is some
-                        match project_infos {
-                            // If is_some
-                            Some(p_infos) => {
-                                // Query all collection_ids
-                                let all_colls = collections.load::<Collection>(conn).optional()?;
-                                // Query all user_ids
-                                let usrs =
-                                    user_permissions.load::<UserPermission>(conn).optional()?;
+                // Check if project_info is some
+                match project_infos {
+                    // If is_some
+                    Some(p_infos) => {
+                        // Query all collection_ids
+                        let all_colls = collections.load::<Collection>(conn).optional()?;
+                        // Query all user_ids
+                        let usrs = user_permissions.load::<UserPermission>(conn).optional()?;
 
-                                Ok(p_infos
-                                    .iter()
-                                    .map(|project| {
-                                        let pcols_ids = if let Some(acoll) = &all_colls {
-                                            let mut retvec = Vec::new();
-                                            for col in acoll {
-                                                if col.project_id == project.id {
-                                                    retvec.push(col.id);
-                                                }
+                        Ok(
+                            p_infos
+                                .iter()
+                                .map(|project| {
+                                    let pcols_ids = if let Some(acoll) = &all_colls {
+                                        let mut retvec = Vec::new();
+                                        for col in acoll {
+                                            if col.project_id == project.id {
+                                                retvec.push(col.id);
                                             }
-                                            retvec
-                                        } else {
-                                            Vec::new()
-                                        };
+                                        }
+                                        retvec
+                                    } else {
+                                        Vec::new()
+                                    };
 
-                                        let userperm = if let Some(uperm) = &usrs {
-                                            let mut retvec = Vec::new();
-                                            for perm in uperm {
-                                                if perm.project_id == project.id {
-                                                    retvec.push(perm.user_id);
-                                                }
+                                    let userperm = if let Some(uperm) = &usrs {
+                                        let mut retvec = Vec::new();
+                                        for perm in uperm {
+                                            if perm.project_id == project.id {
+                                                retvec.push(perm.user_id);
                                             }
-                                            retvec
-                                        } else {
-                                            Vec::new()
-                                        };
-                                        (project.clone(), pcols_ids, userperm)
-                                    })
-                                    .collect::<Vec<_>>())
-                            }
-                            // If is_none return none
-                            None => Ok(Vec::new()),
-                        }
-                    },
-                )?;
+                                        }
+                                        retvec
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    (project.clone(), pcols_ids, userperm)
+                                })
+                                .collect::<Vec<_>>()
+                        )
+                    }
+                    // If is_none return none
+                    None => Ok(Vec::new()),
+                }
+            })?;
 
         // Map result to Project_overview
         let map_projects = project_infos
@@ -304,8 +346,14 @@ impl Database {
                 id: pinfo.0.id.to_string(),
                 name: pinfo.0.name.to_string(),
                 description: pinfo.0.description.to_string(),
-                collection_ids: pinfo.1.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
-                user_ids: pinfo.2.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+                collection_ids: pinfo.1
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>(),
+                user_ids: pinfo.2
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>(),
             })
             .collect::<Vec<_>>();
         // Return empty response
@@ -329,7 +377,7 @@ impl Database {
     pub fn destroy_project(
         &self,
         request: DestroyProjectRequest,
-        _user_id: uuid::Uuid,
+        _user_id: uuid::Uuid
     ) -> Result<DestroyProjectResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl::*;
@@ -395,7 +443,7 @@ impl Database {
     pub fn update_project(
         &self,
         request: UpdateProjectRequest,
-        req_user_id: uuid::Uuid,
+        req_user_id: uuid::Uuid
     ) -> Result<UpdateProjectResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl::*;
@@ -405,49 +453,56 @@ impl Database {
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
 
         // Execute db query
-        let project_info = self.pg_connection.get()?.transaction::<Option<(
-            Project,
-            Option<Vec<uuid::Uuid>>,
-            Vec<uuid::Uuid>,
-        )>, dError, _>(|conn| {
-            // Update the project and return the updated project
-            let project_info =
-                update(projects.filter(crate::database::schema::projects::id.eq(p_id)))
-                    .set((
-                        crate::database::schema::projects::name.eq(request.name),
-                        crate::database::schema::projects::description.eq(request.description),
-                        crate::database::schema::projects::created_by.eq(req_user_id),
-                    ))
-                    .get_result(conn)
-                    .optional()?;
-            // Check if project_info is some
-            match project_info {
-                // If is_some
-                Some(p_info) => {
-                    // Query collection_ids
-                    let colls = collections
-                        .filter(crate::database::schema::collections::project_id.eq(p_id))
-                        .select(crate::database::schema::collections::id)
-                        .load::<uuid::Uuid>(conn)
+        let project_info = self.pg_connection
+            .get()?
+            .transaction::<Option<(Project, Option<Vec<uuid::Uuid>>, Vec<uuid::Uuid>)>, dError, _>(
+                |conn| {
+                    // Update the project and return the updated project
+                    let project_info = update(
+                        projects.filter(crate::database::schema::projects::id.eq(p_id))
+                    )
+                        .set((
+                            crate::database::schema::projects::name.eq(request.name),
+                            crate::database::schema::projects::description.eq(request.description),
+                            crate::database::schema::projects::created_by.eq(req_user_id),
+                        ))
+                        .get_result(conn)
                         .optional()?;
-                    // Query user_ids -> Should not be optional, every project should have at least one user_permission
-                    let usrs = user_permissions
-                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
-                        .select(crate::database::schema::user_permissions::user_id)
-                        .load::<uuid::Uuid>(conn)?;
-                    Ok(Some((p_info, colls, usrs)))
+                    // Check if project_info is some
+                    match project_info {
+                        // If is_some
+                        Some(p_info) => {
+                            // Query collection_ids
+                            let colls = collections
+                                .filter(crate::database::schema::collections::project_id.eq(p_id))
+                                .select(crate::database::schema::collections::id)
+                                .load::<uuid::Uuid>(conn)
+                                .optional()?;
+                            // Query user_ids -> Should not be optional, every project should have at least one user_permission
+                            let usrs = user_permissions
+                                .filter(
+                                    crate::database::schema::user_permissions::project_id.eq(p_id)
+                                )
+                                .select(crate::database::schema::user_permissions::user_id)
+                                .load::<uuid::Uuid>(conn)?;
+                            Ok(Some((p_info, colls, usrs)))
+                        }
+                        // If is_none return none
+                        None => Ok(None),
+                    }
                 }
-                // If is_none return none
-                None => Ok(None),
-            }
-        })?;
+            )?;
 
         // Map result to Project_overview
         let map_project = match project_info {
             // If project_info is some
             Some((project_info, coll_ids, user_ids)) => {
                 let mapped_col_ids = match coll_ids {
-                    Some(c_id) => c_id.iter().map(|elem| elem.to_string()).collect::<Vec<_>>(),
+                    Some(c_id) =>
+                        c_id
+                            .iter()
+                            .map(|elem| elem.to_string())
+                            .collect::<Vec<_>>(),
                     None => Vec::new(),
                 };
                 Some(ProjectOverview {
@@ -485,7 +540,7 @@ impl Database {
     pub fn remove_user_from_project(
         &self,
         request: RemoveUserFromProjectRequest,
-        _req_user_id: uuid::Uuid,
+        _req_user_id: uuid::Uuid
     ) -> Result<RemoveUserFromProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         // Get project_id
@@ -493,20 +548,17 @@ impl Database {
         let d_u_id = uuid::Uuid::parse_str(&request.user_id)?;
 
         // Execute db query
-        self.pg_connection
-            .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
-                // Delete user_permissions
-                delete(
-                    user_permissions.filter(
-                        crate::database::schema::user_permissions::project_id
-                            .eq(p_id)
-                            .and(crate::database::schema::user_permissions::user_id.eq(d_u_id)),
-                    ),
+        self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
+            // Delete user_permissions
+            delete(
+                user_permissions.filter(
+                    crate::database::schema::user_permissions::project_id
+                        .eq(p_id)
+                        .and(crate::database::schema::user_permissions::user_id.eq(d_u_id))
                 )
-                .execute(conn)?;
-                Ok(())
-            })?;
+            ).execute(conn)?;
+            Ok(())
+        })?;
 
         // Return empty response
         Ok(RemoveUserFromProjectResponse {})
@@ -527,7 +579,7 @@ impl Database {
     pub fn get_userpermission_from_project(
         &self,
         request: GetUserPermissionsForProjectRequest,
-        _req_user_id: uuid::Uuid,
+        _req_user_id: uuid::Uuid
     ) -> Result<GetUserPermissionsForProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use crate::database::schema::users::dsl::*;
@@ -536,8 +588,7 @@ impl Database {
         let d_u_id = uuid::Uuid::parse_str(&request.user_id)?;
 
         // Execute db query
-        let permissions = self
-            .pg_connection
+        let permissions = self.pg_connection
             .get()?
             .transaction::<(Option<UserPermission>, Option<String>), diesel::result::Error, _>(
                 |conn| {
@@ -554,7 +605,7 @@ impl Database {
                         .optional()?;
 
                     Ok((perm, user_name))
-                },
+                }
             )?;
 
         let resp = GetUserPermissionsForProjectResponse {
@@ -585,7 +636,7 @@ impl Database {
     pub fn edit_user_permissions_for_project(
         &self,
         request: EditUserPermissionsForProjectRequest,
-        _req_user_id: uuid::Uuid,
+        _req_user_id: uuid::Uuid
     ) -> Result<EditUserPermissionsForProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         // Get project_id
@@ -598,27 +649,23 @@ impl Database {
             })?;
 
             // Execute db query
-            self.pg_connection
-                .get()?
-                .transaction::<_, ArunaError, _>(|conn| {
-                    // Update user_permissions
-                    update(
-                        user_permissions.filter(
-                            crate::database::schema::user_permissions::user_id
-                                .eq(parsed_user_id)
-                                .and(
-                                    crate::database::schema::user_permissions::project_id.eq(p_id),
-                                ),
-                        ),
+            self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
+                // Update user_permissions
+                update(
+                    user_permissions.filter(
+                        crate::database::schema::user_permissions::user_id
+                            .eq(parsed_user_id)
+                            .and(crate::database::schema::user_permissions::project_id.eq(p_id))
                     )
+                )
                     .set(crate::database::schema::user_permissions::user_right.eq(user_perm))
                     .execute(conn)?;
-                    Ok(())
-                })?;
+                Ok(())
+            })?;
         } else {
-            return Err(ArunaError::InvalidRequest(
-                "User and permissions must be specified".to_string(),
-            ));
+            return Err(
+                ArunaError::InvalidRequest("User and permissions must be specified".to_string())
+            );
         }
         // Return empty response
         Ok(EditUserPermissionsForProjectResponse {})
