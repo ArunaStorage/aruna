@@ -1826,7 +1826,7 @@ pub fn delete_multiple_objects(
     let mut object_refs_for_col = Vec::new();
 
     // Populate object_refs_per_obj && object_refs_for_col
-    for colref in references.clone() {
+    for colref in references {
         match object_refs_per_obj.get_mut(&colref.object_id) {
             Some(arr) => {
                 arr.push(colref.clone());
@@ -1840,10 +1840,14 @@ pub fn delete_multiple_objects(
         }
     }
 
+    // This contains all UUIDs that should only be deleted by reference
+    let mut ref_only: Vec<uuid::Uuid> = Vec::new();
+
     for (k, v) in object_refs_per_obj.clone() {
         // This can have two reasons:
         // A. An object_id was specified that is not present in the collection
         // B. A revision of an object is not referenced in the current collection but in another one
+
         if object_refs_per_obj.len() != object_refs_for_col.len() {
             let mut in_collection = false;
             for col_ref in &v {
@@ -1872,48 +1876,78 @@ pub fn delete_multiple_objects(
             }
         }
 
-        if !with_force && v.len() > 1 {
-            let refed_colls = v.iter().map(|e| e.collection_id).collect::<Vec<_>>();
-            return Err(ArunaError::InvalidRequest(format!(
-                "Object with ID {} is still referenced in collection(s): {:#?}",
-                k, refed_colls
-            )));
+        // If it has more than 1 reference (This could create a dangling reference)
+        if v.is_empty() {
+            // Assume it is the only writeable
+            let mut is_only_writeable = true;
+            // Iterate through all other refs
+            for other_refs in &v {
+                // If another reference is writeable
+                if other_refs.collection_id != coll_id && other_refs.writeable {
+                    is_only_writeable = false;
+                    // This object has other "writeable" targets ->
+                    // Delete only the reference, regardless of force or not
+                    // add it to the reference only list (-> we can delete this reference only)
+                    // Add to ref_only
+                    ref_only.push(k);
+                    // Remove from hashmap (This should only delete the ref not the object itself)
+                    object_refs_per_obj.remove(&k);
+                }
+                if other_refs.collection_id == coll_id && !other_refs.writeable {
+                    // It is not writeable -> Delete only the reference
+                    is_only_writeable = false;
+                    // Add to ref_only
+                    ref_only.push(k);
+                    // Remove from hashmap (This should only delete the ref not the object itself)
+                    object_refs_per_obj.remove(&k);
+                }
+            }
+            // If it is the only writeable and force is not used
+            if is_only_writeable && !with_force {
+                return Err(ArunaError::InvalidRequest(format!(
+                    "Object with ID {} is the last writeable reference while referenced in other collection(s), delete references or use force",
+                    k
+                )));
+            }
         }
     }
 
-    // Sort by collection
-    // Delete and bump
-    let object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = if with_force {
-        let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
-        // Populate object_refs_per_obj && object_refs_for_col
-        for colref in references {
-            match object_ids_per_coll.get_mut(&colref.collection_id) {
+    let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
+    let mut object_ids_to_delete = Vec::new();
+
+    for v in object_refs_per_obj.values() {
+        for e in v {
+            if e.collection_id == coll_id {
+                object_ids_to_delete.push(e.object_id)
+            }
+
+            match object_ids_per_coll.get_mut(&e.collection_id) {
                 Some(arr) => {
-                    arr.push(colref.object_id);
+                    arr.push(e.object_id);
                 }
                 None => {
-                    object_ids_per_coll.insert(colref.collection_id, vec![colref.object_id]);
+                    object_ids_per_coll.insert(e.collection_id, vec![e.object_id]);
                 }
             }
         }
-        object_ids_per_coll
-    } else {
-        let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
-        object_ids_per_coll.insert(coll_id, object_ids.clone());
-        object_ids_per_coll
-    };
+    }
 
-    // Delete object_references and update object_groups
+    // Delete object_references and update object_groups for "deleteable" without the "reference onlys"
     for (d_coll_id, d_object_ids) in object_ids_per_coll {
         delete_and_bump_objs(&d_object_ids, &d_coll_id, &creator_id, conn)?;
     }
 
+    // Delete and bump the "ref_onlys"
+    delete_and_bump_objs(&ref_only, &coll_id, &creator_id, conn)?;
+
     // Update object_status to "TRASH"
     update(objects)
-        .filter(database::schema::objects::id.eq_any(&object_ids))
+        .filter(database::schema::objects::id.eq_any(&object_ids_to_delete))
         .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
         .execute(conn)?;
+
     // TODO: Should this also delete key_values etc. ?
+
     Ok(())
 }
 
