@@ -5,7 +5,8 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'AVAILABLE',
     'UNAVAILABLE',
     'ERROR',
-    'TRASH'
+    'DELETED', -- Permanently deleted objects that are preserved for history reasons
+    'TRASH' -- Objects that should be cleaned up and removed
 );
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');

@@ -12,8 +12,9 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
-    AddLabelToObjectRequest, AddLabelToObjectResponse, GetReferencesRequest, GetReferencesResponse,
-    ObjectReference, SetHooksOfObjectRequest, SetHooksOfObjectResponse,
+    AddLabelToObjectRequest, AddLabelToObjectResponse, DeleteObjectsRequest, DeleteObjectsResponse,
+    GetReferencesRequest, GetReferencesResponse, ObjectReference, SetHooksOfObjectRequest,
+    SetHooksOfObjectResponse,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -1214,6 +1215,7 @@ impl Database {
          *          - ObjectLocations --> S3 Objects (Currently no delete function available in data proxy)
          *          - Source (Only with original)
          *          - ObjectKeyValues
+         *
          *          - CollectionObject
          *          - ObjectGroupObject
          *          - Object
@@ -1496,6 +1498,66 @@ impl Database {
         Ok(DeleteObjectResponse {})
     }
 
+    pub fn delete_objects(
+        &self,
+        request: DeleteObjectsRequest,
+        creator_id: uuid::Uuid,
+    ) -> Result<DeleteObjectsResponse, ArunaError> {
+        //writeable = w+ or w-
+        //history   = h+ or h-
+        //force     = f+ or f-
+
+        // Permissions needed:
+        //   w*,h*,f-: Collection WRITE
+        //   w*,h*,f+: Project ADMIN
+
+        /*
+         * w-,h-,f* : - Remove collection_object reference for specific collection
+         *            - Remove object_group_object reference and update object_group
+         * w-,h+,f* : - Remove collection_object reference for all revisions in specific collection
+         *            - For all revisions remove object_group_object reference and update object_group
+         * w+,h-,f- : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for specific collection
+         *                       - Remove object_group_object reference and update object_group
+         *              - True: Error -> Transfer Ownership or force
+         * w+,h+,f- : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for all revisions in specific collection
+         *                       - For all revisions remove object_group_object reference and update object_group
+         *              - True: Error -> Transfer ownership or force
+         * w+,h-,f+ : - Check if last writeable for all revisions
+         *              - False: - Remove collection_object reference for specific collection
+         *                       - Remove object_group_object reference and update object_group
+         *              - True: - Remove all references and set object status to TRASH
+         *                      - Update all object_groups with references to the specific object/revision
+         * w+,h+,f+ : - Remove all references and set object status to TRASH
+         *            - Update all object_groups with references to the specific object/revision
+         */
+
+        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        // Parse objectids
+        let parsed_object_ids = request
+            .object_ids
+            .iter()
+            .map(|objid| uuid::Uuid::parse_str(objid))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                delete_multiple_objects(
+                    parsed_object_ids,
+                    parsed_collection_id,
+                    request.force,
+                    request.with_revisions,
+                    creator_id,
+                    conn,
+                )?;
+                Ok(())
+            })?;
+        Ok(DeleteObjectsResponse {})
+    }
+
     /// ToDo: Rust Doc
     pub fn add_label_to_object(
         &self,
@@ -1693,7 +1755,7 @@ pub fn clone_object(
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `ref_object_id`: `uuid::Uuid` - The Uuid for which the latest Object revision should be found
 ///
-/// ## Resturns:
+/// ## Returns:
 ///
 /// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
 /// The latest database object or error if the request failed.
@@ -1713,6 +1775,146 @@ pub fn get_latest_obj(
         .first::<Object>(conn)?;
 
     Ok(latest_object)
+}
+
+/// This is a helper method that deletes all specified objects (by id)
+/// it has two options (with_force) == true => allow for sideeffects in other collections
+/// otherwise this method will error
+///
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_ids`: `Vec<uuid::Uuid>` - The Uuids of all objects that should be deleted
+/// * `coll_id`: uuid::Uuid - The collection these ids should be deleted from
+/// * `with_force`: bool - Are sideeffects allowed ?
+///
+/// ## Returns:
+///
+/// `Result<(), ArunaError>` - Will return empty Result or Error
+///
+pub fn delete_multiple_objects(
+    original_object_ids: Vec<uuid::Uuid>,
+    coll_id: uuid::Uuid,
+    with_force: bool,
+    with_revisions: bool,
+    creator_id: uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), ArunaError> {
+    let object_ids = if with_revisions {
+        let shared_ids = objects
+            .filter(database::schema::objects::id.eq_any(&original_object_ids))
+            .select(database::schema::objects::shared_revision_id)
+            .load::<uuid::Uuid>(conn)?;
+
+        objects
+            .filter(database::schema::objects::shared_revision_id.eq_any(&shared_ids))
+            .select(database::schema::objects::id)
+            .load::<uuid::Uuid>(conn)?
+    } else {
+        original_object_ids.clone()
+    };
+
+    // This will query all references and Error if no reference exists
+    let references = collection_objects
+        .filter(database::schema::collection_objects::object_id.eq_any(&object_ids))
+        .load::<CollectionObject>(conn)?;
+
+    // This contains all references per object_id
+    let mut object_refs_per_obj: HashMap<uuid::Uuid, Vec<CollectionObject>> = HashMap::new();
+    // This contains all specific references for "this" collection
+    let mut object_refs_for_col = Vec::new();
+
+    // Populate object_refs_per_obj && object_refs_for_col
+    for colref in references.clone() {
+        match object_refs_per_obj.get_mut(&colref.object_id) {
+            Some(arr) => {
+                arr.push(colref.clone());
+            }
+            None => {
+                object_refs_per_obj.insert(colref.object_id, vec![colref.clone()]);
+            }
+        }
+        if colref.collection_id == coll_id {
+            object_refs_for_col.push(colref)
+        }
+    }
+
+    for (k, v) in object_refs_per_obj.clone() {
+        // This can have two reasons:
+        // A. An object_id was specified that is not present in the collection
+        // B. A revision of an object is not referenced in the current collection but in another one
+        if object_refs_per_obj.len() != object_refs_for_col.len() {
+            let mut in_collection = false;
+            for col_ref in &v {
+                if col_ref.collection_id == coll_id {
+                    in_collection = true;
+                }
+            }
+            if !in_collection {
+                // A or B
+                if original_object_ids.contains(&k) {
+                    // A
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "ObjectID {} not part of collection: {}",
+                        k, coll_id
+                    )));
+                } else {
+                    // B
+                    if !with_force {
+                        let refed_colls = v.iter().map(|e| e.collection_id).collect::<Vec<_>>();
+                        return Err(ArunaError::InvalidRequest(format!(
+                            "Object with ID {} is still referenced in collection(s): {:#?}",
+                            k, refed_colls
+                        )));
+                    }
+                }
+            }
+        }
+
+        if !with_force && v.len() > 1 {
+            let refed_colls = v.iter().map(|e| e.collection_id).collect::<Vec<_>>();
+            return Err(ArunaError::InvalidRequest(format!(
+                "Object with ID {} is still referenced in collection(s): {:#?}",
+                k, refed_colls
+            )));
+        }
+    }
+
+    // Sort by collection
+    // Delete and bump
+    let object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = if with_force {
+        let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
+        // Populate object_refs_per_obj && object_refs_for_col
+        for colref in references {
+            match object_ids_per_coll.get_mut(&colref.collection_id) {
+                Some(arr) => {
+                    arr.push(colref.object_id);
+                }
+                None => {
+                    object_ids_per_coll.insert(colref.collection_id, vec![colref.object_id]);
+                }
+            }
+        }
+        object_ids_per_coll
+    } else {
+        let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
+        object_ids_per_coll.insert(coll_id, object_ids.clone());
+        object_ids_per_coll
+    };
+
+    // Delete object_references and update object_groups
+    for (d_coll_id, d_object_ids) in object_ids_per_coll {
+        delete_and_bump_objs(&d_object_ids, &d_coll_id, &creator_id, conn)?;
+    }
+
+    // Update object_status to "TRASH"
+    update(objects)
+        .filter(database::schema::objects::id.eq_any(&object_ids))
+        .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
+        .execute(conn)?;
+    // TODO: Should this also delete key_values etc. ?
+    Ok(())
 }
 
 /// Query all revisions associated to a specific object.

@@ -570,6 +570,51 @@ impl ObjectService for ObjectServiceImpl {
         return Ok(response);
     }
 
+    async fn delete_objects(
+        &self,
+        request: Request<DeleteObjectsRequest>,
+    ) -> Result<Response<DeleteObjectsResponse>, Status> {
+        log::info!("Received DeleteObjectsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let user: uuid::Uuid = if request.get_ref().force {
+            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
+            // Authorize "TARGET"
+            self.authz
+                .project_authorize_by_collectionid(
+                    request.metadata(),
+                    target_collection_uuid, // This is the collection uuid which the project_id will be based
+                    UserRights::ADMIN, // User needs at least append permission to create an object
+                )
+                .await?
+        } else {
+            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
+            // Authorize "TARGET"
+            self.authz
+                .collection_authorize(
+                    request.metadata(),
+                    target_collection_uuid, // This is the collection uuid in which this object should be created
+                    UserRights::APPEND, // User needs at least append permission to create an object
+                )
+                .await?
+        };
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.delete_objects(request.into_inner(), user))
+                .await
+                .map_err(ArunaError::from)??,
+        );
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending DeleteObjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
+    }
+
     async fn delete_object(
         &self,
         request: Request<DeleteObjectRequest>,
