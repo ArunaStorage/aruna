@@ -10,13 +10,13 @@
 //! - DeleteCollection
 use super::utils::*;
 use crate::database::connection::Database;
-use crate::database::crud::object::clone_object;
+use crate::database::crud::object::{clone_object, delete_multiple_objects};
 use crate::database::models;
 use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
     RequiredLabel,
 };
-use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, ObjectStatus};
+use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType };
 use crate::database::models::object::{Object, ObjectKeyValue};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
@@ -584,7 +584,6 @@ impl Database {
         use crate::database::schema::object_group_key_value::dsl as objgrpkv;
         use crate::database::schema::object_group_objects::dsl as objgrpobj;
         use crate::database::schema::object_groups::dsl as objgrp;
-        use crate::database::schema::objects::dsl as obj;
         // Parse the collection_id string to uuid
         let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Execute the request in transaction
@@ -593,63 +592,17 @@ impl Database {
             let all_obj_references = colobj::collection_objects
                 .filter(colobj::collection_id.eq(collection_id))
                 .load::<CollectionObject>(conn)?;
-            // Query the object_ids of all writeable references
-            let all_obj_ids = all_obj_references
-                .iter()
-                .map(|elem| elem.object_id)
-                .collect::<Vec<_>>();
-            // Query all other object references for the specified object ids
-            let all_other_references = colobj::collection_objects
-                .filter(colobj::object_id.eq_any(all_obj_ids))
-                .filter(colobj::collection_id.ne(collection_id))
-                .load::<CollectionObject>(conn)?;
-
-            // Create hashmap with key = object_uuid and value all associated mappings
-            // This is needed to check if the object is referenced somewhere else
-            let mut objects_referenced = HashMap::new();
-            // Iterate through all returned references
-            for specific_ref in all_obj_references {
-                // Temporary vec that contains all references beginning with the reference for this collection
-                let mut shared = vec![specific_ref.clone()];
-                // Iterate all other references
-                for all_ref in &all_other_references {
-                    // If both object_ids are the same -> they reference the same object
-                    if specific_ref.object_id == all_ref.object_id {
-                        // Append to reference vector
-                        shared.push(all_ref.to_owned());
-                        // If the reference vector is greater than 1 and force is not used
-                        // This means the data is owned by this collection and referenced somewhere else
-                        if shared.len() > 1 && !request.force && specific_ref.writeable {
-                            return Err(
-                                ArunaError::InvalidRequest(
-                                    "Can not delete collection because of dangling objects. Transfer ownership manually or use force".to_string()
-                                )
-                            );
-                        }
-                    }
-                }
-                // Insert the object_id and vector with associated references to the hashmap
-                // Each value vector should contain at least one element -> the associated reference from this collection
-                objects_referenced.insert(specific_ref.object_id, shared);
+                
+            // If not all objects are moved or deleted and no force is used
+            if all_obj_references.len() != 0 && !request.force{
+                return Err(ArunaError::InvalidRequest("Can not delete collection that is not empty, use force or delete all associated objects first.".to_string()))
             }
-            // Create a list of all "trashable" objects
-            let trash = objects_referenced.iter().fold(Vec::new(), |mut trash, (k, v)| {
-                // If the object is writeable by this collection
-                // Append it to the list of trashable objects
-                if v[0].writeable {
-                    trash.push(k.to_owned());
-                }
-                trash
-            });
-            // Delete all references
-            delete(
-                colobj::collection_objects.filter(colobj::collection_id.eq(collection_id))
-            ).execute(conn)?;
-            // Delete all collection object groups belonging to this collection
+            // Delete everything related to object_groups
+            // Delete collection object groups belonging to this collection
             let deleted_objgrp = delete(
-                colobjgrp::collection_object_groups.filter(
-                    colobjgrp::collection_id.eq(collection_id)
-                )
+            colobjgrp::collection_object_groups.filter(
+                colobjgrp::collection_id.eq(collection_id)
+            )
             ).load::<CollectionObjectGroup>(conn)?;
             // Filter out the objgrpids
             let objgrpids = deleted_objgrp
@@ -670,10 +623,18 @@ impl Database {
             ).execute(conn)?;
             // Delete all objgrps -> Objgrps for now are bound to a collection
             delete(objgrp::object_groups.filter(objgrp::id.eq_any(&objgrpids))).execute(conn)?;
-            // Update all "owned/writeable" objects to be "TRASH" -> The trash routine should update all other objectgroups
-            update(obj::objects.filter(obj::id.eq_any(&trash)))
-                .set((obj::object_status.eq(ObjectStatus::TRASH), obj::created_by.eq(user_id)))
-                .execute(conn)?;
+
+
+            if request.force {
+                // Query the object_ids of all writeable references
+                let all_obj_ids = all_obj_references
+                .iter()
+                .map(|elem| elem.object_id)
+                .collect::<Vec<_>>();
+            
+                delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
+            }
+            
             // Delete all collection_key_values
             delete(
                 colkv::collection_key_value.filter(colkv::collection_id.eq(collection_id))
