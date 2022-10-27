@@ -1786,7 +1786,7 @@ pub fn get_latest_obj(
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `object_ids`: `Vec<uuid::Uuid>` - The Uuids of all objects that should be deleted
-/// * `coll_id`: uuid::Uuid - The collection these ids should be deleted from
+/// * `coll_id`: uuid::Uuid - The collection where these ids should be deleted from
 /// * `with_force`: bool - Are sideeffects allowed ?
 ///
 /// ## Returns:

@@ -891,7 +891,7 @@ fn transform_collection_overviewdb(
 ///
 /// ## Behaviour
 /// Sucessfully pinning a specific collection requires the following steps.
-/// WARNING: This process is quite compute heavy and must make several database requests.
+/// WARNING: This process is quite compute heavy and includes several extensive database requests.
 /// This might take a significant time for large collections.
 ///
 /// - Query all information from "origin" collection including (KeyValues, Objects, Objectgroups etc.)
