@@ -16,7 +16,7 @@ use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
     RequiredLabel,
 };
-use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType };
+use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, ReferenceStatus};
 use crate::database::models::object::{Object, ObjectKeyValue};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
@@ -592,9 +592,8 @@ impl Database {
             let all_obj_references = colobj::collection_objects
                 .filter(colobj::collection_id.eq(collection_id))
                 .load::<CollectionObject>(conn)?;
-                
             // If not all objects are moved or deleted and no force is used
-            if all_obj_references.len() != 0 && !request.force{
+            if all_obj_references.iter().any(|e| e.reference_status != ReferenceStatus::STAGING) && !request.force{
                 return Err(ArunaError::InvalidRequest("Can not delete collection that is not empty, use force or delete all associated objects first.".to_string()))
             }
             // Delete everything related to object_groups
@@ -624,17 +623,14 @@ impl Database {
             // Delete all objgrps -> Objgrps for now are bound to a collection
             delete(objgrp::object_groups.filter(objgrp::id.eq_any(&objgrpids))).execute(conn)?;
 
-
-            if request.force {
-                // Query the object_ids of all writeable references
-                let all_obj_ids = all_obj_references
-                .iter()
-                .map(|elem| elem.object_id)
-                .collect::<Vec<_>>();
-            
+            // Query the object_ids of all references
+            let all_obj_ids = all_obj_references
+            .iter()
+            .map(|elem| elem.object_id)
+            .collect::<Vec<_>>();
+            if all_obj_ids.len() != 0 {
                 delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
             }
-            
             // Delete all collection_key_values
             delete(
                 colkv::collection_key_value.filter(colkv::collection_id.eq(collection_id))
