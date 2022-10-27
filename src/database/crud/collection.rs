@@ -628,7 +628,7 @@ impl Database {
             .iter()
             .map(|elem| elem.object_id)
             .collect::<Vec<_>>();
-            if all_obj_ids.len() != 0 {
+            if !all_obj_ids.is_empty() {
                 delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
             }
             // Delete all collection_key_values

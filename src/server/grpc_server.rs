@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
+use crate::database::cron::{Scheduler, Task};
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -33,6 +34,40 @@ impl ServiceServer {
         let default_endpoint = db_ref
             .init_default_endpoint(config.config.default_endpoint)
             .unwrap();
+
+        let mut cron_scheduler = Scheduler::new();
+        cron_scheduler.add(Task::new(
+            |db| {
+                let res = db.update_collection_views();
+                if res.is_err() {
+                    log::info!(
+                        "Update of cron: materialized collection view failed, with: {:#?}",
+                        res
+                    )
+                }
+            },
+            "collection_views",
+            300,
+            db_ref.clone(),
+        ));
+        cron_scheduler.add(Task::new(
+            |db| {
+                let res = db.update_object_group_views();
+                if res.is_err() {
+                    log::info!(
+                        "Update of cron: materialized object_group view failed, with: {:#?}",
+                        res
+                    )
+                }
+            },
+            "object_views",
+            300,
+            db_ref.clone(),
+        ));
+
+        tokio::spawn(async move {
+            cron_scheduler.run().await;
+        });
 
         // Upstart server
         let addr = "0.0.0.0:50051".parse().unwrap();

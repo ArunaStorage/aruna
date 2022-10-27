@@ -1,38 +1,49 @@
+use std::sync::Arc;
+
 use tokio::time::{sleep, Duration};
 
-struct Task {
+use super::connection::Database;
+
+pub struct Task {
     name: String,
     intervall: usize,
-    func: fn(),
+    func: fn(db: Arc<Database>),
     ticked: usize,
+    db: Arc<Database>,
 }
 
 impl Task {
-    fn tick(&mut self) {
+    pub fn tick(&mut self) {
         self.ticked += 1;
         if self.ticked >= self.intervall {
-            (self.func)();
+            (self.func)(self.db.clone());
             self.ticked = 0;
             log::info!("[CRON] {} ticked", self.name);
         }
     }
 
-    fn new(func: fn(), name: &str, intervall: usize) -> Self {
+    pub fn new(
+        func: fn(db: Arc<Database>),
+        name: &str,
+        intervall: usize,
+        db: Arc<Database>,
+    ) -> Self {
         Task {
             name: name.to_string(),
             intervall,
             func,
             ticked: 0,
+            db,
         }
     }
 }
 
-struct Scheduler {
+pub struct Scheduler {
     tasklist: Vec<Task>,
 }
 
 impl Scheduler {
-    async fn run(&mut self) {
+    pub async fn run(&mut self) {
         loop {
             sleep(Duration::from_millis(1000)).await;
 
@@ -42,13 +53,19 @@ impl Scheduler {
         }
     }
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         Scheduler {
             tasklist: Vec::new(),
         }
     }
 
-    fn add(&mut self, t: Task) {
+    pub fn add(&mut self, t: Task) {
         self.tasklist.push(t)
+    }
+}
+
+impl Default for Scheduler {
+    fn default() -> Self {
+        Self::new()
     }
 }
