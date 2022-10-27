@@ -13,6 +13,7 @@ pub enum ObjectStatus {
     AVAILABLE,
     UNAVAILABLE,
     ERROR,
+    DELETED,
     TRASH,
 }
 
