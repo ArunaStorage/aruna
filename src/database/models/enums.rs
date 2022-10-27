@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tonic::{Code, Status};
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Debug, DbEnum, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum ObjectStatus {

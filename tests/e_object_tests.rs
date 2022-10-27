@@ -1,15 +1,19 @@
 mod common;
 
-use crate::common::functions::TCreateCollection;
+use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
-use aruna_rust_api::api::storage::models::v1::{EndpointType, Hash, Hashalgorithm, KeyValue};
+use aruna_rust_api::api::storage::models::v1::{
+    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue,
+};
 use aruna_rust_api::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
-    InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
+    CreateNewCollectionRequest, CreateProjectRequest, DeleteObjectRequest,
+    FinishObjectStagingRequest, InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::ObjectStatus;
+use common::functions::{create_collection, create_object, create_project, TCreateObject};
+use rand::{thread_rng, Rng};
 use serial_test::serial;
 
 #[test]
@@ -348,4 +352,133 @@ fn update_object_test() {
     assert_eq!(updated_object_002.content_len, 123456);
     assert_eq!(updated_object_002.hash.unwrap(), updated_hash_002);
     assert!(updated_object_002.auto_update);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create a single object
+
+    let single_id = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0, 4),
+            num_hooks: thread_rng().gen_range(0, 4),
+        }),
+    )
+    .id;
+
+    // Simple delete without revision or force
+    // Delete without revision or force
+    let delreq = DeleteObjectRequest {
+        object_id: single_id.clone(),
+        collection_id: random_collection.clone().id,
+        with_revisions: false,
+        force: false,
+    };
+
+    let resp = db.delete_object(delreq, creator);
+
+    assert!(resp.is_ok());
+
+    let raw_db_object = get_object_status_raw(&single_id);
+
+    // Should delete the object
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+
+    //---------------------------------------------
+
+    // New single object
+    let single_id = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0, 4),
+            num_hooks: thread_rng().gen_range(0, 4),
+        }),
+    )
+    .id;
+
+    // Add revision
+
+    let updatereq = UpdateObjectRequest {
+        object_id: single_id.clone(),
+        collection_id: random_collection.id.to_string(),
+        object: Some(StageObject {
+            filename: "Update".to_string(),
+            description: "Update".to_string(),
+            collection_id: random_collection.id.to_string(),
+            content_len: 0,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: Vec::new(),
+            hooks: Vec::new(),
+        }),
+        reupload: false,
+        is_specification: false,
+        preferred_endpoint_id: "".to_string(),
+        multi_part: false,
+    };
+
+    let new_id = uuid::Uuid::new_v4();
+    let updateresp = db
+        .update_object(&updatereq, &None, &creator, uuid::Uuid::default(), new_id)
+        .unwrap();
+
+    let staging_finished = db
+        .finish_object_staging(
+            &FinishObjectStagingRequest {
+                object_id: single_id.clone(),
+                upload_id: updateresp.staging_id,
+                collection_id: random_collection.id.to_string(),
+                hash: None,
+                no_upload: false,
+                completed_parts: vec![],
+                auto_update: true,
+            },
+            &creator,
+        )
+        .unwrap();
+
+    // Simple delete with revisions / without force
+    // Delete without revision or force
+    let delreq = DeleteObjectRequest {
+        object_id: single_id.clone(),
+        collection_id: random_collection.id,
+        with_revisions: true,
+        force: false,
+    };
+
+    let resp = db.delete_object(delreq, creator);
+
+    assert!(resp.is_ok());
+
+    let raw_db_object = get_object_status_raw(&single_id);
+
+    // Should delete the object
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+
+    // Revision Should also be deleted
+    let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
+
+    // Should delete the object
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
 }

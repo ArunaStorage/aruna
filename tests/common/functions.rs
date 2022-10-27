@@ -13,6 +13,7 @@ use aruna_rust_api::api::storage::{
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::ObjectStatus;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 fn rand_string(len: usize) -> String {
@@ -212,7 +213,8 @@ pub struct TCreateObject {
 
 /// Creates an Object in the specified Collection.
 /// Fills everything with random values.
-pub fn _create_object(object_info: &TCreateObject) -> Object {
+#[allow(dead_code)]
+pub fn create_object(object_info: &TCreateObject) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator_id = if let Some(c_id) = &object_info.creator_id {
         uuid::Uuid::parse_str(c_id).unwrap()
@@ -328,4 +330,20 @@ pub fn _get_object(collection_id: String, object_id: String) -> Object {
     let object = db.get_object(&get_request).unwrap();
 
     object.unwrap()
+}
+
+/// Helper function to get the "raw" object from database without ID
+#[allow(dead_code)]
+pub fn get_object_status_raw(object_id: &str) -> aruna_server::database::models::object::Object {
+    use database::schema::objects::dsl::*;
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let mut conn = db.pg_connection.get().unwrap();
+
+    let obj_id = uuid::Uuid::parse_str(object_id).unwrap();
+
+    objects
+        .filter(database::schema::objects::id.eq(&obj_id))
+        .first::<aruna_server::database::models::object::Object>(&mut conn)
+        .unwrap()
 }

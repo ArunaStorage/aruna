@@ -1,7 +1,7 @@
 mod common;
 
 use crate::common::functions::{
-    create_collection, create_project, TCreateCollection, TCreateObject, _create_object,
+    create_collection, create_object, create_project, TCreateCollection, TCreateObject,
 };
 
 use aruna_rust_api::api::storage::models::v1::KeyValue;
@@ -38,7 +38,7 @@ fn create_object_group_test() {
     // Create 5 random objects
     let mut object_ids = (0..5)
         .map(|_| {
-            _create_object(
+            create_object(
                 &(TCreateObject {
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
@@ -160,7 +160,7 @@ fn update_object_group_test() {
     // Create 5 random objects
     let mut object_ids = (0..5)
         .map(|_| {
-            _create_object(
+            create_object(
                 &(TCreateObject {
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
@@ -338,7 +338,7 @@ fn delete_object_group_test() {
     // Create 5 random objects
     let mut object_ids = (0..5)
         .map(|_| {
-            _create_object(
+            create_object(
                 &(TCreateObject {
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
