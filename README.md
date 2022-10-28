@@ -4,7 +4,6 @@
 [![Codecov](https://codecov.io/github/ArunaStorage/ArunaServer/coverage.svg?branch=main)](https://codecov.io/gh/ArunaStorage/ArunaServer)
 [![Dependency status](https://deps.rs/repo/github/ArunaStorage/ArunaServer/status.svg)](https://deps.rs/repo/github/ArunaStorage/ArunaServer)
 ___
-<br>
 
 <p align="center">
     <picture>
@@ -37,7 +36,7 @@ This is the main repo for the server application of the Aruna Object Storage (AO
 
 ## Getting started
 
-A detailed user guide is found in the [Documentation](https://arunastorage.github.io/Documentation/get_started/basic_usage/00_index/).
+A detailed user guide is found in the [Documentation](https://arunastorage.github.io/Documentation/).
 
 **TLDR:**
 - **REST**: see our [Swagger Documentation](https://api.aruna.nfdi-dev.gi.denbi.de/swagger-ui/)
