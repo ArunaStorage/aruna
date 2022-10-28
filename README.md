@@ -2,6 +2,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-brightgreen.svg)](https://github.com/ArunaStorage/ArunaServer/blob/main/LICENSE)
 ![CI](https://github.com/ArunaStorage/ArunaServer/actions/workflows/test.yml/badge.svg)
 [![Codecov](https://codecov.io/github/ArunaStorage/ArunaServer/coverage.svg?branch=main)](https://codecov.io/gh/ArunaStorage/ArunaServer)
+[![Dependency status](https://deps.rs/repo/github/ArunaStorage/ArunaServer/status.svg)](https://deps.rs/repo/github/ArunaStorage/ArunaServer)
 ___
 <br>
 
