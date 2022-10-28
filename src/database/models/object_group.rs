@@ -77,3 +77,39 @@ pub struct ObjectGroupObject {
     pub object_group_id: uuid::Uuid,
     pub is_meta: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn object_group_is_key_value_test() {
+        let test_kv_label_oid = uuid::Uuid::new_v4();
+
+        let test_kv_label = ObjectGroupKeyValue::new_kv::<ObjectGroupKeyValue>(
+            "test_key",
+            "test_value",
+            test_kv_label_oid,
+            KeyValueType::LABEL,
+        );
+
+        assert_eq!(*test_kv_label.get_associated_uuid(), test_kv_label_oid);
+        assert_eq!(test_kv_label.get_key(), "test_key".to_string());
+        assert_eq!(test_kv_label.get_value(), "test_value".to_string());
+        assert_eq!(*test_kv_label.get_type(), KeyValueType::LABEL);
+
+        let test_kv_hook_oid = uuid::Uuid::new_v4();
+
+        let test_kv_hook = ObjectGroupKeyValue::new_kv::<ObjectGroupKeyValue>(
+            "test_key_hook",
+            "test_value_hook",
+            test_kv_hook_oid,
+            KeyValueType::HOOK,
+        );
+
+        assert_eq!(*test_kv_hook.get_associated_uuid(), test_kv_hook_oid);
+        assert_eq!(test_kv_hook.get_key(), "test_key_hook".to_string());
+        assert_eq!(test_kv_hook.get_value(), "test_value_hook".to_string());
+        assert_eq!(*test_kv_hook.get_type(), KeyValueType::HOOK);
+    }
+}
