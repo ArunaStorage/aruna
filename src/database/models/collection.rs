@@ -138,3 +138,82 @@ pub struct CollectionObjectGroup {
     pub object_group_id: uuid::Uuid,
     pub writeable: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_key_value_test() {
+        let test_kv_label_oid = uuid::Uuid::new_v4();
+
+        let test_kv_label = CollectionKeyValue::new_kv::<CollectionKeyValue>(
+            "test_key",
+            "test_value",
+            test_kv_label_oid,
+            KeyValueType::LABEL,
+        );
+
+        assert_eq!(*test_kv_label.get_associated_uuid(), test_kv_label_oid);
+        assert_eq!(test_kv_label.get_key(), "test_key".to_string());
+        assert_eq!(test_kv_label.get_value(), "test_value".to_string());
+        assert_eq!(*test_kv_label.get_type(), KeyValueType::LABEL);
+
+        let test_kv_hook_oid = uuid::Uuid::new_v4();
+
+        let test_kv_hook = CollectionKeyValue::new_kv::<CollectionKeyValue>(
+            "test_key_hook",
+            "test_value_hook",
+            test_kv_hook_oid,
+            KeyValueType::HOOK,
+        );
+
+        assert_eq!(*test_kv_hook.get_associated_uuid(), test_kv_hook_oid);
+        assert_eq!(test_kv_hook.get_key(), "test_key_hook".to_string());
+        assert_eq!(test_kv_hook.get_value(), "test_value_hook".to_string());
+        assert_eq!(*test_kv_hook.get_type(), KeyValueType::HOOK);
+    }
+
+    #[test]
+    fn collection_version_conversion_test() {
+        let v1 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 1,
+            minor: 0,
+            patch: 0,
+        };
+
+        let v1_2 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 1,
+            minor: 0,
+            patch: 0,
+        };
+
+        let v0_1 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 0,
+            minor: 1,
+            patch: 0,
+        };
+
+        let v0_0_1 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 0,
+            minor: 0,
+            patch: 1,
+        };
+
+        let v5_0_1 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 5,
+            minor: 0,
+            patch: 1,
+        };
+
+        assert!(v1.eq(&v1_2));
+        assert!(v1.ge(&v0_1));
+        assert!(v0_1.ge(&v0_0_1));
+        assert!(v0_1.lt(&v5_0_1));
+    }
+}
