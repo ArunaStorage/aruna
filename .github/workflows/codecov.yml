@@ -1,0 +1,33 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+name: coverage
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: arduino/setup-protoc@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - name: Install tarpaulin
+        run: | 
+          cargo install cargo-tarpaulin
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Prepare DB
+        run: ./tests/sources/startup.sh
+        shell: bash
+      - name: Load DB
+        run: ./tests/sources/load.sh
+        shell: bash
+      - name: Generate code coverage
+        run: |
+          cargo tarpaulin --ignored --verbose --all-features --run-types AllTargets --timeout 120 --out Xml
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: true

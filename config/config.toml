@@ -1,0 +1,9 @@
+database_url    = 'host=localhost user=root password=test123 port=26257 dbname=test'
+oauth_realminfo = 'https://localhost:1234'
+
+[default_endpoint]
+ep_type         = 'S3'
+endpoint_name   = 'Default Data Proxy'
+endpoint_proxy  = 'http://localhost:8081'
+endpoint_host   = 'http://localhost:8081'
+endpoint_public = true

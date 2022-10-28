@@ -1,3 +1,6 @@
+DROP DATABASE IF EXISTS test;
+CREATE DATABASE test;
+USE test;
 /* ----- Type ENUMs ------------------------------------------------ */
 -- All ENUM types have to be created before their usage in a table
 CREATE TYPE OBJECT_STATUS AS ENUM (
@@ -40,7 +43,7 @@ CREATE TABLE identity_providers (
 -- Table with users imported from some aai
 CREATE TABLE users (
     id UUID PRIMARY KEY,
-    external_id TEXT NOT NULL UNIQUE,
+    external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
 );
@@ -300,3 +303,52 @@ FROM object_groups AS objgrp
     LEFT JOIN object_group_objects AS objgrpobj ON objgrp.id = objgrpobj.object_group_id
     LEFT JOIN objects AS obj ON objgrpobj.object_id = obj.id
 GROUP BY objgrp.id;
+-- Insert initial data
+INSERT INTO users (id, external_id, display_name, active)
+VALUES (
+        '12345678-1234-1234-1234-111111111111',
+        'admin_test_oidc_id',
+        'admin',
+        TRUE
+    );
+INSERT INTO projects (id, name, description, flag, created_by)
+VALUES (
+        '12345678-1111-1111-1111-111111111111',
+        'admin_project',
+        'admin description',
+        1,
+        '12345678-1234-1234-1234-111111111111'
+    );
+INSERT INTO user_permissions (id, user_id, user_right, project_id)
+VALUES (
+        '12345678-9999-9999-9999-999999999999',
+        '12345678-1234-1234-1234-111111111111',
+        'ADMIN',
+        '12345678-1111-1111-1111-111111111111'
+    );
+INSERT INTO pub_keys (
+        -- This is a serial to make jwt tokens smaller
+        id,
+        pubkey
+    )
+VALUES('1', 'admin_key');
+INSERT INTO api_tokens (id, creator_user_id, pub_key)
+VALUES (
+        '12345678-8888-8888-8888-999999999999',
+        '12345678-1234-1234-1234-111111111111',
+        '1'
+    );
+INSERT INTO endpoints (
+        id,
+        endpoint_type,
+        name,
+        proxy_hostname,
+        internal_hostname
+    )
+VALUES (
+        '12345678-6666-6666-6666-999999999999',
+        'S3',
+        'demo_endpoint',
+        'https://proxy.example.com',
+        'http://localhost:8081'
+    );

@@ -1,12 +1,16 @@
-//mod api;
-#[macro_use]
-extern crate diesel;
+use simple_logger::SimpleLogger;
 
-mod database;
-mod server;
+extern crate aruna_server;
 
 #[tokio::main]
 async fn main() {
-    let server = server::server::ServiceServer {};
+    // Initialize simple logger
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .env()
+        .init()
+        .unwrap();
+
+    let server = aruna_server::server::grpc_server::ServiceServer {};
     server.run().await;
 }
