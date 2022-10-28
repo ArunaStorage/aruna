@@ -17,13 +17,14 @@ pub enum ObjectStatus {
     TRASH,
 }
 
-#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[DieselTypePath = "sql_types::EndpointType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum EndpointType {
     S3,
     File,
 }
+
 impl EndpointType {
     pub fn from_i32(value: i32) -> Result<EndpointType, Status> {
         match value {
@@ -33,6 +34,7 @@ impl EndpointType {
         }
     }
 }
+
 impl FromStr for EndpointType {
     type Err = ArunaError;
 
@@ -57,7 +59,7 @@ pub enum Dataclass {
     PROTECTED,
 }
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[DieselTypePath = "sql_types::SourceType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum SourceType {
@@ -74,7 +76,7 @@ impl SourceType {
     }
 }
 
-#[derive(Debug, DbEnum, Clone, Copy)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[DieselTypePath = "sql_types::HashType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum HashType {
@@ -142,4 +144,48 @@ pub enum ReferenceStatus {
     STAGING,
     HIDDEN,
     OK,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_type_from_i32_test() {
+        assert!(EndpointType::from_i32(1).unwrap() == EndpointType::S3);
+        assert!(EndpointType::from_i32(2).unwrap() == EndpointType::File);
+        assert!(EndpointType::from_i32(0).is_err());
+        assert!(EndpointType::from_i32(-1).is_err());
+        assert!(EndpointType::from_i32(3).is_err())
+    }
+
+    #[test]
+    fn endpoint_type_from_str_test() {
+        assert!(EndpointType::from_str("S3").unwrap() == EndpointType::S3);
+        assert!(EndpointType::from_str("File").unwrap() == EndpointType::File);
+        assert!(EndpointType::from_str("UNKNOWN").is_err());
+        assert!(EndpointType::from_str("TEST").is_err())
+    }
+
+    #[test]
+    fn source_type_from_i32_test() {
+        assert!(SourceType::from_i32(1).unwrap() == SourceType::URL);
+        assert!(SourceType::from_i32(2).unwrap() == SourceType::DOI);
+        assert!(SourceType::from_i32(0).is_err());
+        assert!(SourceType::from_i32(-1).is_err());
+        assert!(SourceType::from_i32(3).is_err());
+    }
+
+    #[test]
+    fn hash_type_from_grpc_test() {
+        assert!(HashType::from_grpc(0) == HashType::MD5);
+        assert!(HashType::from_grpc(1) == HashType::MD5);
+        assert!(HashType::from_grpc(2) == HashType::SHA1);
+        assert!(HashType::from_grpc(3) == HashType::SHA256);
+        assert!(HashType::from_grpc(4) == HashType::SHA512);
+        assert!(HashType::from_grpc(5) == HashType::MURMUR3A32);
+        assert!(HashType::from_grpc(6) == HashType::XXHASH32);
+        assert!(HashType::from_grpc(7) == HashType::MD5);
+        assert!(HashType::from_grpc(100000) == HashType::MD5); // Default -> MD5
+    }
 }
