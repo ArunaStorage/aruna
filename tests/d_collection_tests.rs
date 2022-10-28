@@ -931,11 +931,10 @@ fn delete_collection_test() {
 #[test]
 #[ignore]
 #[serial(db)]
-pub fn get_object_status_raw() {
-    use database::schema::objects::dsl::*;
+pub fn test_materialized_view_refreshs() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let mut conn = db.pg_connection.get().unwrap();
-
-    db.update_collection_views().unwrap();
+    let result = db.update_collection_views();
+    assert!(result.is_ok());
+    let result = db.update_object_group_views();
+    assert!(result.is_ok());
 }
