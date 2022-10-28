@@ -927,3 +927,15 @@ fn delete_collection_test() {
     // Should not fail
     let _res = db.delete_collection(delete_req_force, creator).unwrap();
 }
+
+#[test]
+#[ignore]
+#[serial(db)]
+pub fn get_object_status_raw() {
+    use database::schema::objects::dsl::*;
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let mut conn = db.pg_connection.get().unwrap();
+
+    db.update_collection_views().unwrap();
+}

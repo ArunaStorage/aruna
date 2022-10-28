@@ -8,8 +8,11 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'AVAILABLE',
     'UNAVAILABLE',
     'ERROR',
-    'TRASH'
+    'DELETED', -- Permanently deleted objects that are preserved for history reasons
+    'TRASH' -- Objects that should be cleaned up and removed
 );
+-- All ENUM types have to be created before their usage in a table
+CREATE TYPE OBJECT_STATUS AS ENUM 
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
 CREATE TYPE SOURCE_TYPE AS ENUM ('URL', 'DOI');
@@ -284,23 +287,23 @@ CREATE TABLE notification_stream_groups (
 CREATE MATERIALIZED VIEW collection_stats AS
 SELECT col.id AS id,
     COUNT(obj.id) AS object_count,
-    SUM(obj.content_len) AS size,
+    COALESCE(SUM(obj.content_len),0) AS size,
     COUNT(cobj.id) AS object_group_count,
     now() AS last_updated
 FROM collections AS col
-    JOIN collection_objects AS cobj ON col.id = cobj.collection_id
-    JOIN objects AS obj ON cobj.object_id = obj.id
-    JOIN collection_object_groups AS cobjgrp ON col.id = cobjgrp.collection_id
+    LEFT JOIN collection_objects AS cobj ON col.id = cobj.collection_id
+    LEFT JOIN objects AS obj ON cobj.object_id = obj.id
+    LEFT JOIN collection_object_groups AS cobjgrp ON col.id = cobjgrp.collection_id
 GROUP BY col.id;
 -- Materialized view for the object_groups table
 CREATE MATERIALIZED VIEW object_group_stats AS
 SELECT objgrp.id AS id,
     COUNT(obj.id) AS object_count,
-    SUM(obj.content_len) AS size,
+    COALESCE(SUM(obj.content_len),0) AS size,
     now() AS last_updated
 FROM object_groups AS objgrp
-    JOIN object_group_objects AS objgrpobj ON objgrp.id = objgrpobj.object_group_id
-    JOIN objects AS obj ON objgrpobj.object_id = obj.id
+    LEFT JOIN object_group_objects AS objgrpobj ON objgrp.id = objgrpobj.object_group_id
+    LEFT JOIN objects AS obj ON objgrpobj.object_id = obj.id
 GROUP BY objgrp.id;
 -- Insert initial data
 INSERT INTO users (id, external_id, display_name, active)
