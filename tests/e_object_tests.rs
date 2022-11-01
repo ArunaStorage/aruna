@@ -7,8 +7,8 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateProjectRequest, DeleteObjectRequest,
-    FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
-    UpdateObjectRequest,
+    FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectsRequest,
+    InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -534,4 +534,52 @@ fn get_objects_test() {
     let get_response = get_optional.unwrap();
 
     assert_eq!(get_response.len(), 64);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    // Get all objects
+    let get_request = GetObjectByIdRequest {
+        collection_id: random_collection.id.to_string(),
+        object_id: new_obj.to_string(),
+        with_url: false,
+    };
+
+    let get_obj = db.get_object(&get_request).unwrap();
+
+    assert!(get_obj.is_some());
+    assert_eq!(get_obj.unwrap().id, new_obj);
+
+    let get_obj_internal = db
+        .get_object_by_id(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_internal.id.to_string(), new_obj);
 }
