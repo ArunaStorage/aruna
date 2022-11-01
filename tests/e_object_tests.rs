@@ -7,8 +7,9 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateObjectReferenceRequest, CreateProjectRequest,
-    DeleteObjectRequest, FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectsRequest,
-    InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
+    DeleteObjectRequest, FinishObjectStagingRequest, GetLatestObjectRevisionRequest,
+    GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest, InitializeNewObjectRequest,
+    StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -318,7 +319,7 @@ fn update_object_test() {
         object: Some(StageObject {
             filename: "File.next.update".to_string(),
             description: "Update to File.update".to_string(),
-            collection_id: rand_collection.id,
+            collection_id: rand_collection.id.to_string(),
             content_len: 123456,
             source: None,
             dataclass: 2,
@@ -385,7 +386,34 @@ fn update_object_test() {
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    assert_eq!(resp[0].object.id.to_string(), updated_object_002.id)
+    assert_eq!(resp[0].object.id.to_string(), updated_object_002.id);
+
+    // Test Revisions
+    // For now this is easier here,
+    // but in the future this should be refactored to a separate function
+
+    let get_latest = GetLatestObjectRevisionRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: new_object_id.to_string(),
+    };
+
+    let latest = db.get_latest_object_revision(get_latest).unwrap();
+
+    // Test if both updates will point to the "latest"
+    assert_eq!(latest.object.unwrap().id, updated_object_002.id);
+
+    // Get all revisions
+
+    let get_all_revs = GetObjectRevisionsRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: new_object_id.to_string(),
+        page_request: None,
+        with_url: false,
+    };
+
+    let resp = db.get_object_revisions(get_all_revs).unwrap();
+
+    assert!(resp.len() == 3)
 }
 
 #[test]
