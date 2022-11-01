@@ -881,15 +881,18 @@ impl Database {
         let query_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Execute request
+        use crate::database::schema::collection_objects::dsl as colobj;
         use crate::database::schema::object_key_value::dsl as okv;
-        use crate::database::schema::objects::dsl as obj;
         use diesel::prelude::*;
         let ret_objects = self
             .pg_connection
             .get()?
             .transaction::<Option<Vec<ObjectDto>>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
-                let mut base_request = obj::objects.into_boxed();
+                let mut base_request = colobj::collection_objects.into_boxed();
+                // Filter collection_id
+                base_request = base_request.filter(colobj::collection_id.eq(&query_collection_id));
+
                 // Create returnvector of CollectionOverviewsDb
                 let mut return_vec: Vec<ObjectDto> = Vec::new();
                 // If pagesize is not unlimited set it to pagesize or default = 20
@@ -898,7 +901,7 @@ impl Database {
                 }
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
-                    base_request = base_request.filter(obj::id.gt(l_uid));
+                    base_request = base_request.filter(colobj::object_id.gt(l_uid));
                 }
                 // Add query if it exists
                 if let Some(p_query) = parsed_query {
@@ -948,7 +951,7 @@ impl Database {
                             }
                             // Add to query if something was found otherwise return Only
                             if let Some(fobjs) = found_objs {
-                                base_request = base_request.filter(obj::id.eq_any(fobjs));
+                                base_request = base_request.filter(colobj::object_id.eq_any(fobjs));
                             } else {
                                 return Ok(None);
                             }
@@ -956,19 +959,20 @@ impl Database {
                         // If the request was an ID request, just filter for all ids
                         // And for uuids makes no sense
                         ParsedQuery::IdsQuery(ids) => {
-                            base_request = base_request.filter(obj::id.eq_any(ids));
+                            base_request = base_request.filter(colobj::object_id.eq_any(ids));
                         }
                     }
                 }
 
                 // Execute the preconfigured query
-                let query_collections: Option<Vec<Object>> =
-                    base_request.load::<Object>(conn).optional()?;
+                let query_collections: Option<Vec<CollectionObject>> =
+                    base_request.load::<CollectionObject>(conn).optional()?;
                 // Query overviews for each collection
                 // TODO: This might be inefficient and can be optimized later
                 if let Some(q_objs) = query_collections {
                     for s_obj in q_objs {
-                        if let Some(obj) = get_object(&s_obj.id, &query_collection_id, false, conn)?
+                        if let Some(obj) =
+                            get_object(&s_obj.object_id, &query_collection_id, false, conn)?
                         {
                             return_vec.push(obj);
                         }

@@ -3,11 +3,12 @@ mod common;
 use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue,
+    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateProjectRequest, DeleteObjectRequest,
-    FinishObjectStagingRequest, InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
+    FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
+    UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -481,4 +482,56 @@ fn delete_object_test() {
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_objects_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create 5 random objects
+    let _object_ids = (0..128)
+        .map(|_| {
+            create_object(
+                &(TCreateObject {
+                    creator_id: Some(creator.to_string()),
+                    collection_id: random_collection.id.to_string(),
+                    default_endpoint_id: Some(endpoint_id.to_string()),
+                    num_labels: thread_rng().gen_range(0, 4),
+                    num_hooks: thread_rng().gen_range(0, 4),
+                }),
+            )
+            .id
+        })
+        .collect::<Vec<_>>();
+
+    // Get all objects
+    let get_request = GetObjectsRequest {
+        collection_id: random_collection.id.to_string(),
+        page_request: Some(PageRequest {
+            last_uuid: "".to_string(),
+            page_size: 64,
+        }),
+        label_id_filter: None,
+        with_url: false,
+        include_history: false,
+    };
+
+    let get_optional = db.get_objects(get_request).unwrap();
+    let get_response = get_optional.unwrap();
+
+    assert_eq!(get_response.len(), 64);
 }
