@@ -380,8 +380,8 @@ fn delete_object_test() {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0, 4),
-            num_hooks: thread_rng().gen_range(0, 4),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
         }),
     )
     .id;
@@ -412,8 +412,8 @@ fn delete_object_test() {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0, 4),
-            num_hooks: thread_rng().gen_range(0, 4),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
         }),
     )
     .id;
@@ -510,8 +510,8 @@ fn get_objects_test() {
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),
-                    num_labels: thread_rng().gen_range(0, 4),
-                    num_hooks: thread_rng().gen_range(0, 4),
+                    num_labels: thread_rng().gen_range(0..4),
+                    num_hooks: thread_rng().gen_range(0..4),
                 }),
             )
             .id

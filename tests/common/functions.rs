@@ -232,7 +232,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let object_id = uuid::Uuid::new_v4();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_description = rand_string(30);
-    let object_length = thread_rng().gen_range(1, 1073741824);
+    let object_length = thread_rng().gen_range(1..1073741824);
     let upload_id = uuid::Uuid::new_v4();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
