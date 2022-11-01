@@ -8,8 +8,8 @@ use aruna_rust_api::api::storage::models::v1::{
 use aruna_rust_api::api::storage::services::v1::{
     CreateNewCollectionRequest, CreateObjectReferenceRequest, CreateProjectRequest,
     DeleteObjectRequest, FinishObjectStagingRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest, InitializeNewObjectRequest,
-    StageObject, UpdateObjectRequest,
+    GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest, GetReferencesRequest,
+    InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -413,7 +413,35 @@ fn update_object_test() {
 
     let resp = db.get_object_revisions(get_all_revs).unwrap();
 
-    assert!(resp.len() == 3)
+    println!("Revisions: {:#?}", resp);
+
+    // This should return the same!
+    assert!(resp.len() == 2);
+
+    let get_all_revs = GetObjectRevisionsRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: updated_object_002.id.to_string(),
+        page_request: None,
+        with_url: false,
+    };
+
+    let resp = db.get_object_revisions(get_all_revs).unwrap();
+
+    println!("Revisions: {:#?}", resp);
+    assert!(resp.len() == 3);
+
+    // Get references test
+
+    let get_refs = GetReferencesRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: new_object_id.to_string(),
+        with_revisions: true,
+    };
+
+    let get_refs_resp = db.get_references(&get_refs).unwrap();
+
+    println!("Refs: {:#?}", get_refs_resp.references);
+    assert!(get_refs_resp.references.len() == 2)
 }
 
 #[test]

@@ -842,6 +842,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+    ///
     pub fn get_object_revisions(
         &self,
         request: GetObjectRevisionsRequest,
@@ -853,15 +854,31 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ObjectDto>, Error, _>(|conn| {
+                // This is a safety measure to make sure on revision is referenced in the current collection
+                // Otherwise get_object_ignore_coll could be used to break safety measures / permission boundaries
                 let all = get_all_revisions(conn, parsed_object_id)?;
-                all.iter()
-                    .filter_map(|obj| {
-                        match get_object(&obj.id, &parsed_collection_id, false, conn) {
+                let all_ids = all.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                let issomewherereferenced = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&all_ids))
+                    .filter(
+                        database::schema::collection_objects::collection_id
+                            .eq(parsed_collection_id),
+                    )
+                    .first::<CollectionObject>(conn)
+                    .optional()?;
+
+                // Query and return all revisions
+                Ok(if issomewherereferenced.is_some() {
+                    all.iter()
+                        .filter_map(|obj| match get_object_ignore_coll(&obj.id, conn) {
                             Ok(opt) => opt.map(Ok),
                             Err(e) => Some(Err(e)),
-                        }
-                    })
-                    .collect::<Result<Vec<ObjectDto>, _>>()
+                        })
+                        .collect::<Result<Vec<ObjectDto>, _>>()?
+                } else {
+                    Vec::new()
+                })
             })?;
 
         Ok(all_revs)
@@ -1829,6 +1846,7 @@ pub fn get_all_references(
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
 /// * `collection_uuid` `&uuid::Uuid` - The Uuid of the requesting collection
+/// * `include_staging`: bool - Should non finished objects be included
 ///
 /// ## Resturns:
 ///
@@ -1897,6 +1915,67 @@ pub fn get_object(
         }
         None => Ok(None),
     }
+}
+
+/// WARNING: This function should be used with care, it could be used to cross permission boundaries
+/// because collections are not checked.
+///
+/// This function is needed to correctly query all revisions which might not be in any collection anymore.
+///
+/// Helper function to query the current database version of an object "ObjectDto"
+/// ObjectDto can be transformed to gRPC objects
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
+///
+/// ## Resturns:
+///
+/// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
+/// Database representation of an object
+///
+pub fn get_object_ignore_coll(
+    object_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<Option<ObjectDto>, diesel::result::Error> {
+    let object: Object = objects
+        .filter(database::schema::objects::id.eq(&object_uuid))
+        .first::<Object>(conn)?;
+
+    let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
+    let (labels, hooks) = from_key_values(object_key_values);
+
+    let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+
+    let source: Option<Source> = match &object.source_id {
+        None => None,
+        Some(src_id) => Some(
+            sources
+                .filter(database::schema::sources::id.eq(src_id))
+                .first::<Source>(conn)?,
+        ),
+    };
+
+    let latest_object_revision: Option<i64> = objects
+        .select(max(database::schema::objects::revision_number))
+        .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+        .first::<Option<i64>>(conn)?;
+
+    let latest = (match latest_object_revision {
+        None => Err(Error::NotFound), // false,
+        Some(revision) => Ok(revision == object.revision_number),
+    })?;
+
+    Ok(Some(ObjectDto {
+        object,
+        labels,
+        hooks,
+        hash: object_hash,
+        source,
+        latest,
+        update: false, // Always false might not include any collection_info
+    }))
 }
 
 /// Implement TryFrom for ObjectDto to ProtoObject
