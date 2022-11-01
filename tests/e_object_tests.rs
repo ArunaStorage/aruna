@@ -419,7 +419,7 @@ fn update_object_test() {
 
     let get_all_revs = GetObjectRevisionsRequest {
         collection_id: rand_collection.id.to_string(),
-        object_id: updated_object_002.id.to_string(),
+        object_id: updated_object_002.id,
         page_request: None,
         with_url: false,
     };
@@ -432,7 +432,7 @@ fn update_object_test() {
     // Get references test
 
     let get_refs = GetReferencesRequest {
-        collection_id: rand_collection.id.to_string(),
+        collection_id: rand_collection.id,
         object_id: new_object_id.to_string(),
         with_revisions: true,
     };
@@ -704,8 +704,8 @@ fn get_object_primary_location_test() {
         .get_primary_object_location(&uuid::Uuid::parse_str(&new_obj).unwrap())
         .unwrap();
 
-    assert_eq!(get_obj_loc.bucket, random_collection.id.to_string());
-    assert_eq!(get_obj_loc.path, new_obj.to_string());
+    assert_eq!(get_obj_loc.bucket, random_collection.id);
+    assert_eq!(get_obj_loc.path, new_obj);
 }
 
 #[test]
@@ -741,8 +741,8 @@ fn get_object_primary_location_with_endpoint_test() {
         .get_primary_object_location_with_endpoint(&uuid::Uuid::parse_str(&new_obj).unwrap())
         .unwrap();
 
-    assert_eq!(get_obj_loc.0.bucket, random_collection.id.to_string());
-    assert_eq!(get_obj_loc.0.path, new_obj.to_string());
+    assert_eq!(get_obj_loc.0.bucket, random_collection.id);
+    assert_eq!(get_obj_loc.0.path, new_obj);
     assert_eq!(get_obj_loc.1.name, "demo_endpoint".to_string());
 }
 
@@ -780,6 +780,6 @@ fn get_object_locations() {
         .unwrap();
 
     assert_eq!(get_obj_locs.len(), 1);
-    assert_eq!(get_obj_locs[0].bucket, random_collection.id.to_string());
-    assert_eq!(get_obj_locs[0].path, new_obj.to_string());
+    assert_eq!(get_obj_locs[0].bucket, random_collection.id);
+    assert_eq!(get_obj_locs[0].path, new_obj);
 }
