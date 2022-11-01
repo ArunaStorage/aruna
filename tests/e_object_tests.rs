@@ -6,8 +6,8 @@ use aruna_rust_api::api::storage::models::v1::{
     DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateProjectRequest, DeleteObjectRequest,
-    FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectsRequest,
+    CreateNewCollectionRequest, CreateObjectReferenceRequest, CreateProjectRequest,
+    DeleteObjectRequest, FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectsRequest,
     InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
@@ -146,6 +146,13 @@ fn update_object_test() {
 
     // Create random collection
     let rand_collection = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id.clone(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create second random collection
+    let rand_collection_2 = common::functions::create_collection(TCreateCollection {
         project_id: rand_project.id,
         col_override: None,
         ..Default::default()
@@ -213,6 +220,18 @@ fn update_object_test() {
 
     let finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
     let finished_object = finish_response.object.unwrap();
+
+    // Create auto_updating reference in col 2
+
+    let create_ref = CreateObjectReferenceRequest {
+        object_id: finished_object.id.clone(),
+        collection_id: rand_collection.id.clone(),
+        target_collection_id: rand_collection_2.id.clone(),
+        writeable: true,
+        auto_update: true,
+    };
+
+    let _resp = db.create_object_reference(create_ref).unwrap();
 
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
@@ -353,6 +372,20 @@ fn update_object_test() {
     assert_eq!(updated_object_002.content_len, 123456);
     assert_eq!(updated_object_002.hash.unwrap(), updated_hash_002);
     assert!(updated_object_002.auto_update);
+
+    // Get auto_updated object
+
+    let get_obj = GetObjectsRequest {
+        collection_id: rand_collection_2.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+        include_history: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert_eq!(resp[0].object.id.to_string(), updated_object_002.id)
 }
 
 #[test]
@@ -520,7 +553,7 @@ fn get_objects_test() {
 
     // Get all objects
     let get_request = GetObjectsRequest {
-        collection_id: random_collection.id.to_string(),
+        collection_id: random_collection.id,
         page_request: Some(PageRequest {
             last_uuid: "".to_string(),
             page_size: 64,
@@ -567,7 +600,7 @@ fn get_object_test() {
 
     // Get all objects
     let get_request = GetObjectByIdRequest {
-        collection_id: random_collection.id.to_string(),
+        collection_id: random_collection.id,
         object_id: new_obj.to_string(),
         with_url: false,
     };
