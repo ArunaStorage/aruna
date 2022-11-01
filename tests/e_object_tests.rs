@@ -616,3 +616,40 @@ fn get_object_test() {
 
     assert_eq!(get_obj_internal.id.to_string(), new_obj);
 }
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_primary_location_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    let get_obj_loc = db
+        .get_primary_object_location(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_loc.bucket, random_collection.id.to_string());
+    assert_eq!(get_obj_loc.path, new_obj.to_string());
+}
