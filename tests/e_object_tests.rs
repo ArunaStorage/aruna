@@ -381,7 +381,6 @@ fn update_object_test() {
         page_request: None,
         label_id_filter: None,
         with_url: false,
-        include_history: false,
     };
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
@@ -616,7 +615,6 @@ fn get_objects_test() {
         }),
         label_id_filter: None,
         with_url: false,
-        include_history: false,
     };
 
     let get_optional = db.get_objects(get_request).unwrap();
