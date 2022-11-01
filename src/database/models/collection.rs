@@ -204,6 +204,13 @@ mod tests {
             patch: 1,
         };
 
+        let v0_0_2 = CollectionVersion {
+            id: uuid::Uuid::new_v4(),
+            major: 0,
+            minor: 0,
+            patch: 2,
+        };
+
         let v5_0_1 = CollectionVersion {
             id: uuid::Uuid::new_v4(),
             major: 5,
@@ -213,6 +220,7 @@ mod tests {
 
         assert!(v1.eq(&v1_2));
         assert!(v1.ge(&v0_1));
+        assert!(v0_0_2.gt(&v0_0_1));
         assert!(v0_1.ge(&v0_0_1));
         assert!(v0_1.lt(&v5_0_1));
     }
