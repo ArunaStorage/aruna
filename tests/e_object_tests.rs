@@ -416,7 +416,7 @@ fn update_object_test() {
     println!("Revisions: {:#?}", resp);
 
     // This should return the same!
-    assert!(resp.len() == 2);
+    assert!(resp.len() == 3);
 
     let get_all_revs = GetObjectRevisionsRequest {
         collection_id: rand_collection.id.to_string(),

@@ -497,6 +497,7 @@ fn get_not_activated_users_test() {
         .get_not_activated_users(req, uuid::Uuid::default())
         .unwrap();
 
+    println!("{:#?}", resp);
     assert!(resp.users.len() == 2)
 }
 
