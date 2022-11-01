@@ -24,6 +24,7 @@ fn rand_string(len: usize) -> String {
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
@@ -64,6 +65,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     response
 }
 
+#[allow(dead_code)]
 pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 

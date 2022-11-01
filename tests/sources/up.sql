@@ -286,7 +286,7 @@ CREATE MATERIALIZED VIEW collection_stats AS
 SELECT col.id AS id,
     COUNT(obj.id) AS object_count,
     COALESCE(SUM(obj.content_len),0) AS size,
-    COUNT(cobj.id) AS object_group_count,
+    COUNT(cobjgrp.id) AS object_group_count,
     now() AS last_updated
 FROM collections AS col
     LEFT JOIN collection_objects AS cobj ON col.id = cobj.collection_id

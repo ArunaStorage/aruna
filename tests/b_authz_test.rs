@@ -3,7 +3,8 @@ use aruna_rust_api::api::storage::{
     services::v1::{
         ActivateUserRequest, AddUserToProjectRequest, CreateApiTokenRequest,
         CreateNewCollectionRequest, CreateProjectRequest, DeleteApiTokenRequest,
-        DeleteApiTokensRequest, GetApiTokenRequest, GetApiTokensRequest, RegisterUserRequest,
+        DeleteApiTokensRequest, ExpiresAt, GetApiTokenRequest, GetApiTokensRequest,
+        GetNotActivatedUsersRequest, GetUserProjectsRequest, RegisterUserRequest,
         UpdateUserDisplayNameRequest,
     },
 };
@@ -13,6 +14,7 @@ use aruna_server::{
     server::services::authz::Context,
 };
 use serial_test::serial;
+mod common;
 
 #[test]
 #[ignore]
@@ -143,6 +145,30 @@ fn create_api_token_test() {
         permission: 1,
     };
     let _token = db.create_api_token(req, user_id, pubkey_result).unwrap();
+
+    // Create personal token with timestamp
+    let req = CreateApiTokenRequest {
+        project_id: "".to_string(),
+        collection_id: "".to_string(),
+        name: "personal_u1_token".to_string(),
+        expires_at: Some(ExpiresAt {
+            timestamp: Some(prost_types::Timestamp::default()),
+        }),
+        permission: 1,
+    };
+    let _token = db.create_api_token(req, user_id, pubkey_result).unwrap();
+
+    // Create token with error
+    let req = CreateApiTokenRequest {
+        project_id: uuid::Uuid::new_v4().to_string(),
+        collection_id: uuid::Uuid::new_v4().to_string(),
+        name: "broken_token".to_string(),
+        expires_at: None,
+        permission: 1,
+    };
+    let res = db.create_api_token(req, user_id, pubkey_result);
+
+    assert!(res.is_err())
 }
 
 #[test]
@@ -150,6 +176,11 @@ fn create_api_token_test() {
 #[serial(db)]
 fn get_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let col = common::functions::create_collection(common::functions::TCreateCollection {
+        project_id: "12345678-1111-1111-1111-111111111111".to_string(),
+        ..Default::default()
+    });
 
     // Create new user
     let user_req = RegisterUserRequest {
@@ -186,6 +217,33 @@ fn get_api_token_test() {
     };
     let get_token_by_id = db.get_api_token(get_api_token_req_id, user_id).unwrap();
     assert_eq!(initial_token.name, get_token_by_id.token.unwrap().name);
+
+    // Create personal token for the user
+    let req = CreateApiTokenRequest {
+        project_id: "".to_string(),
+        collection_id: col.id,
+        name: "collection_token".to_string(),
+        expires_at: None,
+        permission: 1,
+    };
+    // Create a initial token
+    let tok = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    assert!(tok.name == "collection_token");
+
+    // ------ FAILS ---------
+    // Get the token (failure)
+    let get_api_token_req_id = GetApiTokenRequest {
+        token_id: "asdasd".to_string(),
+    };
+    let get_token_by_id = db.get_api_token(get_api_token_req_id, user_id);
+    assert!(get_token_by_id.is_err());
+
+    // Get the token (failure / empty)
+    let get_api_token_req_id = GetApiTokenRequest {
+        token_id: "".to_string(),
+    };
+    let get_token_by_id = db.get_api_token(get_api_token_req_id, user_id);
+    assert!(get_token_by_id.is_err());
 }
 
 #[test]
@@ -406,6 +464,40 @@ fn get_user_test() {
         user_info.user.unwrap().display_name,
         "test_user_4".to_string()
     );
+
+    // -------- FAILS ---------
+
+    let user_info = db.get_user(uuid::Uuid::new_v4()).unwrap();
+
+    assert!(user_info.user.is_none())
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_not_activated_users_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    for x in 1337..1339 {
+        // Add another user
+        // Build request for new user
+        let req_2 = RegisterUserRequest {
+            display_name: format!("test_user_{}", x),
+        };
+        // Create new user
+        let _resp_2 = db
+            .register_user(req_2, format!("external_id_{}", x))
+            .unwrap();
+    }
+
+    // Build request for new user
+    let req = GetNotActivatedUsersRequest {};
+
+    let resp = db
+        .get_not_activated_users(req, uuid::Uuid::default())
+        .unwrap();
+
+    assert!(resp.users.len() == 2)
 }
 
 #[test]
@@ -515,6 +607,14 @@ fn get_user_projects_test() {
     for perm in perms.project_permissions {
         assert!(perm.project_id == proj_1.project_id || perm.project_id == _proj_2.project_id);
     }
+
+    let get_user_projects = GetUserProjectsRequest {
+        user_id: user_id.to_string(),
+    };
+
+    let get_user_proj = db.get_user_projects(get_user_projects, user_id).unwrap();
+
+    assert!(get_user_proj.projects.len() == 2)
 }
 
 #[test]
