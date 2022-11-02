@@ -307,7 +307,7 @@ GROUP BY objgrp.id;
 INSERT INTO users (id, external_id, display_name, active)
 VALUES (
         '12345678-1234-1234-1234-111111111111',
-        'admin_test_oidc_id',
+        'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
         'admin',
         TRUE
     );
