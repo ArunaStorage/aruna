@@ -6,10 +6,11 @@ use aruna_rust_api::api::storage::models::v1::{
     DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateObjectReferenceRequest, CreateProjectRequest,
-    DeleteObjectRequest, FinishObjectStagingRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest, GetReferencesRequest,
-    InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
+    CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
+    CreateProjectRequest, DeleteObjectRequest, FinishObjectStagingRequest,
+    GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
+    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, StageObject,
+    UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -865,4 +866,66 @@ fn get_object_locations() {
     assert_eq!(get_obj_locs.len(), 1);
     assert_eq!(get_obj_locs[0].bucket, random_collection.id);
     assert_eq!(get_obj_locs[0].path, new_obj);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn clone_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let random_collection2 = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: new_obj,
+        collection_id: random_collection.id.to_string(),
+        new_name: "File.next.update2".to_string(),
+        new_description: "File.next.description2".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    let clone_req = CloneObjectRequest {
+        object_id: update_2.id.to_string(),
+        collection_id: random_collection.id.to_string(),
+        target_collection_id: random_collection2.id.to_string(),
+    };
+
+    let resp = db.clone_object(&clone_req).unwrap();
+
+    let cloned = resp.object.unwrap();
+
+    assert!(cloned.id != update_2.id.to_string());
+    assert_eq!(cloned.rev_number, 0);
+    assert_eq!(cloned.origin.unwrap().id, update_2.id.to_string());
+    assert_eq!(cloned.content_len, update_2.content_len);
+    assert_eq!(cloned.filename, update_2.filename);
 }
