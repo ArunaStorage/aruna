@@ -7,7 +7,7 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
-    CreateProjectRequest, DeleteObjectRequest, FinishObjectStagingRequest,
+    CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
     GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, StageObject,
     UpdateObjectRequest,
@@ -915,21 +915,165 @@ fn clone_object_test() {
 
     let clone_req = CloneObjectRequest {
         object_id: update_2.id.to_string(),
-        collection_id: random_collection.id.to_string(),
-        target_collection_id: random_collection2.id.to_string(),
+        collection_id: random_collection.id,
+        target_collection_id: random_collection2.id,
     };
 
     let resp = db.clone_object(&clone_req).unwrap();
 
     let cloned = resp.object.unwrap();
 
-    assert!(cloned.id != update_2.id.to_string());
+    assert!(cloned.id != update_2.id);
     assert_eq!(cloned.rev_number, 0);
     println!("{:#?}", cloned.id);
-    println!("{:#?}", cloned.origin.clone().unwrap().id.to_string());
+    println!("{:#?}", cloned.origin.clone().unwrap().id);
     println!("{:#?}", update_2.id);
     println!("{:#?}", new_obj.id);
-    assert_eq!(cloned.origin.unwrap().id, update_2.id.to_string());
+    assert_eq!(cloned.origin.unwrap().id, update_2.id);
     assert_eq!(cloned.content_len, update_2.content_len);
     assert_eq!(cloned.filename, update_2.filename);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_multiple_objects_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let random_collection2 = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj_1 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Create auto_updating reference in col 2
+
+    let create_ref_2 = CreateObjectReferenceRequest {
+        object_id: new_obj_1.id.clone(),
+        collection_id: random_collection.id.clone(),
+        target_collection_id: random_collection2.id.clone(),
+        writeable: false,
+        auto_update: false,
+    };
+
+    let _resp = db.create_object_reference(create_ref_2).unwrap();
+
+    // Update Object again
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: new_obj_1,
+        collection_id: random_collection.id.to_string(),
+        new_name: "File.next.update2".to_string(),
+        new_description: "File.next.description2".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    let new_obj_2 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    let new_obj_3 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Create auto_updating reference in col 2
+
+    let create_ref = CreateObjectReferenceRequest {
+        object_id: new_obj_3.id.clone(),
+        collection_id: random_collection.id.clone(),
+        target_collection_id: random_collection2.id.clone(),
+        writeable: true,
+        auto_update: true,
+    };
+
+    let _resp = db.create_object_reference(create_ref).unwrap();
+
+    // Test deletes
+
+    let ids = vec![
+        update_1.id,
+        new_obj_2.id,
+        new_obj_3.id,
+    ];
+
+    let del_req = DeleteObjectsRequest {
+        object_ids: ids.clone(),
+        collection_id: random_collection.id.to_string(),
+        with_revisions: true,
+        force: false,
+    };
+
+    let resp = db.delete_objects(del_req, creator);
+    println!("{:#?}", resp);
+
+    // This should fail without forc
+    // Because new_obj_1 is referenced in coll2
+    assert!(resp.is_err());
+
+    let del_req = DeleteObjectsRequest {
+        object_ids: ids,
+        collection_id: random_collection.id.to_string(),
+        with_revisions: false,
+        force: true,
+    };
+
+    let resp = db.delete_objects(del_req, creator);
+    assert!(resp.is_ok());
+
+    let get_obj = GetObjectsRequest {
+        collection_id: random_collection.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert!(resp.is_empty());
+
+    let get_obj = GetObjectsRequest {
+        collection_id: random_collection2.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert!(resp.len() == 1);
 }
