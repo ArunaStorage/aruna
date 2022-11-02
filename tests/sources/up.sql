@@ -331,7 +331,7 @@ INSERT INTO pub_keys (
         id,
         pubkey
     )
-VALUES('1', 'admin_key');
+VALUES('1',E'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n');
 INSERT INTO api_tokens (id, creator_user_id, pub_key)
 VALUES (
         '12345678-8888-8888-8888-999999999999',

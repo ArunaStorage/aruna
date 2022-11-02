@@ -23,11 +23,23 @@ fn get_or_add_pubkey_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Insert new element -> Create new serial number
-    let result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
     // Insert a second "pubkey"
-    let _result_2 = db.get_or_add_pub_key("pubkey_test_2".to_string()).unwrap();
+    let _result_2 = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
     // Try to insert the first serial again -> should be the same as result
-    let result_3 = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let result_3 = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
     assert_eq!(result, result_3);
 }
 
@@ -43,15 +55,15 @@ fn get_pub_keys_test() {
     // Iterate through keys
     for key in result {
         // Expect it to be either "pubkey_test_1" or "pub_key_test_2"
-        if key.pubkey == *"pubkey_test_1"
-            || key.pubkey == *"pubkey_test_2"
-            || key.pubkey == *"admin_key"
+        if key.pubkey == *"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n"
+            || key.pubkey == *"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n"
+            || key.pubkey == *"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n"
         {
             continue;
             // Panic otherwise -> unknown pubkey in db
         } else {
             panic!(
-                "Expected pubkey_test_1 or pubkey_test_2, got: {:?}",
+                "Expected -----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n or -----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n, got: {:?}",
                 key.pubkey
             );
         }
@@ -134,7 +146,11 @@ fn create_api_token_test() {
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_2".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -198,7 +214,11 @@ fn get_api_token_test() {
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -268,7 +288,11 @@ fn get_api_tokens_test() {
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -330,7 +354,11 @@ fn delete_api_token_test() {
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -385,7 +413,11 @@ fn delete_api_tokens_test() {
     db.activate_user(req).unwrap();
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -672,7 +704,11 @@ fn get_checked_user_id_from_token_test() {
     // Create / Get tokens with differing permissions:
 
     // Add fresh pubkey
-    let pubkey_result = db.get_or_add_pub_key("pubkey_test_1".to_string()).unwrap();
+    let pubkey_result = db
+        .get_or_add_pub_key(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+        )
+        .unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
