@@ -1549,7 +1549,7 @@ pub fn clone_object(
         status: db_object.object_status as i32,
         origin: Some(ProtoOrigin {
             r#type: 2,
-            id: db_object.id.to_string(),
+            id: db_object.origin_id.unwrap_or_default().to_string(),
         }),
         data_class: db_object.dataclass as i32,
         hash: Some(ProtoHash {

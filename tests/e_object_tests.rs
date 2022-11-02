@@ -905,7 +905,7 @@ fn clone_object_test() {
 
     // Update Object again
     let update_2 = common::functions::update_object(&TCreateUpdate {
-        original_object: new_obj,
+        original_object: new_obj.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
         new_description: "File.next.description2".to_string(),
@@ -925,6 +925,10 @@ fn clone_object_test() {
 
     assert!(cloned.id != update_2.id.to_string());
     assert_eq!(cloned.rev_number, 0);
+    println!("{:#?}", cloned.id);
+    println!("{:#?}", cloned.origin.clone().unwrap().id.to_string());
+    println!("{:#?}", update_2.id);
+    println!("{:#?}", new_obj.id);
     assert_eq!(cloned.origin.unwrap().id, update_2.id.to_string());
     assert_eq!(cloned.content_len, update_2.content_len);
     assert_eq!(cloned.filename, update_2.filename);
