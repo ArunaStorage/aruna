@@ -30,5 +30,22 @@ async fn register_user_grpc_test() {
     let resp = userservice.register_user(req).await;
 
     // Should be error without metadata
-    assert!(resp.is_err())
+    assert!(resp.is_err());
+
+    // Test
+    let mut req = tonic::Request::new(RegisterUserRequest {
+        display_name: "This is a test user".to_string(),
+    });
+
+    req.metadata_mut().append(
+        "Authorization",
+        format!("Bearer {}", common::oidc::REGULAROIDC)
+            .parse()
+            .unwrap(),
+    );
+
+    let resp = userservice.register_user(req).await;
+
+    assert!(resp.is_ok());
+    assert!(resp.unwrap().into_inner().user_id != "");
 }

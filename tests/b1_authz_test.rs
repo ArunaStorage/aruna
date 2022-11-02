@@ -77,7 +77,10 @@ fn get_oidc_user_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Get admin user via (fake) oidc id
-    let user_id = db.get_oidc_user("admin_test_oidc_id").unwrap().unwrap();
+    let user_id = db
+        .get_oidc_user("df5b0209-60e0-4a3b-806d-bbfc99d9e152")
+        .unwrap()
+        .unwrap();
 
     // Expect the user to have the following uuid
     let parsed_uid = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
