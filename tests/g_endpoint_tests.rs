@@ -6,6 +6,8 @@ use aruna_server::database::models::enums::EndpointType;
 use aruna_server::database::models::object::Endpoint;
 use serial_test::serial;
 
+mod common;
+
 #[test]
 #[ignore]
 #[serial(db)]
@@ -154,4 +156,17 @@ fn get_endpoint_by_name_test() {
     assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_endpoints_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Get Endpoint by its uuid
+    let eps = db.get_endpoints().unwrap();
+
+    // Validate returned endpoint
+    assert_eq!(eps.len(), 2);
 }

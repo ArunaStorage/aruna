@@ -129,6 +129,7 @@ pub struct TCreateCollection {
     pub creator_id: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     #[derive(Clone)]
