@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tonic::{Code, Status};
 
-#[derive(Debug, DbEnum, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, DbEnum, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[DieselTypePath = "sql_types::ObjectStatus"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum ObjectStatus {
@@ -49,7 +49,7 @@ impl FromStr for EndpointType {
     }
 }
 
-#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[DieselTypePath = "sql_types::Dataclass"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Dataclass {

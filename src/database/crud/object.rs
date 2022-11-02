@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::hash::Hash;
+use std::hash::Hasher;
 
 use chrono::Local;
 use diesel::dsl::{count, max};
@@ -42,7 +44,7 @@ use crate::database::models::enums::{
     HashType, KeyValueType, ObjectStatus, ReferenceStatus, SourceType,
 };
 use crate::database::models::object::{
-    Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
+    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
@@ -59,10 +61,30 @@ pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
     pub hooks: Vec<KeyValue>,
-    pub hash: Hash,
+    pub hash: ApiHash,
     pub source: Option<Source>,
     pub latest: bool,
     pub update: bool,
+}
+
+impl PartialEq for ObjectDto {
+    fn eq(&self, other: &Self) -> bool {
+        self.object == other.object
+            && self.labels == other.labels
+            && self.hooks == other.hooks
+            && self.hash == other.hash
+            && self.source == other.source
+            && self.latest == other.latest
+            && self.update == other.update
+    }
+}
+
+impl Eq for ObjectDto {}
+
+impl Hash for ObjectDto {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.object.hash(state);
+    }
 }
 
 /// Implementing CRUD+ database operations for Objects
@@ -153,7 +175,7 @@ impl Database {
         };
 
         // Define the hash placeholder for the object
-        let empty_hash = Hash {
+        let empty_hash = ApiHash {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id,
@@ -233,7 +255,7 @@ impl Database {
                         }
                         Some(req_hash) =>
                             diesel
-                                ::update(Hash::belonging_to(&returned_obj))
+                                ::update(ApiHash::belonging_to(&returned_obj))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type.eq(
@@ -636,7 +658,7 @@ impl Database {
                             };
 
                             // Define the hash placeholder for the object
-                            let empty_hash = Hash {
+                            let empty_hash = ApiHash {
                                 id: uuid::Uuid::new_v4(),
                                 hash: "".to_string(), //Note: Empty hash will be updated later
                                 object_id: new_obj_id,
@@ -1464,7 +1486,7 @@ pub fn clone_object(
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
-    let db_hash: Hash = Hash::belonging_to(&db_object).first::<Hash>(conn)?;
+    let db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
 
     let db_source: Option<Source> = match &db_object.source_id {
         None => None,
@@ -1866,7 +1888,7 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -1946,7 +1968,7 @@ pub fn get_object_ignore_coll(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
