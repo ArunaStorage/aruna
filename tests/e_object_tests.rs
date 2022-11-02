@@ -1025,11 +1025,7 @@ fn delete_multiple_objects_test() {
 
     // Test deletes
 
-    let ids = vec![
-        update_1.id,
-        new_obj_2.id,
-        new_obj_3.id,
-    ];
+    let ids = vec![update_1.id, new_obj_2.id, new_obj_3.id];
 
     let del_req = DeleteObjectsRequest {
         object_ids: ids.clone(),

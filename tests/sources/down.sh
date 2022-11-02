@@ -13,3 +13,4 @@ $Runtime rm roach
 $Runtime volume rm roach
 # Stop fake keycloak
 $Runtime stop fake-keycloak
+$Runtime rm fake-keycloak

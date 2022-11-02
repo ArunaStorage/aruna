@@ -31,7 +31,7 @@ cockroachdb/cockroach:v22.1.5 start-single-node \
 --insecure \
 
 # Fake keycloak
-$Runtime run -dit --name fake-keycloak -p 8999:80 -v "$(pwd)/tests/sources/keycloak/:/usr/local/apache2/htdocs/" httpd:2.4
+$Runtime run -d --name fake-keycloak -p 8999:80 -v "$(pwd)/tests/sources/keycloak/:/usr/local/apache2/htdocs/" httpd:2.4
 
 until [ "`$Runtime inspect -f {{.State.Running}} roach`"=="true" ]; do
     sleep 0.1;
