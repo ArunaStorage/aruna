@@ -50,10 +50,10 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
     let expires = if create_token.expires_at == 0 {
         Utc::now().timestamp() + 111111111
     } else {
-        create_token.expires_at.clone()
+        create_token.expires_at
     };
 
-    let token = if create_token.basetoken == "" {
+    let token = if create_token.basetoken.is_empty() {
         super::oidc::REGULARTOKEN.to_string()
     } else {
         create_token.basetoken.to_string()
@@ -71,7 +71,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
                     nanos: 0,
                 }),
             }),
-            permission: create_token.permission.clone(),
+            permission: create_token.permission,
         }),
         &token,
     );
@@ -80,6 +80,6 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
 
     // Check the token
     let tok = resp.unwrap().into_inner().token.unwrap();
-    assert_eq!(tok.name.to_string(), tokname);
+    assert_eq!(tok.name, tokname);
     tok
 }

@@ -168,7 +168,7 @@ async fn create_api_token_grpc_test() {
 
     assert!(resp.is_ok());
     let resp = resp.unwrap().into_inner();
-    assert!(resp.token_secret != "".to_string());
+    assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
     assert_eq!(tok.name.to_string(), "test_token".to_string());
     assert_eq!(tok.collection_id, "".to_string());
@@ -207,7 +207,7 @@ async fn create_api_token_grpc_test() {
     println!("{:#?}", resp);
     assert!(resp.is_ok());
     let resp = resp.unwrap().into_inner();
-    assert!(resp.token_secret != "".to_string());
+    assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
     assert_eq!(tok.name.to_string(), "test_token_foreign".to_string());
     assert_eq!(tok.collection_id, "".to_string());
@@ -265,9 +265,9 @@ async fn create_api_token_grpc_test() {
     println!("{:#?}", resp);
     assert!(resp.is_ok());
     let resp = resp.unwrap().into_inner();
-    assert!(resp.token_secret != "".to_string());
+    assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
-    assert_eq!(tok.name.to_string(), "test_personal_oidc".to_string());
+    assert_eq!(tok.name, "test_personal_oidc".to_string());
     assert_eq!(tok.collection_id, "".to_string());
     assert_eq!(tok.project_id, "".to_string());
 }
