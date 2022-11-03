@@ -329,6 +329,15 @@ VALUES (
         1,
         '12345678-1234-1234-1234-111111111111'
     );
+
+INSERT INTO projects (id, name, description, flag, created_by)
+VALUES (
+        '12345678-1111-1111-1111-111111111122',
+        'test_project',
+        'test_regular_description',
+        0,
+        'ee4e1d0b-abab-4979-a33e-dc28ed199b17'
+    );
 INSERT INTO user_permissions (id, user_id, user_right, project_id)
 VALUES (
         '12345678-9999-9999-9999-999999999999',
