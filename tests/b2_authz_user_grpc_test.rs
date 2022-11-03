@@ -41,7 +41,38 @@ async fn register_user_grpc_test() {
     // Should be error without metadata
     assert!(resp.is_err());
 
-    // Test
+    // Expired test
+
+    let mut req = tonic::Request::new(RegisterUserRequest {
+        display_name: "This is a test user".to_string(),
+    });
+
+    let metadata = req.metadata_mut();
+    metadata.append(
+        AsciiMetadataKey::from_bytes("Authorization".as_bytes()).unwrap(),
+        AsciiMetadataValue::try_from(format!("Bearer {}", common::oidc::REGULAREXPIRED)).unwrap(),
+    );
+
+    let resp = userservice.register_user(req).await;
+
+    assert!(resp.is_err());
+
+    // Invalid token test
+    let mut req = tonic::Request::new(RegisterUserRequest {
+        display_name: "This is a test user".to_string(),
+    });
+
+    let metadata = req.metadata_mut();
+    metadata.append(
+        AsciiMetadataKey::from_bytes("Authorization".as_bytes()).unwrap(),
+        AsciiMetadataValue::try_from(format!("Bearer {}", common::oidc::REGULARINVALID)).unwrap(),
+    );
+
+    let resp = userservice.register_user(req).await;
+
+    assert!(resp.is_err());
+
+    // Real Test
     let mut req = tonic::Request::new(RegisterUserRequest {
         display_name: "This is a test user".to_string(),
     });
@@ -56,7 +87,5 @@ async fn register_user_grpc_test() {
 
     println!("{:#?}", resp);
     assert!(resp.is_ok());
-    let respo = resp.unwrap();
-    println!("{:#?}", respo);
-    assert!(!respo.into_inner().user_id.is_empty());
+    assert!(!resp.unwrap().into_inner().user_id.is_empty());
 }
