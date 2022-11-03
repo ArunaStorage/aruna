@@ -168,5 +168,15 @@ fn get_endpoints_test() {
     let eps = db.get_endpoints().unwrap();
 
     // Validate returned endpoint
-    assert_eq!(eps.len(), 2);
+    for ep in eps {
+        let ep_names = vec![
+            "DummyEndpoint_001".to_string(),
+            "demo_endpoint".to_string(),
+            "Default_Endpoint".to_string(),
+        ];
+
+        if !ep_names.contains(&ep.name) {
+            panic!("Wrong endpoint name: {:#?}", ep.name);
+        }
+    }
 }
