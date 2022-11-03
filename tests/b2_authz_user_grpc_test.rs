@@ -9,6 +9,7 @@ use aruna_server::{
     server::services::user::UserServiceImpl,
 };
 use serial_test::serial;
+use simple_logger::SimpleLogger;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 mod common;
 
@@ -86,6 +87,12 @@ async fn register_user_grpc_test() {
 #[tokio::test]
 #[serial(db)]
 async fn activate_user_grpc_test() {
+    // Initialize simple logger
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .env()
+        .init()
+        .unwrap();
     // Init services
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",

@@ -533,7 +533,19 @@ fn get_not_activated_users_test() {
         .unwrap();
 
     println!("{:#?}", resp);
-    assert!(resp.users.len() == 3)
+
+    let names = vec![
+        "test_user_1".to_string(),
+        "test_user_1337".to_string(),
+        "test_user_1338".to_string(),
+        "regular_user".to_string(),
+    ];
+
+    for u in resp.users {
+        if !names.contains(&u.display_name) {
+            panic!("Unknown displayname: {}", u.display_name);
+        }
+    }
 }
 
 #[test]
