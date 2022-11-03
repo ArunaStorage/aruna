@@ -533,7 +533,7 @@ fn get_not_activated_users_test() {
         .unwrap();
 
     println!("{:#?}", resp);
-    assert!(resp.users.len() == 2)
+    assert!(resp.users.len() == 3)
 }
 
 #[test]

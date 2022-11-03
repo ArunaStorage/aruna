@@ -1,4 +1,7 @@
-# This is a list of fake-tokens that can be used to test the "keycloak" validation behaviour
+# This is a list of fake-keys and oidc tokens that can be used to test the "auth" validation behaviour
+
+
+## OIDC
 
 ---
 
@@ -53,3 +56,30 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMyNjc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ
 ```
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA6H72FcaKo5U92jDW5errboBo8x2OUdM9e90+Qa8GXSmV88AM3W9TJFIJBsqOT3HpeggAt1yYbVZCFrPVZkkDmMjoKuTO2JQFvzn3K7ZnhtGdvZXicgAfgvMBevcNIThjk/Wn2tgXMrgSa+4T3HsQl25axUybAFC8EssnvwBmrVk8wWjhpTPl4Z9dVN0pcdpniueGu6qFyoxvLgsSnonjLBCQ9fz+9kZSpIkf5GgRYEWov5io3pDwE3INBSMkTWtJYG+/7DDIOvIuO4wOikm6jzpKm7ehBHy5LDUupC2EMlzYZW9lG1mUW9TschJ7pULoHsckVeMpP9CKj931q0ifYVVAQMIOOpFtBBR6McUYQ9m7p+FzLCWYU0dWqEncYKNdcQNaE+QGB8SqLBUVKE10xnjtDeH9N0Xbqpk5V5P7kFSp1JfHzwznzVk3KCmK/U0xWnEDGDC+a9vr3Ct11BgvcFThKK2ovjL9iPuLLNpI/dVCsttFRQ5D8rzJitnbczaHcPzzG3pYDBvbvkvU7GWOuCSBbhowhEuq5gm8I0tE42pyvdqAlY3Z0EtuIf/4WlmcWwN3Hm0RH+phR94llDXiCeDDLqnQUMii6Qb4E9+sAV+oWDeGxsFqiXp6T92o+Hu8VaHmuJFl/2WnVkjd0SPio2cbQP8Z/KQQTwFncc4cVMCAwEAAQ==
 ```
+
+
+## REGULAR
+
+ED25519 signing key:
+
+```
+-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIMApQn06nLG2mAeilaj8SpVb0xOQi7m2l+uC3PA8CnAN
+-----END PRIVATE KEY-----
+```
+
+Pubkey:
+```
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=
+-----END PUBLIC KEY-----
+```
+
+ADMINTOKEN:
+
+```
+eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjAifQ.eyJzdWIiOiIxMjM0NTY3OC04ODg4LTg4ODgtODg4OC05OTk5OTk5OTk5OTkiLCJleHAiOjE5ODI4NDYzNTZ9.3M9ke3BAT6yJY9Dk-gyxCetdefkEofyOofljr0BSFUQLIjUEsaxbmzZGpAD9Y5E2qCQjvmftMtcnTglLfu0ECg
+```
+
+
+
