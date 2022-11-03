@@ -19,7 +19,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
 
-fn rand_string(len: usize) -> String {
+pub fn rand_string(len: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
         .take(len)

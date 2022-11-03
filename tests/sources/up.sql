@@ -318,7 +318,7 @@ VALUES (
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
         '39893781-320e-4dbf-be39-c06d8b28e897',
         'regular_user',
-        FALSE
+        TRUE
     );
 
 INSERT INTO projects (id, name, description, flag, created_by)

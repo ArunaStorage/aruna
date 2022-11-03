@@ -111,10 +111,25 @@ async fn activate_user_grpc_test() {
     // Should fail -> wrong token
     assert!(resp.is_err());
 
-    // FAILED Test -> ADMIN OIDC TOKEN
+    // Real Test 1. Register USER2
+    let req = common::grpc_helpers::add_token(
+        tonic::Request::new(RegisterUserRequest {
+            display_name: "This is a test user2".to_string(),
+        }),
+        common::oidc::USER2OIDC,
+    );
+
+    let resp = userservice.register_user(req).await;
+
+    println!("{:#?}", resp);
+    assert!(resp.is_ok());
+    let resp = resp.unwrap().into_inner();
+    assert!(!resp.user_id.is_empty());
+
+    // Should succeed
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(ActivateUserRequest {
-            user_id: "ee4e1d0b-abab-4979-a33e-dc28ed199b17".to_string(),
+            user_id: resp.user_id.to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -261,6 +276,50 @@ async fn create_api_token_grpc_test() {
 #[tokio::test]
 #[serial(db)]
 async fn get_api_token_grpc_test() {
+    // Init services
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let userservice = UserServiceImpl::new(db, authz).await;
+
+    // First Create a token
+    let req = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateApiTokenRequest {
+            project_id: "".to_string(),
+            collection_id: "".to_string(),
+            name: "test_personal_oidc".to_string(),
+            expires_at: None,
+            permission: 4,
+        }),
+        common::oidc::REGULAROIDC,
+    );
+
+    let resp = userservice.create_api_token(req).await;
+
+    let tok = resp.unwrap().into_inner().token.unwrap();
+
+    let req = common::grpc_helpers::add_token(
+        tonic::Request::new(GetApiTokenRequest {
+            token_id: tok.id.to_string(),
+        }),
+        common::oidc::REGULAROIDC,
+    );
+
+    let resp = userservice.get_api_token(req).await;
+
+    let resp = resp.unwrap().into_inner();
+
+    let get_tok = resp.token.unwrap();
+
+    // Both tokens should be equal
+    assert_eq!(get_tok, tok);
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn get_api_tokens_grpc_test() {
     // Init services
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
