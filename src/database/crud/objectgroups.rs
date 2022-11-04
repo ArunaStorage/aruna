@@ -913,14 +913,8 @@ impl From<ObjectGroupDb> for ObjectGroupOverview {
 
         ObjectGroupOverview {
             id: ogroup_db.object_group.id.to_string(),
-            name: ogroup_db
-                .object_group
-                .name
-                .unwrap_or_else(|| "".to_string()),
-            description: ogroup_db
-                .object_group
-                .description
-                .unwrap_or_else(|| "".to_string()),
+            name: ogroup_db.object_group.name.unwrap_or_default(),
+            description: ogroup_db.object_group.description.unwrap_or_default(),
             labels: ogroup_db.labels,
             hooks: ogroup_db.hooks,
             stats,
