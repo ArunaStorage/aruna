@@ -180,7 +180,7 @@ fn add_remove_project_user_test() {
             user_permission: Some(ProjectPermission {
                 user_id: user_id.to_string(),
                 project_id: project_id.to_string(),
-                permission: rng.gen_range(2, 5),
+                permission: rng.gen_range(2..5),
             }),
         };
 

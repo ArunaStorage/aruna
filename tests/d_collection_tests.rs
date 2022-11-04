@@ -1,7 +1,7 @@
 mod common;
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    collection_overview, KeyValue, LabelFilter, LabelOrIdQuery, PageRequest, Version,
+    collection_overview, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
@@ -557,6 +557,34 @@ fn update_collection_test() {
     let up_res = db.update_collection(normal_update, creator).unwrap();
 
     assert_eq!(up_res.collection.unwrap().id, col_id.to_string());
+
+    let pin_update = UpdateCollectionRequest {
+        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        collection_id: col_id.to_string(),
+        name: "new_name".to_string(),
+        description: "new_descrpt".to_string(),
+        labels: vec![KeyValue {
+            key: "test_key_2".to_owned(),
+            value: "test_value_2".to_owned(),
+        }],
+        hooks: vec![KeyValue {
+            key: "test_key_2".to_owned(),
+            value: "test_value_2".to_owned(),
+        }],
+        label_ontology: Some(LabelOntology {
+            required_label_keys: vec!["test_key".to_string()],
+        }),
+        dataclass: 2,
+        version: Some(Version {
+            major: 1,
+            minor: 1,
+            patch: 1,
+        }),
+    };
+
+    let pin_up_res = db.update_collection(pin_update, creator);
+    // Should fail because of label ontology
+    assert!(pin_up_res.is_err());
 
     let pin_update = UpdateCollectionRequest {
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),

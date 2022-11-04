@@ -5,14 +5,27 @@ use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 use uuid;
 
-#[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Source {
     pub id: uuid::Uuid,
     pub link: String,
     pub source_type: SourceType,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone)]
+#[derive(
+    Associations,
+    Queryable,
+    Insertable,
+    Identifiable,
+    Debug,
+    Selectable,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+)]
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(belongs_to(Source))]
 #[diesel(belongs_to(Object, foreign_key = origin_id))]
@@ -54,7 +67,9 @@ pub struct ObjectLocation {
     pub is_primary: bool,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(
+    Associations, Queryable, Insertable, Identifiable, Debug, Clone, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[diesel(belongs_to(Object))]
 #[diesel(table_name = hashes)]
 pub struct Hash {

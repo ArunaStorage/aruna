@@ -1,9 +1,9 @@
 use aruna_rust_api::api::internal::v1::{Location, LocationType};
-use aruna_rust_api::api::storage::services::v1::GetObjectByIdRequest;
+use aruna_rust_api::api::storage::services::v1::{GetObjectByIdRequest, UpdateObjectRequest};
 use aruna_rust_api::api::storage::{
     models::v1::{
-        collection_overview, CollectionOverview, DataClass, Hash, Hashalgorithm, KeyValue, Object,
-        ProjectOverview,
+        collection_overview, CollectionOverview, DataClass, Hash as ApiHash, Hashalgorithm,
+        KeyValue, Object, ProjectOverview,
     },
     services::v1::{
         CreateNewCollectionRequest, CreateProjectRequest, FinishObjectStagingRequest,
@@ -12,11 +12,14 @@ use aruna_rust_api::api::storage::{
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
-use aruna_server::database::models::enums::ObjectStatus;
+use aruna_server::database::models::enums::{EndpointType, ObjectStatus};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use std::collections::{hash_map::Entry, HashMap};
+use std::hash::Hash;
 
-fn rand_string(len: usize) -> String {
+pub fn rand_string(len: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
         .take(len)
@@ -24,6 +27,36 @@ fn rand_string(len: usize) -> String {
         .collect()
 }
 
+fn rand_int(len: i64) -> i64 {
+    let roll = Uniform::new_inclusive(0, len);
+    thread_rng().sample_iter(roll).next().unwrap()
+}
+
+// Compare two vectors same elements ...
+// Source: https://users.rust-lang.org/t/assert-vectors-equal-in-any-order/38716/11
+#[allow(dead_code)]
+pub fn compare_it<T: Eq + Hash>(
+    i1: impl IntoIterator<Item = T>,
+    i2: impl IntoIterator<Item = T>,
+) -> bool {
+    fn get_lookup<T: Eq + Hash>(iter: impl Iterator<Item = T>) -> HashMap<T, usize> {
+        let mut lookup = HashMap::<T, usize>::new();
+        for value in iter {
+            match lookup.entry(value) {
+                Entry::Occupied(entry) => {
+                    *entry.into_mut() += 1;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(0);
+                }
+            }
+        }
+        lookup
+    }
+    get_lookup(i1.into_iter()) == get_lookup(i2.into_iter())
+}
+
+#[allow(dead_code)]
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
@@ -64,6 +97,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     response
 }
 
+#[allow(dead_code)]
 pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
@@ -95,6 +129,7 @@ pub struct TCreateCollection {
     pub creator_id: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     #[derive(Clone)]
@@ -225,14 +260,14 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
         uuid::Uuid::parse_str(e_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
     };
 
     // Initialize Object with random values
     let object_id = uuid::Uuid::new_v4();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_description = rand_string(30);
-    let object_length = thread_rng().gen_range(1, 1073741824);
+    let object_length = thread_rng().gen_range(1..1073741824);
     let upload_id = uuid::Uuid::new_v4();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
@@ -283,7 +318,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     //Note: Skipping the data upload part.
     //      Maybe will be integrated later but is also tested in the data proxy repo.
 
-    let dummy_hash = Hash {
+    let dummy_hash = ApiHash {
         alg: Hashalgorithm::Sha256 as i32,
         hash: rand_string(64),
     };
@@ -346,4 +381,134 @@ pub fn get_object_status_raw(object_id: &str) -> aruna_server::database::models:
         .filter(database::schema::objects::id.eq(&obj_id))
         .first::<aruna_server::database::models::object::Object>(&mut conn)
         .unwrap()
+}
+
+#[derive(Default)]
+pub struct TCreateUpdate {
+    pub original_object: Object,
+    pub collection_id: String,
+    pub new_name: String,
+    pub new_description: String,
+    pub content_len: i64,
+    pub num_labels: i64,
+    pub num_hooks: i64,
+}
+
+// Helper function to update an object
+
+#[allow(dead_code)]
+pub fn update_object(update: &TCreateUpdate) -> Object {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // ParseTCreateUpdate
+
+    let dummy_labels = (0..update.num_labels)
+        .map(|num| KeyValue {
+            key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("label_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+    let dummy_hooks = (0..update.num_hooks)
+        .map(|num| KeyValue {
+            key: format!("hook_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("hook_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+
+    let update_name = if update.new_name.is_empty() {
+        "This is an updated object.name".to_string()
+    } else {
+        update.new_name.to_string()
+    };
+
+    let update_descr = if update.new_description.is_empty() {
+        "This is an updated object description".to_string()
+    } else {
+        update.new_description.to_string()
+    };
+
+    let update_len = if update.content_len == 0 {
+        rand_int(123555)
+    } else {
+        update.content_len
+    };
+
+    // Update Object
+    let updated_object_id_001 = uuid::Uuid::new_v4();
+    println!("Updated Object Id: {}", updated_object_id_001);
+    let updated_upload_id = uuid::Uuid::new_v4();
+    let updated_location = Location {
+        r#type: EndpointType::S3 as i32,
+        bucket: update.collection_id.to_string(),
+        path: updated_object_id_001.to_string(),
+    };
+    let update_request = UpdateObjectRequest {
+        object_id: update.original_object.id.to_string(),
+        collection_id: update.collection_id.to_string(),
+        object: Some(StageObject {
+            filename: update_name.to_string(),
+            description: update_descr,
+            collection_id: update.collection_id.to_string(),
+            content_len: update_len,
+            source: None,
+            dataclass: 2,
+            labels: dummy_labels.clone(),
+            hooks: dummy_hooks.clone(),
+        }),
+        reupload: true,
+        preferred_endpoint_id: "".to_string(),
+        multi_part: false,
+        is_specification: false,
+    };
+
+    let update_response = db
+        .update_object(
+            &update_request,
+            &Some(updated_location),
+            &creator,
+            endpoint_id,
+            updated_object_id_001,
+        )
+        .unwrap();
+
+    // Finish updated Object
+    let updated_hash = ApiHash {
+        alg: Hashalgorithm::Sha256 as i32,
+        hash: "90d1f400137575ed06a0200be160768f7e9aaa3da547f9e7e0722ee05457f7df".to_string(),
+    };
+    let updated_finish_request = FinishObjectStagingRequest {
+        object_id: update_response.object_id.to_string(),
+        upload_id: updated_upload_id.to_string(),
+        collection_id: update_response.collection_id,
+        hash: Some(updated_hash.clone()),
+        no_upload: false,
+        completed_parts: vec![],
+        auto_update: true,
+    };
+
+    let finish_update_response = db
+        .finish_object_staging(&updated_finish_request, &creator)
+        .unwrap();
+    let updated_object = finish_update_response.object.unwrap();
+
+    // Validate update
+    assert_eq!(updated_object.id, updated_object_id_001.to_string());
+    assert!(matches!(
+        grpc_to_db_object_status(&updated_object.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(
+        updated_object.rev_number,
+        update.original_object.rev_number + 1
+    );
+    assert_eq!(updated_object.filename, update_name);
+    assert_eq!(updated_object.content_len, update_len);
+    assert_eq!(updated_object.hash.as_ref().unwrap().clone(), updated_hash);
+    assert_eq!(updated_object.hooks, dummy_hooks);
+    assert_eq!(updated_object.labels, dummy_labels);
+    assert!(updated_object.auto_update);
+
+    updated_object
 }

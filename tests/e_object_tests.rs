@@ -3,16 +3,21 @@ mod common;
 use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue,
+    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateProjectRequest, DeleteObjectRequest,
-    FinishObjectStagingRequest, InitializeNewObjectRequest, StageObject, UpdateObjectRequest,
+    CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
+    CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
+    GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
+    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, StageObject,
+    UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::ObjectStatus;
-use common::functions::{create_collection, create_object, create_project, TCreateObject};
+use common::functions::{
+    create_collection, create_object, create_project, TCreateObject, TCreateUpdate,
+};
 use rand::{thread_rng, Rng};
 use serial_test::serial;
 
@@ -135,10 +140,141 @@ fn create_object_test() {
 #[ignore]
 #[serial(db)]
 fn update_object_test() {
+    // Create random project
+    let rand_project = common::functions::create_project(None);
+
+    // Create random collection
+    let rand_collection = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create an object
+    let object = common::functions::create_object(&TCreateObject {
+        collection_id: rand_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Update 1
+
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: object,
+        collection_id: rand_collection.id.to_string(),
+        new_name: "SuperName".to_string(),
+        ..Default::default()
+    });
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: update_1,
+        collection_id: rand_collection.id,
+        new_name: "File.next.update".to_string(),
+        new_description: "File.next.description".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    // Validate update
+    assert!(matches!(
+        grpc_to_db_object_status(&update_2.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(update_2.rev_number, 2);
+    assert_eq!(update_2.filename, "File.next.update".to_string());
+    assert_eq!(update_2.content_len, 123456);
+    assert!(update_2.auto_update);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn update_object_with_reference_test() {
     // Create db connection
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let rand_project = common::functions::create_project(None);
+
+    // Create random collection
+    let rand_collection = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id.clone(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create second random collection
+    let rand_collection_2 = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create an object
+    let object = common::functions::create_object(&TCreateObject {
+        collection_id: rand_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Create auto_updating reference in col 2
+
+    let create_ref = CreateObjectReferenceRequest {
+        object_id: object.id.clone(),
+        collection_id: rand_collection.id.to_string(),
+        target_collection_id: rand_collection_2.id.clone(),
+        writeable: true,
+        auto_update: true,
+    };
+
+    let _resp = db.create_object_reference(create_ref).unwrap();
+
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: object,
+        collection_id: rand_collection.id.to_string(),
+        new_name: "SuperName".to_string(),
+        ..Default::default()
+    });
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: update_1,
+        collection_id: rand_collection.id,
+        new_name: "File.next.update".to_string(),
+        new_description: "File.next.description".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    // Validate update
+    assert!(matches!(
+        grpc_to_db_object_status(&update_2.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(update_2.rev_number, 2);
+    assert_eq!(update_2.filename, "File.next.update".to_string());
+    assert_eq!(update_2.content_len, 123456);
+    assert!(update_2.auto_update);
+
+    // Get auto_updated object
+
+    let get_obj = GetObjectsRequest {
+        collection_id: rand_collection_2.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert_eq!(resp[0].object.id.to_string(), update_2.id);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn object_revision_test() {
+    // Create db connection
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Create random project
     let rand_project = common::functions::create_project(None);
@@ -150,208 +286,245 @@ fn update_object_test() {
         ..Default::default()
     });
 
-    // Create Object
-    let new_object_id = uuid::Uuid::new_v4();
-    println!("Initial Object Id: {}", new_object_id);
-    let upload_id = uuid::Uuid::new_v4(); // Dummy id to mock data proxy usage
-
-    let location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: rand_collection.id.to_string(),
-        path: new_object_id.to_string(),
-    };
-
-    let init_object_request = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: rand_collection.id.to_string(),
-            content_len: 1234,
-            source: None,
-            dataclass: 1,
-            labels: vec![KeyValue {
-                key: "LabelKey".to_string(),
-                value: "LabelValue".to_string(),
-            }],
-            hooks: vec![KeyValue {
-                key: "HookKey".to_string(),
-                value: "HookValue".to_string(),
-            }],
-        }),
+    // Create an object
+    let object = common::functions::create_object(&TCreateObject {
         collection_id: rand_collection.id.to_string(),
-        preferred_endpoint_id: endpoint_id.to_string(),
-        multipart: false,
-        is_specification: false,
-    };
+        ..Default::default()
+    });
 
-    let init_object_response = db
-        .create_object(
-            &init_object_request,
-            &creator,
-            &location,
-            upload_id.to_string(),
-            endpoint_id,
-            new_object_id,
-        )
-        .unwrap();
+    // Update 1
 
-    // Finish object staging
-    let finish_hash = Hash {
-        alg: Hashalgorithm::Sha256 as i32,
-        hash: "f60b102aa455f085df91ffff53b3c0acd45c10f02782b953759ab10973707a92".to_string(),
-    };
-    let finish_request = FinishObjectStagingRequest {
-        object_id: init_object_response.object_id.to_string(),
-        upload_id: upload_id.to_string(),
-        collection_id: init_object_response.collection_id,
-        hash: Some(finish_hash),
-        no_upload: false,
-        completed_parts: vec![],
-        auto_update: true,
-    };
-
-    let finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
-    let finished_object = finish_response.object.unwrap();
-
-    // Update Object
-    let updated_object_id_001 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_001);
-    let updated_upload_id = uuid::Uuid::new_v4();
-    let updated_location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: rand_collection.id.to_string(),
-        path: updated_object_id_001.to_string(),
-    };
-    let update_request = UpdateObjectRequest {
-        object_id: finished_object.id,
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: object.clone(),
         collection_id: rand_collection.id.to_string(),
-        object: Some(StageObject {
-            filename: "File.update".to_string(),
-            description: "Update to File.file".to_string(),
-            collection_id: rand_collection.id.to_string(),
-            content_len: 4321,
-            source: None,
-            dataclass: 2,
-            labels: vec![],
-            hooks: vec![],
-        }),
-        reupload: true,
-        preferred_endpoint_id: "".to_string(),
-        multi_part: false,
-        is_specification: false,
-    };
-
-    let update_response = db
-        .update_object(
-            &update_request,
-            &Some(updated_location),
-            &creator,
-            endpoint_id,
-            updated_object_id_001,
-        )
-        .unwrap();
-
-    // Finish updated Object
-    let updated_hash = Hash {
-        alg: Hashalgorithm::Sha256 as i32,
-        hash: "90d1f400137575ed06a0200be160768f7e9aaa3da547f9e7e0722ee05457f7df".to_string(),
-    };
-    let updated_finish_request = FinishObjectStagingRequest {
-        object_id: update_response.object_id.to_string(),
-        upload_id: updated_upload_id.to_string(),
-        collection_id: update_response.collection_id,
-        hash: Some(updated_hash.clone()),
-        no_upload: false,
-        completed_parts: vec![],
-        auto_update: true,
-    };
-
-    let finish_update_response = db
-        .finish_object_staging(&updated_finish_request, &creator)
-        .unwrap();
-    let updated_object = finish_update_response.object.unwrap();
-
-    // Validate update
-    assert_eq!(updated_object.id, updated_object_id_001.to_string());
-    assert!(matches!(
-        grpc_to_db_object_status(&updated_object.status),
-        ObjectStatus::AVAILABLE
-    ));
-    assert_eq!(updated_object.rev_number, 1);
-    assert_eq!(updated_object.filename, "File.update".to_string());
-    assert_eq!(updated_object.content_len, 4321);
-    assert_eq!(updated_object.hash.unwrap(), updated_hash);
-    assert!(updated_object.auto_update);
+        new_name: "SuperName".to_string(),
+        ..Default::default()
+    });
 
     // Update Object again
-    let updated_object_id_002 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_002);
-    let updated_upload_id_002 = uuid::Uuid::new_v4();
-    let updated_location_002 = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: rand_collection.id.to_string(),
-        path: updated_object_id_002.to_string(),
-    };
-    let update_request_002 = UpdateObjectRequest {
-        object_id: updated_object.id,
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: update_1,
         collection_id: rand_collection.id.to_string(),
-        object: Some(StageObject {
-            filename: "File.next.update".to_string(),
-            description: "Update to File.update".to_string(),
-            collection_id: rand_collection.id,
-            content_len: 123456,
-            source: None,
-            dataclass: 2,
-            labels: vec![],
-            hooks: vec![],
-        }),
-        reupload: true,
-        preferred_endpoint_id: "".to_string(),
-        multi_part: false,
-        is_specification: false,
+        new_name: "File.next.update".to_string(),
+        new_description: "File.next.description".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    // Validate update
+    assert!(matches!(
+        grpc_to_db_object_status(&update_2.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(update_2.rev_number, 2);
+    assert_eq!(update_2.filename, "File.next.update".to_string());
+    assert_eq!(update_2.content_len, 123456);
+    assert!(update_2.auto_update);
+
+    // Test Revisions
+    // For now this is easier here,
+    // but in the future this should be refactored to a separate function
+
+    let get_latest = GetLatestObjectRevisionRequest {
+        collection_id: rand_collection.id,
+        object_id: object.id,
     };
 
-    let update_response_002 = db
-        .update_object(
-            &update_request_002,
-            &Some(updated_location_002),
-            &creator,
-            endpoint_id,
-            updated_object_id_002,
-        )
-        .unwrap();
+    let latest = db.get_latest_object_revision(get_latest).unwrap();
 
-    // Finish updated Object
-    let updated_hash_002 = Hash {
-        alg: Hashalgorithm::Sha256 as i32,
-        hash: "8fba9e1beb1dc591b6ab5bb0266583ebd4bfedb3bae8fd91beda168d4ca3995b".to_string(),
+    // Test if both updates will point to the "latest"
+    assert_eq!(latest.object.unwrap().id, update_2.id);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn object_revisions_test() {
+    // Create db connection
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Create random project
+    let rand_project = common::functions::create_project(None);
+
+    // Create random collection
+    let rand_collection = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create an object
+    let object = common::functions::create_object(&TCreateObject {
+        collection_id: rand_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Update 1
+
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: object.clone(),
+        collection_id: rand_collection.id.to_string(),
+        new_name: "SuperName".to_string(),
+        ..Default::default()
+    });
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: update_1,
+        collection_id: rand_collection.id.to_string(),
+        new_name: "File.next.update".to_string(),
+        new_description: "File.next.description".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    // Validate update
+    assert!(matches!(
+        grpc_to_db_object_status(&update_2.status),
+        ObjectStatus::AVAILABLE
+    ));
+    assert_eq!(update_2.rev_number, 2);
+    assert_eq!(update_2.filename, "File.next.update".to_string());
+    assert_eq!(update_2.content_len, 123456);
+    assert!(update_2.auto_update);
+
+    // Test Revisions
+    // Get all revisions
+
+    let get_all_revs = GetObjectRevisionsRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: object.id,
+        page_request: None,
+        with_url: false,
     };
-    let updated_finish_request_002 = FinishObjectStagingRequest {
-        object_id: update_response_002.object_id.to_string(),
-        upload_id: updated_upload_id_002.to_string(),
-        collection_id: update_response_002.collection_id,
-        hash: Some(updated_hash_002.clone()),
-        no_upload: false,
-        completed_parts: vec![],
+
+    let resp_1 = db.get_object_revisions(get_all_revs).unwrap();
+
+    println!("Revisions: {:#?}", resp_1);
+
+    // This should return the same!
+    assert!(resp_1.len() == 3);
+
+    let get_all_revs = GetObjectRevisionsRequest {
+        collection_id: rand_collection.id,
+        object_id: update_2.id,
+        page_request: None,
+        with_url: false,
+    };
+
+    let resp_2 = db.get_object_revisions(get_all_revs).unwrap();
+
+    println!("Revisions: {:#?}", resp_2);
+    assert!(resp_2.len() == 3);
+    assert!(common::functions::compare_it(resp_1, resp_2))
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn update_object_get_references_test() {
+    // Create db connection
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Create random project
+    let rand_project = common::functions::create_project(None);
+
+    // Create random collection
+    let rand_collection = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id.clone(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create second random collection
+    let rand_collection_2 = common::functions::create_collection(TCreateCollection {
+        project_id: rand_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create an object
+    let object = common::functions::create_object(&TCreateObject {
+        collection_id: rand_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Create auto_updating reference in col 2
+
+    let create_ref = CreateObjectReferenceRequest {
+        object_id: object.id.clone(),
+        collection_id: rand_collection.id.clone(),
+        target_collection_id: rand_collection_2.id.clone(),
+        writeable: true,
         auto_update: true,
     };
 
-    let finish_update_response_002 = db
-        .finish_object_staging(&updated_finish_request_002, &creator)
-        .unwrap();
-    let updated_object_002 = finish_update_response_002.object.unwrap();
+    let _resp = db.create_object_reference(create_ref).unwrap();
+
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: object.clone(),
+        collection_id: rand_collection.id.to_string(),
+        new_name: "SuperName".to_string(),
+        ..Default::default()
+    });
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: update_1,
+        collection_id: rand_collection.id.to_string(),
+        new_name: "File.next.update".to_string(),
+        new_description: "File.next.description".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
 
     // Validate update
-    assert_eq!(updated_object_002.id, updated_object_id_002.to_string());
     assert!(matches!(
-        grpc_to_db_object_status(&updated_object_002.status),
+        grpc_to_db_object_status(&update_2.status),
         ObjectStatus::AVAILABLE
     ));
-    assert_eq!(updated_object_002.rev_number, 2);
-    assert_eq!(updated_object_002.filename, "File.next.update".to_string());
-    assert_eq!(updated_object_002.content_len, 123456);
-    assert_eq!(updated_object_002.hash.unwrap(), updated_hash_002);
-    assert!(updated_object_002.auto_update);
+    assert_eq!(update_2.rev_number, 2);
+    assert_eq!(update_2.filename, "File.next.update".to_string());
+    assert_eq!(update_2.content_len, 123456);
+    assert!(update_2.auto_update);
+
+    // Get auto_updated object
+
+    let get_obj = GetObjectsRequest {
+        collection_id: rand_collection_2.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert_eq!(resp[0].object.id.to_string(), update_2.id);
+
+    // Get references test
+
+    let get_refs = GetReferencesRequest {
+        collection_id: rand_collection.id.to_string(),
+        object_id: update_2.id,
+        with_revisions: true,
+    };
+
+    let get_refs_resp_1 = db.get_references(&get_refs).unwrap();
+
+    println!("Refs: {:#?}", get_refs_resp_1.references);
+    assert!(get_refs_resp_1.references.len() == 2);
+
+    let get_refs = GetReferencesRequest {
+        collection_id: rand_collection.id,
+        object_id: object.id,
+        with_revisions: true,
+    };
+
+    let get_refs_resp_2 = db.get_references(&get_refs).unwrap();
+
+    println!("Refs: {:#?}", get_refs_resp_2.references);
+    assert!(get_refs_resp_2.references.len() == 2);
+    assert_eq!(get_refs_resp_1, get_refs_resp_2);
 }
 
 #[test]
@@ -379,8 +552,8 @@ fn delete_object_test() {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0, 4),
-            num_hooks: thread_rng().gen_range(0, 4),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
         }),
     )
     .id;
@@ -411,8 +584,8 @@ fn delete_object_test() {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0, 4),
-            num_hooks: thread_rng().gen_range(0, 4),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
         }),
     )
     .id;
@@ -481,4 +654,422 @@ fn delete_object_test() {
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_objects_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create 5 random objects
+    let _object_ids = (0..128)
+        .map(|_| {
+            create_object(
+                &(TCreateObject {
+                    creator_id: Some(creator.to_string()),
+                    collection_id: random_collection.id.to_string(),
+                    default_endpoint_id: Some(endpoint_id.to_string()),
+                    num_labels: thread_rng().gen_range(0..4),
+                    num_hooks: thread_rng().gen_range(0..4),
+                }),
+            )
+            .id
+        })
+        .collect::<Vec<_>>();
+
+    // Get all objects
+    let get_request = GetObjectsRequest {
+        collection_id: random_collection.id,
+        page_request: Some(PageRequest {
+            last_uuid: "".to_string(),
+            page_size: 64,
+        }),
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let get_optional = db.get_objects(get_request).unwrap();
+    let get_response = get_optional.unwrap();
+
+    assert_eq!(get_response.len(), 64);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    // Get all objects
+    let get_request = GetObjectByIdRequest {
+        collection_id: random_collection.id,
+        object_id: new_obj.to_string(),
+        with_url: false,
+    };
+
+    let get_obj = db.get_object(&get_request).unwrap();
+
+    assert!(get_obj.is_some());
+    assert_eq!(get_obj.unwrap().id, new_obj);
+
+    let get_obj_internal = db
+        .get_object_by_id(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_internal.id.to_string(), new_obj);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_primary_location_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    let get_obj_loc = db
+        .get_primary_object_location(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_loc.bucket, random_collection.id);
+    assert_eq!(get_obj_loc.path, new_obj);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_primary_location_with_endpoint_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    let get_obj_loc = db
+        .get_primary_object_location_with_endpoint(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_loc.0.bucket, random_collection.id);
+    assert_eq!(get_obj_loc.0.path, new_obj);
+    assert_eq!(get_obj_loc.1.name, "demo_endpoint".to_string());
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn get_object_locations() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    )
+    .id;
+
+    let get_obj_locs = db
+        .get_object_locations(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .unwrap();
+
+    assert_eq!(get_obj_locs.len(), 1);
+    assert_eq!(get_obj_locs[0].bucket, random_collection.id);
+    assert_eq!(get_obj_locs[0].path, new_obj);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn clone_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let random_collection2 = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Update Object again
+    let update_2 = common::functions::update_object(&TCreateUpdate {
+        original_object: new_obj.clone(),
+        collection_id: random_collection.id.to_string(),
+        new_name: "File.next.update2".to_string(),
+        new_description: "File.next.description2".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    let clone_req = CloneObjectRequest {
+        object_id: update_2.id.to_string(),
+        collection_id: random_collection.id,
+        target_collection_id: random_collection2.id,
+    };
+
+    let resp = db.clone_object(&clone_req).unwrap();
+
+    let cloned = resp.object.unwrap();
+
+    assert!(cloned.id != update_2.id);
+    assert_eq!(cloned.rev_number, 0);
+    println!("{:#?}", cloned.id);
+    println!("{:#?}", cloned.origin.clone().unwrap().id);
+    println!("{:#?}", update_2.id);
+    println!("{:#?}", new_obj.id);
+    assert_eq!(cloned.origin.unwrap().id, update_2.id);
+    assert_eq!(cloned.content_len, update_2.content_len);
+    assert_eq!(cloned.filename, update_2.filename);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_multiple_objects_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let random_collection2 = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj_1 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Create auto_updating reference in col 2
+
+    let create_ref_2 = CreateObjectReferenceRequest {
+        object_id: new_obj_1.id.clone(),
+        collection_id: random_collection.id.clone(),
+        target_collection_id: random_collection2.id.clone(),
+        writeable: false,
+        auto_update: false,
+    };
+
+    let _resp = db.create_object_reference(create_ref_2).unwrap();
+
+    // Update Object again
+    let update_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: new_obj_1,
+        collection_id: random_collection.id.to_string(),
+        new_name: "File.next.update2".to_string(),
+        new_description: "File.next.description2".to_string(),
+        content_len: 123456,
+        ..Default::default()
+    });
+
+    let new_obj_2 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    let new_obj_3 = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Create auto_updating reference in col 2
+
+    let create_ref = CreateObjectReferenceRequest {
+        object_id: new_obj_3.id.clone(),
+        collection_id: random_collection.id.clone(),
+        target_collection_id: random_collection2.id.clone(),
+        writeable: true,
+        auto_update: true,
+    };
+
+    let _resp = db.create_object_reference(create_ref).unwrap();
+
+    // Test deletes
+
+    let ids = vec![update_1.id, new_obj_2.id, new_obj_3.id];
+
+    let del_req = DeleteObjectsRequest {
+        object_ids: ids.clone(),
+        collection_id: random_collection.id.to_string(),
+        with_revisions: true,
+        force: false,
+    };
+
+    let resp = db.delete_objects(del_req, creator);
+    println!("{:#?}", resp);
+
+    // This should fail without forc
+    // Because new_obj_1 is referenced in coll2
+    assert!(resp.is_err());
+
+    let del_req = DeleteObjectsRequest {
+        object_ids: ids,
+        collection_id: random_collection.id.to_string(),
+        with_revisions: false,
+        force: true,
+    };
+
+    let resp = db.delete_objects(del_req, creator);
+    assert!(resp.is_ok());
+
+    let get_obj = GetObjectsRequest {
+        collection_id: random_collection.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert!(resp.is_empty());
+
+    let get_obj = GetObjectsRequest {
+        collection_id: random_collection2.id,
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+
+    let resp = db.get_objects(get_obj).unwrap().unwrap();
+
+    assert!(resp.len() == 1);
 }

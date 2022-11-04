@@ -205,33 +205,6 @@ impl Database {
         Ok(endpoint)
     }
 
-    /// Get the data proxy endpoint associated with a specific object location.
-    ///
-    /// ## Arguments:
-    ///
-    /// * `location`: The object location associated with the endpoint
-    ///
-    /// ## Returns:
-    ///
-    /// * `Result<Response<Endpoint>, Status>`:
-    ///   - **On success**: Database endpoint model
-    ///   - **On failure**: Aruna error with failure details
-    ///
-    pub fn get_location_endpoint(&self, location: &ObjectLocation) -> Result<Endpoint, ArunaError> {
-        let endpoint = self
-            .pg_connection
-            .get()?
-            .transaction::<Endpoint, Error, _>(|conn| {
-                let endpoint: Endpoint = endpoints
-                    .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
-                    .first::<Endpoint>(conn)?;
-
-                Ok(endpoint)
-            })?;
-
-        Ok(endpoint)
-    }
-
     /// Get all data proxy endpoints associated with a specific object.
     ///
     /// ## Arguments:
