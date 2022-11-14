@@ -605,6 +605,7 @@ fn delete_object_test() {
             labels: Vec::new(),
             hooks: Vec::new(),
         }),
+        force: true,
         reupload: false,
         is_specification: false,
         preferred_endpoint_id: "".to_string(),

@@ -537,7 +537,6 @@ fn update_collection_test() {
     let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
 
     let normal_update = UpdateCollectionRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         collection_id: col_id.to_string(),
         name: "new_name".to_string(),
         description: "new_descrpt".to_string(),
@@ -559,7 +558,6 @@ fn update_collection_test() {
     assert_eq!(up_res.collection.unwrap().id, col_id.to_string());
 
     let pin_update = UpdateCollectionRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         collection_id: col_id.to_string(),
         name: "new_name".to_string(),
         description: "new_descrpt".to_string(),
@@ -587,7 +585,6 @@ fn update_collection_test() {
     assert!(pin_up_res.is_err());
 
     let pin_update = UpdateCollectionRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         collection_id: col_id.to_string(),
         name: "new_name".to_string(),
         description: "new_descrpt".to_string(),
@@ -938,7 +935,6 @@ fn delete_collection_test() {
 
     let delete_req_normal = DeleteCollectionRequest {
         collection_id: col_id.to_string(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         force: false,
     };
 
@@ -948,7 +944,6 @@ fn delete_collection_test() {
 
     let delete_req_force = DeleteCollectionRequest {
         collection_id: col_id.to_string(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         force: true,
     };
 
