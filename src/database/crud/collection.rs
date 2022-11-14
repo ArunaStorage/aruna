@@ -397,7 +397,7 @@ impl Database {
                         created_by: user_id,
                         version_id: Some(new_version.id),
                         dataclass: Some(request.dataclass()).map(DBDataclass::from),
-                        project_id: uuid::Uuid::parse_str(&request.project_id)?,
+                        project_id: old_collection.project_id,
                     };
                     // Execute the pin request and return the collection overview
 
