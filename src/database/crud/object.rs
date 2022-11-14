@@ -578,6 +578,13 @@ impl Database {
                     // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
 
+                    if latest.id != parsed_old_id && !request.force {
+                        return Err(ArunaError::InvalidRequest(
+                            "Concurrency error: Updates without force are only allowed for the latest object"
+                                .to_string(),
+                        ));
+                    }
+
                     //Define source object from updated request; None if empty
                     let source: Option<Source> = match &sobj.source {
                         Some(source) => Some(Source {
