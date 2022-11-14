@@ -14,9 +14,9 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
-    AddLabelToObjectRequest, AddLabelToObjectResponse, DeleteObjectsRequest, DeleteObjectsResponse,
-    GetReferencesRequest, GetReferencesResponse, ObjectReference, SetHooksOfObjectRequest,
-    SetHooksOfObjectResponse,
+    AddLabelsToObjectRequest, AddLabelsToObjectResponse, DeleteObjectsRequest,
+    DeleteObjectsResponse, GetReferencesRequest, GetReferencesResponse, ObjectReference,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -1375,10 +1375,10 @@ impl Database {
     }
 
     /// ToDo: Rust Doc
-    pub fn add_label_to_object(
+    pub fn add_labels_to_object(
         &self,
-        request: AddLabelToObjectRequest,
-    ) -> Result<AddLabelToObjectResponse, ArunaError> {
+        request: AddLabelsToObjectRequest,
+    ) -> Result<AddLabelsToObjectResponse, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Transaction time
@@ -1403,7 +1403,7 @@ impl Database {
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
 
-        Ok(AddLabelToObjectResponse { object: mapped })
+        Ok(AddLabelsToObjectResponse { object: mapped })
     }
 
     /// ToDo: Rust Doc

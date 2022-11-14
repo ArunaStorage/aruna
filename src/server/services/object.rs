@@ -955,10 +955,10 @@ impl ObjectService for ObjectServiceImpl {
         return Ok(response);
     }
 
-    async fn add_label_to_object(
+    async fn add_labels_to_object(
         &self,
-        request: Request<AddLabelToObjectRequest>,
-    ) -> Result<Response<AddLabelToObjectResponse>, Status> {
+        request: Request<AddLabelsToObjectRequest>,
+    ) -> Result<Response<AddLabelsToObjectResponse>, Status> {
         log::info!("Received AddLabelToObjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -975,7 +975,7 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.add_label_to_object(request.into_inner()))
+            task::spawn_blocking(move || database_clone.add_labels_to_object(request.into_inner()))
                 .await
                 .map_err(ArunaError::from)??,
         );
