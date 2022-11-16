@@ -6,9 +6,11 @@ use crate::database::cron::{Scheduler, Task};
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
+use crate::server::services::internal_notifications::InternalEventServiceImpl;
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
 use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::user::UserServiceImpl;
+use aruna_rust_api::api::internal::v1::internal_event_service_server::InternalEventServiceServer;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
 use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointServiceServer;
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupServiceServer;
@@ -90,6 +92,9 @@ impl ServiceServer {
 
         let storage_info_service = StorageInfoServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
+        let internal_event_service =
+            InternalEventServiceImpl::new(db_ref.clone(), authz.clone()).await;
+
         log::info!("ArunaServer listening on {}", addr);
 
         Server::builder()
@@ -101,6 +106,7 @@ impl ServiceServer {
             .add_service(ObjectGroupServiceServer::new(object_group_service))
             .add_service(ResourceInfoServiceServer::new(resource_info_service))
             .add_service(StorageInfoServiceServer::new(storage_info_service))
+            .add_service(InternalEventServiceServer::new(internal_event_service))
             .serve(addr)
             .await
             .unwrap();
