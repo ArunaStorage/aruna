@@ -9,4 +9,5 @@ pub mod user;
 pub mod utils;
 // ----- INTERNAL Services -----
 
+pub mod internal_authorize;
 pub mod internal_notifications;
