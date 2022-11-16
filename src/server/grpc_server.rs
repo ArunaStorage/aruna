@@ -5,6 +5,7 @@ use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
+use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
 use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::user::UserServiceImpl;
@@ -13,6 +14,8 @@ use aruna_rust_api::api::storage::services::v1::endpoint_service_server::Endpoin
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupServiceServer;
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectServiceServer;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectServiceServer;
+use aruna_rust_api::api::storage::services::v1::resource_info_service_server::ResourceInfoServiceServer;
+use aruna_rust_api::api::storage::services::v1::storage_info_service_server::StorageInfoServiceServer;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserServiceServer;
 use tonic::transport::Server;
 
@@ -82,6 +85,11 @@ impl ServiceServer {
             ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let object_group_service = ObjectGroupServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
+        let resource_info_service =
+            ResourceInfoServiceImpl::new(db_ref.clone(), authz.clone()).await;
+
+        let storage_info_service = StorageInfoServiceImpl::new(db_ref.clone(), authz.clone()).await;
+
         log::info!("ArunaServer listening on {}", addr);
 
         Server::builder()
@@ -91,6 +99,8 @@ impl ServiceServer {
             .add_service(CollectionServiceServer::new(collection_service))
             .add_service(ObjectServiceServer::new(object_service))
             .add_service(ObjectGroupServiceServer::new(object_group_service))
+            .add_service(ResourceInfoServiceServer::new(resource_info_service))
+            .add_service(StorageInfoServiceServer::new(storage_info_service))
             .serve(addr)
             .await
             .unwrap();

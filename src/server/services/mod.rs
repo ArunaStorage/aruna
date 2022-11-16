@@ -1,6 +1,7 @@
 pub mod authz;
 pub mod collection;
 pub mod endpoint;
+pub mod info;
 pub mod object;
 pub mod objectgroup;
 pub mod project;
