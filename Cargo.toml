@@ -32,7 +32,7 @@ serde_json = "1.0"
 reqwest = {version = "0.11.11", features = ["json"] }
 openssl = "0.10.41"
 toml = "0.5.9"
-aruna-rust-api = "0.5.0-beta.8"
+aruna-rust-api = "0.5.0-beta.9"
 
 [dev-dependencies]
 serial_test = "0.9.0"
