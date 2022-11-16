@@ -5,6 +5,7 @@ pub mod info;
 pub mod object;
 pub mod objectgroup;
 pub mod project;
+pub mod service_account;
 pub mod user;
 pub mod utils;
 // ----- INTERNAL Services -----
