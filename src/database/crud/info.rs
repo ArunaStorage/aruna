@@ -1,6 +1,6 @@
-use aruna_rust_api::api::storage::models::v1::Permission;
+use aruna_rust_api::api::storage::models::v1::{Permission, ResourceType};
 use aruna_rust_api::api::storage::services::v1::{
-    GetResourceHierarchyRequest, GetResourceHierarchyResponse,
+    GetResourceHierarchyRequest, GetResourceHierarchyResponse, Hierarchy,
 };
 use diesel::{prelude::*, sql_query, QueryDsl, RunQueryDsl};
 
@@ -20,7 +20,8 @@ impl Database {
         let hierarchy = self
             .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Vec<Hierarchy>, ArunaError, _>(|conn| {
+                #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
                 enum Scoped {
                     COLLECTIONID(uuid::Uuid),
                     PROJECTID(uuid::Uuid),
@@ -31,8 +32,6 @@ impl Database {
                     .filter(database::schema::api_tokens::id.eq(token_id))
                     .first::<ApiToken>(conn)?;
 
-                let project_ids = Vec::new();
-
                 // Check if token is scoped and use this scope
                 let scope = match api_token.collection_id {
                     Some(coll) => Scoped::COLLECTIONID(coll),
@@ -42,12 +41,28 @@ impl Database {
                     },
                 };
 
-                let permissions = match scope {
-                    Scoped::COLLECTIONID(coll) => {
-
+                match request.resource_type() {
+                    ResourceType::Unspecified | ResourceType::All => {
+                        return Err(ArunaError::InvalidRequest(
+                            "ResourceType must be specified".to_string(),
+                        ))
                     }
-                    Scoped::PROJECTID(proj) => {}
-                    Scoped::NONE => {}
+                    ResourceType::Project => {
+                        if scope == Scoped::PROJECTID(uuid::Uuid::parse_str(&request.resource_id)?)
+                        {
+                            return Ok(vec![Hierarchy {
+                                object_id: "".to_string(),
+                                object_group_ids: vec!["".to_string()],
+                                collection_id: "".to_string(),
+                                project_id: request.resource_id,
+                            }]);
+                        } else {
+                            
+                        }
+                    }
+                    ResourceType::Collection => {}
+                    ResourceType::Object => {}
+                    ResourceType::ObjectGroup => {}
                 }
 
                 Ok(())
