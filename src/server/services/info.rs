@@ -3,10 +3,11 @@ use crate::config::LocationVersion;
 use crate::database::connection::Database;
 use aruna_rust_api::api::storage::services::v1::{
     resource_info_service_server::ResourceInfoService,
-    storage_info_service_server::StorageInfoService, ComponentVersion as GRPCCVersion,
-    GetResourceHierarchyRequest, GetResourceHierarchyResponse, GetStorageStatusRequest,
-    GetStorageStatusResponse, GetStorageVersionRequest, GetStorageVersionResponse,
-    LocationVersion as GRPCLocationVersion, SemanticVersion,
+    storage_info_service_server::StorageInfoService, ComponentStatus,
+    ComponentVersion as GRPCCVersion, GetResourceHierarchyRequest, GetResourceHierarchyResponse,
+    GetStorageStatusRequest, GetStorageStatusResponse, GetStorageVersionRequest,
+    GetStorageVersionResponse, LocationStatus, LocationVersion as GRPCLocationVersion,
+    SemanticVersion, Status,
 };
 use std::sync::Arc;
 use tonic::Response;
@@ -83,6 +84,14 @@ impl StorageInfoService for StorageInfoServiceImpl {
         &self,
         _request: tonic::Request<GetStorageStatusRequest>,
     ) -> Result<tonic::Response<GetStorageStatusResponse>, tonic::Status> {
-        todo!()
+        Ok(Response::new(GetStorageStatusResponse {
+            component_status: vec![ComponentStatus {
+                component_name: "backend".to_string(),
+                location_status: vec![LocationStatus {
+                    location: self.config.location.to_string(),
+                    status: Status::Available as i32,
+                }],
+            }],
+        }))
     }
 }
