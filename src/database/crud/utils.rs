@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
-use aruna_rust_api::api::storage::models::v1::{KeyValue, LabelOrIdQuery, PageRequest, Status};
+use aruna_rust_api::api::storage::models::v1::{
+    DataClass, KeyValue, LabelOrIdQuery, PageRequest, Status,
+};
 
 use crate::database::models::enums::{Dataclass, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
@@ -399,6 +401,15 @@ pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
         3 => Dataclass::CONFIDENTIAL,
         4 => Dataclass::PROTECTED,
         _ => Dataclass::PRIVATE, // Default
+    }
+}
+
+pub fn db_to_grpc_dataclass(db_dataclass: &Dataclass) -> DataClass {
+    match db_dataclass {
+        Dataclass::PUBLIC => DataClass::Public,
+        Dataclass::PRIVATE => DataClass::Private,
+        Dataclass::CONFIDENTIAL => DataClass::Confidential,
+        Dataclass::PROTECTED => DataClass::Protected,
     }
 }
 
