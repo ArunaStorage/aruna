@@ -94,7 +94,9 @@ impl ServiceServer {
         let resource_info_service =
             ResourceInfoServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
-        let storage_info_service = StorageInfoServiceImpl::new(db_ref.clone(), authz.clone()).await;
+        let storage_info_service =
+            StorageInfoServiceImpl::new(db_ref.clone(), authz.clone(), config.config.loc_version)
+                .await;
 
         let service_account_service =
             ServiceAccountServiceImpl::new(db_ref.clone(), authz.clone()).await;

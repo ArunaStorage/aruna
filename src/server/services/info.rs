@@ -1,12 +1,15 @@
 use super::authz::Authz;
+use crate::config::LocationVersion;
 use crate::database::connection::Database;
 use aruna_rust_api::api::storage::services::v1::{
     resource_info_service_server::ResourceInfoService,
-    storage_info_service_server::StorageInfoService, GetResourceHierarchyRequest,
-    GetResourceHierarchyResponse, GetStorageStatusRequest, GetStorageStatusResponse,
-    GetStorageVersionRequest, GetStorageVersionResponse,
+    storage_info_service_server::StorageInfoService, ComponentVersion as GRPCCVersion,
+    GetResourceHierarchyRequest, GetResourceHierarchyResponse, GetStorageStatusRequest,
+    GetStorageStatusResponse, GetStorageVersionRequest, GetStorageVersionResponse,
+    LocationVersion as GRPCLocationVersion, SemanticVersion,
 };
 use std::sync::Arc;
+use tonic::Response;
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ResourceInfoServiceImpl);
@@ -32,7 +35,7 @@ impl ResourceInfoService for ResourceInfoServiceImpl {
 }
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(StorageInfoServiceImpl);
+crate::impl_grpc_server!(StorageInfoServiceImpl, config: LocationVersion);
 
 #[tonic::async_trait]
 impl StorageInfoService for StorageInfoServiceImpl {
@@ -44,7 +47,34 @@ impl StorageInfoService for StorageInfoServiceImpl {
         &self,
         _request: tonic::Request<GetStorageVersionRequest>,
     ) -> Result<tonic::Response<GetStorageVersionResponse>, tonic::Status> {
-        todo!()
+        let resp = GetStorageVersionResponse {
+            component_version: self
+                .config
+                .components
+                .iter()
+                .map(|component| GRPCCVersion {
+                    component_name: component.component_name.to_string(),
+                    location_version: vec![GRPCLocationVersion {
+                        location: self.config.location.to_string(),
+                        version: Some(SemanticVersion {
+                            major: component.semver.major,
+                            minor: component.semver.minor,
+                            patch: component.semver.patch,
+                            labels: component.semver.labels.to_string(),
+                            version_string: format!(
+                                "{}.{}.{}-{}",
+                                component.semver.major,
+                                component.semver.minor,
+                                component.semver.patch,
+                                component.semver.labels.to_string()
+                            ),
+                        }),
+                    }],
+                })
+                .collect(),
+        };
+
+        Ok(Response::new(resp))
     }
     /// GetStorageStatus
     ///

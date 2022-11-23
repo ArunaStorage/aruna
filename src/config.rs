@@ -35,9 +35,9 @@ pub struct DefaultEndpoint {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct SemVer {
-    pub major: i64,
-    pub minor: i64,
-    pub patch: i64,
+    pub major: i32,
+    pub minor: i32,
+    pub patch: i32,
     pub labels: String,
 }
 
