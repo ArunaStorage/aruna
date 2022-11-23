@@ -441,9 +441,9 @@ mod tests {
     use super::*;
     use crate::database::models::collection::CollectionKeyValue;
     use crate::database::models::object::ObjectKeyValue;
-    use aruna_rust_api::api::storage::models::v1::KeyValue;
     use aruna_rust_api::api::storage::models::v1::LabelFilter;
     use aruna_rust_api::api::storage::models::v1::Permission;
+    use aruna_rust_api::api::storage::models::v1::{DataClass, KeyValue};
     use std::any::type_name;
 
     #[test]
@@ -948,6 +948,60 @@ mod tests {
         assert_eq!(hits.clone().unwrap().len(), 2);
         assert!(hits.clone().unwrap().contains(&id_non_hit));
         assert!(hits.unwrap().contains(&id_hit));
+    }
+
+    #[test]
+    fn test_grpc_to_db_dataclass() {
+        for grpc_dataclass in vec![
+            DataClass::Unspecified as i32,
+            DataClass::Public as i32,
+            DataClass::Private as i32,
+            DataClass::Confidential as i32,
+            DataClass::Protected as i32,
+            12345, // Some index that does not exist
+        ]
+        .iter()
+        {
+            match grpc_dataclass {
+                0 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
+                1 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PUBLIC),
+                2 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
+                3 => assert_eq!(
+                    grpc_to_db_dataclass(&grpc_dataclass),
+                    Dataclass::CONFIDENTIAL
+                ),
+                4 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PROTECTED),
+                _ => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
+            }
+        }
+    }
+
+    #[test]
+    fn test_db_to_grpc_dataclass() {
+        for db_dataclass in vec![
+            Dataclass::PUBLIC,
+            Dataclass::PRIVATE,
+            Dataclass::CONFIDENTIAL,
+            Dataclass::PROTECTED,
+        ]
+        .iter()
+        {
+            match db_dataclass {
+                Dataclass::PUBLIC => {
+                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Public)
+                }
+                Dataclass::PRIVATE => {
+                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Private)
+                }
+                Dataclass::CONFIDENTIAL => {
+                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Confidential)
+                }
+                Dataclass::PROTECTED => {
+                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Protected)
+                }
+                _ => assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Private),
+            }
+        }
     }
 
     /// Helper method to return the fully qualified type name of an object
