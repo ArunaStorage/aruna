@@ -26,6 +26,7 @@ use aruna_rust_api::api::storage::{
         UpdateObjectGroupResponse,
     },
 };
+use bigdecimal::ToPrimitive;
 use chrono::Utc;
 use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update};
 use itertools::Itertools;
@@ -939,7 +940,7 @@ impl From<ObjectGroupDb> for ObjectGroupOverview {
         let stats = ogroup_db.stats.map(|ogstats| ObjectGroupStats {
             object_stats: Some(Stats {
                 count: ogstats.object_count,
-                acc_size: ogstats.size,
+                acc_size: ogstats.size.to_i64().unwrap_or_default(),
             }),
             last_updated: Some(
                 naivedatetime_to_prost_time(ogstats.last_updated).unwrap_or_default(),

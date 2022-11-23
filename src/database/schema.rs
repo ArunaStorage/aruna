@@ -324,7 +324,7 @@ diesel::table! {
         id -> Uuid,
         object_count -> Int8,
         object_group_count -> Int8,
-        size -> Int8,
+        size -> Numeric,
         last_updated -> Timestamp,
     }
 }
@@ -333,7 +333,7 @@ diesel::table! {
     object_group_stats (id) {
         id -> Uuid,
         object_count -> Int8,
-        size -> Int8,
+        size -> Numeric,
         last_updated -> Timestamp,
     }
 }
