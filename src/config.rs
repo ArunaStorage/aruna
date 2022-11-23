@@ -21,6 +21,7 @@ pub struct Config {
     pub database_url: String,
     pub oauth_realminfo: String,
     pub default_endpoint: DefaultEndpoint,
+    pub loc_version: LocationVersion,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct DefaultEndpoint {
@@ -30,6 +31,26 @@ pub struct DefaultEndpoint {
     pub endpoint_proxy: String,
     pub endpoint_public: bool,
     pub endpoint_docu: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SemVer {
+    pub major: i64,
+    pub minor: i64,
+    pub patch: i64,
+    pub labels: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ComponentVersion {
+    pub component_name: String,
+    pub semver: SemVer,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct LocationVersion {
+    pub location: String,
+    pub components: Vec<ComponentVersion>,
 }
 
 ///
