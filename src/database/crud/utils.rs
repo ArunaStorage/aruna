@@ -963,15 +963,15 @@ mod tests {
         .iter()
         {
             match grpc_dataclass {
-                0 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
-                1 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PUBLIC),
-                2 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
+                0 => assert_eq!(grpc_to_db_dataclass(grpc_dataclass), Dataclass::PRIVATE),
+                1 => assert_eq!(grpc_to_db_dataclass(grpc_dataclass), Dataclass::PUBLIC),
+                2 => assert_eq!(grpc_to_db_dataclass(grpc_dataclass), Dataclass::PRIVATE),
                 3 => assert_eq!(
-                    grpc_to_db_dataclass(&grpc_dataclass),
+                    grpc_to_db_dataclass(grpc_dataclass),
                     Dataclass::CONFIDENTIAL
                 ),
-                4 => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PROTECTED),
-                _ => assert_eq!(grpc_to_db_dataclass(&grpc_dataclass), Dataclass::PRIVATE),
+                4 => assert_eq!(grpc_to_db_dataclass(grpc_dataclass), Dataclass::PROTECTED),
+                _ => assert_eq!(grpc_to_db_dataclass(grpc_dataclass), Dataclass::PRIVATE),
             }
         }
     }
@@ -988,18 +988,17 @@ mod tests {
         {
             match db_dataclass {
                 Dataclass::PUBLIC => {
-                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Public)
+                    assert_eq!(db_to_grpc_dataclass(db_dataclass), DataClass::Public)
                 }
                 Dataclass::PRIVATE => {
-                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Private)
+                    assert_eq!(db_to_grpc_dataclass(db_dataclass), DataClass::Private)
                 }
                 Dataclass::CONFIDENTIAL => {
-                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Confidential)
+                    assert_eq!(db_to_grpc_dataclass(db_dataclass), DataClass::Confidential)
                 }
                 Dataclass::PROTECTED => {
-                    assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Protected)
+                    assert_eq!(db_to_grpc_dataclass(db_dataclass), DataClass::Protected)
                 }
-                _ => assert_eq!(db_to_grpc_dataclass(&db_dataclass), DataClass::Private),
             }
         }
     }

@@ -266,7 +266,7 @@ impl ObjectService for ObjectServiceImpl {
         let upload_url = data_proxy
             .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
                 multipart: inner_request.multipart,
-                part_number: part_number,
+                part_number,
                 location: Some(location),
                 upload_id: inner_request.upload_id, //Note: Can be moved, only used here
             })
