@@ -15,16 +15,19 @@ crate::impl_grpc_server!(ResourceInfoServiceImpl);
 impl ResourceInfoService for ResourceInfoServiceImpl {
     async fn get_resource_hierarchy(
         &self,
-        request: tonic::Request<GetResourceHierarchyRequest>,
+        _request: tonic::Request<GetResourceHierarchyRequest>,
     ) -> Result<tonic::Response<GetResourceHierarchyResponse>, tonic::Status> {
         // Validate token ?
         // This indicates a "valid token"
-        let token_id = self
-            .authz
-            .validate_and_query_token(request.metadata())
-            .await?;
 
-        todo!()
+        return Err(tonic::Status::unimplemented("In development"));
+
+        // let token_id = self
+        //     .authz
+        //     .validate_and_query_token(request.metadata())
+        //     .await?;
+
+        // todo!()
     }
 }
 

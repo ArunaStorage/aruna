@@ -1,13 +1,12 @@
-use aruna_rust_api::api::storage::models::v1::{Permission, ResourceType};
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::{
     GetResourceHierarchyRequest, GetResourceHierarchyResponse, Hierarchy,
 };
-use diesel::dsl::date;
-use diesel::{prelude::*, sql_query, QueryDsl, RunQueryDsl};
+use diesel::{prelude::*, QueryDsl, RunQueryDsl};
 
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, UserPermission};
+use crate::database::models::auth::ApiToken;
 use crate::database::models::collection::{Collection, CollectionObject, CollectionObjectGroup};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::ArunaError;
@@ -28,7 +27,7 @@ impl Database {
         let parsed_resource = uuid::Uuid::parse_str(&request.resource_id)?;
 
         // Check if endpoint defined in the config already exists in the database
-        let hierarchy = self
+        let _hierarchy = self
             .pg_connection
             .get()?
             .transaction::<Vec<Hierarchy>, ArunaError, _>(|conn| {
@@ -44,7 +43,7 @@ impl Database {
                     .first::<ApiToken>(conn)?;
 
                 // Check if token is scoped and use this scope
-                let scope = match api_token.collection_id {
+                let _scope = match api_token.collection_id {
                     Some(coll) => Scoped::COLLECTIONID(coll),
                     None => match api_token.project_id {
                         Some(proj) => Scoped::PROJECTID(proj),
@@ -78,7 +77,7 @@ impl Database {
                         }]
                     }
                     ResourceType::Object => {
-                        let coll_objects = collection_objects
+                        let _coll_objects = collection_objects
                             .filter(
                                 database::schema::collection_objects::object_id
                                     .eq(&parsed_resource),
@@ -136,7 +135,7 @@ impl Database {
                             .filter(database::schema::collections::id.eq_any(&coll_ids))
                             .load::<Collection>(conn)?;
 
-                        let col_projs = colls
+                        let _col_projs = colls
                             .iter()
                             .map(|col| (col.project_id, col.id))
                             .collect::<Vec<(uuid::Uuid, uuid::Uuid)>>();
