@@ -1057,7 +1057,7 @@ pub fn test_collection_materialized_views_stats() {
         object_id: new_object_id.to_string(),
         upload_id,
         collection_id: collection_id.to_string(),
-        hash: Some(finish_hash.clone()),
+        hash: Some(finish_hash),
         no_upload: false,
         completed_parts: vec![],
         auto_update: true,

@@ -59,8 +59,7 @@ async fn storage_info_version_test() {
         .into_inner();
 
     assert_eq!(
-        resp.clone()
-            .component_version
+        resp.component_version
             .first()
             .unwrap()
             .location_version

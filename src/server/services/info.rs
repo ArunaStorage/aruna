@@ -67,7 +67,7 @@ impl StorageInfoService for StorageInfoServiceImpl {
                                 component.semver.major,
                                 component.semver.minor,
                                 component.semver.patch,
-                                component.semver.labels.to_string()
+                                component.semver.labels
                             ),
                         }),
                     }],

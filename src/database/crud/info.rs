@@ -33,9 +33,9 @@ impl Database {
             .transaction::<Vec<Hierarchy>, ArunaError, _>(|conn| {
                 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
                 enum Scoped {
-                    COLLECTIONID(uuid::Uuid),
-                    PROJECTID(uuid::Uuid),
-                    NONE,
+                    Collectionid(uuid::Uuid),
+                    Projectid(uuid::Uuid),
+                    None,
                 }
 
                 let api_token = api_tokens
@@ -44,10 +44,10 @@ impl Database {
 
                 // Check if token is scoped and use this scope
                 let _scope = match api_token.collection_id {
-                    Some(coll) => Scoped::COLLECTIONID(coll),
+                    Some(coll) => Scoped::Collectionid(coll),
                     None => match api_token.project_id {
-                        Some(proj) => Scoped::PROJECTID(proj),
-                        None => Scoped::NONE,
+                        Some(proj) => Scoped::Projectid(proj),
+                        None => Scoped::None,
                     },
                 };
 
