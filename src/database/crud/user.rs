@@ -510,6 +510,8 @@ impl Database {
                         .to_string(),
                     project_id: elem.project_id.to_string(),
                     permission: map_permissions_rev(Some(elem.user_right)),
+                    // TODO: check for service account
+                    service_account: false,
                 })
                 .collect::<Vec<_>>(),
         })

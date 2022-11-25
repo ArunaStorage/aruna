@@ -286,7 +286,7 @@ CREATE MATERIALIZED VIEW collection_stats AS
 SELECT col.id AS id,
     COUNT(obj.id) AS object_count,
     COALESCE(SUM(obj.content_len),0) AS size,
-    COUNT(cobj.id) AS object_group_count,
+    COUNT(cobjgrp.id) AS object_group_count,
     now() AS last_updated
 FROM collections AS col
     LEFT JOIN collection_objects AS cobj ON col.id = cobj.collection_id
@@ -304,13 +304,23 @@ FROM object_groups AS objgrp
     LEFT JOIN objects AS obj ON objgrpobj.object_id = obj.id
 GROUP BY objgrp.id;
 -- Insert initial data
+-- ADMIN
 INSERT INTO users (id, external_id, display_name, active)
 VALUES (
         '12345678-1234-1234-1234-111111111111',
-        'admin_test_oidc_id',
+        'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
         'admin',
         TRUE
     );
+-- REGULAR_USER
+INSERT INTO users (id, external_id, display_name, active)
+VALUES (
+        'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
+        '39893781-320e-4dbf-be39-c06d8b28e897',
+        'regular_user',
+        TRUE
+    );
+
 INSERT INTO projects (id, name, description, flag, created_by)
 VALUES (
         '12345678-1111-1111-1111-111111111111',
@@ -318,6 +328,15 @@ VALUES (
         'admin description',
         1,
         '12345678-1234-1234-1234-111111111111'
+    );
+
+INSERT INTO projects (id, name, description, flag, created_by)
+VALUES (
+        '12345678-1111-1111-1111-111111111122',
+        'test_project',
+        'test_regular_description',
+        0,
+        'ee4e1d0b-abab-4979-a33e-dc28ed199b17'
     );
 INSERT INTO user_permissions (id, user_id, user_right, project_id)
 VALUES (
@@ -331,11 +350,17 @@ INSERT INTO pub_keys (
         id,
         pubkey
     )
-VALUES('1', 'admin_key');
+VALUES('1',E'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n');
 INSERT INTO api_tokens (id, creator_user_id, pub_key)
 VALUES (
         '12345678-8888-8888-8888-999999999999',
         '12345678-1234-1234-1234-111111111111',
+        '1'
+    );
+INSERT INTO api_tokens (id, creator_user_id, pub_key)
+VALUES (
+        'e4b36f63-a633-48a8-9748-7f82058e8e3b',
+        'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
         '1'
     );
 INSERT INTO endpoints (

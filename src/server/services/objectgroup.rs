@@ -304,4 +304,43 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
+    /// AddLabelsToObjectGroup
+    ///
+    /// This is a specific request to add new label(s)
+    /// to an existing object_group, in contrast to UpdateObjectGroup
+    /// this will not create a new revision for the specific object_group
+    /// Instead it will directly add the specified label(s) to the object_group
+    async fn add_labels_to_object_group(
+        &self,
+        request: tonic::Request<AddLabelsToObjectGroupRequest>,
+    ) -> Result<tonic::Response<AddLabelsToObjectGroupResponse>, tonic::Status> {
+        log::info!("Received AddLabelsToObjectGroupRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid in which this object should be created
+                UserRights::WRITE,      // User needs at least append permission to create an object
+            )
+            .await?;
+
+        // Create Object in database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.add_labels_to_object_group(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending AddLabelsToObjectGroupResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
+    }
 }

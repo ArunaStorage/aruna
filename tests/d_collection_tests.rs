@@ -1,7 +1,8 @@
 mod common;
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    collection_overview, KeyValue, LabelFilter, LabelOrIdQuery, PageRequest, Version,
+    collection_overview, DataClass, EndpointType, Hashalgorithm, KeyValue, LabelFilter,
+    LabelOntology, LabelOrIdQuery, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
@@ -537,7 +538,6 @@ fn update_collection_test() {
     let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
 
     let normal_update = UpdateCollectionRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         collection_id: col_id.to_string(),
         name: "new_name".to_string(),
         description: "new_descrpt".to_string(),
@@ -559,7 +559,33 @@ fn update_collection_test() {
     assert_eq!(up_res.collection.unwrap().id, col_id.to_string());
 
     let pin_update = UpdateCollectionRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        collection_id: col_id.to_string(),
+        name: "new_name".to_string(),
+        description: "new_descrpt".to_string(),
+        labels: vec![KeyValue {
+            key: "test_key_2".to_owned(),
+            value: "test_value_2".to_owned(),
+        }],
+        hooks: vec![KeyValue {
+            key: "test_key_2".to_owned(),
+            value: "test_value_2".to_owned(),
+        }],
+        label_ontology: Some(LabelOntology {
+            required_label_keys: vec!["test_key".to_string()],
+        }),
+        dataclass: 2,
+        version: Some(Version {
+            major: 1,
+            minor: 1,
+            patch: 1,
+        }),
+    };
+
+    let pin_up_res = db.update_collection(pin_update, creator);
+    // Should fail because of label ontology
+    assert!(pin_up_res.is_err());
+
+    let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
         name: "new_name".to_string(),
         description: "new_descrpt".to_string(),
@@ -910,7 +936,6 @@ fn delete_collection_test() {
 
     let delete_req_normal = DeleteCollectionRequest {
         collection_id: col_id.to_string(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         force: false,
     };
 
@@ -920,7 +945,6 @@ fn delete_collection_test() {
 
     let delete_req_force = DeleteCollectionRequest {
         collection_id: col_id.to_string(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         force: true,
     };
 
@@ -937,4 +961,131 @@ pub fn test_materialized_view_refreshs() {
     assert!(result.is_ok());
     let result = db.update_object_group_views();
     assert!(result.is_ok());
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+pub fn test_collection_materialized_views_stats() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create fresh Project
+    let create_project_request = CreateProjectRequest {
+        name: "Object creation test project".to_string(),
+        description: "Test project used in object creation test.".to_string(),
+    };
+
+    let create_project_response = db.create_project(create_project_request, creator).unwrap();
+    let project_id = uuid::Uuid::parse_str(&create_project_response.project_id).unwrap();
+
+    assert!(!project_id.is_nil());
+
+    // Create Collection
+    let create_collection_request = CreateNewCollectionRequest {
+        name: "Object creation test project collection".to_string(),
+        description: "Test collection used in object creation test.".to_string(),
+        label_ontology: None,
+        project_id: project_id.to_string(),
+        labels: vec![],
+        hooks: vec![],
+        dataclass: DataClass::Private as i32,
+    };
+    let create_collection_response = db
+        .create_new_collection(create_collection_request, creator)
+        .unwrap();
+    let collection_id = uuid::Uuid::parse_str(&create_collection_response.collection_id).unwrap();
+
+    // Create Object
+    let new_object_id = uuid::Uuid::new_v4();
+    let upload_id = uuid::Uuid::new_v4().to_string();
+
+    let location = Location {
+        r#type: EndpointType::S3 as i32,
+        bucket: collection_id.to_string(),
+        path: new_object_id.to_string(),
+    };
+
+    let init_object_request = InitializeNewObjectRequest {
+        object: Some(StageObject {
+            filename: "File.file".to_string(),
+            description: "This is a mock file.".to_string(),
+            collection_id: collection_id.to_string(),
+            content_len: 1337,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: vec![KeyValue {
+                key: "LabelKey".to_string(),
+                value: "LabelValue".to_string(),
+            }],
+            hooks: vec![KeyValue {
+                key: "HookKey".to_string(),
+                value: "HookValue".to_string(),
+            }],
+        }),
+        collection_id: collection_id.to_string(),
+        preferred_endpoint_id: endpoint_id.to_string(),
+        multipart: false,
+        is_specification: false,
+    };
+
+    let init_object_response = db
+        .create_object(
+            &init_object_request,
+            &creator,
+            &location,
+            upload_id.clone(),
+            endpoint_id,
+            new_object_id,
+        )
+        .unwrap();
+
+    assert_eq!(&init_object_response.object_id, &new_object_id.to_string());
+    assert_eq!(
+        &init_object_response.collection_id,
+        &collection_id.to_string()
+    );
+    assert_eq!(&init_object_response.upload_id, &upload_id);
+
+    // Finish object staging
+    let finish_hash = aruna_rust_api::api::storage::models::v1::Hash {
+        alg: Hashalgorithm::Sha256 as i32,
+        hash: "f60b102aa455f085df91ffff53b3c0acd45c10f02782b953759ab10973707a92".to_string(),
+    };
+    let finish_request = FinishObjectStagingRequest {
+        object_id: new_object_id.to_string(),
+        upload_id,
+        collection_id: collection_id.to_string(),
+        hash: Some(finish_hash),
+        no_upload: false,
+        completed_parts: vec![],
+        auto_update: true,
+    };
+
+    let _finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
+
+    // Objects initialized -> refresh views
+
+    let result = db.update_collection_views();
+    assert!(result.is_ok());
+
+    // Get collection by ID
+    let q_col_req = GetCollectionByIdRequest {
+        collection_id: collection_id.to_string(),
+    };
+    let queried_col = db.get_collection_by_id(q_col_req).unwrap();
+
+    // Acc size should be 1337
+    assert_eq!(
+        queried_col
+            .collection
+            .unwrap()
+            .stats
+            .unwrap()
+            .object_stats
+            .unwrap()
+            .acc_size,
+        1337
+    )
 }

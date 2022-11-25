@@ -8,6 +8,9 @@ use crate::database::models::{
     views::ObjectGroupStat,
 };
 use crate::error::ArunaError;
+use aruna_rust_api::api::storage::services::v1::{
+    AddLabelsToObjectGroupRequest, AddLabelsToObjectGroupResponse,
+};
 use aruna_rust_api::api::storage::{
     models::v1::{
         KeyValue, Object as ProtoObject, ObjectGroupOverview, ObjectGroupOverviews,
@@ -23,6 +26,7 @@ use aruna_rust_api::api::storage::{
         UpdateObjectGroupResponse,
     },
 };
+use bigdecimal::ToPrimitive;
 use chrono::Utc;
 use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update};
 use itertools::Itertools;
@@ -687,6 +691,38 @@ impl Database {
         // Return already complete gRPC response
         Ok(DeleteObjectGroupResponse {})
     }
+    pub fn add_labels_to_object_group(
+        &self,
+        request: AddLabelsToObjectGroupRequest,
+    ) -> Result<AddLabelsToObjectGroupResponse, ArunaError> {
+        use crate::database::schema::object_group_key_value::dsl::*;
+
+        // Parse id of object group to be deleted
+        let object_group_uuid = Uuid::parse_str(&request.group_id)?;
+
+        // Deletion transaction
+        let updated_ogroup = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<ObjectGroupDb>, Error, _>(|conn| {
+                let db_key_values = to_key_values::<ObjectGroupKeyValue>(
+                    request.labels_to_add,
+                    Vec::new(),
+                    object_group_uuid,
+                );
+
+                insert_into(object_group_key_value)
+                    .values(&db_key_values)
+                    .execute(conn)?;
+
+                query_object_group(object_group_uuid, conn)
+            })?;
+
+        // Return already complete gRPC response
+        Ok(AddLabelsToObjectGroupResponse {
+            object_group: updated_ogroup.map(|ogrp| ogrp.into()),
+        })
+    }
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
@@ -904,7 +940,7 @@ impl From<ObjectGroupDb> for ObjectGroupOverview {
         let stats = ogroup_db.stats.map(|ogstats| ObjectGroupStats {
             object_stats: Some(Stats {
                 count: ogstats.object_count,
-                acc_size: ogstats.size,
+                acc_size: ogstats.size.to_i64().unwrap_or_default(),
             }),
             last_updated: Some(
                 naivedatetime_to_prost_time(ogstats.last_updated).unwrap_or_default(),
@@ -913,14 +949,8 @@ impl From<ObjectGroupDb> for ObjectGroupOverview {
 
         ObjectGroupOverview {
             id: ogroup_db.object_group.id.to_string(),
-            name: ogroup_db
-                .object_group
-                .name
-                .unwrap_or_else(|| "".to_string()),
-            description: ogroup_db
-                .object_group
-                .description
-                .unwrap_or_else(|| "".to_string()),
+            name: ogroup_db.object_group.name.unwrap_or_default(),
+            description: ogroup_db.object_group.description.unwrap_or_default(),
             labels: ogroup_db.labels,
             hooks: ogroup_db.hooks,
             stats,

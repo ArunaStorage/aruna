@@ -252,17 +252,21 @@ impl ObjectService for ObjectServiceImpl {
         // Try to connect to one of the objects data proxy endpoints (currently only primary location endpoint)
         let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_id).await?;
 
-        if inner_request.part_number < 1 {
+        let part_number: i64 = if inner_request.multipart && inner_request.part_number < 1 {
             return Err(tonic::Status::invalid_argument(
                 "Invalid part number, must be greater or equal 1",
             ));
-        }
+        } else if !inner_request.multipart {
+            1
+        } else {
+            inner_request.part_number as i64
+        };
 
         // Get upload url through data proxy
         let upload_url = data_proxy
             .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
                 multipart: inner_request.multipart,
-                part_number: inner_request.part_number as i64,
+                part_number,
                 location: Some(location),
                 upload_id: inner_request.upload_id, //Note: Can be moved, only used here
             })
@@ -955,10 +959,10 @@ impl ObjectService for ObjectServiceImpl {
         return Ok(response);
     }
 
-    async fn add_label_to_object(
+    async fn add_labels_to_object(
         &self,
-        request: Request<AddLabelToObjectRequest>,
-    ) -> Result<Response<AddLabelToObjectResponse>, Status> {
+        request: Request<AddLabelsToObjectRequest>,
+    ) -> Result<Response<AddLabelsToObjectResponse>, Status> {
         log::info!("Received AddLabelToObjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -975,7 +979,7 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.add_label_to_object(request.into_inner()))
+            task::spawn_blocking(move || database_clone.add_labels_to_object(request.into_inner()))
                 .await
                 .map_err(ArunaError::from)??,
         );

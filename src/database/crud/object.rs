@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::hash::Hash;
+use std::hash::Hasher;
 
 use chrono::Local;
 use diesel::dsl::{count, max};
@@ -12,9 +14,9 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
-    AddLabelToObjectRequest, AddLabelToObjectResponse, DeleteObjectsRequest, DeleteObjectsResponse,
-    GetReferencesRequest, GetReferencesResponse, ObjectReference, SetHooksOfObjectRequest,
-    SetHooksOfObjectResponse,
+    AddLabelsToObjectRequest, AddLabelsToObjectResponse, DeleteObjectsRequest,
+    DeleteObjectsResponse, GetReferencesRequest, GetReferencesResponse, ObjectReference,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -34,15 +36,15 @@ use aruna_rust_api::api::storage::{
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
-    check_all_for_db_kv, db_to_grpc_object_status, from_key_values, naivedatetime_to_prost_time,
-    parse_page_request, parse_query, to_key_values,
+    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_object_status, from_key_values,
+    naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
     HashType, KeyValueType, ObjectStatus, ReferenceStatus, SourceType,
 };
 use crate::database::models::object::{
-    Endpoint, Hash, Object, ObjectKeyValue, ObjectLocation, Source,
+    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
@@ -59,10 +61,30 @@ pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
     pub hooks: Vec<KeyValue>,
-    pub hash: Hash,
+    pub hash: ApiHash,
     pub source: Option<Source>,
     pub latest: bool,
     pub update: bool,
+}
+
+impl PartialEq for ObjectDto {
+    fn eq(&self, other: &Self) -> bool {
+        self.object == other.object
+            && self.labels == other.labels
+            && self.hooks == other.hooks
+            && self.hash == other.hash
+            && self.source == other.source
+            && self.latest == other.latest
+            && self.update == other.update
+    }
+}
+
+impl Eq for ObjectDto {}
+
+impl Hash for ObjectDto {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.object.hash(state);
+    }
 }
 
 /// Implementing CRUD+ database operations for Objects
@@ -153,7 +175,7 @@ impl Database {
         };
 
         // Define the hash placeholder for the object
-        let empty_hash = Hash {
+        let empty_hash = ApiHash {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id,
@@ -233,7 +255,7 @@ impl Database {
                         }
                         Some(req_hash) =>
                             diesel
-                                ::update(Hash::belonging_to(&returned_obj))
+                                ::update(ApiHash::belonging_to(&returned_obj))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type.eq(
@@ -556,6 +578,13 @@ impl Database {
                     // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
 
+                    if latest.id != parsed_old_id && !request.force {
+                        return Err(ArunaError::InvalidRequest(
+                            "Concurrency error: Updates without force are only allowed for the latest object"
+                                .to_string(),
+                        ));
+                    }
+
                     //Define source object from updated request; None if empty
                     let source: Option<Source> = match &sobj.source {
                         Some(source) => Some(Source {
@@ -636,7 +665,7 @@ impl Database {
                             };
 
                             // Define the hash placeholder for the object
-                            let empty_hash = Hash {
+                            let empty_hash = ApiHash {
                                 id: uuid::Uuid::new_v4(),
                                 hash: "".to_string(), //Note: Empty hash will be updated later
                                 object_id: new_obj_id,
@@ -842,6 +871,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+    ///
     pub fn get_object_revisions(
         &self,
         request: GetObjectRevisionsRequest,
@@ -853,15 +883,31 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ObjectDto>, Error, _>(|conn| {
+                // This is a safety measure to make sure on revision is referenced in the current collection
+                // Otherwise get_object_ignore_coll could be used to break safety measures / permission boundaries
                 let all = get_all_revisions(conn, parsed_object_id)?;
-                all.iter()
-                    .filter_map(|obj| {
-                        match get_object(&obj.id, &parsed_collection_id, false, conn) {
+                let all_ids = all.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                let issomewherereferenced = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&all_ids))
+                    .filter(
+                        database::schema::collection_objects::collection_id
+                            .eq(parsed_collection_id),
+                    )
+                    .first::<CollectionObject>(conn)
+                    .optional()?;
+
+                // Query and return all revisions
+                Ok(if issomewherereferenced.is_some() {
+                    all.iter()
+                        .filter_map(|obj| match get_object_ignore_coll(&obj.id, conn) {
                             Ok(opt) => opt.map(Ok),
                             Err(e) => Some(Err(e)),
-                        }
-                    })
-                    .collect::<Result<Vec<ObjectDto>, _>>()
+                        })
+                        .collect::<Result<Vec<ObjectDto>, _>>()?
+                } else {
+                    Vec::new()
+                })
             })?;
 
         Ok(all_revs)
@@ -881,15 +927,18 @@ impl Database {
         let query_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Execute request
+        use crate::database::schema::collection_objects::dsl as colobj;
         use crate::database::schema::object_key_value::dsl as okv;
-        use crate::database::schema::objects::dsl as obj;
         use diesel::prelude::*;
         let ret_objects = self
             .pg_connection
             .get()?
             .transaction::<Option<Vec<ObjectDto>>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
-                let mut base_request = obj::objects.into_boxed();
+                let mut base_request = colobj::collection_objects.into_boxed();
+                // Filter collection_id
+                base_request = base_request.filter(colobj::collection_id.eq(&query_collection_id));
+
                 // Create returnvector of CollectionOverviewsDb
                 let mut return_vec: Vec<ObjectDto> = Vec::new();
                 // If pagesize is not unlimited set it to pagesize or default = 20
@@ -898,7 +947,7 @@ impl Database {
                 }
                 // Add "last_uuid" filter if it is specified
                 if let Some(l_uid) = last_uuid {
-                    base_request = base_request.filter(obj::id.gt(l_uid));
+                    base_request = base_request.filter(colobj::object_id.gt(l_uid));
                 }
                 // Add query if it exists
                 if let Some(p_query) = parsed_query {
@@ -948,7 +997,7 @@ impl Database {
                             }
                             // Add to query if something was found otherwise return Only
                             if let Some(fobjs) = found_objs {
-                                base_request = base_request.filter(obj::id.eq_any(fobjs));
+                                base_request = base_request.filter(colobj::object_id.eq_any(fobjs));
                             } else {
                                 return Ok(None);
                             }
@@ -956,19 +1005,20 @@ impl Database {
                         // If the request was an ID request, just filter for all ids
                         // And for uuids makes no sense
                         ParsedQuery::IdsQuery(ids) => {
-                            base_request = base_request.filter(obj::id.eq_any(ids));
+                            base_request = base_request.filter(colobj::object_id.eq_any(ids));
                         }
                     }
                 }
 
                 // Execute the preconfigured query
-                let query_collections: Option<Vec<Object>> =
-                    base_request.load::<Object>(conn).optional()?;
+                let query_collections: Option<Vec<CollectionObject>> =
+                    base_request.load::<CollectionObject>(conn).optional()?;
                 // Query overviews for each collection
                 // TODO: This might be inefficient and can be optimized later
                 if let Some(q_objs) = query_collections {
                     for s_obj in q_objs {
-                        if let Some(obj) = get_object(&s_obj.id, &query_collection_id, false, conn)?
+                        if let Some(obj) =
+                            get_object(&s_obj.object_id, &query_collection_id, false, conn)?
                         {
                             return_vec.push(obj);
                         }
@@ -1332,10 +1382,10 @@ impl Database {
     }
 
     /// ToDo: Rust Doc
-    pub fn add_label_to_object(
+    pub fn add_labels_to_object(
         &self,
-        request: AddLabelToObjectRequest,
-    ) -> Result<AddLabelToObjectResponse, ArunaError> {
+        request: AddLabelsToObjectRequest,
+    ) -> Result<AddLabelsToObjectResponse, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Transaction time
@@ -1360,7 +1410,7 @@ impl Database {
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
 
-        Ok(AddLabelToObjectResponse { object: mapped })
+        Ok(AddLabelsToObjectResponse { object: mapped })
     }
 
     /// ToDo: Rust Doc
@@ -1443,7 +1493,7 @@ pub fn clone_object(
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
-    let db_hash: Hash = Hash::belonging_to(&db_object).first::<Hash>(conn)?;
+    let db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
 
     let db_source: Option<Source> = match &db_object.source_id {
         None => None,
@@ -1506,7 +1556,7 @@ pub fn clone_object(
         status: db_object.object_status as i32,
         origin: Some(ProtoOrigin {
             r#type: 2,
-            id: db_object.id.to_string(),
+            id: db_object.origin_id.unwrap_or_default().to_string(),
         }),
         data_class: db_object.dataclass as i32,
         hash: Some(ProtoHash {
@@ -1825,6 +1875,7 @@ pub fn get_all_references(
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
 /// * `collection_uuid` `&uuid::Uuid` - The Uuid of the requesting collection
+/// * `include_staging`: bool - Should non finished objects be included
 ///
 /// ## Resturns:
 ///
@@ -1844,7 +1895,7 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: Hash = Hash::belonging_to(&object).first::<Hash>(conn)?;
+    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -1893,6 +1944,67 @@ pub fn get_object(
         }
         None => Ok(None),
     }
+}
+
+/// WARNING: This function should be used with care, it could be used to cross permission boundaries
+/// because collections are not checked.
+///
+/// This function is needed to correctly query all revisions which might not be in any collection anymore.
+///
+/// Helper function to query the current database version of an object "ObjectDto"
+/// ObjectDto can be transformed to gRPC objects
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
+///
+/// ## Resturns:
+///
+/// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
+/// Database representation of an object
+///
+pub fn get_object_ignore_coll(
+    object_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<Option<ObjectDto>, diesel::result::Error> {
+    let object: Object = objects
+        .filter(database::schema::objects::id.eq(&object_uuid))
+        .first::<Object>(conn)?;
+
+    let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
+    let (labels, hooks) = from_key_values(object_key_values);
+
+    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
+
+    let source: Option<Source> = match &object.source_id {
+        None => None,
+        Some(src_id) => Some(
+            sources
+                .filter(database::schema::sources::id.eq(src_id))
+                .first::<Source>(conn)?,
+        ),
+    };
+
+    let latest_object_revision: Option<i64> = objects
+        .select(max(database::schema::objects::revision_number))
+        .filter(database::schema::objects::shared_revision_id.eq(&object.shared_revision_id))
+        .first::<Option<i64>>(conn)?;
+
+    let latest = (match latest_object_revision {
+        None => Err(Error::NotFound), // false,
+        Some(revision) => Ok(revision == object.revision_number),
+    })?;
+
+    Ok(Some(ObjectDto {
+        object,
+        labels,
+        hooks,
+        hash: object_hash,
+        source,
+        latest,
+        update: false, // Always false might not include any collection_info
+    }))
 }
 
 /// Implement TryFrom for ObjectDto to ProtoObject
@@ -1952,7 +2064,7 @@ impl TryFrom<ObjectDto> for ProtoObject {
             content_len: object_dto.object.content_len,
             status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
             origin: proto_origin,
-            data_class: object_dto.object.dataclass as i32,
+            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
             hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,
             source: proto_source,

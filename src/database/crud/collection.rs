@@ -20,7 +20,7 @@ use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, Ref
 use crate::database::models::object::{Object, ObjectKeyValue};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
-use crate::error::ArunaError;
+use crate::error::{ArunaError, TypeConversionError};
 use aruna_rust_api::api::storage::models::v1::DataClass;
 use aruna_rust_api::api::storage::models::v1::{
     collection_overview, collection_overview::Version as CollectionVersiongRPC, CollectionOverview,
@@ -32,6 +32,7 @@ use aruna_rust_api::api::storage::services::v1::{
     GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
     PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
 };
+use bigdecimal::ToPrimitive;
 use chrono::Local;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
@@ -397,7 +398,7 @@ impl Database {
                         created_by: user_id,
                         version_id: Some(new_version.id),
                         dataclass: Some(request.dataclass()).map(DBDataclass::from),
-                        project_id: uuid::Uuid::parse_str(&request.project_id)?,
+                        project_id: old_collection.project_id,
                     };
                     // Execute the pin request and return the collection overview
 
@@ -744,7 +745,9 @@ fn map_to_collection_overview(
             if let Some(sts) = ret_coll.coll_stats {
                 let obj_stats = Stats {
                     count: sts.object_count,
-                    acc_size: sts.size,
+                    acc_size: sts.size.to_i64().ok_or(ArunaError::TypeConversionError(
+                        TypeConversionError::BIGDECIMAL,
+                    ))?,
                 };
 
                 let coll_stats = CollectionStats {
