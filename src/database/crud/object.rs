@@ -1895,7 +1895,16 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
+    let object_hash: Option<ApiHash> = ApiHash::belonging_to(&object)
+        .first::<ApiHash>(conn)
+        .optional()?;
+
+    let object_hash = object_hash.unwrap_or_else(|| ApiHash {
+        id: uuid::Uuid::default(),
+        hash: "".to_string(),
+        object_id: uuid::Uuid::default(),
+        hash_type: HashType::MD5,
+    });
 
     let source: Option<Source> = match &object.source_id {
         None => None,
