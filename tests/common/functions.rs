@@ -457,6 +457,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
             labels: dummy_labels.clone(),
             hooks: dummy_hooks.clone(),
         }),
+        force: true,
         reupload: true,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,

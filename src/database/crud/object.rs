@@ -14,9 +14,9 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
-    AddLabelToObjectRequest, AddLabelToObjectResponse, DeleteObjectsRequest, DeleteObjectsResponse,
-    GetReferencesRequest, GetReferencesResponse, ObjectReference, SetHooksOfObjectRequest,
-    SetHooksOfObjectResponse,
+    AddLabelsToObjectRequest, AddLabelsToObjectResponse, DeleteObjectsRequest,
+    DeleteObjectsResponse, GetReferencesRequest, GetReferencesResponse, ObjectReference,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -36,8 +36,8 @@ use aruna_rust_api::api::storage::{
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
-    check_all_for_db_kv, db_to_grpc_object_status, from_key_values, naivedatetime_to_prost_time,
-    parse_page_request, parse_query, to_key_values,
+    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_object_status, from_key_values,
+    naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
@@ -577,6 +577,13 @@ impl Database {
                 .transaction::<_, ArunaError, _>(|conn| {
                     // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
+
+                    if latest.id != parsed_old_id && !request.force {
+                        return Err(ArunaError::InvalidRequest(
+                            "Concurrency error: Updates without force are only allowed for the latest object"
+                                .to_string(),
+                        ));
+                    }
 
                     //Define source object from updated request; None if empty
                     let source: Option<Source> = match &sobj.source {
@@ -1375,10 +1382,10 @@ impl Database {
     }
 
     /// ToDo: Rust Doc
-    pub fn add_label_to_object(
+    pub fn add_labels_to_object(
         &self,
-        request: AddLabelToObjectRequest,
-    ) -> Result<AddLabelToObjectResponse, ArunaError> {
+        request: AddLabelsToObjectRequest,
+    ) -> Result<AddLabelsToObjectResponse, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
         // Transaction time
@@ -1403,7 +1410,7 @@ impl Database {
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
 
-        Ok(AddLabelToObjectResponse { object: mapped })
+        Ok(AddLabelsToObjectResponse { object: mapped })
     }
 
     /// ToDo: Rust Doc
@@ -2057,7 +2064,7 @@ impl TryFrom<ObjectDto> for ProtoObject {
             content_len: object_dto.object.content_len,
             status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
             origin: proto_origin,
-            data_class: object_dto.object.dataclass as i32,
+            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
             hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,
             source: proto_source,

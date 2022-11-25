@@ -318,9 +318,9 @@ impl CollectionService for CollectionServiceImpl {
 
         let user_id = if request.get_ref().force {
             self.authz
-                .project_authorize(
+                .project_authorize_by_collectionid(
                     request.metadata(),
-                    uuid::Uuid::parse_str(&request.get_ref().project_id)
+                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
                         .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                     UserRights::ADMIN,
                 )

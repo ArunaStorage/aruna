@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use aruna_rust_api::api::storage::services::v1::{
     user_service_server::UserService, ActivateUserRequest, CreateApiTokenRequest,
-    GetApiTokenRequest, RegisterUserRequest,
+    GetApiTokenRequest, GetUserRequest, RegisterUserRequest,
 };
 use aruna_server::{
     database::{self},
@@ -282,6 +282,15 @@ async fn get_api_token_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
+
+    // Get User
+    let get_req = common::grpc_helpers::add_token(
+        tonic::Request::new(GetUserRequest {
+            user_id: "".to_string(),
+        }),
+        common::oidc::REGULAROIDC,
+    );
+    let _resp = userservice.get_user(get_req).await.unwrap();
 
     // First Create a token
     let req = common::grpc_helpers::add_token(

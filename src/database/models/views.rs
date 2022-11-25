@@ -1,4 +1,5 @@
 use crate::database::schema::*;
+use bigdecimal::BigDecimal;
 use uuid;
 
 #[derive(Queryable, Identifiable, Debug, Clone)]
@@ -7,7 +8,7 @@ pub struct CollectionStat {
     pub id: uuid::Uuid,
     pub object_count: i64,
     pub object_group_count: i64,
-    pub size: i64,
+    pub size: BigDecimal,
     pub last_updated: chrono::NaiveDateTime,
 }
 
@@ -16,6 +17,6 @@ pub struct CollectionStat {
 pub struct ObjectGroupStat {
     pub id: uuid::Uuid,
     pub object_count: i64,
-    pub size: i64,
+    pub size: BigDecimal,
     pub last_updated: chrono::NaiveDateTime,
 }

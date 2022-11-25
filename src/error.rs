@@ -206,6 +206,7 @@ impl Display for ConnectionError {
 pub enum TypeConversionError {
     UUID,
     TONICMETADATATOSTR,
+    BIGDECIMAL,
     JWT,
     STRTOENDPOINTTYPE,
     PARSECONFIG,
@@ -218,6 +219,12 @@ impl Display for TypeConversionError {
             TypeConversionError::UUID => write!(f, "Typeconversion for UUID failed"),
             TypeConversionError::TONICMETADATATOSTR => {
                 write!(f, "Typeconversion for gRPC metadata 'to_str' failed")
+            }
+            TypeConversionError::BIGDECIMAL => {
+                write!(
+                    f,
+                    "Typecoversion from BIGDECIMAL to int failed (possible overflow)"
+                )
             }
             TypeConversionError::JWT => write!(f, "Typeconversion for JWT failed"),
             TypeConversionError::STRTOENDPOINTTYPE => {

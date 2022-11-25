@@ -48,7 +48,7 @@ fn create_object_test() {
         project_id: project_id.to_string(),
         labels: vec![],
         hooks: vec![],
-        dataclass: 1,
+        dataclass: DataClass::Private as i32,
     };
     let create_collection_response = db
         .create_new_collection(create_collection_request, creator)
@@ -72,7 +72,7 @@ fn create_object_test() {
             collection_id: collection_id.to_string(),
             content_len: 1234,
             source: None,
-            dataclass: 1,
+            dataclass: DataClass::Private as i32,
             labels: vec![KeyValue {
                 key: "LabelKey".to_string(),
                 value: "LabelValue".to_string(),
@@ -123,12 +123,12 @@ fn create_object_test() {
 
     let finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
     let finished_object = finish_response.object.unwrap();
-
     assert_eq!(finished_object.id, new_object_id.to_string());
     assert!(matches!(
         grpc_to_db_object_status(&finished_object.status),
         ObjectStatus::AVAILABLE
     ));
+    assert_eq!(finished_object.data_class, DataClass::Private as i32);
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, "File.file".to_string());
     assert_eq!(finished_object.content_len, 1234);
@@ -605,6 +605,7 @@ fn delete_object_test() {
             labels: Vec::new(),
             hooks: Vec::new(),
         }),
+        force: true,
         reupload: false,
         is_specification: false,
         preferred_endpoint_id: "".to_string(),

@@ -635,6 +635,7 @@ fn get_user_projects_test() {
             user_id: user_id.to_string(),
             project_id: proj_1.clone().project_id,
             permission: 2,
+            service_account: false,
         }),
     };
     db.add_user_to_project(add_user_req, user_id).unwrap();
@@ -704,6 +705,7 @@ fn get_checked_user_id_from_token_test() {
             user_id: user_id.to_string(),
             project_id: proj_1.clone().project_id,
             permission: 2,
+            service_account: false,
         }),
     };
     db.add_user_to_project(add_user_req, user_id).unwrap();
