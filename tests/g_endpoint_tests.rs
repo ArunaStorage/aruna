@@ -173,6 +173,7 @@ fn get_endpoints_test() {
             "DummyEndpoint_001".to_string(),
             "demo_endpoint".to_string(),
             "Default_Endpoint".to_string(),
+            "Default Data Proxy".to_string(),
         ];
 
         if !ep_names.contains(&ep.name) {
