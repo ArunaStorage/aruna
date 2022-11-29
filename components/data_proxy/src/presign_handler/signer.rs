@@ -110,9 +110,23 @@ impl PresignHandler {
         mac.update(query_signature.as_bytes());
 
         match mac.verify_slice(signature_hmac_key.as_slice()) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
+            Ok(_) => {}
+            Err(_) => return Ok(false),
         }
+
+        let expiry_time = match DateTime::parse_from_rfc3339(sign_query_params.expiry.as_str()) {
+            Ok(expiry_time) => expiry_time.naive_utc(),
+            Err(err) => {
+                log::error!("{}", err);
+                return Ok(false);
+            }
+        };
+
+        if chrono::offset::Utc::now().naive_utc() > expiry_time {
+            return Ok(false);
+        }
+
+        return Ok(true);
     }
 
     fn query_signature_string(&self, sign_query_params: SignedParamsQuery, path: String) -> String {
@@ -127,11 +141,58 @@ impl PresignHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, str::FromStr, time::Duration};
+    use std::{env, str::FromStr, thread, time::Duration};
 
     use crate::data_server::server::SignedParamsQuery;
 
     use super::{PresignHandler, SECRET_ENV_VAR};
+
+    #[test]
+    fn test_signer_expired() {
+        env::set_var(SECRET_ENV_VAR, "test");
+
+        let signer = PresignHandler::new().unwrap();
+        let path = "/test/path/1/3".to_string();
+        let duration = Duration::new(1, 0);
+
+        let url = url::Url::from_str(format!("{}{}", "http://example.com", path).as_str()).unwrap();
+
+        let url = signer.sign_url(duration, None, None, url).unwrap();
+
+        let mut query_sign_params = SignedParamsQuery {
+            ..Default::default()
+        };
+        for (key, value) in url.query_pairs() {
+            match key.to_string().as_str() {
+                "expiry" => {
+                    query_sign_params.expiry = value.to_string();
+                }
+                "salt" => {
+                    query_sign_params.salt = value.to_string();
+                }
+                "signature" => {
+                    query_sign_params.signature = value.to_string();
+                }
+                _ => {}
+            }
+        }
+
+        let is_valid = signer
+            .verify_sign_url(query_sign_params.clone(), path.clone())
+            .unwrap();
+        assert!(is_valid);
+
+        thread::sleep(Duration::new(2, 0));
+
+        let is_valid = signer
+            .verify_sign_url(query_sign_params.clone(), path)
+            .unwrap();
+        assert!(!is_valid);
+
+        let bad_path = "/test/path/2/3".to_string();
+        let is_valid = signer.verify_sign_url(query_sign_params, bad_path).unwrap();
+        assert!(!is_valid);
+    }
 
     #[test]
     fn test_signer() {
