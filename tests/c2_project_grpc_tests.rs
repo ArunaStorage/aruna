@@ -2,7 +2,7 @@ use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, CreateProjectRequest, GetProjectRequest,
+    AddUserToProjectRequest, CreateProjectRequest, GetProjectRequest, GetProjectsRequest,
     GetUserPermissionsForProjectRequest, RegisterUserRequest, RemoveUserFromProjectRequest,
 };
 use aruna_server::{
@@ -60,6 +60,96 @@ async fn create_project_grpc_test() {
 
     // Validate project creation failed with non-admin token
     assert!(create_project_response.is_err())
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn get_projects_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let project_service = ProjectServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let project_001 = common::functions::create_project(None);
+    let project_002 = common::functions::create_project(None);
+
+    // Create gPC Request to fetch single project
+    let get_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetProjectRequest {
+            project_id: project_001.id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_project_response = project_service
+        .get_project(get_project_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let fetch_project = get_project_response.project.unwrap();
+
+    assert_eq!(project_001.id, fetch_project.id);
+    assert_eq!(project_001.name, fetch_project.name);
+    assert_eq!(project_001.description, fetch_project.description);
+
+    // Create gPC Request to fetch project with non-authorized token
+    let get_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetProjectRequest {
+            project_id: project_001.id.to_string(),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+
+    let get_project_response = project_service.get_project(get_project_request).await;
+
+    assert!(get_project_response.is_err());
+
+    // Create gPC Request to fetch all projects including project_001 and project_002
+    let get_projects_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetProjectsRequest {}),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_projects_response = project_service
+        .get_projects(get_projects_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Note: Filter for specific projects as there were created A LOT more in other tests with this token
+    let filtered_projects = get_projects_response
+        .projects
+        .iter()
+        .filter(|proj| vec![project_001.id.clone(), project_002.id.clone()].contains(&proj.id))
+        .collect::<Vec<_>>();
+
+    assert_eq!(filtered_projects.len(), 2);
+    for proj in filtered_projects {
+        if proj.id == project_001.id {
+            assert_eq!(proj.name, project_001.name);
+            assert_eq!(proj.description, project_001.description);
+        } else if proj.id == project_002.id {
+            assert_eq!(proj.name, project_002.name);
+            assert_eq!(proj.description, project_002.description);
+        } else {
+            panic!("There should only be the ids of project_001 and project_002.")
+        }
+    }
+
+    // Create gPC Request to fetch all projects with non-authorized token
+    let get_projects_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetProjectsRequest {}),
+        common::oidc::REGULARTOKEN,
+    );
+
+    let get_projects_response = project_service.get_projects(get_projects_request).await;
+
+    assert!(get_projects_response.is_err())
 }
 
 #[ignore]
