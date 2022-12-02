@@ -1,11 +1,14 @@
+use crate::common::functions::TCreateCollection;
 use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
+use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, CreateProjectRequest, GetProjectRequest, GetProjectsRequest,
-    GetUserPermissionsForProjectRequest, RegisterUserRequest, RemoveUserFromProjectRequest,
-    UpdateProjectRequest,
+    AddUserToProjectRequest, CreateProjectRequest, DeleteCollectionRequest, DestroyProjectRequest,
+    GetProjectRequest, GetProjectsRequest, GetUserPermissionsForProjectRequest,
+    RegisterUserRequest, RemoveUserFromProjectRequest, UpdateProjectRequest,
 };
+use aruna_server::server::services::collection::CollectionServiceImpl;
 use aruna_server::{
     database::{self},
     server::services::authz::Authz,
@@ -205,6 +208,84 @@ async fn update_project_grpc_test() {
     let update_project_response = project_service.update_project(update_project_request).await;
 
     assert!(update_project_response.is_err())
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn destroy_project_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
+    let collection_service = CollectionServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Create gPC Request to delete project with non-authorized token
+    let delete_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DestroyProjectRequest {
+            project_id: random_project.id.to_string(),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+
+    let delete_project_response = project_service
+        .destroy_project(delete_project_request)
+        .await;
+
+    assert!(delete_project_response.is_err());
+
+    // Try to delete non-empty project
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: None,
+    });
+
+    let delete_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DestroyProjectRequest {
+            project_id: random_project.id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let delete_project_response = project_service
+        .destroy_project(delete_project_request)
+        .await;
+
+    assert!(delete_project_response.is_err());
+
+    // Remove collection and then empty project
+    let delete_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteCollectionRequest {
+            collection_id: random_collection.id.to_string(),
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    assert!(collection_service
+        .delete_collection(delete_collection_request)
+        .await
+        .is_ok());
+
+    let delete_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DestroyProjectRequest {
+            project_id: random_project.id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let _delete_project_response = project_service
+        .destroy_project(delete_project_request)
+        .await
+        .unwrap();
 }
 
 #[ignore]
