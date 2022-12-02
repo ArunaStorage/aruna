@@ -75,7 +75,8 @@ CREATE TABLE user_permissions (
     user_right USER_RIGHTS NOT NULL DEFAULT 'READ',
     project_id UUID NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (project_id) REFERENCES projects(id)
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    UNIQUE(user_id, project_id)
 );
 /* ----- Collections ----------------------------------------------- */
 -- Table with the individual parts of semantic versioning
