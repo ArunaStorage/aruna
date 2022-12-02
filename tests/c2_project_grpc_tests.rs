@@ -4,6 +4,7 @@ use aruna_rust_api::api::storage::services::v1::user_service_server::UserService
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, CreateProjectRequest, GetProjectRequest, GetProjectsRequest,
     GetUserPermissionsForProjectRequest, RegisterUserRequest, RemoveUserFromProjectRequest,
+    UpdateProjectRequest,
 };
 use aruna_server::{
     database::{self},
@@ -150,6 +151,60 @@ async fn get_projects_grpc_test() {
     let get_projects_response = project_service.get_projects(get_projects_request).await;
 
     assert!(get_projects_response.is_err())
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn update_project_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let project_service = ProjectServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let orig_project = common::functions::create_project(None);
+
+    // Create gPC Request to update single project name and description
+    let update_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateProjectRequest {
+            project_id: orig_project.id.to_string(),
+            name: "Updated Project".to_string(),
+            description: "This project was updated in update_project_grpc_test().".to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let update_project_response = project_service
+        .update_project(update_project_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let updated_project = update_project_response.project.unwrap();
+
+    assert_eq!(orig_project.id, updated_project.id);
+    assert_eq!(updated_project.name, "Updated Project".to_string());
+    assert_eq!(
+        updated_project.description,
+        "This project was updated in update_project_grpc_test().".to_string()
+    );
+
+    // Create gPC Request to update single project with non-authorized token
+    let update_project_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateProjectRequest {
+            project_id: orig_project.id.to_string(),
+            name: "Updated Project".to_string(),
+            description: "This update should have been failed...".to_string(),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+
+    let update_project_response = project_service.update_project(update_project_request).await;
+
+    assert!(update_project_response.is_err())
 }
 
 #[ignore]
