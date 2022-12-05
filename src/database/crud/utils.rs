@@ -150,7 +150,7 @@ pub fn map_permissions(
 ) -> Option<UserRights> {
     match perm {
         aruna_rust_api::api::storage::models::v1::Permission::Unspecified => None,
-        aruna_rust_api::api::storage::models::v1::Permission::None => None,
+        aruna_rust_api::api::storage::models::v1::Permission::None => Some(UserRights::NONE),
         aruna_rust_api::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
         aruna_rust_api::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
         aruna_rust_api::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
@@ -189,6 +189,7 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
     //
     match right {
         Some(t) => match t {
+            UserRights::NONE => 1,
             UserRights::READ => 2,
             UserRights::APPEND => 3,
             UserRights::MODIFY => 4,
@@ -462,6 +463,7 @@ mod tests {
     fn test_map_permissions_rev() {
         let tests = vec![
             (None, 0),
+            (Some(UserRights::NONE), 1),
             (Some(UserRights::READ), 2),
             (Some(UserRights::APPEND), 3),
             (Some(UserRights::MODIFY), 4),
@@ -478,22 +480,22 @@ mod tests {
     fn test_map_permissions() {
         for (index, perm) in vec![
             Permission::Unspecified,
+            Permission::None,
             Permission::Read,
             Permission::Append,
             Permission::Modify,
             Permission::Admin,
-            Permission::None,
         ]
         .iter()
         .enumerate()
         {
             match index {
                 0 => assert_eq!(map_permissions(*perm), None),
-                1 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
-                2 => assert_eq!(map_permissions(*perm), Some(UserRights::APPEND)),
-                3 => assert_eq!(map_permissions(*perm), Some(UserRights::WRITE)),
-                4 => assert_eq!(map_permissions(*perm), Some(UserRights::ADMIN)),
-                5 => assert_eq!(map_permissions(*perm), None),
+                1 => assert_eq!(map_permissions(*perm), Some(UserRights::NONE)),
+                2 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
+                3 => assert_eq!(map_permissions(*perm), Some(UserRights::APPEND)),
+                4 => assert_eq!(map_permissions(*perm), Some(UserRights::WRITE)),
+                5 => assert_eq!(map_permissions(*perm), Some(UserRights::ADMIN)),
                 _ => panic!("map permissions test index out of bound"),
             }
         }
