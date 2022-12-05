@@ -3,11 +3,7 @@ use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
-use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, CreateProjectRequest, DeleteCollectionRequest, DestroyProjectRequest,
-    GetProjectRequest, GetProjectsRequest, GetUserPermissionsForProjectRequest,
-    RegisterUserRequest, RemoveUserFromProjectRequest, UpdateProjectRequest,
-};
+use aruna_rust_api::api::storage::services::v1::{AddUserToProjectRequest, CreateProjectRequest, DeleteCollectionRequest, DestroyProjectRequest, EditUserPermissionsForProjectRequest, GetProjectRequest, GetProjectsRequest, GetUserPermissionsForProjectRequest, RegisterUserRequest, RemoveUserFromProjectRequest, UpdateProjectRequest};
 use aruna_server::server::services::collection::CollectionServiceImpl;
 use aruna_server::{
     database::{self},
@@ -509,4 +505,116 @@ async fn add_remove_project_user_grpc_test() {
         .await;
 
     assert!(remove_user_response.is_ok());
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn edit_project_user_grpc_test() {
+    // Init user/project services
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let user_service = UserServiceImpl::new(db.clone(), authz.clone()).await;
+    let project_service = ProjectServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Create gPC Request to register user in AOS instance
+    let register_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(RegisterUserRequest {
+            display_name: "Rando Man 001".to_string(),
+        }),
+        common::oidc::REGULAROIDC,
+    );
+
+    let register_user_response = user_service.register_user(register_user_request).await;
+    assert!(register_user_response.is_ok());
+
+    let user_id_001 = register_user_response.unwrap().into_inner().user_id;
+
+    // Create gPC Request to add user with permissions to project
+    let add_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddUserToProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: user_id_001.to_string(),
+                project_id: project_id.to_string(),
+                permission: Permission::Read as i32,
+                service_account: false,
+            }),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let add_user_response = project_service.add_user_to_project(add_user_request).await;
+
+    // Validate that user could get added even as it is not activated
+    assert!(add_user_response.is_ok());
+
+    // Create gPC Request to edit users project permissions with non-authorized token
+    let edit_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(EditUserPermissionsForProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: user_id_001.to_string(),
+                project_id: project_id.to_string(),
+                permission: Permission::Admin as i32,
+                service_account: false,
+            }),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+
+    // Validate that
+    assert!(edit_user_response.is_err());
+
+    // Create gPC Request to edit user who is not member of project / does not exist
+    let edit_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(EditUserPermissionsForProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: uuid::Uuid::new_v4().to_string(),
+                project_id: project_id.to_string(),
+                permission: Permission::Admin as i32,
+                service_account: false,
+            }),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+
+    // Validate that the request succeeds having done nothing as the update just returns Ok for 0 rows
+    assert!(edit_user_response.is_ok());
+
+    // Edit user permission once to all available permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+        .iter() {
+        // Create gPC Request to edit permissions to None
+        let edit_user_request = common::grpc_helpers::add_token(
+            tonic::Request::new(EditUserPermissionsForProjectRequest {
+                project_id: project_id.to_string(),
+                user_permission: Some(ProjectPermission {
+                    user_id: user_id_001.to_string(),
+                    project_id: project_id.to_string(),
+                    permission: *permission as i32,
+                    service_account: false,
+                }),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+
+        // Validate that the request succeeds as expected
+        assert!(edit_user_response.is_ok());
+    }
 }
