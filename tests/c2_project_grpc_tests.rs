@@ -3,7 +3,12 @@ use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
-use aruna_rust_api::api::storage::services::v1::{AddUserToProjectRequest, CreateProjectRequest, DeleteCollectionRequest, DestroyProjectRequest, EditUserPermissionsForProjectRequest, GetProjectRequest, GetProjectsRequest, GetUserPermissionsForProjectRequest, RegisterUserRequest, RemoveUserFromProjectRequest, UpdateProjectRequest};
+use aruna_rust_api::api::storage::services::v1::{
+    AddUserToProjectRequest, CreateProjectRequest, DeleteCollectionRequest, DestroyProjectRequest,
+    EditUserPermissionsForProjectRequest, GetProjectRequest, GetProjectsRequest,
+    GetUserPermissionsForProjectRequest, GetUserRequest, RemoveUserFromProjectRequest,
+    UpdateProjectRequest,
+};
 use aruna_server::server::services::collection::CollectionServiceImpl;
 use aruna_server::{
     database::{self},
@@ -299,7 +304,7 @@ async fn add_remove_project_user_grpc_test() {
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
 
-    // Create gPC Request to add user with permissions
+    // Create gPC Request to add non-existing user with permissions
     let add_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(AddUserToProjectRequest {
             project_id: project_id.to_string(),
@@ -316,27 +321,152 @@ async fn add_remove_project_user_grpc_test() {
     // Send request to gRPC endpoint of AOS instance
     let add_user_response = project_service.add_user_to_project(add_user_request).await;
 
-    // Validate that user could not get added as it is not registered
+    // Validate that user could not get added as it does not exist
     assert!(add_user_response.is_err());
 
-    // Register user ...
-    let register_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(RegisterUserRequest {
-            display_name: "Rando Man 001".to_string(),
+    // Create gRPC request to fetch user associated with token
+    let get_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetUserRequest {
+            user_id: "".to_string(),
         }),
-        common::oidc::REGULAROIDC,
+        common::oidc::REGULARTOKEN,
     );
-    let register_user_response = user_service.register_user(register_user_request).await;
-    assert!(register_user_response.is_ok());
+    let get_user_response = user_service
+        .get_user(get_user_request)
+        .await
+        .unwrap()
+        .into_inner();
+    let user_id = get_user_response.user.unwrap().id;
 
-    let user_id_001 = register_user_response.unwrap().into_inner().user_id;
-
-    // ... and try again
+    // Try to add user with Unspecified permission which should fail
     let add_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(AddUserToProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: user_id_001.to_string(),
+                user_id: user_id.to_string(),
+                project_id: project_id.to_string(),
+                permission: Permission::Unspecified as i32,
+                service_account: false,
+            }),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let add_user_response = project_service.add_user_to_project(add_user_request).await;
+
+    // Validate that user could not get added with Unspecified permission
+    assert!(add_user_response.is_err());
+
+    // Add user initially with None permission to project
+    let add_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddUserToProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: user_id.to_string(),
+                project_id: project_id.to_string(),
+                permission: Permission::None as i32,
+                service_account: false,
+            }),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let add_user_response = project_service.add_user_to_project(add_user_request).await;
+
+    // Validate that user was added successfully
+    assert!(add_user_response.is_ok());
+
+    let get_permission_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetUserPermissionsForProjectRequest {
+            project_id: project_id.to_string(),
+            user_id: user_id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_permission_response = project_service
+        .get_user_permissions_for_project(get_permission_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .user_permission
+        .unwrap();
+
+    assert_eq!(get_permission_response.user_id, user_id);
+    assert_eq!(get_permission_response.project_id, project_id);
+    assert_eq!(
+        get_permission_response.display_name,
+        "regular_user".to_string()
+    );
+    assert_eq!(get_permission_response.permission, 1);
+
+    // Add/remove user with all possible permissions
+    for (permission, enum_val) in vec![
+        (Permission::Read, 2),
+        (Permission::Append, 3),
+        (Permission::Modify, 4),
+        (Permission::Admin, 5),
+    ]
+    .iter()
+    {
+        // Remove user from project
+        let remove_permission_request = common::grpc_helpers::add_token(
+            tonic::Request::new(RemoveUserFromProjectRequest {
+                project_id: project_id.to_string(),
+                user_id: user_id.to_string(),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let remove_permission_response = project_service
+            .remove_user_from_project(remove_permission_request)
+            .await;
+        assert!(remove_permission_response.is_ok());
+
+        // Add user to project with other permissions
+        let add_user_request = common::grpc_helpers::add_token(
+            tonic::Request::new(AddUserToProjectRequest {
+                project_id: project_id.to_string(),
+                user_permission: Some(ProjectPermission {
+                    user_id: user_id.to_string(),
+                    project_id: project_id.to_string(),
+                    permission: *permission as i32,
+                    service_account: false,
+                }),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let add_user_response = project_service.add_user_to_project(add_user_request).await;
+
+        // Validate that user was added successfully
+        assert!(add_user_response.is_ok());
+
+        let get_permission_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetUserPermissionsForProjectRequest {
+                project_id: project_id.to_string(),
+                user_id: user_id.to_string(),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let get_permission_response = project_service
+            .get_user_permissions_for_project(get_permission_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .user_permission
+            .unwrap();
+
+        assert_eq!(get_permission_response.user_id, user_id);
+        assert_eq!(get_permission_response.project_id, project_id);
+        assert_eq!(
+            get_permission_response.display_name,
+            "regular_user".to_string()
+        );
+        assert_eq!(get_permission_response.permission, *enum_val);
+    }
+
+    // Try to add user twice with different permissions to project
+    let add_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddUserToProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: user_id.to_string(),
                 project_id: project_id.to_string(),
                 permission: Permission::Read as i32,
                 service_account: false,
@@ -344,167 +474,10 @@ async fn add_remove_project_user_grpc_test() {
         }),
         common::oidc::ADMINTOKEN,
     );
-
     let add_user_response = project_service.add_user_to_project(add_user_request).await;
 
-    // Validate that user could get added even as it is not activated
-    assert!(add_user_response.is_ok());
-
-    // Try to add user again with other permissions --> Should Error
-    let add_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(AddUserToProjectRequest {
-            project_id: project_id.to_string(),
-            user_permission: Some(ProjectPermission {
-                user_id: user_id_001.to_string(),
-                project_id: project_id.to_string(),
-                permission: Permission::Modify as i32,
-                service_account: false,
-            }),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let add_user_response = project_service.add_user_to_project(add_user_request).await;
-
-    // Validate that user could not get added twice to the project
+    // Validate that request failed
     assert!(add_user_response.is_err());
-
-    // Try to add some user without permissions -> Should Error
-    let add_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(AddUserToProjectRequest {
-            project_id: project_id.to_string(),
-            user_permission: None,
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-    let add_user_response = project_service.add_user_to_project(add_user_request).await;
-
-    // Validate that user could not get added without permissions
-    assert!(add_user_response.is_err());
-
-    // Add another user and validate correct creation/assignment
-    let register_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(RegisterUserRequest {
-            display_name: "Rando Man 002".to_string(),
-        }),
-        common::oidc::REGULAROIDC,
-    );
-    let register_user_response = user_service.register_user(register_user_request).await;
-    assert!(register_user_response.is_ok());
-
-    let user_id_002 = register_user_response.unwrap().into_inner().user_id;
-
-    let add_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(AddUserToProjectRequest {
-            project_id: project_id.to_string(),
-            user_permission: Some(ProjectPermission {
-                user_id: user_id_002.to_string(),
-                project_id: project_id.to_string(),
-                permission: Permission::Modify as i32,
-                service_account: false,
-            }),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let add_user_response = project_service.add_user_to_project(add_user_request).await;
-    assert!(add_user_response.is_ok());
-
-    let get_project_request = common::grpc_helpers::add_token(
-        tonic::Request::new(GetProjectRequest {
-            project_id: project_id.to_string(),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-    let get_project_response = project_service
-        .get_project(get_project_request)
-        .await
-        .unwrap()
-        .into_inner();
-    let project_users = get_project_response.project.unwrap().user_ids;
-
-    assert!(project_users.contains(&user_id_001));
-    assert!(project_users.contains(&user_id_002));
-
-    // validate user 001
-    let get_permission_request = common::grpc_helpers::add_token(
-        tonic::Request::new(GetUserPermissionsForProjectRequest {
-            project_id: project_id.to_string(),
-            user_id: user_id_001.to_string(),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let get_permission_response = project_service
-        .get_user_permissions_for_project(get_permission_request)
-        .await
-        .unwrap()
-        .into_inner()
-        .user_permission
-        .unwrap();
-
-    assert_eq!(get_permission_response.user_id, user_id_001);
-    assert_eq!(get_permission_response.project_id, project_id);
-    assert_eq!(
-        get_permission_response.display_name,
-        "Rando Man 001".to_string()
-    );
-    //assert!(matches!(UserRights::from_i32(get_permission_response.permission).unwrap(), UserRights::READ));
-    assert_eq!(get_permission_response.permission, 2);
-
-    // validate user 002
-    let get_permission_request = common::grpc_helpers::add_token(
-        tonic::Request::new(GetUserPermissionsForProjectRequest {
-            project_id: project_id.to_string(),
-            user_id: user_id_002.to_string(),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let get_permission_response = project_service
-        .get_user_permissions_for_project(get_permission_request)
-        .await
-        .unwrap()
-        .into_inner()
-        .user_permission
-        .unwrap();
-
-    assert_eq!(get_permission_response.user_id, user_id_002);
-    assert_eq!(get_permission_response.project_id, project_id);
-    assert_eq!(
-        get_permission_response.display_name,
-        "Rando Man 002".to_string()
-    );
-    assert_eq!(get_permission_response.permission, 4);
-
-    // Remove user permissions from project
-    let remove_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(RemoveUserFromProjectRequest {
-            project_id: project_id.to_string(),
-            user_id: user_id_001.to_string(),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let remove_user_response = project_service
-        .remove_user_from_project(remove_user_request)
-        .await;
-
-    assert!(remove_user_response.is_ok());
-
-    let remove_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(RemoveUserFromProjectRequest {
-            project_id: project_id.to_string(),
-            user_id: user_id_002.to_string(),
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-
-    let remove_user_response = project_service
-        .remove_user_from_project(remove_user_request)
-        .await;
-
-    assert!(remove_user_response.is_ok());
 }
 
 #[ignore]
@@ -522,44 +495,44 @@ async fn edit_project_user_grpc_test() {
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
 
-    // Create gPC Request to register user in AOS instance
-    let register_user_request = common::grpc_helpers::add_token(
-        tonic::Request::new(RegisterUserRequest {
-            display_name: "Rando Man 001".to_string(),
+    // Create gRPC request to fetch user associated with token
+    let get_user_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetUserRequest {
+            user_id: "".to_string(),
         }),
-        common::oidc::REGULAROIDC,
+        common::oidc::REGULARTOKEN,
     );
+    let get_user_response = user_service
+        .get_user(get_user_request)
+        .await
+        .unwrap()
+        .into_inner();
+    let user_id = get_user_response.user.unwrap().id;
 
-    let register_user_response = user_service.register_user(register_user_request).await;
-    assert!(register_user_response.is_ok());
-
-    let user_id_001 = register_user_response.unwrap().into_inner().user_id;
-
-    // Create gPC Request to add user with permissions to project
+    // Create gRPC Request to initially add user to project
     let add_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(AddUserToProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: user_id_001.to_string(),
+                user_id: user_id.to_string(),
                 project_id: project_id.to_string(),
-                permission: Permission::Read as i32,
+                permission: Permission::None as i32,
                 service_account: false,
             }),
         }),
         common::oidc::ADMINTOKEN,
     );
-
     let add_user_response = project_service.add_user_to_project(add_user_request).await;
 
     // Validate that user could get added even as it is not activated
     assert!(add_user_response.is_ok());
 
-    // Create gPC Request to edit users project permissions with non-authorized token
+    // Create gRPC Request to edit users project permissions with non-authorized token
     let edit_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(EditUserPermissionsForProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: user_id_001.to_string(),
+                user_id: user_id.to_string(),
                 project_id: project_id.to_string(),
                 permission: Permission::Admin as i32,
                 service_account: false,
@@ -567,7 +540,9 @@ async fn edit_project_user_grpc_test() {
         }),
         common::oidc::REGULARTOKEN,
     );
-    let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+    let edit_user_response = project_service
+        .edit_user_permissions_for_project(edit_user_request)
+        .await;
 
     // Validate that
     assert!(edit_user_response.is_err());
@@ -585,26 +560,29 @@ async fn edit_project_user_grpc_test() {
         }),
         common::oidc::ADMINTOKEN,
     );
-    let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+    let edit_user_response = project_service
+        .edit_user_permissions_for_project(edit_user_request)
+        .await;
 
     // Validate that the request succeeds having done nothing as the update just returns Ok for 0 rows
     assert!(edit_user_response.is_ok());
 
     // Edit user permission once to all available permissions
-    for permission in vec![
-        Permission::None,
-        Permission::Read,
-        Permission::Append,
-        Permission::Modify,
-        Permission::Admin,
+    for (permission, enum_val) in vec![
+        (Permission::None, 1),
+        (Permission::Read, 2),
+        (Permission::Append, 3),
+        (Permission::Modify, 4),
+        (Permission::Admin, 5),
     ]
-        .iter() {
+    .iter()
+    {
         // Create gPC Request to edit permissions to None
         let edit_user_request = common::grpc_helpers::add_token(
             tonic::Request::new(EditUserPermissionsForProjectRequest {
                 project_id: project_id.to_string(),
                 user_permission: Some(ProjectPermission {
-                    user_id: user_id_001.to_string(),
+                    user_id: user_id.to_string(),
                     project_id: project_id.to_string(),
                     permission: *permission as i32,
                     service_account: false,
@@ -612,9 +590,34 @@ async fn edit_project_user_grpc_test() {
             }),
             common::oidc::ADMINTOKEN,
         );
-        let edit_user_response = project_service.edit_user_permissions_for_project(edit_user_request).await;
+        let edit_user_response = project_service
+            .edit_user_permissions_for_project(edit_user_request)
+            .await;
 
         // Validate that the request succeeds as expected
         assert!(edit_user_response.is_ok());
+
+        let get_permission_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetUserPermissionsForProjectRequest {
+                project_id: project_id.to_string(),
+                user_id: user_id.to_string(),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let get_permission_response = project_service
+            .get_user_permissions_for_project(get_permission_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .user_permission
+            .unwrap();
+
+        assert_eq!(get_permission_response.user_id, user_id);
+        assert_eq!(get_permission_response.project_id, project_id);
+        assert_eq!(
+            get_permission_response.display_name,
+            "regular_user".to_string()
+        );
+        assert_eq!(get_permission_response.permission, *enum_val);
     }
 }
