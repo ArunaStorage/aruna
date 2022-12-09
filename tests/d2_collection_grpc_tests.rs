@@ -1,15 +1,17 @@
 extern crate core;
 
 use crate::common::functions::TCreateCollection;
+use aruna_rust_api::api::storage::models::v1::collection_overview::Version::SemanticVersion;
 use aruna_rust_api::api::storage::models::v1::{
     DataClass, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, Permission, ProjectPermission,
+    Version,
 };
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, CreateNewCollectionRequest, GetCollectionByIdRequest,
-    GetCollectionsRequest, GetUserRequest,
+    GetCollectionsRequest, GetUserRequest, UpdateCollectionRequest,
 };
 use aruna_server::{
     database::{self},
@@ -546,4 +548,230 @@ async fn get_collections_grpc_test() {
         })
     );
     assert!(!collections[0].is_public)
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn update_collection_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let collection_service = CollectionServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track user adding with None permission
+    let user_id = common::grpc_helpers::get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: None,
+    });
+
+    // Update collection information with varying permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create gRPC request to update collection
+        let update_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(UpdateCollectionRequest {
+                collection_id: random_collection.id.to_string(),
+                name: "Test Collection".to_string(),
+                description: format!(
+                    "Collection updated with permission {}",
+                    permission.as_str_name().to_string()
+                ),
+                labels: vec![KeyValue {
+                    key: "permission".to_string(),
+                    value: permission.as_str_name().to_string(),
+                }],
+                hooks: vec![],
+                label_ontology: None,
+                dataclass: DataClass::Private as i32,
+                version: None,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let update_collection_response = collection_service
+            .update_collection(update_collection_grpc_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                // Request should fail with insufficient permissions
+                assert!(update_collection_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                assert!(update_collection_response.is_ok());
+
+                // Validate fetched collection information
+                let collection = update_collection_response
+                    .unwrap()
+                    .into_inner()
+                    .collection
+                    .unwrap();
+
+                assert_eq!(collection.id, random_collection.id);
+                assert_eq!(collection.name, "Test Collection".to_string());
+                assert_eq!(
+                    collection.description,
+                    format!(
+                        "Collection updated with permission {}",
+                        permission.as_str_name().to_string()
+                    )
+                );
+                assert_eq!(
+                    collection.labels,
+                    vec![KeyValue {
+                        key: "permission".to_string(),
+                        value: permission.as_str_name().to_string()
+                    }]
+                );
+                assert_eq!(collection.hooks, vec![]);
+                assert_eq!(
+                    collection.label_ontology,
+                    Some(LabelOntology {
+                        required_label_keys: vec![]
+                    })
+                );
+                assert!(collection.is_public)
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Update collection with version --> pinned collection
+
+    let pin_update_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateCollectionRequest {
+            collection_id: random_collection.id.to_string(),
+            name: "Test Collection".to_string(),
+            description: "Collection updated with version 1.2.3.".to_string(),
+            labels: vec![KeyValue {
+                key: "is_versioned".to_string(),
+                value: "true".to_string(),
+            }],
+            hooks: vec![],
+            label_ontology: None,
+            dataclass: DataClass::Public as i32,
+            version: Some(Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+            }),
+        }),
+        common::oidc::REGULARTOKEN, // Project Admin at this point
+    );
+    let pin_update_collection_response = collection_service
+        .update_collection(pin_update_collection_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let versioned_collection = pin_update_collection_response.collection.unwrap();
+
+    assert_ne!(versioned_collection.id, random_collection.id); // Versioned collection is deep clone with individual id
+    assert_eq!(versioned_collection.name, "Test Collection".to_string());
+    assert_eq!(
+        versioned_collection.description,
+        "Collection updated with version 1.2.3.".to_string()
+    );
+    assert_eq!(
+        versioned_collection.labels,
+        vec![KeyValue {
+            key: "is_versioned".to_string(),
+            value: "true".to_string(),
+        }]
+    );
+    assert_eq!(versioned_collection.hooks, vec![]);
+    assert_eq!(
+        versioned_collection.version,
+        Some(SemanticVersion(Version {
+            major: 1,
+            minor: 2,
+            patch: 3
+        }))
+    );
+    assert!(versioned_collection.is_public);
+
+    // Update versioned/pinned collection without version --> Error
+    let update_versioned_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateCollectionRequest {
+            collection_id: versioned_collection.id.to_string(),
+            name: "Test Collection".to_string(),
+            description: "Versioned collection updated without version.".to_string(),
+            labels: vec![KeyValue {
+                key: "is_versioned".to_string(),
+                value: "false".to_string(),
+            }],
+            hooks: vec![],
+            label_ontology: None,
+            dataclass: DataClass::Private as i32,
+            version: None,
+        }),
+        common::oidc::REGULARTOKEN, // Project Admin at this point
+    );
+    let update_versioned_collection_response = collection_service
+        .update_collection(update_versioned_collection_request)
+        .await;
+
+    assert!(update_versioned_collection_response.is_err());
+
+    // Update versioned/pinned collection with lesser version --> Error
+    let update_versioned_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateCollectionRequest {
+            collection_id: versioned_collection.id.to_string(),
+            name: "Test Collection".to_string(),
+            description: "Versioned collection updated without version.".to_string(),
+            labels: vec![KeyValue {
+                key: "is_versioned".to_string(),
+                value: "true".to_string(),
+            }],
+            hooks: vec![],
+            label_ontology: None,
+            dataclass: DataClass::Private as i32,
+            version: Some(Version {
+                major: 1,
+                minor: 0,
+                patch: 0,
+            }),
+        }),
+        common::oidc::REGULARTOKEN, // Project Admin at this point
+    );
+    let update_versioned_collection_response = collection_service
+        .update_collection(update_versioned_collection_request)
+        .await;
+
+    assert!(update_versioned_collection_response.is_err());
 }
