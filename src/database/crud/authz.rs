@@ -23,6 +23,7 @@ impl Database {
             .get()?
             .transaction::<Vec<PubKey>, dError, _>(|conn| pub_keys.load::<PubKey>(conn))?)
     }
+
     /// Method to query a specific pubkey and add it to the database if it not exists
     ///
     /// ## Arguments
@@ -241,9 +242,10 @@ impl Database {
                                         crate::database::schema::user_permissions::dsl::project_id,
                                     ),
                                 ))
+                                .filter(user_id.eq(&api_token.creator_user_id))
                                 .filter(
                                     crate::database::schema::collections::dsl::id
-                                        .eq(req_ctx.resource_id),
+                                        .eq(&req_ctx.resource_id),
                                 )
                                 .select(UserPermission::as_select())
                                 .first::<UserPermission>(conn)
@@ -291,7 +293,7 @@ impl Database {
                         // This checks for the permissions in the user_permissions table which already contains a project_id
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
                             let user_permissions_option = user_permissions
-                                .filter(user_id.eq(api_token.creator_user_id))
+                                .filter(user_id.eq(&api_token.creator_user_id))
                                 .filter(
                                     crate::database::schema::user_permissions::dsl::project_id
                                         .eq(req_ctx.resource_id),
