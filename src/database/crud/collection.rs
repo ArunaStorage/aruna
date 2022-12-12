@@ -469,7 +469,10 @@ impl Database {
                     }
 
                     // Update the collection "in place"
-                    update(collections).set(&update_col).execute(conn)?;
+                    update(collections)
+                        .filter(id.eq(&old_collection.id))
+                        .set(&update_col)
+                        .execute(conn)?;
 
                     // return the new collectionoverview
                     Ok(map_to_collection_overview(Some(query_overview(
