@@ -2,17 +2,15 @@ extern crate core;
 
 use crate::common::functions::TCreateCollection;
 use aruna_rust_api::api::storage::models::v1::collection_overview::Version::SemanticVersion;
-use aruna_rust_api::api::storage::models::v1::{
-    DataClass, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, Permission, ProjectPermission,
-    Version,
-};
+use aruna_rust_api::api::storage::models::v1::{CollectionOverview, DataClass, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, Permission, ProjectPermission, Version};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, CreateNewCollectionRequest, GetCollectionByIdRequest,
-    GetCollectionsRequest, GetUserRequest, UpdateCollectionRequest,
+    GetCollectionsRequest, GetUserRequest, PinCollectionVersionRequest, UpdateCollectionRequest,
 };
+use aruna_server::server::services::utils::format_grpc_response;
 use aruna_server::{
     database::{self},
     server::services::authz::Authz,
@@ -200,7 +198,7 @@ async fn get_collection_grpc_test() {
         num_labels: 0,
         num_hooks: 0,
         col_override: None,
-        creator_id: None,
+        creator_id: Some(user_id.clone()),
     });
 
     // Get collection information with varying permissions
@@ -580,7 +578,7 @@ async fn update_collection_grpc_test() {
         num_labels: 0,
         num_hooks: 0,
         col_override: None,
-        creator_id: None,
+        creator_id: Some(user_id.clone()),
     });
 
     // Update collection information with varying permissions
@@ -672,7 +670,6 @@ async fn update_collection_grpc_test() {
     }
 
     // Update collection with version --> pinned collection
-
     let pin_update_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateCollectionRequest {
             collection_id: random_collection.id.to_string(),
@@ -774,4 +771,268 @@ async fn update_collection_grpc_test() {
         .await;
 
     assert!(update_versioned_collection_response.is_err());
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn pin_collection_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let collection_service = CollectionServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track user adding with None permission
+    let user_id = common::grpc_helpers::get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Create and get collection
+    let create_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateNewCollectionRequest {
+            name: "pin_collection_grpc_test()".to_string(),
+            description: "Some description.".to_string(),
+            project_id: random_project.id.to_string(),
+            labels: vec![],
+            hooks: vec![],
+            label_ontology: None,
+            dataclass: DataClass::Private as i32,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let create_collection_response = collection_service
+        .create_new_collection(create_collection_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let get_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetCollectionByIdRequest {
+            collection_id: create_collection_response.collection_id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_collection_response = collection_service
+        .get_collection_by_id(get_collection_request)
+        .await
+        .unwrap()
+        .into_inner();
+    let random_collection = get_collection_response.collection.unwrap();
+
+    println!("{:#?}", random_collection);
+    /*
+        // Fast track collection creation
+        let random_collection = common::functions::create_collection(TCreateCollection {
+            project_id: random_project.id.to_string(),
+            num_labels: 0,
+            num_hooks: 0,
+            col_override: Some(CreateNewCollectionRequest {
+                name: "pin_collection_grpc_test()".to_string(),
+                description: "Some description".to_string(),
+                project_id: random_project.id.to_string(),
+                labels: vec![],
+                hooks: vec![],
+                label_ontology: None,
+                dataclass: DataClass::Private as i32,
+            }),
+            creator_id: Some(user_id.clone()),
+        });
+    */
+
+    // Try to pin collection without collection_id --> Error
+    let pin_collection_grpc_request = common::grpc_helpers::add_token(
+        tonic::Request::new(PinCollectionVersionRequest {
+            collection_id: "".to_string(),
+            version: Some(Version {
+                major: 1,
+                minor: 0,
+                patch: 0,
+            }),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let pin_collection_response = collection_service
+        .pin_collection_version(pin_collection_grpc_request)
+        .await;
+
+    assert!(pin_collection_response.is_err());
+
+    // Try to pin collection without version --> Error
+    let pin_collection_grpc_request = common::grpc_helpers::add_token(
+        tonic::Request::new(PinCollectionVersionRequest {
+            collection_id: random_collection.id.to_string(),
+            version: None,
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let pin_collection_response = collection_service
+        .pin_collection_version(pin_collection_grpc_request)
+        .await;
+
+    assert!(pin_collection_response.is_err());
+
+    let mut versioned_collection_option: Option<CollectionOverview> = None;
+    // Pin collection with varying permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create gRPC request to pin collection
+        let pin_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(PinCollectionVersionRequest {
+                collection_id: random_collection.id.to_string(),
+                version: Some(Version {
+                    major: 3,
+                    minor: 2,
+                    patch: 1,
+                }),
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let pin_collection_response = collection_service
+            .pin_collection_version(pin_collection_grpc_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                // Request should fail with insufficient permissions
+                assert!(pin_collection_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                if pin_collection_response.is_err() {
+                    println!(
+                        "{}",
+                        format_grpc_response(&pin_collection_response.as_ref().unwrap())
+                    );
+                }
+                assert!(pin_collection_response.is_ok());
+
+                // Validate collection information returned from pin
+                let collection = pin_collection_response
+                    .unwrap()
+                    .into_inner()
+                    .collection
+                    .unwrap();
+
+                assert_ne!(collection.id, random_collection.id);
+                assert_eq!(collection.name, random_collection.name);
+                assert_eq!(collection.description, random_collection.description);
+                assert_eq!(collection.labels, random_collection.labels);
+                assert_eq!(collection.hooks, random_collection.hooks);
+                assert_eq!(collection.label_ontology, random_collection.label_ontology);
+                assert!(!collection.is_public);
+
+                versioned_collection_option = Some(collection);
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Check if pinned version is available after permission loop
+    if let Some(versioned_collection) = versioned_collection_option {
+
+        // Try to pin versioned collection without version --> Error
+        let pin_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(PinCollectionVersionRequest {
+                collection_id: versioned_collection.id.to_string(),
+                version: None,
+            }),
+            common::oidc::REGULARTOKEN, // At this point has project ADMIN permissions
+        );
+        let pin_collection_response = collection_service
+            .pin_collection_version(pin_collection_grpc_request)
+            .await;
+
+        assert!(pin_collection_response.is_err());
+
+        // Try to pin versioned collection with lesser version --> Error
+        let pin_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(PinCollectionVersionRequest {
+                collection_id: versioned_collection.id.to_string(),
+                version: Some(Version {
+                    major: 1,
+                    minor: 2,
+                    patch: 3,
+                }),
+            }),
+            common::oidc::REGULARTOKEN, // At this point has project ADMIN permissions
+        );
+        let pin_collection_response = collection_service
+            .pin_collection_version(pin_collection_grpc_request)
+            .await;
+
+        assert!(pin_collection_response.is_err());
+
+        // Try to pin versioned collection with same version --> Error
+        let pin_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(PinCollectionVersionRequest {
+                collection_id: versioned_collection.id.to_string(),
+                version: Some(Version {
+                    major: 1,
+                    minor: 2,
+                    patch: 3,
+                }),
+            }),
+            common::oidc::REGULARTOKEN, // At this point has project ADMIN permissions
+        );
+        let pin_collection_response = collection_service
+            .pin_collection_version(pin_collection_grpc_request)
+            .await;
+
+        assert!(pin_collection_response.is_err());
+
+        // Try to pin versioned collection with greater version --> Success
+        let pin_collection_grpc_request = common::grpc_helpers::add_token(
+            tonic::Request::new(PinCollectionVersionRequest {
+                collection_id: versioned_collection.id.to_string(),
+                version: Some(Version {
+                    major: 4,
+                    minor: 0,
+                    patch: 0,
+                }),
+            }),
+            common::oidc::REGULARTOKEN, // At this point has project ADMIN permissions
+        );
+        let pin_collection_response = collection_service
+            .pin_collection_version(pin_collection_grpc_request)
+            .await;
+
+        assert!(pin_collection_response.is_ok());
+
+        let ultra_versioned_collection = pin_collection_response
+            .unwrap()
+            .into_inner()
+            .collection
+            .unwrap();
+
+        assert_ne!(ultra_versioned_collection.id, versioned_collection.id); // Again created a clone of the collection
+    } else {
+        panic!("No versioned collection available after collection pin.")
+    }
 }
