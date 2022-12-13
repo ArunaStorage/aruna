@@ -14,7 +14,6 @@ use aruna_rust_api::api::storage::services::v1::{
     GetCollectionByIdRequest, GetCollectionsRequest, GetUserRequest, PinCollectionVersionRequest,
     UpdateCollectionRequest,
 };
-use aruna_server::server::services::utils::format_grpc_response;
 use aruna_server::{
     database::{self},
     server::services::authz::Authz,
@@ -834,26 +833,6 @@ async fn pin_collection_grpc_test() {
         .into_inner();
     let random_collection = get_collection_response.collection.unwrap();
 
-    println!("{:#?}", random_collection);
-    /*
-        // Fast track collection creation
-        let random_collection = common::functions::create_collection(TCreateCollection {
-            project_id: random_project.id.to_string(),
-            num_labels: 0,
-            num_hooks: 0,
-            col_override: Some(CreateNewCollectionRequest {
-                name: "pin_collection_grpc_test()".to_string(),
-                description: "Some description".to_string(),
-                project_id: random_project.id.to_string(),
-                labels: vec![],
-                hooks: vec![],
-                label_ontology: None,
-                dataclass: DataClass::Private as i32,
-            }),
-            creator_id: Some(user_id.clone()),
-        });
-    */
-
     // Try to pin collection without collection_id --> Error
     let pin_collection_grpc_request = common::grpc_helpers::add_token(
         tonic::Request::new(PinCollectionVersionRequest {
@@ -929,12 +908,6 @@ async fn pin_collection_grpc_test() {
                 assert!(pin_collection_response.is_err());
             }
             Permission::Modify | Permission::Admin => {
-                if pin_collection_response.is_err() {
-                    println!(
-                        "{}",
-                        format_grpc_response(&pin_collection_response.as_ref().unwrap())
-                    );
-                }
                 assert!(pin_collection_response.is_ok());
 
                 // Validate collection information returned from pin
@@ -960,7 +933,6 @@ async fn pin_collection_grpc_test() {
 
     // Check if pinned version is available after permission loop
     if let Some(versioned_collection) = versioned_collection_option {
-
         // Try to pin versioned collection without version --> Error
         let pin_collection_grpc_request = common::grpc_helpers::add_token(
             tonic::Request::new(PinCollectionVersionRequest {
