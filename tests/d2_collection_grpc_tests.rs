@@ -1,14 +1,18 @@
 extern crate core;
 
-use crate::common::functions::TCreateCollection;
+use crate::common::functions::{TCreateCollection, TCreateObject};
 use aruna_rust_api::api::storage::models::v1::collection_overview::Version::SemanticVersion;
-use aruna_rust_api::api::storage::models::v1::{CollectionOverview, DataClass, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, Permission, ProjectPermission, Version};
+use aruna_rust_api::api::storage::models::v1::{
+    CollectionOverview, DataClass, KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery,
+    Permission, ProjectPermission, Version,
+};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, CreateNewCollectionRequest, GetCollectionByIdRequest,
-    GetCollectionsRequest, GetUserRequest, PinCollectionVersionRequest, UpdateCollectionRequest,
+    AddUserToProjectRequest, CreateNewCollectionRequest, DeleteCollectionRequest,
+    GetCollectionByIdRequest, GetCollectionsRequest, GetUserRequest, PinCollectionVersionRequest,
+    UpdateCollectionRequest,
 };
 use aruna_server::server::services::utils::format_grpc_response;
 use aruna_server::{
@@ -1035,4 +1039,174 @@ async fn pin_collection_grpc_test() {
     } else {
         panic!("No versioned collection available after collection pin.")
     }
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn delete_collection_grpc_test() {
+    // Init project service
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+    let collection_service = CollectionServiceImpl::new(db, authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track user adding with None permission
+    let user_id = common::grpc_helpers::get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Try delete non-existing collection --> Error
+    let delete_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteCollectionRequest {
+            collection_id: "".to_string(),
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let delete_collection_response = collection_service
+        .delete_collection(delete_collection_request)
+        .await;
+
+    assert!(delete_collection_response.is_err());
+
+    // Try to delete collection with varying permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        let random_collection = common::functions::create_collection(TCreateCollection {
+            project_id: random_project.id.to_string(),
+            num_labels: 0,
+            num_hooks: 0,
+            col_override: None,
+            creator_id: Some(user_id.to_string()),
+        });
+
+        // Create gRPC request to delete collection
+        let delete_collection_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteCollectionRequest {
+                collection_id: random_collection.id.to_string(),
+                force: false,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_collection_response = collection_service
+            .delete_collection(delete_collection_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                if delete_collection_response.is_ok() {
+                    println!("Permission {:#?}", permission);
+                    println!("{:#?}", delete_collection_response);
+                }
+
+                // Request should fail with insufficient permissions
+                assert!(delete_collection_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                assert!(delete_collection_response.is_ok());
+
+                let get_collection_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetCollectionByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                    }),
+                    common::oidc::REGULARTOKEN,
+                );
+                let get_collection_response = collection_service
+                    .get_collection_by_id(get_collection_request)
+                    .await;
+
+                assert!(get_collection_response.is_err());
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Try to delete non-empty collection --> Error
+    //   - Create collection
+    //   - Create object in collection
+    //   - Delete collection --> Error
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.to_string()),
+    });
+
+    let random_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    });
+
+    let delete_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteCollectionRequest {
+            collection_id: random_collection.id.to_string(),
+            force: false,
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_collection_response = collection_service
+        .delete_collection(delete_collection_request)
+        .await;
+
+    assert!(delete_collection_response.is_err());
+
+    // Try delete non-empty collection with force
+    //   - Delete collection with force --> Success
+    //   - Validate deletion of collection and object
+    let delete_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteCollectionRequest {
+            collection_id: random_collection.id.to_string(),
+            force: true,
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_collection_response = collection_service
+        .delete_collection(delete_collection_request)
+        .await;
+
+    assert!(delete_collection_response.is_ok());
+    assert!(common::grpc_helpers::try_get_collection(
+        random_collection.id.to_string(),
+        common::oidc::REGULARTOKEN
+    )
+    .await
+    .is_none());
+    assert!(common::grpc_helpers::try_get_object(
+        random_collection.id,
+        random_object.id,
+        common::oidc::REGULARTOKEN
+    )
+    .await
+    .is_none())
 }
