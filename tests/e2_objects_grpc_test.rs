@@ -1,15 +1,19 @@
 use std::sync::Arc;
 
-use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
+use aruna_rust_api::api::storage::models::v1::{
+    DataClass, Hash, Hashalgorithm, KeyValue, Permission,
+};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, CreateNewCollectionRequest,
-    GetDownloadUrlRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
+    GetDownloadUrlRequest, GetObjectByIdRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
     UpdateObjectRequest,
 };
+use aruna_server::database::crud::utils::db_to_grpc_object_status;
+use aruna_server::database::models::enums::{ObjectStatus, ReferenceStatus};
 use aruna_server::{
     config::ArunaServerConfig,
     database::{self},
@@ -410,4 +414,438 @@ async fn get_objects_grpc_test() {
         .await
         .unwrap()
         .into_inner();
+}
+
+/// The individual steps of this test function contains:
+/// 1) Initializing an object
+/// 2) Updating the revision 0 staging object
+/// 3) Finishing the revision 0 staging object
+/// 4) Starting the update on the revision 0 object
+/// 5) Updating the revision 1 staging object
+/// 6) Finishing the revision 1 staging object
+// 7) Starting the update on the revision 1 object
+// 8) Force update the revision 0 object
+// 9) Finish the revision 2 staging object
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn update_staging_object_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: None,
+    };
+    let random_collection = common::functions::create_collection(collection_meta);
+
+    // Initialize object
+    let init_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(InitializeNewObjectRequest {
+            object: Some(StageObject {
+                filename: "original.object".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 0,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            collection_id: random_collection.id.clone(),
+            preferred_endpoint_id: "".to_string(),
+            multipart: false,
+            is_specification: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let init_object_response = object_service
+        .initialize_new_object(init_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Validate object creation
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: init_object_response.collection_id.clone(),
+            object_id: init_object_response.object_id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_0_staging_object = get_object_response.object.unwrap().object.unwrap();
+    assert_eq!(init_object_response.object_id, rev_0_staging_object.id);
+
+    // Update stage object
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: init_object_response.object_id.clone(),
+            collection_id: init_object_response.collection_id.clone(),
+            object: Some(StageObject {
+                filename: "updated.object".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 1234,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Validate object was updated in-place --> No new object id
+    assert_eq!(
+        init_object_response.object_id,
+        update_object_response.object_id.clone()
+    );
+
+    // Validate object was updated in-place
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: update_object_response.collection_id.clone(),
+            object_id: update_object_response.object_id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_0_staging_object_updated = get_object_response.object.unwrap().object.unwrap();
+    let rev_0_staging_object_updated_ref_status = db
+        .clone()
+        .get_reference_status(
+            &uuid::Uuid::parse_str(&rev_0_staging_object_updated.id).unwrap(),
+            &uuid::Uuid::parse_str(&random_collection.id).unwrap(),
+        )
+        .unwrap();
+
+    // Object uuid should be the same
+    assert_eq!(rev_0_staging_object.id, rev_0_staging_object_updated.id);
+
+    // Object status is still INITIALIZING
+    assert_eq!(
+        rev_0_staging_object.status,
+        db_to_grpc_object_status(ObjectStatus::INITIALIZING) as i32
+    );
+    assert_eq!(
+        rev_0_staging_object_updated.status,
+        db_to_grpc_object_status(ObjectStatus::INITIALIZING) as i32
+    );
+
+    // Reference status is still STAGING
+    assert_eq!(
+        rev_0_staging_object_updated_ref_status,
+        ReferenceStatus::STAGING
+    );
+
+    // Filename should differ as it was updated
+    assert_ne!(
+        rev_0_staging_object.filename,
+        rev_0_staging_object_updated.filename
+    );
+    assert_eq!(rev_0_staging_object.filename, "original.object".to_string());
+    assert_eq!(
+        rev_0_staging_object_updated.filename,
+        "updated.object".to_string()
+    );
+
+    // Content length should differ as it was updated
+    assert_ne!(
+        rev_0_staging_object.content_len,
+        rev_0_staging_object_updated.content_len
+    );
+    assert_eq!(rev_0_staging_object.content_len, 0);
+    assert_eq!(rev_0_staging_object_updated.content_len, 1234);
+
+    // Creation timestamp should differ as it was updated
+    assert_ne!(
+        rev_0_staging_object.created,
+        rev_0_staging_object_updated.created
+    );
+
+    // Origin should be equal as the same user created/updated
+    assert_eq!(
+        rev_0_staging_object.origin.unwrap(),
+        rev_0_staging_object_updated.origin.unwrap()
+    );
+
+    // Revision number should not be increased
+    assert_eq!(
+        rev_0_staging_object.rev_number,
+        rev_0_staging_object_updated.rev_number
+    );
+    assert_eq!(rev_0_staging_object_updated.rev_number, 0);
+    assert_eq!(rev_0_staging_object.rev_number, 0);
+
+    // Hash should be the same as it can only be updated at finish
+    assert_eq!(rev_0_staging_object.hash, rev_0_staging_object_updated.hash);
+
+    // Labels/Hooks should be the same as they were not updated
+    assert_eq!(
+        rev_0_staging_object.labels,
+        rev_0_staging_object_updated.labels
+    );
+    assert_eq!(
+        rev_0_staging_object.hooks,
+        rev_0_staging_object_updated.hooks
+    );
+
+    // Still latest
+    assert!(rev_0_staging_object.latest);
+    assert!(rev_0_staging_object_updated.latest);
+
+    // Finish object
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.clone(),
+            upload_id: update_object_response.staging_id.clone(),
+            collection_id: update_object_response.collection_id.clone(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_0_object = finish_object_response.object.unwrap();
+
+    // Update object --> Add label and increase revision count
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: random_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "updated.object".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 1234,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![KeyValue {
+                    key: "NewKey".to_string(),
+                    value: "NewValue".to_string(),
+                }],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_1_object = finish_object_response.object.unwrap();
+
+    assert_ne!(rev_1_object.id, rev_0_object.id);
+    assert_eq!(rev_1_object.filename, "updated.object".to_string());
+    assert_eq!(rev_1_object.rev_number, 1);
+    assert_eq!(
+        rev_1_object.labels,
+        vec![KeyValue {
+            key: "NewKey".to_string(),
+            value: "NewValue".to_string()
+        }]
+    );
+
+    // Start another update process to update description
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_1_object.id.to_string(),
+            collection_id: random_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "updated.object".to_string(),
+                description: "New description of object".to_string(),
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 1234,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![KeyValue {
+                    key: "NewKey".to_string(),
+                    value: "NewValue".to_string(),
+                }],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: update_object_response.collection_id.clone(),
+            object_id: update_object_response.object_id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_2_staging_object = get_object_response.object.unwrap().object.unwrap();
+
+    assert_ne!(rev_1_object.id, rev_2_staging_object.id);
+    assert_eq!(rev_2_staging_object.filename, "updated.object".to_string());
+    assert_eq!(rev_2_staging_object.rev_number, 2);
+
+    // Update revision 2 staging object
+    //  - Description was not the best idea, so remove it
+    //  - Instead change existing label to description
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_2_staging_object.id.to_string(),
+            collection_id: random_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "updated.object".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 1234,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![KeyValue {
+                    key: "description".to_string(),
+                    value: "My object description".to_string(),
+                }],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: update_object_response.collection_id.clone(),
+            object_id: update_object_response.object_id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_2_staging_object_updated = get_object_response.object.unwrap().object.unwrap();
+
+    assert_eq!(rev_2_staging_object.id, rev_2_staging_object_updated.id);
+    assert_eq!(
+        rev_2_staging_object.filename,
+        rev_2_staging_object_updated.filename
+    );
+    assert_eq!(rev_2_staging_object.rev_number, 2);
+    assert_eq!(
+        rev_2_staging_object_updated.labels,
+        vec![KeyValue {
+            key: "description".to_string(),
+            value: "My object description".to_string(),
+        }]
+    );
 }
