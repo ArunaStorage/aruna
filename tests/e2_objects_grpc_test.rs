@@ -23,7 +23,7 @@ use aruna_server::{
 };
 use serial_test::serial;
 
-use crate::common::functions::TCreateCollection;
+use crate::common::functions::{TCreateCollection, TCreateObject};
 
 mod common;
 
@@ -848,4 +848,201 @@ async fn update_staging_object_grpc_test() {
             value: "My object description".to_string(),
         }]
     );
+}
+
+
+/// The individual steps of this test function contains:
+/// 1) Creating an object
+/// 2) Creating revision 1 of object
+/// 3) Try to update revision 0 without force
+/// 4) Try to update revision 0 with force
+/// 5) Validate revision 2 object
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn update_outdated_revision_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: None,
+    };
+    let random_collection = common::functions::create_collection(collection_meta);
+
+    // Fast track object creation
+    let rev_0_object = common::functions::create_object(&TCreateObject {
+        creator_id: None,
+        collection_id: random_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    });
+
+    // Create revision 1 of object
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: random_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "file.name".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 123456,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![KeyValue {
+                    key: "description".to_string(),
+                    value: "Created in update_outdated_revision_grpc_test()".to_string(),
+                }],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_1_object = finish_object_response.object.unwrap();
+
+    assert_ne!(rev_0_object.id, rev_1_object.id);
+    assert_ne!(rev_0_object.filename, rev_1_object.filename);
+    assert_ne!(rev_0_object.content_len, rev_1_object.content_len);
+    assert_ne!(rev_0_object.labels, rev_1_object.labels);
+    assert_eq!(rev_1_object.labels, vec![KeyValue {
+        key: "description".to_string(),
+        value: "Created in update_outdated_revision_grpc_test()".to_string(),
+    }]);
+    assert_eq!(rev_1_object.rev_number, 1);
+
+    // Try to update old revision without force --> Error
+    let mut inner_update_request = UpdateObjectRequest {
+        object_id: rev_0_object.id.to_string(),
+        collection_id: random_collection.id.to_string(),
+        object: Some(StageObject {
+            filename: "file.name".to_string(),
+            description: "".to_string(),   // No use.
+            collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+            content_len: 123456,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: vec![KeyValue {
+                key: "description".to_string(),
+                value: "Created in update_outdated_revision_grpc_test()".to_string(),
+            }],
+            hooks: vec![KeyValue {
+                key: "my_hook".to_string(),
+                value: "service-url".to_string(),
+            }],
+        }),
+        reupload: false,
+        preferred_endpoint_id: "".to_string(),
+        multi_part: false,
+        is_specification: false,
+        force: false,
+    };
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_update_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await;
+
+    assert!(update_object_response.is_err()); // Fails because it is not the latest revision
+
+    // Use the same request with force
+    inner_update_request.force = true;
+
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_update_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_2_object = finish_object_response.object.unwrap();
+
+    assert_ne!(rev_1_object.id, rev_2_object.id);
+    assert_ne!(rev_1_object.hooks, rev_2_object.hooks);
+    assert_eq!(rev_2_object.hooks, vec![KeyValue {
+        key: "my_hook".to_string(),
+        value: "service-url".to_string(),
+    }]);
+    assert_eq!(rev_2_object.rev_number, 2);
 }
