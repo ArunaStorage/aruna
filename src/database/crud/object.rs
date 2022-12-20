@@ -16,7 +16,7 @@ use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType}
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, DeleteObjectsRequest,
     DeleteObjectsResponse, GetReferencesRequest, GetReferencesResponse, ObjectReference,
-    SetHooksOfObjectRequest, SetHooksOfObjectResponse,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -572,9 +572,9 @@ impl Database {
             let parsed_old_id = uuid::Uuid::parse_str(&request.object_id)?;
             let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
-            self.pg_connection
+            let updated_object = self.pg_connection
                 .get()?
-                .transaction::<_, ArunaError, _>(|conn| {
+                .transaction::<Object, ArunaError, _>(|conn| {
                     // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
 
@@ -594,6 +594,18 @@ impl Database {
                         }),
                         _ => None,
                     };
+
+                    // Check if object is already staging
+                    let reference_opt: Option<CollectionObject> = collection_objects
+                        .filter(database::schema::collection_objects::object_id.eq(parsed_old_id))
+                        .first::<CollectionObject>(conn)
+                        .optional()?;
+
+                    if let Some(reference) = reference_opt {
+                        if reference.reference_status == ReferenceStatus::STAGING {
+                            return Ok(update_object_in_place(conn, &parsed_old_id, creator_uuid, sobj)?);
+                        }
+                    }
 
                     // Define new Object with updated values
                     let new_object = Object {
@@ -701,12 +713,12 @@ impl Database {
                             .execute(conn)?;
                     }
 
-                    Ok(())
+                    Ok(new_object)
                 })?;
 
             Ok(UpdateObjectResponse {
-                object_id: new_obj_id.to_string(),
-                staging_id: new_obj_id.to_string(),
+                object_id: updated_object.id.to_string(),
+                staging_id: updated_object.id.to_string(),
                 collection_id: parsed_col_id.to_string(),
             })
         } else {
@@ -1460,6 +1472,94 @@ impl Database {
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
+/// This is a general helper function that can be use inside already open transactions
+/// to update an object in-place without creating a new revision. This should only be
+/// used for objects which are still/already in STAGING.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid: &uuid::Uuid` - Unique object identifier
+/// * `stage_object: &StageObject` - Stage object from the init/update request
+///
+/// ## Returns:
+///
+/// `Result<aruna_server::database::models::object::Object, Error>` -
+/// The Object contains the updated database object
+///
+pub fn update_object_in_place(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_uuid: &uuid::Uuid,
+    user_uuid: &uuid::Uuid,
+    stage_object: &StageObject,
+) -> Result<Object, Error> {
+    // Get mutable object record from database
+    let mut old_object: Object = objects
+        .filter(database::schema::objects::id.eq(&object_uuid))
+        .first::<Object>(conn)?;
+
+    if let Some(stage_source) = &stage_object.source {
+        if let Some(old_source) = &old_object.source_id {
+            // Update Source in-place
+            update(sources)
+                .filter(database::schema::sources::id.eq(&old_source))
+                .set((
+                    link.eq(&stage_source.identifier),
+                    source_type.eq(&SourceType::from_i32(stage_source.source_type)
+                        .map_err(|_| Error::RollbackTransaction)?),
+                ))
+                .execute(conn)?;
+        } else {
+            // Insert new Source
+            let new_source = Source {
+                id: uuid::Uuid::new_v4(),
+                link: stage_source.identifier.clone(),
+                source_type: SourceType::from_i32(stage_source.source_type)
+                    .map_err(|_| Error::RollbackTransaction)?,
+            };
+
+            insert_into(sources).values(&new_source).execute(conn)?;
+        }
+    } else if let Some(old_source) = &old_object.source_id {
+        // Delete Source
+        delete(sources)
+            .filter(database::schema::sources::id.eq(&old_source))
+            .execute(conn)?;
+
+        old_object.source_id = None;
+    } // else, do nothing.
+
+    // Replace labels/hooks
+    let key_value_pairs = to_key_values::<ObjectKeyValue>(
+        stage_object.labels.clone(),
+        stage_object.hooks.clone(),
+        *object_uuid,
+    );
+
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
+        .execute(conn)?;
+    insert_into(object_key_value)
+        .values(&key_value_pairs)
+        .execute(conn)?;
+
+    // Update remaining object meta in-place
+    old_object.filename = stage_object.filename.to_string();
+    old_object.content_len = stage_object.content_len;
+    old_object.created_at = chrono::Utc::now().naive_utc();
+    old_object.created_by = *user_uuid;
+    old_object.dataclass = grpc_to_db_dataclass(&stage_object.dataclass);
+
+    // Update the object record in the database
+    let updated_obj = update(objects)
+        .filter(database::schema::objects::id.eq(&old_object.id))
+        .set(&old_object)
+        .get_result::<Object>(conn)?;
+
+    // Return updated db object
+    Ok(updated_obj)
+}
+
 /// This is a general helper function that can be use inside already open transactions
 /// to clone an object.
 ///
