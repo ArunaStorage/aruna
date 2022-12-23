@@ -5,9 +5,10 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
-    collection_service_server::CollectionService, CreateNewCollectionRequest,
-    CreateObjectReferenceRequest, GetDownloadUrlRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetReferencesRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
+    collection_service_server::CollectionService, AddLabelsToObjectRequest,
+    CreateNewCollectionRequest, CreateObjectReferenceRequest, GetDownloadUrlRequest,
+    GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetReferencesRequest,
+    GetUploadUrlRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
@@ -1680,4 +1681,320 @@ async fn object_references_grpc_test() {
     let update_object_response = object_service.update_object(update_object_request).await;
 
     assert!(update_object_response.is_err());
+}
+
+/// The individual steps of this test function contains:
+/// 1. Create a random object
+/// 2. Create a writeable reference in another collection
+/// 3. Create a read-only reference in another collection
+/// 4. Add labels with different permissions to object
+/// 5. Add labels through writeable reference to object
+/// 6. Try add labels through read-only reference to object
+/// 7. Update object and try to add labels to outdated revision
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn add_labels_to_object_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        project_id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let source_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with read-only auto_update reference
+    let read_only_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with writeable auto_update reference
+    let writeable_collection = common::functions::create_collection(collection_meta);
+
+    // Fast track object creation
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: source_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    };
+    let rev_0_object = common::functions::create_object(&object_meta);
+
+    // Create read-only object reference in another collection
+    let read_only_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: read_only_collection.id.to_string(),
+            writeable: false,
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let read_only_reference_response = object_service
+        .create_object_reference(read_only_reference_request)
+        .await;
+
+    assert!(read_only_reference_response.is_ok());
+
+    // Create writeable object reference in another collection
+    let writeable_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: writeable_collection.id.to_string(),
+            writeable: true,
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let writeable_reference_response = object_service
+        .create_object_reference(writeable_reference_request)
+        .await;
+
+    assert!(writeable_reference_response.is_ok());
+
+    //Loop through permissions and add labels to object in source collection
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Add labels to object without creating a new revision
+        let add_labels_request = common::grpc_helpers::add_token(
+            tonic::Request::new(AddLabelsToObjectRequest {
+                collection_id: source_collection.id.to_string(),
+                object_id: rev_0_object.id.to_string(),
+                labels_to_add: vec![KeyValue {
+                    key: "permission".to_string(),
+                    value: permission.clone().as_str_name().to_string(),
+                }],
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let add_labels_response = object_service
+            .add_labels_to_object(add_labels_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                // Request should fail with insufficient permissions
+                assert!(add_labels_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                assert!(add_labels_response.is_ok());
+
+                let proto_object = add_labels_response.unwrap().into_inner().object.unwrap();
+
+                assert!(proto_object.labels.contains(&KeyValue {
+                    key: "permission".to_string(),
+                    value: permission.clone().as_str_name().to_string(),
+                }))
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Validate object has exactly two labels from Modify and Admin
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: source_collection.id.clone(),
+            object_id: rev_0_object.id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_0_object = get_object_response.object.unwrap().object.unwrap();
+    assert_eq!(rev_0_object.labels.len(), 2);
+    assert!(rev_0_object.labels.contains(&KeyValue {
+        key: "permission".to_string(),
+        value: Permission::Modify.as_str_name().to_string(),
+    }));
+    assert!(rev_0_object.labels.contains(&KeyValue {
+        key: "permission".to_string(),
+        value: Permission::Admin.as_str_name().to_string(),
+    }));
+
+    // Add labels through writeable reference
+    let add_labels_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddLabelsToObjectRequest {
+            collection_id: writeable_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            labels_to_add: vec![KeyValue {
+                key: "added_writeable".to_string(),
+                value: "Yes baby.".to_string(),
+            }],
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let add_labels_response = object_service
+        .add_labels_to_object(add_labels_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let proto_object = add_labels_response.object.unwrap();
+    assert!(proto_object.labels.contains(&KeyValue {
+        key: "added_writeable".to_string(),
+        value: "Yes baby.".to_string(),
+    }));
+
+    // Try to add labels through read-only reference
+    let add_labels_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddLabelsToObjectRequest {
+            collection_id: read_only_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            labels_to_add: vec![KeyValue {
+                key: "added_read-only".to_string(),
+                value: "Hell no.".to_string(),
+            }],
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let add_labels_response = object_service
+        .add_labels_to_object(add_labels_request)
+        .await;
+
+    assert!(add_labels_response.is_err());
+    println!("{:#?}", add_labels_response);
+
+    // Remove all labels with object update and try to add labels to outdated revision
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "updated.object".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 1234,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_1_object = finish_object_response.object.unwrap();
+    assert_eq!(rev_1_object.labels.len(), 0);
+
+    let add_labels_request = common::grpc_helpers::add_token(
+        tonic::Request::new(AddLabelsToObjectRequest {
+            collection_id: source_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            labels_to_add: vec![KeyValue {
+                key: "added_outdated".to_string(),
+                value: "Hell no.".to_string(),
+            }],
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let add_labels_response = object_service
+        .add_labels_to_object(add_labels_request)
+        .await;
+
+    assert!(add_labels_response.is_err());
+    println!("{:#?}", add_labels_response);
+
+    let get_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectByIdRequest {
+            collection_id: source_collection.id.clone(),
+            object_id: rev_0_object.id.clone(),
+            with_url: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_object_response = object_service
+        .get_object_by_id(get_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_0_object = get_object_response.object.unwrap().object.unwrap();
+
+    assert_eq!(rev_0_object.labels.len(), 3); // Still 3: 2 from permissions and one from reference
+    assert_eq!(rev_1_object.labels.len(), 0); // Still 0
 }
