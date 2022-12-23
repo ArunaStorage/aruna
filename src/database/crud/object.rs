@@ -275,6 +275,7 @@ impl Database {
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
                         let all_revisions = get_all_revisions(conn, req_object_uuid)?;
+
                         // Filter out the UUIDs
                         let all_rev_ids = all_revisions
                             .iter()
@@ -292,6 +293,7 @@ impl Database {
                             .optional()?
                             .unwrap_or_default();
 
+                        // Filter collection_object references to object's collection
                         let auto_update_collection_references = auto_updating_coll_obj
                             .iter()
                             .filter(|elem| elem.collection_id == req_coll_uuid)
@@ -445,106 +447,75 @@ impl Database {
                             None => {
                                 // Update latest reference
                                 update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id.eq(
-                                            &req_object_uuid
-                                        )
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id.eq(
-                                            &req_coll_uuid
-                                        )
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status.eq(
-                                            &ReferenceStatus::STAGING
-                                        )
-                                    )
+                                    .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                    .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                    .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
                                     .set((
-                                        database::schema::collection_objects::object_id.eq(
-                                            req_object_uuid
-                                        ),
-                                        database::schema::collection_objects::is_latest.eq(
-                                            is_still_latest
-                                        ),
-                                        database::schema::collection_objects::reference_status.eq(
-                                            ReferenceStatus::OK
-                                        ),
-                                        database::schema::collection_objects::auto_update.eq(
-                                            request.auto_update
-                                        ),
+                                        database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                        database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                        database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                        database::schema::collection_objects::auto_update.eq(request.auto_update),
                                     ))
                                     .execute(conn)?;
                             }
                             Some(reference) => {
-                                // Delete staging reference
-                                delete(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id.eq(
-                                            &req_object_uuid
-                                        )
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id.eq(
-                                            &req_coll_uuid
-                                        )
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status.eq(
-                                            &ReferenceStatus::STAGING
-                                        )
-                                    )
-                                    .execute(conn)?;
+                                  if is_still_latest { // Object is still latest revision on finish --> Normal case
+                                    // Delete staging reference
+                                    delete(collection_objects)
+                                        .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                        .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                        .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
+                                        .execute(conn)?;
 
-                                // Update latest reference
-                                update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::id.eq(&reference.id)
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id.eq(
-                                            &req_coll_uuid
-                                        )
-                                    )
-                                    .set((
-                                        database::schema::collection_objects::object_id.eq(
-                                            req_object_uuid
-                                        ),
-                                        database::schema::collection_objects::is_latest.eq(
-                                            is_still_latest
-                                        ),
-                                        database::schema::collection_objects::reference_status.eq(
-                                            ReferenceStatus::OK
-                                        ),
-                                        database::schema::collection_objects::auto_update.eq(
-                                            request.auto_update && is_still_latest
-                                        ),
-                                    ))
-                                    .execute(conn)?;
+                                    // Update latest reference
+                                    update(collection_objects)
+                                        .filter(database::schema::collection_objects::id.eq(&reference.id))
+                                        .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                        .set((
+                                            database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                            database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                            database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                            database::schema::collection_objects::auto_update.eq(request.auto_update && is_still_latest),
+                                        ))
+                                        .execute(conn)?;
+
+                                } else if !is_still_latest && request.auto_update {
+                                    // Delete staging reference
+                                    delete(collection_objects)
+                                        .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                        .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                        .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
+                                        .execute(conn)?;
+
+                                } else {
+                                    // Update staging reference of outdated object with is_latest == false and auto_update == false
+                                    update(collection_objects)
+                                        .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
+                                        .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
+                                        .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
+                                        .set((
+                                            database::schema::collection_objects::object_id.eq(req_object_uuid),
+                                            database::schema::collection_objects::is_latest.eq(is_still_latest),
+                                            database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                            database::schema::collection_objects::auto_update.eq(request.auto_update),
+                                        ))
+                                        .execute(conn)?;
+                                }
                             }
                         }
-                        // origin_id == object_id => Initialize
+                    // origin_id == object_id => Initialize
                     } else {
                         // Update the collection objects
                         // - Status
                         // - is_latest
                         // - auto_update
-                        diesel
-                            ::update(
-                                collection_objects.filter(
-                                    database::schema::collection_objects::object_id.eq(
-                                        req_object_uuid
-                                    )
-                                )
-                            )
+                        diesel::
+                        update(collection_objects)
+                            .filter(database::schema::collection_objects::object_id.eq(req_object_uuid))
                             .set((
                                 database::schema::collection_objects::is_latest.eq(is_still_latest),
-                                database::schema::collection_objects::reference_status.eq(
-                                    ReferenceStatus::OK
-                                ),
-                                database::schema::collection_objects::auto_update.eq(
-                                    request.auto_update
-                                ),
+                                database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                                database::schema::collection_objects::auto_update.eq(request.auto_update),
                             ))
                             .execute(conn)?;
                     }
@@ -2051,7 +2022,17 @@ pub fn get_object(
                 update: colobj.auto_update,
             }))
         }
-        None => Ok(None),
+        // Ok(None),
+        None => Ok(Some(ObjectDto {
+            // In case of concurrent object update finish on outdated revision no reference exists
+            object,
+            labels,
+            hooks,
+            hash: object_hash,
+            source,
+            latest: false,
+            update: false,
+        })),
     }
 }
 
