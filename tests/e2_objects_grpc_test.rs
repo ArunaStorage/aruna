@@ -1246,3 +1246,438 @@ async fn concurrent_update_grpc_test() {
     assert_eq!(latest_object.hooks, rev_2_object.hooks);
     assert_eq!(latest_object.rev_number, rev_2_object.rev_number);
 }
+
+/// The individual steps of this test function contains:
+/// 1. Create a random object
+/// 2. Create static read-only reference of revision 0 in another collection
+/// 3. Create static writeable reference of revision 0 in another collection
+/// 4. Create auto_update read_only reference in another collection
+/// 5. Create auto_update writeable reference in another collection
+/// 6. Update object in source collection and validate references
+/// 7. Update object in writeable auto_update collection and validate references
+/// 8. Try create a reference duplicate in a collection
+/// 9. Try update writeable reference on object revision 0
+/// 10. Try update read-only references
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn object_references_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track collection creation
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.to_string()),
+    };
+    let source_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with read-only reference on static revision
+    let ro_st_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with read-only auto_update reference
+    let wr_st_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with writeable reference on static revision
+    let ro_au_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection with writeable auto_update reference
+    let wr_au_collection = common::functions::create_collection(collection_meta);
+
+    // Fast track object creation
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id),
+        collection_id: source_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    };
+    let rev_0_object = common::functions::create_object(&object_meta);
+
+    // Create static read-only revision reference in target collection
+    let read_only_revision_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: ro_st_collection.id.to_string(),
+            writeable: false,
+            auto_update: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let read_only_revision_reference_response = object_service
+        .create_object_reference(read_only_revision_reference_request)
+        .await;
+
+    assert!(read_only_revision_reference_response.is_ok());
+
+    // Create static writeable revision reference in target collection
+    let writeable_revision_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: wr_st_collection.id.to_string(),
+            writeable: true,
+            auto_update: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let writeable_revision_reference_response = object_service
+        .create_object_reference(writeable_revision_reference_request)
+        .await;
+
+    assert!(writeable_revision_reference_response.is_ok());
+
+    // Create read-only auto_update reference in target collection
+    let read_only_revision_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: ro_au_collection.id.to_string(),
+            writeable: false,
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let read_only_revision_reference_response = object_service
+        .create_object_reference(read_only_revision_reference_request)
+        .await;
+
+    assert!(read_only_revision_reference_response.is_ok());
+
+    // Create writeable auto_update reference in target collection
+    let read_only_revision_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: wr_au_collection.id.to_string(),
+            writeable: true,
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let read_only_revision_reference_response = object_service
+        .create_object_reference(read_only_revision_reference_request)
+        .await;
+
+    assert!(read_only_revision_reference_response.is_ok());
+
+    // Validate state of references
+    let all_references_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetReferencesRequest {
+            collection_id: source_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            with_revisions: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let all_references = object_service
+        .get_references(all_references_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .references;
+    assert_eq!(all_references.len(), 5);
+
+    for reference in all_references {
+        assert_eq!(reference.object_id, rev_0_object.id);
+        assert_eq!(reference.revision_number, 0);
+
+        if reference.collection_id == ro_st_collection.id
+            || reference.collection_id == ro_au_collection.id
+        {
+            assert!(!reference.is_writeable);
+        } else if reference.collection_id == source_collection.id
+            || reference.collection_id == wr_st_collection.id
+            || reference.collection_id == wr_au_collection.id
+        {
+            assert!(reference.is_writeable);
+        } else {
+            panic!(
+                "Reference in collection {} should not exist.",
+                reference.collection_id
+            )
+        }
+    }
+
+    // Update object in source collection
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "reference.update.01".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 111222,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_1_object = finish_object_response.object.unwrap();
+
+    // Validate state of references
+    let all_references_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetReferencesRequest {
+            collection_id: source_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            with_revisions: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let all_references = object_service
+        .get_references(all_references_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .references;
+    assert_eq!(all_references.len(), 5);
+
+    for reference in all_references {
+        if reference.collection_id == ro_st_collection.id {
+            assert_eq!(reference.object_id, rev_0_object.id);
+            assert_eq!(reference.revision_number, 0);
+            assert!(!reference.is_writeable);
+        } else if reference.collection_id == ro_au_collection.id {
+            assert_eq!(reference.object_id, rev_1_object.id);
+            assert_eq!(reference.revision_number, 1);
+            assert!(!reference.is_writeable);
+        } else if reference.collection_id == wr_st_collection.id {
+            assert_eq!(reference.object_id, rev_0_object.id);
+            assert_eq!(reference.revision_number, 0);
+            assert!(reference.is_writeable);
+        } else if reference.collection_id == source_collection.id
+            || reference.collection_id == wr_au_collection.id
+        {
+            assert_eq!(reference.object_id, rev_1_object.id);
+            assert_eq!(reference.revision_number, 1);
+            assert!(reference.is_writeable);
+        } else {
+            panic!(
+                "Reference in collection {} should not exist.",
+                reference.collection_id
+            )
+        }
+    }
+
+    // Update object in writeable auto_update collection --> Revision 2
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_1_object.id.to_string(),
+            collection_id: wr_au_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "reference.update.02".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 222111,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service
+        .update_object(update_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let finish_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(FinishObjectStagingRequest {
+            object_id: update_object_response.object_id.to_string(),
+            upload_id: update_object_response.staging_id.to_string(),
+            collection_id: update_object_response.collection_id.to_string(),
+            hash: Some(Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+            }),
+            no_upload: true,
+            completed_parts: vec![],
+            auto_update: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let finish_object_response = object_service
+        .finish_object_staging(finish_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let rev_2_object = finish_object_response.object.unwrap();
+
+    // Validate state of references
+    let all_references_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetReferencesRequest {
+            collection_id: source_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            with_revisions: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let all_references = object_service
+        .get_references(all_references_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .references;
+    assert_eq!(all_references.len(), 5);
+
+    for reference in all_references {
+        if reference.collection_id == ro_st_collection.id {
+            assert_eq!(reference.object_id, rev_0_object.id);
+            assert_eq!(reference.revision_number, 0);
+            assert!(!reference.is_writeable);
+        } else if reference.collection_id == ro_au_collection.id {
+            assert_eq!(reference.object_id, rev_2_object.id);
+            assert_eq!(reference.revision_number, 2);
+            assert!(!reference.is_writeable);
+        } else if reference.collection_id == wr_st_collection.id {
+            assert_eq!(reference.object_id, rev_0_object.id);
+            assert_eq!(reference.revision_number, 0);
+            assert!(reference.is_writeable);
+        } else if reference.collection_id == source_collection.id
+            || reference.collection_id == wr_au_collection.id
+        {
+            assert_eq!(reference.object_id, rev_2_object.id);
+            assert_eq!(reference.revision_number, 2);
+            assert!(reference.is_writeable);
+        } else {
+            panic!(
+                "Reference in collection {} should not exist.",
+                reference.collection_id
+            )
+        }
+    }
+
+    // Try to create duplicate reference in collection --> Error (object duplicate in collection)
+    let duplicate_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectReferenceRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: ro_st_collection.id.to_string(),
+            writeable: false,
+            auto_update: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let duplicate_reference_response = object_service
+        .create_object_reference(duplicate_reference_request)
+        .await;
+
+    assert!(duplicate_reference_response.is_err());
+
+    // Try update object in writeable static reference collection --> Error (outdated revision)
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: wr_st_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "outdated.reference.update".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 121212,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service.update_object(update_object_request).await;
+
+    assert!(update_object_response.is_err());
+
+    // Try update object in read-only auto-update collection --> Error (read-only reference)
+    let update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_2_object.id.to_string(),
+            collection_id: ro_au_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "read-only.reference.update".to_string(),
+                description: "".to_string(),   // No use.
+                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                content_len: 212121,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![],
+                hooks: vec![],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let update_object_response = object_service.update_object(update_object_request).await;
+
+    assert!(update_object_response.is_err());
+}

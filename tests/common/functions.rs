@@ -152,7 +152,7 @@ pub fn update_project_permission(
 ///   ..Default::default()
 /// };
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TCreateCollection {
     pub project_id: String,
     pub num_labels: i64,
