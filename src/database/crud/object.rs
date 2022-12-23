@@ -1376,11 +1376,35 @@ impl Database {
     ) -> Result<AddLabelsToObjectResponse, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
         // Transaction time
         let updated_objects = self
             .pg_connection
             .get()?
-            .transaction::<Option<ObjectDto>, Error, _>(|conn| {
+            .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+                // Check if object reference is writeable
+                let reference_opt: Option<CollectionObject> = collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq(parsed_object_id))
+                    .filter(
+                        database::schema::collection_objects::collection_id
+                            .eq(parsed_collection_id),
+                    )
+                    .first::<CollectionObject>(conn)
+                    .optional()?;
+
+                if let Some(reference) = reference_opt {
+                    if !reference.writeable {
+                        return Err(ArunaError::InvalidRequest(
+                            "Cannot add labels through read-only reference.".to_string(),
+                        ));
+                    }
+                } else {
+                    // Not latest revision
+                    return Err(ArunaError::InvalidRequest(
+                        "Please add labels to latest revision.".to_string(),
+                    ));
+                }
+
                 let db_key_values = to_key_values::<ObjectKeyValue>(
                     request.labels_to_add,
                     Vec::new(),
@@ -1392,6 +1416,7 @@ impl Database {
                     .execute(conn)?;
 
                 get_object(&parsed_object_id, &parsed_collection_id, true, conn)
+                    .map_err(|err| ArunaError::DieselError(err))
             })?;
 
         let mapped = updated_objects
