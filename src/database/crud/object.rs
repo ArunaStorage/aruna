@@ -1136,7 +1136,7 @@ impl Database {
                         .map(|elem| ObjectReference {
                             object_id: elem.object_id.to_string(),
                             collection_id: elem.collection_id.to_string(),
-                            revision_number: *mapped.get(&elem.id).unwrap_or(&0),
+                            revision_number: *mapped.get(&elem.object_id).unwrap_or(&0),
                             is_writeable: elem.writeable,
                         })
                         .collect::<Vec<_>>())
