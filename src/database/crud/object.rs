@@ -577,7 +577,11 @@ impl Database {
                         if reference.reference_status == ReferenceStatus::STAGING {
                             return Ok(update_object_in_place(conn, &parsed_old_id, creator_uuid, sobj)?);
                         }
-                    }
+
+                        if !reference.writeable {
+                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()))
+                        }
+                    } // only instance where no reference is available should be outdated revisions in source collection --> always writeable
 
                     // Define new Object with updated values
                     let new_object = Object {
