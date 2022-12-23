@@ -569,6 +569,7 @@ impl Database {
                     // Check if object is already staging
                     let reference_opt: Option<CollectionObject> = collection_objects
                         .filter(database::schema::collection_objects::object_id.eq(parsed_old_id))
+                        .filter(database::schema::collection_objects::collection_id.eq(parsed_col_id))
                         .first::<CollectionObject>(conn)
                         .optional()?;
 
