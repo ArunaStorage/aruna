@@ -963,6 +963,7 @@ fn pin_collection_to_version(
     for obj_id in original_objects_ids {
         let new_obj = clone_object(
             conn,
+            &creator_user,
             obj_id,
             origin_collection,
             new_collection_overview.coll.id,

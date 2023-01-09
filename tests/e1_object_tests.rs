@@ -920,7 +920,7 @@ fn clone_object_test() {
         target_collection_id: random_collection2.id,
     };
 
-    let resp = db.clone_object(&clone_req).unwrap();
+    let resp = db.clone_object(&clone_req, &creator).unwrap();
 
     let cloned = resp.object.unwrap();
 

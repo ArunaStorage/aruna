@@ -541,7 +541,8 @@ impl ObjectService for ObjectServiceImpl {
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
-        self.authz
+        let creator_uuid = self
+            .authz
             .collection_authorize(
                 request.metadata(),
                 collection_id, // This is the collection uuid in which this object should be created
@@ -563,9 +564,11 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.clone_object(request.get_ref()))
-                .await
-                .map_err(ArunaError::from)??,
+            task::spawn_blocking(move || {
+                database_clone.clone_object(request.get_ref(), &creator_uuid)
+            })
+            .await
+            .map_err(ArunaError::from)??,
         );
 
         // Return gRPC response after everything succeeded

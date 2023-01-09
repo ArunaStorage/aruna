@@ -1198,6 +1198,7 @@ impl Database {
     pub fn clone_object(
         &self,
         request: &CloneObjectRequest,
+        creator_uuid: &uuid::Uuid,
     ) -> Result<CloneObjectResponse, ArunaError> {
         // Extract (and automagically validate) uuids from request
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
@@ -1211,6 +1212,7 @@ impl Database {
             .transaction::<ProtoObject, Error, _>(|conn| {
                 let proto_object = clone_object(
                     conn,
+                    creator_uuid,
                     object_uuid,
                     source_collection_uuid,
                     target_collection_uuid,
@@ -1578,6 +1580,7 @@ pub fn update_object_in_place(
 ///
 pub fn clone_object(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    creator_uuid: &uuid::Uuid,
     object_uuid: uuid::Uuid,
     source_collection_uuid: uuid::Uuid,
     target_collection_uuid: uuid::Uuid,
@@ -1610,6 +1613,7 @@ pub fn clone_object(
     db_object.shared_revision_id = uuid::Uuid::new_v4();
     db_object.revision_number = 0;
     db_object.origin_id = Some(object_uuid);
+    db_object.created_by = *creator_uuid;
 
     // Modify collection_object reference
     db_collection_object.id = uuid::Uuid::new_v4();
