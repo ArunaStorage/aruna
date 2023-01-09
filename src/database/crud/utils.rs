@@ -4,12 +4,13 @@ use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, KeyValue, LabelOrIdQuery, PageRequest, Status,
+    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, Status,
 };
 
-use crate::database::models::enums::{Dataclass, KeyValueType, ObjectStatus, UserRights};
+use crate::database::models::enums::{Dataclass, HashType, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::ArunaError;
+use crate::error::TypeConversionError::PROTOCONVERSION;
 
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
 /// This converts types with the `as` keyword. It should be safe
@@ -434,6 +435,30 @@ pub fn db_to_grpc_object_status(db_status: ObjectStatus) -> Status {
         ObjectStatus::ERROR => Status::Error,
         ObjectStatus::DELETED => Status::Unavailable,
         ObjectStatus::TRASH => Status::Trash,
+    }
+}
+
+pub fn grpc_to_db_hash_type(grpc_hash_type: &i32) -> Result<HashType, ArunaError> {
+    match grpc_hash_type {
+        0 => Ok(HashType::MD5),
+        1 => Ok(HashType::MD5),
+        2 => Ok(HashType::SHA1),
+        3 => Ok(HashType::SHA256),
+        4 => Ok(HashType::SHA512),
+        5 => Ok(HashType::MURMUR3A32),
+        6 => Ok(HashType::XXHASH32),
+        _ => Err(ArunaError::TypeConversionError(PROTOCONVERSION)), // Unspecified is not good...
+    }
+}
+
+pub fn db_to_grpc_hash_type(db_hash_type: &HashType) -> i32 {
+    match db_hash_type {
+        HashType::MD5 => Hashalgorithm::Md5 as i32,
+        HashType::SHA1 => Hashalgorithm::Sha1 as i32,
+        HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+        HashType::SHA512 => Hashalgorithm::Sha512 as i32,
+        HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
+        HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
     }
 }
 

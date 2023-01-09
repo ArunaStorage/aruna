@@ -36,8 +36,8 @@ use aruna_rust_api::api::storage::{
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{
-    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_object_status, from_key_values,
-    naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
+    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_hash_type, db_to_grpc_object_status,
+    from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
@@ -1661,7 +1661,7 @@ pub fn clone_object(
         }),
         data_class: db_object.dataclass as i32,
         hash: Some(ProtoHash {
-            alg: db_hash.hash_type as i32,
+            alg: db_to_grpc_hash_type(&db_hash.hash_type), // db_hash.hash_type as i32,
             hash: db_hash.hash,
         }),
         rev_number: db_object.revision_number,
