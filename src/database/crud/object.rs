@@ -1618,7 +1618,7 @@ pub fn clone_object(
     // Modify collection_object reference
     db_collection_object.id = uuid::Uuid::new_v4();
     db_collection_object.collection_id = target_collection_uuid;
-    db_collection_object.object_id = object_uuid;
+    db_collection_object.object_id = db_object.id;
 
     // Modify object_key_values
     for kv in &mut db_object_key_values {
