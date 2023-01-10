@@ -598,6 +598,27 @@ impl Database {
                         origin_id: Some(parsed_old_id),
                     };
 
+                    // Define new object hash depending if update contains data re-upload
+                    let new_hash = if request.reupload {
+                        // Create new empty hash record which will be updated on object finish
+                        ApiHash {
+                            id: uuid::Uuid::new_v4(),
+                            hash: "".to_string(),
+                            object_id: new_object.id,
+                            hash_type: HashType::MD5, // Default hash type
+                        }
+                    } else {
+                        // Without re-upload just clone hash of object to be updated
+                        let mut old_hash: ApiHash = hashes
+                            .filter(database::schema::hashes::object_id.eq(parsed_old_id))
+                            .first::<ApiHash>(conn)?;
+
+                        old_hash.id =  uuid::Uuid::new_v4();
+                        old_hash.object_id = new_obj_id;
+                        old_hash
+                    };
+
+
                     // Define temporary STAGING join table entry collection <-->  staging object
                     let collection_object = CollectionObject {
                         id: uuid::Uuid::new_v4(),
@@ -621,6 +642,9 @@ impl Database {
                     // Insert entities which are always created on update
                     diesel::insert_into(objects)
                         .values(&new_object)
+                        .execute(conn)?;
+                    diesel::insert_into(hashes)
+                        .values(&new_hash)
                         .execute(conn)?;
                     diesel::insert_into(object_key_value)
                         .values(&key_value_pairs)
@@ -652,18 +676,8 @@ impl Database {
                                 is_primary: true,
                             };
 
-                            // Define the hash placeholder for the object
-                            let empty_hash = ApiHash {
-                                id: uuid::Uuid::new_v4(),
-                                hash: "".to_string(), //Note: Empty hash will be updated later
-                                object_id: new_obj_id,
-                                hash_type: HashType::MD5, //Note: Default. Will be updated later
-                            };
                             diesel::insert_into(object_locations)
                                 .values(&object_location)
-                                .execute(conn)?;
-                            diesel::insert_into(hashes)
-                                .values(&empty_hash)
                                 .execute(conn)?;
                         }
                     } else {
@@ -1597,7 +1611,7 @@ pub fn clone_object(
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
-    let db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
+    let mut db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
 
     let db_source: Option<Source> = match &db_object.source_id {
         None => None,
@@ -1614,6 +1628,11 @@ pub fn clone_object(
     db_object.revision_number = 0;
     db_object.origin_id = Some(object_uuid);
     db_object.created_by = *creator_uuid;
+    db_object.created_at = Local::now().naive_local();
+
+    // Modify hash
+    db_hash.id = uuid::Uuid::new_v4();
+    db_hash.object_id = db_object.id;
 
     // Modify collection_object reference
     db_collection_object.id = uuid::Uuid::new_v4();
@@ -1626,10 +1645,13 @@ pub fn clone_object(
         kv.object_id = db_object.id;
     }
 
-    // Insert object, key_Values and references
+    //ToDo: What about object location cloning?
+
+    // Insert object, hash, key_Values and references
     diesel::insert_into(objects)
         .values(&db_object)
         .execute(conn)?;
+    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
     diesel::insert_into(object_key_value)
         .values(&db_object_key_values)
         .execute(conn)?;
@@ -1665,7 +1687,7 @@ pub fn clone_object(
         }),
         data_class: db_object.dataclass as i32,
         hash: Some(ProtoHash {
-            alg: db_to_grpc_hash_type(&db_hash.hash_type), // db_hash.hash_type as i32,
+            alg: db_to_grpc_hash_type(&db_hash.hash_type),
             hash: db_hash.hash,
         }),
         rev_number: db_object.revision_number,
