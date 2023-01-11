@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::{thread, time};
 
 use aruna_rust_api::api::storage::models::v1::{
     DataClass, Hash, Hashalgorithm, KeyValue, Permission,
 };
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
-    collection_service_server::CollectionService, AddLabelsToObjectRequest,
+    collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
     CreateNewCollectionRequest, CreateObjectReferenceRequest, GetDownloadUrlRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetReferencesRequest,
     GetUploadUrlRequest, InitializeNewObjectResponse,
@@ -25,7 +26,7 @@ use aruna_server::{
 };
 use serial_test::serial;
 
-use crate::common::functions::{TCreateCollection, TCreateObject};
+use crate::common::functions::{TCreateCollection, TCreateObject, TCreateUpdate};
 use crate::common::grpc_helpers::get_token_user_id;
 
 mod common;
@@ -1997,4 +1998,299 @@ async fn add_labels_to_object_grpc_test() {
 
     assert_eq!(rev_0_object.labels.len(), 3); // Still 3: 2 from permissions and one from reference
     assert_eq!(rev_1_object.labels.len(), 0); // Still 0
+}
+
+/// The individual steps of this test function contains:
+/// 1. Create a random object
+/// 2. Try to clone non-existing object
+/// 3. Try to clone object in non-existing collection
+/// 4. Try to clone object with different permissions
+/// 5. Try to clone object in same collection
+/// 6. Update Object and clone revision 1
+/// 7. Update cloned object and check OriginType
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn clone_object_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        project_id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let source_collection = common::functions::create_collection(collection_meta.clone());
+    // Collection where the object will be cloned to
+    let target_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Fast track object creation
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: source_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    };
+    let rev_0_object = common::functions::create_object(&object_meta);
+
+    assert_eq!(rev_0_object.clone().origin.unwrap().r#type, 1); // OriginType::User
+
+    // Sleep 1 second to have differing created_at timestamps with cloned objects
+    thread::sleep(time::Duration::from_secs(1));
+
+    // Try to clone non-existing object --> Error
+    let clone_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CloneObjectRequest {
+            object_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: target_collection.id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let clone_object_response = object_service.clone_object(clone_object_request).await;
+
+    assert!(clone_object_response.is_err());
+
+    // Try to clone object from/in non-existing collection --> Error
+    let clone_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CloneObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            target_collection_id: target_collection.id.to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let clone_object_response = object_service.clone_object(clone_object_request).await;
+
+    assert!(clone_object_response.is_err());
+
+    let clone_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CloneObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let clone_object_response = object_service.clone_object(clone_object_request).await;
+
+    assert!(clone_object_response.is_err());
+
+    // Loop through permissions and clone object to target collection
+    //ToDo: Clone with all permission permutations for both collections?
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Clone object in target collection
+        let clone_object_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CloneObjectRequest {
+                object_id: rev_0_object.id.to_string(),
+                collection_id: source_collection.id.to_string(),
+                target_collection_id: target_collection.id.to_string(),
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let clone_object_response = object_service.clone_object(clone_object_request).await;
+
+        match *permission {
+            Permission::None | Permission::Read => {
+                // Request should fail with insufficient permissions
+                assert!(clone_object_response.is_err());
+            }
+            Permission::Append | Permission::Modify | Permission::Admin => {
+                assert!(clone_object_response.is_ok());
+
+                let proto_object = clone_object_response.unwrap().into_inner().object.unwrap();
+
+                // Check attributes from object in clone response
+                assert_ne!(rev_0_object.id, proto_object.id);
+                assert_ne!(
+                    rev_0_object.created.as_ref().unwrap(),
+                    proto_object.created.as_ref().unwrap()
+                );
+                assert_ne!(rev_0_object.origin, proto_object.origin);
+
+                assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
+                assert_eq!(rev_0_object.filename, proto_object.filename);
+                assert_eq!(rev_0_object.content_len, proto_object.content_len);
+                assert_eq!(rev_0_object.hash, proto_object.hash);
+
+                assert_eq!(proto_object.rev_number, 0);
+                assert_eq!(proto_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+
+                // Get cloned object and check attributes
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: target_collection.id.to_string(),
+                        object_id: proto_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::REGULARTOKEN,
+                );
+                let get_object_response = object_service
+                    .get_object_by_id(get_object_request)
+                    .await
+                    .unwrap()
+                    .into_inner();
+                let cloned_object = get_object_response.object.unwrap().object.unwrap();
+
+                assert_ne!(rev_0_object.id, cloned_object.id);
+                assert_ne!(
+                    rev_0_object.created.as_ref().unwrap(),
+                    cloned_object.created.as_ref().unwrap()
+                );
+                assert_ne!(rev_0_object.origin, cloned_object.origin);
+
+                assert_eq!(rev_0_object.id, cloned_object.origin.clone().unwrap().id);
+                assert_eq!(rev_0_object.filename, cloned_object.filename);
+                assert_eq!(rev_0_object.content_len, cloned_object.content_len);
+                assert_eq!(rev_0_object.hash, cloned_object.hash);
+
+                assert_eq!(cloned_object.rev_number, 0);
+                assert_eq!(cloned_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Try to clone in same collection
+    let clone_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CloneObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: source_collection.id.to_string(),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let clone_object_response = object_service
+        .clone_object(clone_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let proto_object = clone_object_response.object.unwrap();
+    assert_ne!(rev_0_object.id, proto_object.id);
+    assert_ne!(
+        rev_0_object.created.as_ref().unwrap(),
+        proto_object.created.as_ref().unwrap()
+    );
+    assert_ne!(rev_0_object.origin, proto_object.origin);
+
+    assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
+    assert_eq!(rev_0_object.filename, proto_object.filename);
+    assert_eq!(rev_0_object.content_len, proto_object.content_len);
+    assert_eq!(rev_0_object.hash, proto_object.hash);
+
+    assert_eq!(proto_object.rev_number, 0);
+    assert_eq!(proto_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+
+    // Fast track update source object
+    let rev_1_object = common::functions::update_object(&TCreateUpdate {
+        original_object: rev_0_object,
+        collection_id: source_collection.id.to_string(),
+        new_name: "updated.object".to_string(),
+        new_description: "".to_string(), // No use.
+        content_len: 1234,
+        num_labels: 0,
+        num_hooks: 0,
+    });
+
+    assert_eq!(rev_1_object.clone().origin.unwrap().r#type, 1); // Still OriginType::User
+
+    // Clone revision 1 of source object
+    let clone_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CloneObjectRequest {
+            object_id: rev_1_object.id.to_string(),
+            collection_id: source_collection.id.to_string(),
+            target_collection_id: target_collection.id.to_string(),
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let clone_object_response = object_service
+        .clone_object(clone_object_request)
+        .await
+        .unwrap()
+        .into_inner();
+    let clone_rev_0_object = clone_object_response.object.unwrap();
+
+    assert_ne!(rev_1_object.id, clone_rev_0_object.id);
+    assert_ne!(
+        rev_1_object.created.as_ref().unwrap(),
+        clone_rev_0_object.created.as_ref().unwrap()
+    );
+    assert_ne!(rev_1_object.origin, clone_rev_0_object.origin);
+
+    assert_eq!(
+        rev_1_object.id,
+        clone_rev_0_object.origin.clone().unwrap().id
+    );
+    assert_eq!(rev_1_object.filename, clone_rev_0_object.filename);
+    assert_eq!(rev_1_object.content_len, clone_rev_0_object.content_len);
+    assert_eq!(rev_1_object.hash, clone_rev_0_object.hash);
+
+    assert_eq!(clone_rev_0_object.filename, "updated.object".to_string());
+    assert_eq!(clone_rev_0_object.content_len, 1234);
+    assert_eq!(clone_rev_0_object.rev_number, 0);
+    assert_eq!(clone_rev_0_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+
+    // Fast track update cloned object
+    let clone_rev_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: clone_rev_0_object,
+        collection_id: target_collection.id.to_string(),
+        new_name: "clone.update".to_string(),
+        new_description: "".to_string(), // No use.
+        content_len: 123456,
+        num_labels: 0,
+        num_hooks: 0,
+    });
+
+    assert_eq!(clone_rev_1.origin.unwrap().r#type, 2); // Still OriginType::Objclone
 }
