@@ -1,15 +1,13 @@
 use std::sync::Arc;
 use std::{thread, time};
 
-use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hash, Hashalgorithm, KeyValue, Permission,
-};
+use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, KeyValue, Permission, Status};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
-    CreateNewCollectionRequest, CreateObjectReferenceRequest, GetDownloadUrlRequest,
-    GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetReferencesRequest,
-    GetUploadUrlRequest, InitializeNewObjectResponse,
+    CreateNewCollectionRequest, CreateObjectReferenceRequest, DeleteObjectRequest,
+    GetDownloadUrlRequest, GetLatestObjectRevisionRequest, GetObjectByIdRequest,
+    GetReferencesRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
@@ -2296,4 +2294,356 @@ async fn clone_object_grpc_test() {
     });
 
     assert_eq!(clone_rev_1.origin.unwrap().r#type, 2); // Still OriginType::Objclone
+}
+
+//ToDo: Test single object deletion
+/// The individual steps of this test function contains:
+/// 1. Try to delete non-existing object
+/// 3. Try to delete with invalid token
+/// 4. Try to delete with invalid collection
+/// 5. Try to normal/force delete object with different permissions
+/// 6. Try to delete object revisions in random order
+/// 7. Try to delete object with read-only references
+/// 8. Try to delete object with writeable references
+/// 9. Try to force delete object with revisions with mixed references
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn delete_object_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        project_id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Fast track random object creation
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    };
+    let random_object = common::functions::create_object(&object_meta);
+
+    // Try to delete non-existing object
+    let delete_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteObjectRequest {
+            object_id: "".to_string(),
+            collection_id: random_collection.id.to_string(),
+            with_revisions: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let delete_object_response = object_service.delete_object(delete_object_request).await;
+
+    assert!(delete_object_response.is_err());
+
+    // Try to delete object with invalid collection
+    let delete_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteObjectRequest {
+            object_id: random_object.id.to_string(),
+            collection_id: "".to_string(),
+            with_revisions: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let delete_object_response = object_service.delete_object(delete_object_request).await;
+
+    assert!(delete_object_response.is_err());
+
+    // Try to normal delete object with single revision with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create/delete random object
+        let object_meta = TCreateObject {
+            creator_id: Some(user_id.clone()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: None,
+            num_labels: 0,
+            num_hooks: 0,
+        };
+        let random_object = common::functions::create_object(&object_meta);
+
+        let delete_object_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteObjectRequest {
+                object_id: random_object.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                with_revisions: false,
+                force: false,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_object_response = object_service
+            .delete_object(delete_object_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read => {
+                // Request should fail with insufficient permissions
+                assert!(delete_object_response.is_err());
+
+                // Validate that object still exists
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let get_object_response = object_service.get_object_by_id(get_object_request).await;
+
+                assert!(get_object_response.is_ok());
+
+                let proto_object = get_object_response
+                    .unwrap()
+                    .into_inner()
+                    .object
+                    .unwrap()
+                    .object
+                    .unwrap();
+
+                assert_eq!(proto_object.id, random_object.id);
+                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Available);
+
+                let all_references_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetReferencesRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_revisions: true,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let all_references = object_service
+                    .get_references(all_references_request)
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .references;
+
+                assert_ne!(all_references.len(), 0); // At least one reference
+            }
+            Permission::Append | Permission::Modify | Permission::Admin => {
+                assert!(delete_object_response.is_ok());
+
+                // Validate object got deleted
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let get_object_response = object_service.get_object_by_id(get_object_request).await;
+
+                assert!(get_object_response.is_ok()); // Objects are not removed directly.
+
+                let proto_object = get_object_response.unwrap().into_inner().object.unwrap().object.unwrap();
+
+                let all_references_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetReferencesRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_revisions: true,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let all_references = object_service
+                    .get_references(all_references_request)
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .references;
+
+                assert_eq!(all_references.len(), 0);
+                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Trash);
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Try to force delete object with single revision with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+        .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+            .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create/delete random object
+        let object_meta = TCreateObject {
+            creator_id: Some(user_id.clone()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: None,
+            num_labels: 0,
+            num_hooks: 0,
+        };
+        let random_object = common::functions::create_object(&object_meta);
+
+        let delete_object_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteObjectRequest {
+                object_id: random_object.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                with_revisions: false,
+                force: true,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_object_response = object_service
+            .delete_object(delete_object_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
+                // Request should fail with insufficient permissions
+                assert!(delete_object_response.is_err());
+
+                // Validate that object still exists
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let get_object_response = object_service.get_object_by_id(get_object_request).await;
+
+                assert!(get_object_response.is_ok());
+
+                let proto_object = get_object_response
+                    .unwrap()
+                    .into_inner()
+                    .object
+                    .unwrap()
+                    .object
+                    .unwrap();
+
+                assert_eq!(proto_object.id, random_object.id);
+                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Available);
+
+                let all_references_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetReferencesRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_revisions: true,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let all_references = object_service
+                    .get_references(all_references_request)
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .references;
+
+                assert_ne!(all_references.len(), 0); // At least one reference
+            }
+            Permission::Admin => {
+                assert!(delete_object_response.is_ok());
+
+                // Validate object got deleted
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let get_object_response = object_service.get_object_by_id(get_object_request).await;
+
+                assert!(get_object_response.is_ok()); // Objects are not removed directly.
+
+                let proto_object = get_object_response.unwrap().into_inner().object.unwrap().object.unwrap();
+
+                let all_references_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetReferencesRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_revisions: true,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let all_references = object_service
+                    .get_references(all_references_request)
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .references;
+
+                assert_eq!(all_references.len(), 0);
+                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Trash);
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
 }
