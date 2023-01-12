@@ -2243,6 +2243,9 @@ async fn clone_object_grpc_test() {
         num_hooks: 0,
     });
 
+    // Sleep 1 second to have differing created_at timestamps with cloned objects
+    thread::sleep(time::Duration::from_secs(1));
+
     assert_eq!(rev_1_object.clone().origin.unwrap().r#type, 1); // Still OriginType::User
 
     // Clone revision 1 of source object
