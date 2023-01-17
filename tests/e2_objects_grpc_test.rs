@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::{thread, time};
 
-use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, KeyValue, Permission, Status};
+use aruna_rust_api::api::storage::models::v1::{
+    DataClass, Hash, Hashalgorithm, KeyValue, Permission, Status,
+};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
@@ -2428,9 +2430,7 @@ async fn delete_object_grpc_test() {
             }),
             common::oidc::REGULARTOKEN,
         );
-        let delete_object_response = object_service
-            .delete_object(delete_object_request)
-            .await;
+        let delete_object_response = object_service.delete_object(delete_object_request).await;
 
         match *permission {
             Permission::None | Permission::Read => {
@@ -2459,7 +2459,10 @@ async fn delete_object_grpc_test() {
                     .unwrap();
 
                 assert_eq!(proto_object.id, random_object.id);
-                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Available);
+                assert_eq!(
+                    Status::from_i32(proto_object.status).unwrap(),
+                    Status::Available
+                );
 
                 let all_references_request = common::grpc_helpers::add_token(
                     tonic::Request::new(GetReferencesRequest {
@@ -2494,7 +2497,13 @@ async fn delete_object_grpc_test() {
 
                 assert!(get_object_response.is_ok()); // Objects are not removed directly.
 
-                let proto_object = get_object_response.unwrap().into_inner().object.unwrap().object.unwrap();
+                let proto_object = get_object_response
+                    .unwrap()
+                    .into_inner()
+                    .object
+                    .unwrap()
+                    .object
+                    .unwrap();
 
                 let all_references_request = common::grpc_helpers::add_token(
                     tonic::Request::new(GetReferencesRequest {
@@ -2512,7 +2521,10 @@ async fn delete_object_grpc_test() {
                     .references;
 
                 assert_eq!(all_references.len(), 0);
-                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Trash);
+                assert_eq!(
+                    Status::from_i32(proto_object.status).unwrap(),
+                    Status::Trash
+                );
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
@@ -2526,7 +2538,7 @@ async fn delete_object_grpc_test() {
         Permission::Modify,
         Permission::Admin,
     ]
-        .iter()
+    .iter()
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
@@ -2535,7 +2547,7 @@ async fn delete_object_grpc_test() {
             permission,
             common::oidc::ADMINTOKEN,
         )
-            .await;
+        .await;
         assert_eq!(edit_perm.permission, *permission as i32);
 
         // Create/delete random object
@@ -2557,9 +2569,7 @@ async fn delete_object_grpc_test() {
             }),
             common::oidc::REGULARTOKEN,
         );
-        let delete_object_response = object_service
-            .delete_object(delete_object_request)
-            .await;
+        let delete_object_response = object_service.delete_object(delete_object_request).await;
 
         match *permission {
             Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
@@ -2588,7 +2598,10 @@ async fn delete_object_grpc_test() {
                     .unwrap();
 
                 assert_eq!(proto_object.id, random_object.id);
-                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Available);
+                assert_eq!(
+                    Status::from_i32(proto_object.status).unwrap(),
+                    Status::Available
+                );
 
                 let all_references_request = common::grpc_helpers::add_token(
                     tonic::Request::new(GetReferencesRequest {
@@ -2623,7 +2636,13 @@ async fn delete_object_grpc_test() {
 
                 assert!(get_object_response.is_ok()); // Objects are not removed directly.
 
-                let proto_object = get_object_response.unwrap().into_inner().object.unwrap().object.unwrap();
+                let proto_object = get_object_response
+                    .unwrap()
+                    .into_inner()
+                    .object
+                    .unwrap()
+                    .object
+                    .unwrap();
 
                 let all_references_request = common::grpc_helpers::add_token(
                     tonic::Request::new(GetReferencesRequest {
@@ -2641,7 +2660,10 @@ async fn delete_object_grpc_test() {
                     .references;
 
                 assert_eq!(all_references.len(), 0);
-                assert_eq!(Status::from_i32(proto_object.status).unwrap(), Status::Trash);
+                assert_eq!(
+                    Status::from_i32(proto_object.status).unwrap(),
+                    Status::Trash
+                );
             }
             _ => panic!("Unspecified permission is not allowed."),
         }

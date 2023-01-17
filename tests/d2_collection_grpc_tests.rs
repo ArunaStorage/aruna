@@ -611,7 +611,7 @@ async fn update_collection_grpc_test() {
                 name: "Test Collection".to_string(),
                 description: format!(
                     "Collection updated with permission {}",
-                    permission.as_str_name().to_string()
+                    permission.as_str_name()
                 ),
                 labels: vec![KeyValue {
                     key: "permission".to_string(),
@@ -649,7 +649,7 @@ async fn update_collection_grpc_test() {
                     collection.description,
                     format!(
                         "Collection updated with permission {}",
-                        permission.as_str_name().to_string()
+                        permission.as_str_name()
                     )
                 );
                 assert_eq!(

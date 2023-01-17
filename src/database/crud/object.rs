@@ -1434,7 +1434,7 @@ impl Database {
                     .execute(conn)?;
 
                 get_object(&parsed_object_id, &parsed_collection_id, true, conn)
-                    .map_err(|err| ArunaError::DieselError(err))
+                    .map_err(ArunaError::DieselError)
             })?;
 
         let mapped = updated_objects
