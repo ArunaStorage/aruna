@@ -120,6 +120,7 @@ pub enum IdentityProviderType {
 #[DieselTypePath = "sql_types::UserRights"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum UserRights {
+    NONE,
     READ,
     APPEND,
     MODIFY,

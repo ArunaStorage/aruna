@@ -13,6 +13,7 @@ pub struct Source {
 }
 
 #[derive(
+    AsChangeset,
     Associations,
     Queryable,
     Insertable,

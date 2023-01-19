@@ -1,5 +1,8 @@
 use aruna_rust_api::api::internal::v1::{Location, LocationType};
-use aruna_rust_api::api::storage::services::v1::{GetObjectByIdRequest, UpdateObjectRequest};
+use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
+use aruna_rust_api::api::storage::services::v1::{
+    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, UpdateObjectRequest,
+};
 use aruna_rust_api::api::storage::{
     models::v1::{
         collection_overview, CollectionOverview, DataClass, Hash as ApiHash, Hashalgorithm,
@@ -111,6 +114,35 @@ pub fn get_project(project_uuid: &str) -> ProjectOverview {
     response.project.unwrap()
 }
 
+/// Fast track permission edit.
+#[allow(dead_code)]
+pub fn update_project_permission(
+    project_uuid: &str,
+    user_uuid: &str,
+    new_perm: Permission,
+) -> bool {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Validate format of provided ids
+    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
+    let user_id = uuid::Uuid::parse_str(user_uuid).unwrap();
+    let creator_id = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+
+    let edit_perm_request = EditUserPermissionsForProjectRequest {
+        project_id: project_id.to_string(),
+        user_permission: Some(ProjectPermission {
+            user_id: user_id.to_string(),
+            project_id: project_id.to_string(),
+            permission: new_perm as i32,
+            service_account: false,
+        }),
+    };
+
+    let edit_perm_response = db.edit_user_permissions_for_project(edit_perm_request, creator_id);
+
+    edit_perm_response.is_ok()
+}
+
 /// This struct is used to simplify the function call
 /// By deriving default you can just use the parameter as in
 /// to auto populate all other values
@@ -120,7 +152,7 @@ pub fn get_project(project_uuid: &str) -> ProjectOverview {
 ///   ..Default::default()
 /// };
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TCreateCollection {
     pub project_id: String,
     pub num_labels: i64,

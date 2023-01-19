@@ -16,7 +16,7 @@ CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED')
 CREATE TYPE SOURCE_TYPE AS ENUM ('URL', 'DOI');
 CREATE TYPE KEY_VALUE_TYPE AS ENUM ('LABEL', 'HOOK');
 CREATE TYPE IDENTITY_PROVIDER_TYPE AS ENUM ('OIDC');
-CREATE TYPE USER_RIGHTS AS ENUM ('READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
+CREATE TYPE USER_RIGHTS AS ENUM ('NONE', 'READ', 'APPEND', 'MODIFY', 'WRITE', 'ADMIN');
 CREATE TYPE REFERENCE_STATUS AS ENUM ('STAGING', 'HIDDEN', 'OK');
 CREATE TYPE RESOURCES AS ENUM (
     'PROJECT',
@@ -75,7 +75,8 @@ CREATE TABLE user_permissions (
     user_right USER_RIGHTS NOT NULL DEFAULT 'READ',
     project_id UUID NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (project_id) REFERENCES projects(id)
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    UNIQUE(user_id, project_id)
 );
 /* ----- Collections ----------------------------------------------- */
 -- Table with the individual parts of semantic versioning
