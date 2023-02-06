@@ -2985,3 +2985,417 @@ async fn delete_object_revisions_grpc_test() {
         )); // Object is in trash and waits to be removed
     }
 }
+
+/// The individual steps of this test function contains:
+/// 1. Delete multiple individual objects with different permissions
+/// 2. Delete multiple individual objects with their revisions with different permissions
+/// 3. Delete all revisions individually of same object in random order
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn delete_multiple_objects_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let project_id = common::functions::create_project(None).id;
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        project_id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+        .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: project_id.clone(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Create multiple objects without revisions and delete them all at once with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+        .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+            .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create objects
+        let mut object_ids = Vec::new();
+        for _ in 1..3 {
+            object_ids.push(
+                common::functions::create_object(&TCreateObject {
+                    creator_id: Some(user_id.clone()),
+                    collection_id: random_collection.id.to_string(),
+                    default_endpoint_id: None,
+                    num_labels: 0,
+                    num_hooks: 0,
+                })
+                    .id,
+            );
+        }
+
+        // Try delete objects without force
+        let mut inner_delete_request = DeleteObjectsRequest {
+            object_ids: object_ids.clone(),
+            collection_id: random_collection.id.to_string(),
+            with_revisions: false,
+            force: false,
+        };
+        let delete_multiple_objects_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_delete_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_multiple_objects_response = object_service
+            .delete_objects(delete_multiple_objects_request)
+            .await;
+
+        // Try delete objects with force
+        inner_delete_request.force = true;
+        let force_delete_multiple_objects_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_delete_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let force_delete_multiple_objects_response = object_service
+            .delete_objects(force_delete_multiple_objects_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
+                // Request should fail with insufficient permissions
+                assert!(delete_multiple_objects_response.is_err());
+                assert!(force_delete_multiple_objects_response.is_err());
+            }
+            Permission::Admin => {
+                assert!(delete_multiple_objects_response.is_err());
+                assert!(force_delete_multiple_objects_response.is_ok());
+
+                // Validate deletion:
+                //   - Get all references of object and check that there are none left
+                //   - Get objects of collection and check status
+                for object_uuid in object_ids {
+                    let get_references_request = common::grpc_helpers::add_token(
+                        tonic::Request::new(GetReferencesRequest {
+                            collection_id: random_collection.id.to_string(),
+                            object_id: object_uuid.to_string(),
+                            with_revisions: false,
+                        }),
+                        common::oidc::ADMINTOKEN,
+                    );
+                    let get_references_response =
+                        object_service.get_references(get_references_request).await;
+
+                    assert!(get_references_response.is_ok());
+                    assert!(get_references_response
+                        .unwrap()
+                        .into_inner()
+                        .references
+                        .is_empty());
+
+                    let get_object_request = common::grpc_helpers::add_token(
+                        tonic::Request::new(GetObjectByIdRequest {
+                            collection_id: random_collection.id.to_string(),
+                            object_id: object_uuid,
+                            with_url: false,
+                        }),
+                        common::oidc::ADMINTOKEN,
+                    );
+                    let get_object_response =
+                        object_service.get_object_by_id(get_object_request).await;
+                    assert!(get_object_response.is_ok());
+
+                    let trashed_object = get_object_response
+                        .unwrap()
+                        .into_inner()
+                        .object
+                        .unwrap()
+                        .object
+                        .unwrap();
+                    assert!(matches!(
+                        Status::from_i32(trashed_object.status),
+                        Some(Status::Trash)
+                    )); // Object is in trash and waits to be removed
+                }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        };
+    }
+
+    // Create multiple objects with revisions and delete them all at once with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+        .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            project_id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+            .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create multiple objects
+        let mut rng = rand::thread_rng();
+        let mut object_ids = Vec::new();
+        for _ in 1..3 {
+            let mut source_object = common::functions::create_object(&TCreateObject {
+                creator_id: Some(user_id.clone()),
+                collection_id: random_collection.id.to_string(),
+                default_endpoint_id: None,
+                num_labels: 0,
+                num_hooks: 0,
+            });
+
+            for update_num in 1..=rng.gen_range(1..3) {
+                // 3 revisions for each object
+                let updated_object = common::functions::update_object(&TCreateUpdate {
+                    original_object: source_object.clone(),
+                    collection_id: random_collection.id.to_string(),
+                    new_name: format!("object-update.{}", update_num).to_string(),
+                    new_description: "".to_string(), // No use.
+                    content_len: rng.gen_range(1234..123456),
+                    num_labels: 0,
+                    num_hooks: 0,
+                });
+
+                source_object = updated_object;
+            }
+
+            object_ids.push(source_object.id);
+        }
+
+        // Try delete objects without force
+        let mut inner_delete_request = DeleteObjectsRequest {
+            object_ids: object_ids.clone(),
+            collection_id: random_collection.id.to_string(),
+            with_revisions: true,
+            force: false,
+        };
+        let delete_multiple_objects_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_delete_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_multiple_objects_response = object_service
+            .delete_objects(delete_multiple_objects_request)
+            .await;
+
+        // Try delete objects with force
+        inner_delete_request.force = true;
+        let force_delete_multiple_objects_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_delete_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let force_delete_multiple_objects_response = object_service
+            .delete_objects(force_delete_multiple_objects_request)
+            .await;
+
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
+                // Request should fail with insufficient permissions
+                assert!(delete_multiple_objects_response.is_err());
+                assert!(force_delete_multiple_objects_response.is_err());
+            }
+            Permission::Admin => {
+                assert!(delete_multiple_objects_response.is_err());
+                assert!(force_delete_multiple_objects_response.is_ok());
+
+                // Validate deletion:
+                //   - Get all references of object and check that there are none left
+                //   - Get objects of collection and check status
+                for object_uuid in object_ids {
+                    let get_references_request = common::grpc_helpers::add_token(
+                        tonic::Request::new(GetReferencesRequest {
+                            collection_id: random_collection.id.to_string(),
+                            object_id: object_uuid.to_string(),
+                            with_revisions: true,
+                        }),
+                        common::oidc::ADMINTOKEN,
+                    );
+                    let get_references_response =
+                        object_service.get_references(get_references_request).await;
+
+                    assert!(get_references_response.is_ok());
+                    assert!(get_references_response
+                        .unwrap()
+                        .into_inner()
+                        .references
+                        .is_empty());
+
+                    let get_object_request = common::grpc_helpers::add_token(
+                        tonic::Request::new(GetObjectByIdRequest {
+                            collection_id: random_collection.id.to_string(),
+                            object_id: object_uuid,
+                            with_url: false,
+                        }),
+                        common::oidc::ADMINTOKEN,
+                    );
+                    let get_object_response =
+                        object_service.get_object_by_id(get_object_request).await;
+                    assert!(get_object_response.is_ok());
+
+                    let trashed_object = get_object_response
+                        .unwrap()
+                        .into_inner()
+                        .object
+                        .unwrap()
+                        .object
+                        .unwrap();
+                    assert!(matches!(
+                        Status::from_i32(trashed_object.status),
+                        Some(Status::Trash)
+                    )); // Object is in trash and waits to be removed
+                }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        };
+    }
+
+    // Create single object with revisions and delete all of them in incorrect order
+    let random_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        default_endpoint_id: None,
+        num_labels: 0,
+        num_hooks: 0,
+    });
+
+    let mut update_meta = TCreateUpdate {
+        original_object: random_object.clone(),
+        collection_id: random_collection.id.to_string().to_string(),
+        new_name: "random_update.01".to_string(),
+        new_description: "".to_string(), // No use.
+        content_len: 123,
+        num_labels: 0,
+        num_hooks: 0,
+    };
+    let random_object_rev_1 = common::functions::update_object(&update_meta);
+
+    update_meta.original_object = random_object_rev_1.clone();
+    update_meta.new_name = "random_update.02".to_string();
+    let random_object_rev_2 = common::functions::update_object(&update_meta);
+
+    update_meta.original_object = random_object_rev_2.clone();
+    update_meta.new_name = "random_update.03".to_string();
+    let random_object_rev_3 = common::functions::update_object(&update_meta);
+
+    let object_ids = vec![
+        random_object_rev_1.id,
+        random_object_rev_3.id,
+        random_object.id,
+        random_object_rev_2.id,
+    ];
+    let mut inner_delete_request = DeleteObjectsRequest {
+        object_ids: object_ids.clone(),
+        collection_id: random_collection.id.to_string(),
+        with_revisions: false,
+        force: false,
+    };
+    let delete_multiple_objects_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_delete_request.clone()),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_multiple_objects_response = object_service
+        .delete_objects(delete_multiple_objects_request)
+        .await;
+
+    assert!(delete_multiple_objects_response.is_err());
+
+    inner_delete_request.force = true;
+
+    let delete_multiple_objects_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_delete_request.clone()),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_multiple_objects_response = object_service
+        .delete_objects(delete_multiple_objects_request)
+        .await;
+
+    assert!(delete_multiple_objects_response.is_ok());
+
+    // Validate deletion:
+    //   - Get all references of object and check that there are none left
+    //   - Get objects of collection and check status
+    for object_uuid in object_ids {
+        let get_references_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetReferencesRequest {
+                collection_id: random_collection.id.to_string(),
+                object_id: object_uuid.to_string(),
+                with_revisions: false,
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let get_references_response = object_service.get_references(get_references_request).await;
+
+        assert!(get_references_response.is_ok());
+        assert!(get_references_response
+            .unwrap()
+            .into_inner()
+            .references
+            .is_empty());
+
+        let get_object_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectByIdRequest {
+                collection_id: random_collection.id.to_string(),
+                object_id: object_uuid,
+                with_url: false,
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let get_object_response = object_service.get_object_by_id(get_object_request).await;
+        assert!(get_object_response.is_ok());
+
+        let trashed_object = get_object_response
+            .unwrap()
+            .into_inner()
+            .object
+            .unwrap()
+            .object
+            .unwrap();
+        assert!(matches!(
+            Status::from_i32(trashed_object.status),
+            Some(Status::Trash)
+        )); // Object is in trash and waits to be removed
+    }
+}
