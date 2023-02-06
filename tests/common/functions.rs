@@ -1,7 +1,8 @@
 use aruna_rust_api::api::internal::v1::{Location, LocationType};
 use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
 use aruna_rust_api::api::storage::services::v1::{
-    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, UpdateObjectRequest,
+    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetReferencesRequest,
+    ObjectReference, UpdateObjectRequest,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -236,7 +237,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     // Collection should have the following name
     assert_eq!(get_col_resp.name, create_collection_request_test.name);
     // Collection should not have a version
-    assert!(get_col_resp.version.clone().unwrap() == collection_overview::Version::Latest(true));
+    assert_eq!(get_col_resp.version.clone().unwrap(), collection_overview::Version::Latest(true));
     assert!(
         // Should be empty vec
         get_col_resp
@@ -385,7 +386,8 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
 }
 
 /// GetObjectById wrapper for simplified use in tests.
-pub fn _get_object(collection_id: String, object_id: String) -> Object {
+#[allow(dead_code)]
+pub fn get_object(collection_id: String, object_id: String) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Get Object by its unique id
@@ -397,6 +399,24 @@ pub fn _get_object(collection_id: String, object_id: String) -> Object {
     let object = db.get_object(&get_request).unwrap();
 
     object.unwrap()
+}
+
+/// GetReferences wrapper for simplified use in tests.
+#[allow(dead_code)]
+pub fn get_object_references(
+    collection_id: String,
+    object_id: String,
+    with_revisions: bool,
+) -> Vec<ObjectReference> {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let get_request = GetReferencesRequest {
+        collection_id,
+        object_id,
+        with_revisions,
+    };
+
+    db.get_references(&get_request).unwrap().references
 }
 
 /// Helper function to get the "raw" object from database without ID
@@ -427,7 +447,6 @@ pub struct TCreateUpdate {
 }
 
 // Helper function to update an object
-
 #[allow(dead_code)]
 pub fn update_object(update: &TCreateUpdate) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
@@ -469,7 +488,6 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
 
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_001);
     let updated_upload_id = uuid::Uuid::new_v4();
     let updated_location = Location {
         r#type: EndpointType::S3 as i32,
