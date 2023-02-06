@@ -1025,11 +1025,7 @@ fn delete_multiple_objects_test() {
     let _resp = db.create_object_reference(create_ref).unwrap();
 
     // Test deletes
-    let ids = vec![
-        rnd_obj_1_rev_1.id,
-        rnd_obj_2_rev_0.id,
-        rnd_obj_3_rev_0.id,
-    ];
+    let ids = vec![rnd_obj_1_rev_1.id, rnd_obj_2_rev_0.id, rnd_obj_3_rev_0.id];
 
     let del_req = DeleteObjectsRequest {
         object_ids: ids.clone(),
