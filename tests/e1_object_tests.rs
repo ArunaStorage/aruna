@@ -1027,7 +1027,7 @@ fn delete_multiple_objects_test() {
     // Test deletes
     let ids = vec![
         rnd_obj_1_rev_1.id,
-        rnd_obj_2_rev_0.clone().id,
+        rnd_obj_2_rev_0.id,
         rnd_obj_3_rev_0.id,
     ];
 
@@ -1106,7 +1106,7 @@ fn delete_object_from_versioned_collection_test() {
 
     // Create random collection
     let random_collection = create_collection(TCreateCollection {
-        project_id: random_project.id.to_string(),
+        project_id: random_project.id,
         col_override: None,
         ..Default::default()
     });
@@ -1124,7 +1124,7 @@ fn delete_object_from_versioned_collection_test() {
 
     // Pin collection to version
     let pin_request = PinCollectionVersionRequest {
-        collection_id: random_collection.id.to_string(),
+        collection_id: random_collection.id,
         version: Some(Version {
             major: 1,
             minor: 0,
@@ -1146,12 +1146,12 @@ fn delete_object_from_versioned_collection_test() {
     };
     let collection_objects = db.get_objects(get_request).unwrap().unwrap();
 
-    assert!(collection_objects.len() > 0);
+    assert!(!collection_objects.is_empty());
 
     // Try to delete objects from versioned collection
     let delete_request = DeleteObjectRequest {
         object_id: collection_objects.first().unwrap().object.id.to_string(),
-        collection_id: versioned_collection.id.to_string(),
+        collection_id: versioned_collection.id,
         with_revisions: false,
         force: true,
     };

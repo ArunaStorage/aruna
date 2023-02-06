@@ -47,7 +47,7 @@ use crate::database::models::enums::{
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
-use crate::database::schema::collections::dsl::collections;
+
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
     hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,

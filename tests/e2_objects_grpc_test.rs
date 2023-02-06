@@ -2476,17 +2476,18 @@ async fn delete_object_grpc_test() {
                     }),
                     common::oidc::ADMINTOKEN,
                 );
-                let all_references = object_service
-                    .get_references(all_references_request)
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .references
-                    .into_iter()
-                    .filter(|reference| reference.is_writeable)
-                    .collect::<Vec<_>>();
-
-                assert_ne!(all_references.len(), 0); // At least one writeable reference exist. Could also be less than 0 but that is very improbable...
+                assert_ne!(
+                    object_service
+                        .get_references(all_references_request)
+                        .await
+                        .unwrap()
+                        .into_inner()
+                        .references
+                        .into_iter()
+                        .filter(|reference| reference.is_writeable)
+                        .count(),
+                    0
+                ); // At least one writeable reference exist. Could also be less than 0 but that is very improbable...
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
@@ -2906,7 +2907,7 @@ async fn delete_object_revisions_grpc_test() {
 
     let mut update_meta = TCreateUpdate {
         original_object: random_object.clone(),
-        collection_id: random_collection.id.to_string().to_string(),
+        collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
         new_description: "".to_string(), // No use.
         content_len: 123,
@@ -3305,7 +3306,7 @@ async fn delete_multiple_objects_grpc_test() {
 
     let mut update_meta = TCreateUpdate {
         original_object: random_object.clone(),
-        collection_id: random_collection.id.to_string().to_string(),
+        collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
         new_description: "".to_string(), // No use.
         content_len: 123,
