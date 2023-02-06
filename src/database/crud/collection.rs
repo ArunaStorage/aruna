@@ -11,7 +11,7 @@
 use super::utils::*;
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::object::{clone_object, delete_multiple_objects};
+use crate::database::crud::object::{clone_object, safe_delete_object};
 use crate::database::models;
 use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
@@ -635,7 +635,17 @@ impl Database {
             .map(|elem| elem.object_id)
             .collect::<Vec<_>>();
             if !all_obj_ids.is_empty() {
-                delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
+                //delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
+                for object_uuid in all_obj_ids {
+                    safe_delete_object(
+                        &object_uuid,
+                    &collection_id,
+                    true,
+                    false,
+                        user_id,
+                        conn
+                    )?;
+                }
             }
             // Delete all collection_key_values
             delete(
