@@ -57,7 +57,7 @@ use crate::database::schema::{
 use super::objectgroups::bump_revisisions;
 use super::utils::{grpc_to_db_dataclass, ParsedQuery};
 
-// Struct to hold the database objects
+// Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
 pub struct ObjectDto {
     pub object: Object,
@@ -85,9 +85,71 @@ impl PartialEq for ObjectDto {
 
 impl Eq for ObjectDto {}
 
+/// Implement hash for ObjectDTO but only include database object
 impl Hash for ObjectDto {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.object.hash(state);
+    }
+}
+
+/// Implement TryFrom for ObjectDto to ProtoObject.
+/// This can convert an ObjectDto to a ProtoObject via built-in try convert functions.
+impl TryFrom<ObjectDto> for ProtoObject {
+    type Error = ArunaError;
+
+    fn try_from(object_dto: ObjectDto) -> Result<Self, Self::Error> {
+        // Transform db Source to proto Source
+        let proto_source = match object_dto.source {
+            None => None,
+            Some(source) => Some(ProtoSource {
+                identifier: source.link,
+                source_type: source.source_type as i32,
+            }),
+        };
+
+        // Transform origin_id and origin type to proto origin
+        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
+            None => None,
+            Some(origin_uuid) => Some(ProtoOrigin {
+                id: origin_uuid.to_string(),
+                r#type: object_dto.origin_type as i32,
+            }),
+        };
+
+        // Transform NaiveDateTime to Timestamp
+        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
+
+        // Transform db Hash to proto Hash
+        let proto_hash = ProtoHash {
+            //alg: object_dto.hash.hash_type as i32,
+            alg: match object_dto.hash.hash_type {
+                HashType::MD5 => Hashalgorithm::Md5 as i32,
+                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
+                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
+                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
+                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+            },
+            hash: object_dto.hash.hash,
+        };
+
+        // Construct proto Object
+        Ok(ProtoObject {
+            id: object_dto.object.id.to_string(),
+            filename: object_dto.object.filename,
+            labels: object_dto.labels,
+            hooks: object_dto.hooks,
+            created: Some(timestamp),
+            content_len: object_dto.object.content_len,
+            status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
+            origin: proto_origin,
+            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
+            hash: Some(proto_hash),
+            rev_number: object_dto.object.revision_number,
+            source: proto_source,
+            latest: object_dto.latest,
+            auto_update: object_dto.update,
+        })
     }
 }
 
@@ -243,7 +305,7 @@ impl Database {
 
                 // Update the object itself to be available
                 let returned_obj = diesel
-                    ::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
+                ::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     .get_result::<Object>(conn)?;
 
@@ -259,7 +321,7 @@ impl Database {
                         }
                         Some(req_hash) =>
                             diesel
-                                ::update(ApiHash::belonging_to(&returned_obj))
+                            ::update(ApiHash::belonging_to(&returned_obj))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type.eq(
@@ -278,7 +340,7 @@ impl Database {
                     // origin_id != object_id => Update
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
-                        let all_revisions = get_all_revisions(conn, req_object_uuid)?;
+                        let all_revisions = get_all_revisions(conn, &req_object_uuid)?;
 
                         // Filter out the UUIDs
                         let all_rev_ids = all_revisions
@@ -360,7 +422,7 @@ impl Database {
                                     let new_ogroups = bump_revisisions(
                                         &obj_grp_ids,
                                         user_id,
-                                        conn
+                                        conn,
                                     )?;
                                     let new_group_ids = new_ogroups
                                         .iter()
@@ -463,7 +525,7 @@ impl Database {
                                     .execute(conn)?;
                             }
                             Some(reference) => {
-                                  if is_still_latest { // Object is still latest revision on finish --> Normal case
+                                if is_still_latest { // Object is still latest revision on finish --> Normal case
                                     // Delete staging reference
                                     delete(collection_objects)
                                         .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
@@ -482,7 +544,6 @@ impl Database {
                                             database::schema::collection_objects::auto_update.eq(request.auto_update && is_still_latest),
                                         ))
                                         .execute(conn)?;
-
                                 } else if !is_still_latest && request.auto_update {
                                     // Delete staging reference
                                     delete(collection_objects)
@@ -490,7 +551,6 @@ impl Database {
                                         .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
                                         .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
                                         .execute(conn)?;
-
                                 } else {
                                     // Update staging reference of outdated object with is_latest == false and auto_update == false
                                     update(collection_objects)
@@ -583,7 +643,7 @@ impl Database {
                         }
 
                         if !reference.writeable {
-                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()))
+                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()));
                         }
                     } // only instance where no reference is available should be outdated revisions in source collection --> always writeable
 
@@ -617,7 +677,7 @@ impl Database {
                             .filter(database::schema::hashes::object_id.eq(parsed_old_id))
                             .first::<ApiHash>(conn)?;
 
-                        old_hash.id =  uuid::Uuid::new_v4();
+                        old_hash.id = uuid::Uuid::new_v4();
                         old_hash.object_id = new_obj_id;
                         old_hash
                     };
@@ -891,7 +951,7 @@ impl Database {
             .transaction::<Vec<ObjectDto>, Error, _>(|conn| {
                 // This is a safety measure to make sure on revision is referenced in the current collection
                 // Otherwise get_object_ignore_coll could be used to break safety measures / permission boundaries
-                let all = get_all_revisions(conn, parsed_object_id)?;
+                let all = get_all_revisions(conn, &parsed_object_id)?;
                 let all_ids = all.iter().map(|e| e.id).collect::<Vec<_>>();
 
                 let issomewherereferenced = collection_objects
@@ -2311,7 +2371,7 @@ pub fn delete_multiple_objects(
     }
 
     // Delete and bump the "ref_onlys"
-    delete_object_and_bump_objectgroups(&ref_only, &collection_uuid, &creator_id, conn)?;
+    delete_object_and_bump_objectgroups(&ref_only, &coll_id, &creator_id, conn)?;
 
     // Update object_status to "TRASH"
     update(objects)
@@ -2338,7 +2398,7 @@ pub fn delete_multiple_objects(
 ///
 pub fn get_all_revisions(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_id: uuid::Uuid,
+    ref_object_id: &uuid::Uuid,
 ) -> Result<Vec<Object>, diesel::result::Error> {
     let shared_id = objects
         .filter(database::schema::objects::id.eq(ref_object_id))
@@ -2347,6 +2407,7 @@ pub fn get_all_revisions(
 
     let all_revision_objects = objects
         .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .order_by(database::schema::objects::revision_number.asc())
         .load::<Object>(conn)?;
 
     Ok(all_revision_objects)

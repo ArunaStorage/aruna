@@ -2667,7 +2667,9 @@ async fn delete_object_grpc_test() {
         }),
         common::oidc::REGULARTOKEN,
     );
-    let get_deleted_object_response = object_service.get_object_by_id(get_deleted_object_request).await;
+    let get_deleted_object_response = object_service
+        .get_object_by_id(get_deleted_object_request)
+        .await;
 
     assert!(get_deleted_object_response.is_err());
 
@@ -2751,7 +2753,7 @@ async fn delete_object_grpc_test() {
     });
 
     assert_ne!(updated_object.id, staging_object_id);
-    assert_eq!(updated_object.rev_number, 1); 
+    assert_eq!(updated_object.rev_number, 1);
 }
 
 /// The individual steps of this test function contains:
@@ -3022,7 +3024,7 @@ async fn delete_multiple_objects_grpc_test() {
         user_id.as_str(),
         common::oidc::ADMINTOKEN,
     )
-        .await;
+    .await;
     assert_eq!(add_perm.permission, Permission::None as i32);
 
     // Fast track collection creation
@@ -3043,7 +3045,7 @@ async fn delete_multiple_objects_grpc_test() {
         Permission::Modify,
         Permission::Admin,
     ]
-        .iter()
+    .iter()
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
@@ -3052,7 +3054,7 @@ async fn delete_multiple_objects_grpc_test() {
             permission,
             common::oidc::ADMINTOKEN,
         )
-            .await;
+        .await;
         assert_eq!(edit_perm.permission, *permission as i32);
 
         // Create objects
@@ -3066,7 +3068,7 @@ async fn delete_multiple_objects_grpc_test() {
                     num_labels: 0,
                     num_hooks: 0,
                 })
-                    .id,
+                .id,
             );
         }
 
@@ -3164,7 +3166,7 @@ async fn delete_multiple_objects_grpc_test() {
         Permission::Modify,
         Permission::Admin,
     ]
-        .iter()
+    .iter()
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
@@ -3173,7 +3175,7 @@ async fn delete_multiple_objects_grpc_test() {
             permission,
             common::oidc::ADMINTOKEN,
         )
-            .await;
+        .await;
         assert_eq!(edit_perm.permission, *permission as i32);
 
         // Create multiple objects

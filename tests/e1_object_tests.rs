@@ -1093,7 +1093,6 @@ fn delete_multiple_objects_test() {
     assert_eq!(resp.len(), 2); // obj_1_rev_0 read-only reference and obj_3_rev_0 is moved here
 }
 
-
 #[test]
 #[ignore]
 #[serial(db)]

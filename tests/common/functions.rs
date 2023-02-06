@@ -237,7 +237,10 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     // Collection should have the following name
     assert_eq!(get_col_resp.name, create_collection_request_test.name);
     // Collection should not have a version
-    assert_eq!(get_col_resp.version.clone().unwrap(), collection_overview::Version::Latest(true));
+    assert_eq!(
+        get_col_resp.version.clone().unwrap(),
+        collection_overview::Version::Latest(true)
+    );
     assert!(
         // Should be empty vec
         get_col_resp
