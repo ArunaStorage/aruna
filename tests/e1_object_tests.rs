@@ -1092,3 +1092,71 @@ fn delete_multiple_objects_test() {
 
     assert_eq!(resp.len(), 2); // obj_1_rev_0 read-only reference and obj_3_rev_0 is moved here
 }
+
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_object_from_versioned_collection_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random object in collection
+    create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: random_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            num_labels: thread_rng().gen_range(0..4),
+            num_hooks: thread_rng().gen_range(0..4),
+        }),
+    );
+
+    // Pin collection to version
+    let pin_request = PinCollectionVersionRequest {
+        collection_id: random_collection.id.to_string(),
+        version: Some(Version {
+            major: 1,
+            minor: 0,
+            patch: 0,
+        }),
+    };
+    let versioned_collection = db
+        .pin_collection_version(pin_request, creator)
+        .unwrap()
+        .collection
+        .unwrap();
+
+    // Get cloned objects from versioned collection
+    let get_request = GetObjectsRequest {
+        collection_id: versioned_collection.id.to_string(),
+        page_request: None,
+        label_id_filter: None,
+        with_url: false,
+    };
+    let collection_objects = db.get_objects(get_request).unwrap().unwrap();
+
+    assert!(collection_objects.len() > 0);
+
+    // Try to delete objects from versioned collection
+    let delete_request = DeleteObjectRequest {
+        object_id: collection_objects.first().unwrap().object.id.to_string(),
+        collection_id: versioned_collection.id.to_string(),
+        with_revisions: false,
+        force: true,
+    };
+    let response = db.delete_object(delete_request, creator);
+
+    assert!(response.is_err()); // Deletion of objects from versioned collections is forbidden.
+}
