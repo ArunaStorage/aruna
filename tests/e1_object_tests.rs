@@ -3,14 +3,14 @@ mod common;
 use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest,
+    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
     CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
-    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, StageObject,
-    UpdateObjectRequest,
+    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest,
+    PinCollectionVersionRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -546,7 +546,6 @@ fn delete_object_test() {
     });
 
     // Create a single object
-
     let single_id = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
@@ -558,17 +557,20 @@ fn delete_object_test() {
     )
     .id;
 
-    // Simple delete without revision or force
-    // Delete without revision or force
-    let delreq = DeleteObjectRequest {
+    // Simple delete single revision object without revision or force --> Error as last revision has to be deleted with force
+    let mut delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.clone().id,
         with_revisions: false,
         force: false,
     };
 
-    let resp = db.delete_object(delreq, creator);
+    let resp = db.delete_object(delreq.clone(), creator);
+    assert!(resp.is_err());
 
+    // Simple delete without revision or force --> Error as last revision has to be deleted with force
+    delreq.force = true;
+    let resp = db.delete_object(delreq, creator);
     assert!(resp.is_ok());
 
     let raw_db_object = get_object_status_raw(&single_id);
@@ -591,7 +593,6 @@ fn delete_object_test() {
     .id;
 
     // Add revision
-
     let updatereq = UpdateObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.id.to_string(),
@@ -605,7 +606,7 @@ fn delete_object_test() {
             labels: Vec::new(),
             hooks: Vec::new(),
         }),
-        force: true,
+        force: false,
         reupload: false,
         is_specification: false,
         preferred_endpoint_id: "".to_string(),
@@ -613,18 +614,19 @@ fn delete_object_test() {
     };
 
     let new_id = uuid::Uuid::new_v4();
-    let updateresp = db
+    let update_response = db
         .update_object(&updatereq, &None, &creator, uuid::Uuid::default(), new_id)
         .unwrap();
 
+    println!("Finish object update for revision 1 before deletion.");
     let staging_finished = db
         .finish_object_staging(
             &FinishObjectStagingRequest {
-                object_id: single_id.clone(),
-                upload_id: updateresp.staging_id,
-                collection_id: random_collection.id.to_string(),
+                object_id: update_response.object_id,
+                upload_id: update_response.staging_id,
+                collection_id: update_response.collection_id,
                 hash: None,
-                no_upload: false,
+                no_upload: true,
                 completed_parts: vec![],
                 auto_update: true,
             },
@@ -632,15 +634,15 @@ fn delete_object_test() {
         )
         .unwrap();
 
-    // Simple delete with revisions / without force
-    // Delete without revision or force
+    // Simple delete with revisions / with force
     let delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.id,
         with_revisions: true,
-        force: false,
+        force: true,
     };
 
+    println!("\nAbout to delete all revisions with the revision 0 id of an object.");
     let resp = db.delete_object(delreq, creator);
 
     assert!(resp.is_ok());
@@ -960,7 +962,7 @@ fn delete_multiple_objects_test() {
         ..Default::default()
     });
 
-    let new_obj_1 = create_object(
+    let rnd_obj_1_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
@@ -971,9 +973,8 @@ fn delete_multiple_objects_test() {
     );
 
     // Create auto_updating reference in col 2
-
     let create_ref_2 = CreateObjectReferenceRequest {
-        object_id: new_obj_1.id.clone(),
+        object_id: rnd_obj_1_rev_0.id.clone(),
         collection_id: random_collection.id.clone(),
         target_collection_id: random_collection2.id.clone(),
         writeable: false,
@@ -983,8 +984,8 @@ fn delete_multiple_objects_test() {
     let _resp = db.create_object_reference(create_ref_2).unwrap();
 
     // Update Object again
-    let update_1 = common::functions::update_object(&TCreateUpdate {
-        original_object: new_obj_1,
+    let rnd_obj_1_rev_1 = common::functions::update_object(&TCreateUpdate {
+        original_object: rnd_obj_1_rev_0.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
         new_description: "File.next.description2".to_string(),
@@ -992,7 +993,7 @@ fn delete_multiple_objects_test() {
         ..Default::default()
     });
 
-    let new_obj_2 = create_object(
+    let rnd_obj_2_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
@@ -1002,7 +1003,7 @@ fn delete_multiple_objects_test() {
         }),
     );
 
-    let new_obj_3 = create_object(
+    let rnd_obj_3_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
@@ -1013,9 +1014,8 @@ fn delete_multiple_objects_test() {
     );
 
     // Create auto_updating reference in col 2
-
     let create_ref = CreateObjectReferenceRequest {
-        object_id: new_obj_3.id.clone(),
+        object_id: rnd_obj_3_rev_0.id.clone(),
         collection_id: random_collection.id.clone(),
         target_collection_id: random_collection2.id.clone(),
         writeable: true,
@@ -1025,8 +1025,11 @@ fn delete_multiple_objects_test() {
     let _resp = db.create_object_reference(create_ref).unwrap();
 
     // Test deletes
-
-    let ids = vec![update_1.id, new_obj_2.id, new_obj_3.id];
+    let ids = vec![
+        rnd_obj_1_rev_1.id,
+        rnd_obj_2_rev_0.clone().id,
+        rnd_obj_3_rev_0.id,
+    ];
 
     let del_req = DeleteObjectsRequest {
         object_ids: ids.clone(),
@@ -1038,8 +1041,7 @@ fn delete_multiple_objects_test() {
     let resp = db.delete_objects(del_req, creator);
     println!("{:#?}", resp);
 
-    // This should fail without forc
-    // Because new_obj_1 is referenced in coll2
+    // This should fail without force as with_revisions can only be executed with force
     assert!(resp.is_err());
 
     let del_req = DeleteObjectsRequest {
@@ -1048,20 +1050,36 @@ fn delete_multiple_objects_test() {
         with_revisions: false,
         force: true,
     };
-
     let resp = db.delete_objects(del_req, creator);
+
     assert!(resp.is_ok());
 
     let get_obj = GetObjectsRequest {
-        collection_id: random_collection.id,
+        collection_id: random_collection.id.to_string(),
         page_request: None,
         label_id_filter: None,
         with_url: false,
     };
-
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    assert!(resp.is_empty());
+    // - obj_1_rev_0 available
+    // - obj_1_rev_1 deleted
+    // - obj_2_rev_0 deleted
+    // - obj_3_rev_0 moved to random_collection2
+    assert_eq!(resp.len(), 1);
+    for object_dto in resp {
+        if object_dto.object.id.to_string() == rnd_obj_1_rev_0.id {
+            assert!(matches!(
+                object_dto.object.object_status,
+                ObjectStatus::AVAILABLE
+            ))
+        } else {
+            panic!(
+                "This id {} should not be returned as existing object of collection {}.",
+                object_dto.object.id, random_collection.id
+            );
+        }
+    }
 
     let get_obj = GetObjectsRequest {
         collection_id: random_collection2.id,
@@ -1072,5 +1090,5 @@ fn delete_multiple_objects_test() {
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    assert!(resp.len() == 1);
+    assert_eq!(resp.len(), 2); // obj_1_rev_0 read-only reference and obj_3_rev_0 is moved here
 }
