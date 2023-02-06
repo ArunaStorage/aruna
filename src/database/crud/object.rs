@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 use chrono::Local;
-use diesel::dsl::{count, max};
+use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
@@ -1729,6 +1729,81 @@ pub fn get_latest_obj(
     Ok(latest_object)
 }
 
+///
+///
+pub fn delete_staging_object(
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), diesel::result::Error> {
+    // Process so that the staging object can be correctly cleared by the cron job:
+    //   - Get object
+    //   - Delete source, hash and key-value pairs
+    //   - Delete reference
+    //   - Update object status to TRASH
+
+    // Get staging database object
+    let staging_object: Object = objects
+        .filter(database::schema::objects::id.eq(object_uuid))
+        .first::<Object>(conn)?;
+
+    // Delete source if exists
+    if let Some(source_uuid) = staging_object.source_id {
+        delete(sources)
+            .filter(database::schema::sources::id.eq(&source_uuid))
+            .execute(conn)?;
+    }
+
+    // Delete all existing hashes of staging object
+    delete(hashes)
+        .filter(database::schema::hashes::object_id.eq(&object_uuid))
+        .execute(conn)?;
+
+    // Delete all key-value pairs of staging object
+    let key_values: Vec<ObjectKeyValue> =
+        ObjectKeyValue::belonging_to(&staging_object).load::<ObjectKeyValue>(conn)?;
+    let key_value_ids = key_values
+        .into_iter()
+        .map(|key_value| key_value.id)
+        .collect::<Vec<_>>();
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::id.eq_any(&key_value_ids))
+        .execute(conn)?;
+
+    // Delete object references
+    delete(collection_objects)
+        .filter(database::schema::collection_objects::object_id.eq(object_uuid))
+        .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .execute(conn)?;
+
+    // Get lowest object revision number
+    println!("{:#?}", staging_object);
+    let lowest_object_revision: Option<i64> = objects
+        .select(min(database::schema::objects::revision_number))
+        .filter(
+            database::schema::objects::shared_revision_id.eq(&staging_object.shared_revision_id),
+        )
+        .first::<Option<i64>>(conn)?;
+    println!("{:#?}", lowest_object_revision);
+
+    // Update object status to TRASH
+    match lowest_object_revision {
+        None => Err(Error::NotFound),
+        Some(lowest) => {
+            update(objects)
+                .filter(database::schema::objects::id.eq(object_uuid))
+                .set((
+                    database::schema::objects::object_status.eq(ObjectStatus::TRASH),
+                    database::schema::objects::revision_number.eq(lowest - 1),
+                ))
+                .execute(conn)?;
+
+            Ok(())
+        }
+    }
+}
+
+///
 /// This is a helper method that deletes all specified objects (by id)
 /// it has two options (with_force) == true => allow for sideeffects in other collections
 /// otherwise this method will error
