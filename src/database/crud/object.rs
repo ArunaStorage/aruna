@@ -1886,11 +1886,11 @@ pub fn delete_multiple_objects(
 
     // Delete object_references and update object_groups for "deleteable" without the "reference onlys"
     for (d_coll_id, d_object_ids) in object_ids_per_coll {
-        delete_and_bump_objs(&d_object_ids, &d_coll_id, &creator_id, conn)?;
+        delete_object_and_bump_objectgroups(&d_object_ids, &d_coll_id, &creator_id, conn)?;
     }
 
     // Delete and bump the "ref_onlys"
-    delete_and_bump_objs(&ref_only, &coll_id, &creator_id, conn)?;
+    delete_object_and_bump_objectgroups(&ref_only, &collection_uuid, &creator_id, conn)?;
 
     // Update object_status to "TRASH"
     update(objects)
@@ -2162,70 +2162,29 @@ pub fn get_object_ignore_coll(
     }))
 }
 
-/// Implement TryFrom for ObjectDto to ProtoObject
-///
-/// This can convert an ObjectDto to a ProtoObject via built-in try convert functions
-///
-impl TryFrom<ObjectDto> for ProtoObject {
-    type Error = ArunaError;
+fn delete_object_and_bump_objectgroups(
+    deletable_objects_uuids: &Vec<uuid::Uuid>,
+    target_collection: &uuid::Uuid,
+    creator_id: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), diesel::result::Error> {
+    // Remove object_group_object reference and update object_group
+    delete_objectgroup_references_and_increase_revisions(
+        deletable_objects_uuids,
+        target_collection,
+        creator_id,
+        conn,
+    )?;
 
-    fn try_from(object_dto: ObjectDto) -> Result<Self, Self::Error> {
-        // Transform db Source to proto Source
-        let proto_source = match object_dto.source {
-            None => None,
-            Some(source) => Some(ProtoSource {
-                identifier: source.link,
-                source_type: source.source_type as i32,
-            }),
-        };
-
-        // Transform origin_id and origin type to proto origin
-        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
-            None => None,
-            Some(origin_uuid) => Some(ProtoOrigin {
-                id: origin_uuid.to_string(),
-                r#type: object_dto.origin_type as i32,
-            }),
-        };
-
-        // Transform NaiveDateTime to Timestamp
-        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
-
-        // Transform db Hash to proto Hash
-        let proto_hash = ProtoHash {
-            //alg: object_dto.hash.hash_type as i32,
-            alg: match object_dto.hash.hash_type {
-                HashType::MD5 => Hashalgorithm::Md5 as i32,
-                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
-                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
-                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
-                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
-            },
-            hash: object_dto.hash.hash,
-        };
-
-        // Construct proto Object
-        Ok(ProtoObject {
-            id: object_dto.object.id.to_string(),
-            filename: object_dto.object.filename,
-            labels: object_dto.labels,
-            hooks: object_dto.hooks,
-            created: Some(timestamp),
-            content_len: object_dto.object.content_len,
-            status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
-            origin: proto_origin,
-            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
-            hash: Some(proto_hash),
-            rev_number: object_dto.object.revision_number,
-            source: proto_source,
-            latest: object_dto.latest,
-            auto_update: object_dto.update,
-        })
-    }
+    // Remove collection_object reference for specific collection
+    delete(collection_objects)
+        .filter(database::schema::collection_objects::object_id.eq_any(deletable_objects_uuids))
+        .filter(database::schema::collection_objects::collection_id.eq(target_collection))
+        .execute(conn)?;
+    Ok(())
 }
 
-fn delete_and_bump_objs(
+fn delete_objectgroup_references_and_increase_revisions(
     deletable_objects_uuids: &Vec<uuid::Uuid>,
     target_collection: &uuid::Uuid,
     creator_id: &uuid::Uuid,
@@ -2244,7 +2203,7 @@ fn delete_and_bump_objs(
         .load::<ObjectGroupObject>(conn)
         .optional()?;
 
-    // Only proceed if at least one reference exists
+    // Only proceed if at least one object_group_objects reference exists
     if let Some(coll_obj_grps) = all_coll_obj_grps {
         // Get object_group_ids
         let object_grp_ids = coll_obj_grps
@@ -2268,11 +2227,7 @@ fn delete_and_bump_objs(
             .filter(database::schema::object_group_objects::object_group_id.eq_any(new_ids))
             .execute(conn)?;
     }
-    // Remove collection_object reference for specific collection
-    delete(collection_objects)
-        .filter(database::schema::collection_objects::object_id.eq_any(deletable_objects_uuids))
-        .filter(database::schema::collection_objects::collection_id.eq(target_collection))
-        .execute(conn)?;
+
     Ok(())
 }
 
