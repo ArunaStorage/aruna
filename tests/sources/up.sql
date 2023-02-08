@@ -227,7 +227,8 @@ CREATE TABLE collection_objects (
     reference_status REFERENCE_STATUS NOT NULL DEFAULT 'OK',
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (collection_id) REFERENCES collections(id),
-    CONSTRAINT unique_collection_object UNIQUE (object_id, collection_id)
+    -- Unique reference possible for static and auto_update parallel on same revision
+    CONSTRAINT unique_collection_object UNIQUE (object_id, collection_id, auto_update)
 );
 -- Join table between collections and object_groups
 CREATE TABLE collection_object_groups (

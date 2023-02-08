@@ -637,7 +637,7 @@ impl ObjectService for ObjectServiceImpl {
                 .project_authorize_by_collectionid(
                     request.metadata(),
                     target_collection_uuid, // This is the collection uuid which the project_id will be based
-                    UserRights::ADMIN, // User needs at least append permission to create an object
+                    UserRights::ADMIN, // User needs at least admin permission to force delete an object
                 )
                 .await?
         } else {
@@ -648,7 +648,7 @@ impl ObjectService for ObjectServiceImpl {
                 .collection_authorize(
                     request.metadata(),
                     target_collection_uuid, // This is the collection uuid in which this object should be created
-                    UserRights::APPEND, // User needs at least append permission to create an object
+                    UserRights::APPEND, // User needs at least append permission to delete an object
                 )
                 .await?
         };

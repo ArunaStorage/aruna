@@ -9,8 +9,9 @@
 //! - PinCollectionVersion
 //! - DeleteCollection
 use super::utils::*;
+use crate::database;
 use crate::database::connection::Database;
-use crate::database::crud::object::{clone_object, delete_multiple_objects};
+use crate::database::crud::object::{clone_object, safe_delete_object};
 use crate::database::models;
 use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
@@ -20,6 +21,7 @@ use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, Ref
 use crate::database::models::object::{Object, ObjectKeyValue};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
+use crate::database::schema::collections::dsl::collections;
 use crate::error::{ArunaError, TypeConversionError};
 use aruna_rust_api::api::storage::models::v1::DataClass;
 use aruna_rust_api::api::storage::models::v1::{
@@ -633,7 +635,17 @@ impl Database {
             .map(|elem| elem.object_id)
             .collect::<Vec<_>>();
             if !all_obj_ids.is_empty() {
-                delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
+                //delete_multiple_objects(all_obj_ids, collection_id, true, false, user_id, conn)?;
+                for object_uuid in all_obj_ids {
+                    safe_delete_object(
+                        &object_uuid,
+                    &collection_id,
+                    true,
+                    false,
+                        user_id,
+                        conn
+                    )?;
+                }
             }
             // Delete all collection_key_values
             delete(
@@ -648,6 +660,34 @@ impl Database {
 }
 
 /* ----------------- Section for collection specific helper functions ------------------- */
+
+/// This is a helper function that checks if a collection is pinned to a version.
+///
+/// ## Arguments
+///
+/// *  conn: &mut PooledConnection<ConnectionManager<PgConnection>>, Database connection
+/// *  collection_uuid: Unique collection id
+///
+/// ## Returns
+///
+/// * Result<bool, ArunaError>: Returns true if collection has a version; false else.
+///
+pub fn is_collection_versioned(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    collection_uuid: &uuid::Uuid,
+) -> Result<bool, ArunaError> {
+    // Get collection version from database
+    let collection_version: Option<uuid::Uuid> = collections
+        .filter(database::schema::collections::id.eq(collection_uuid))
+        .select(database::schema::collections::version_id)
+        .first::<Option<uuid::Uuid>>(conn)?;
+
+    // Unwrap Option with version id
+    match collection_version {
+        None => Ok(false),
+        Some(_) => Ok(true),
+    }
+}
 
 /// This is a helper function that queries and builds a CollectionOverviewDb based on an existing collection query
 /// Used to query all associated Tables and map them to one consistent struct.

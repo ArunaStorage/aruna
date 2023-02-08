@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 use chrono::Local;
-use diesel::dsl::{count, max};
+use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
@@ -35,6 +35,7 @@ use aruna_rust_api::api::storage::{
 
 use crate::database;
 use crate::database::connection::Database;
+use crate::database::crud::collection::is_collection_versioned;
 use crate::database::crud::utils::{
     check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_hash_type, db_to_grpc_object_status,
     from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
@@ -46,6 +47,7 @@ use crate::database::models::enums::{
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
+
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
     hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
@@ -55,7 +57,7 @@ use crate::database::schema::{
 use super::objectgroups::bump_revisisions;
 use super::utils::{grpc_to_db_dataclass, ParsedQuery};
 
-// Struct to hold the database objects
+// Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
 pub struct ObjectDto {
     pub object: Object,
@@ -83,9 +85,71 @@ impl PartialEq for ObjectDto {
 
 impl Eq for ObjectDto {}
 
+/// Implement hash for ObjectDTO but only include database object
 impl Hash for ObjectDto {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.object.hash(state);
+    }
+}
+
+/// Implement TryFrom for ObjectDto to ProtoObject.
+/// This can convert an ObjectDto to a ProtoObject via built-in try convert functions.
+impl TryFrom<ObjectDto> for ProtoObject {
+    type Error = ArunaError;
+
+    fn try_from(object_dto: ObjectDto) -> Result<Self, Self::Error> {
+        // Transform db Source to proto Source
+        let proto_source = match object_dto.source {
+            None => None,
+            Some(source) => Some(ProtoSource {
+                identifier: source.link,
+                source_type: source.source_type as i32,
+            }),
+        };
+
+        // Transform origin_id and origin type to proto origin
+        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
+            None => None,
+            Some(origin_uuid) => Some(ProtoOrigin {
+                id: origin_uuid.to_string(),
+                r#type: object_dto.origin_type as i32,
+            }),
+        };
+
+        // Transform NaiveDateTime to Timestamp
+        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
+
+        // Transform db Hash to proto Hash
+        let proto_hash = ProtoHash {
+            //alg: object_dto.hash.hash_type as i32,
+            alg: match object_dto.hash.hash_type {
+                HashType::MD5 => Hashalgorithm::Md5 as i32,
+                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
+                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
+                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
+                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+            },
+            hash: object_dto.hash.hash,
+        };
+
+        // Construct proto Object
+        Ok(ProtoObject {
+            id: object_dto.object.id.to_string(),
+            filename: object_dto.object.filename,
+            labels: object_dto.labels,
+            hooks: object_dto.hooks,
+            created: Some(timestamp),
+            content_len: object_dto.object.content_len,
+            status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
+            origin: proto_origin,
+            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
+            hash: Some(proto_hash),
+            rev_number: object_dto.object.revision_number,
+            source: proto_source,
+            latest: object_dto.latest,
+            auto_update: object_dto.update,
+        })
     }
 }
 
@@ -241,7 +305,7 @@ impl Database {
 
                 // Update the object itself to be available
                 let returned_obj = diesel
-                    ::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
+                ::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     .get_result::<Object>(conn)?;
 
@@ -257,7 +321,7 @@ impl Database {
                         }
                         Some(req_hash) =>
                             diesel
-                                ::update(ApiHash::belonging_to(&returned_obj))
+                            ::update(ApiHash::belonging_to(&returned_obj))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type.eq(
@@ -276,7 +340,7 @@ impl Database {
                     // origin_id != object_id => Update
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
-                        let all_revisions = get_all_revisions(conn, req_object_uuid)?;
+                        let all_revisions = get_all_revisions(conn, &req_object_uuid)?;
 
                         // Filter out the UUIDs
                         let all_rev_ids = all_revisions
@@ -358,7 +422,7 @@ impl Database {
                                     let new_ogroups = bump_revisisions(
                                         &obj_grp_ids,
                                         user_id,
-                                        conn
+                                        conn,
                                     )?;
                                     let new_group_ids = new_ogroups
                                         .iter()
@@ -461,7 +525,7 @@ impl Database {
                                     .execute(conn)?;
                             }
                             Some(reference) => {
-                                  if is_still_latest { // Object is still latest revision on finish --> Normal case
+                                if is_still_latest { // Object is still latest revision on finish --> Normal case
                                     // Delete staging reference
                                     delete(collection_objects)
                                         .filter(database::schema::collection_objects::object_id.eq(&req_object_uuid))
@@ -480,7 +544,6 @@ impl Database {
                                             database::schema::collection_objects::auto_update.eq(request.auto_update && is_still_latest),
                                         ))
                                         .execute(conn)?;
-
                                 } else if !is_still_latest && request.auto_update {
                                     // Delete staging reference
                                     delete(collection_objects)
@@ -488,7 +551,6 @@ impl Database {
                                         .filter(database::schema::collection_objects::collection_id.eq(&req_coll_uuid))
                                         .filter(database::schema::collection_objects::reference_status.eq(&ReferenceStatus::STAGING))
                                         .execute(conn)?;
-
                                 } else {
                                     // Update staging reference of outdated object with is_latest == false and auto_update == false
                                     update(collection_objects)
@@ -581,7 +643,7 @@ impl Database {
                         }
 
                         if !reference.writeable {
-                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()))
+                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()));
                         }
                     } // only instance where no reference is available should be outdated revisions in source collection --> always writeable
 
@@ -615,7 +677,7 @@ impl Database {
                             .filter(database::schema::hashes::object_id.eq(parsed_old_id))
                             .first::<ApiHash>(conn)?;
 
-                        old_hash.id =  uuid::Uuid::new_v4();
+                        old_hash.id = uuid::Uuid::new_v4();
                         old_hash.object_id = new_obj_id;
                         old_hash
                     };
@@ -889,7 +951,7 @@ impl Database {
             .transaction::<Vec<ObjectDto>, Error, _>(|conn| {
                 // This is a safety measure to make sure on revision is referenced in the current collection
                 // Otherwise get_object_ignore_coll could be used to break safety measures / permission boundaries
-                let all = get_all_revisions(conn, parsed_object_id)?;
+                let all = get_all_revisions(conn, &parsed_object_id)?;
                 let all_ids = all.iter().map(|e| e.id).collect::<Vec<_>>();
 
                 let issomewherereferenced = collection_objects
@@ -1313,14 +1375,15 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                delete_multiple_objects(
-                    vec![parsed_object_id],
-                    parsed_collection_id,
+                safe_delete_object(
+                    &parsed_object_id,
+                    &parsed_collection_id,
                     request.force,
                     request.with_revisions,
                     creator_id,
                     conn,
                 )?;
+
                 Ok(())
             })?;
 
@@ -1374,14 +1437,17 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                delete_multiple_objects(
-                    parsed_object_ids,
-                    parsed_collection_id,
-                    request.force,
-                    request.with_revisions,
-                    creator_id,
-                    conn,
-                )?;
+                for object_uuid in parsed_object_ids {
+                    safe_delete_object(
+                        &object_uuid,
+                        &parsed_collection_id,
+                        request.force,
+                        request.with_revisions,
+                        creator_id,
+                        conn,
+                    )?;
+                }
+
                 Ok(())
             })?;
         Ok(DeleteObjectsResponse {})
@@ -1729,6 +1795,420 @@ pub fn get_latest_obj(
     Ok(latest_object)
 }
 
+///
+///
+pub fn delete_staging_object(
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), diesel::result::Error> {
+    // Process so that the staging object can be correctly cleared by the cron job:
+    //   - Get object
+    //   - Delete source, hash and key-value pairs
+    //   - Delete reference
+    //   - Update object status to TRASH
+
+    // Get staging database object
+    let staging_object: Object = objects
+        .filter(database::schema::objects::id.eq(object_uuid))
+        .first::<Object>(conn)?;
+
+    // Delete source if exists
+    if let Some(source_uuid) = staging_object.source_id {
+        delete(sources)
+            .filter(database::schema::sources::id.eq(&source_uuid))
+            .execute(conn)?;
+    }
+
+    // Delete all existing hashes of staging object
+    delete(hashes)
+        .filter(database::schema::hashes::object_id.eq(&object_uuid))
+        .execute(conn)?;
+
+    // Delete all key-value pairs of staging object
+    let key_values: Vec<ObjectKeyValue> =
+        ObjectKeyValue::belonging_to(&staging_object).load::<ObjectKeyValue>(conn)?;
+    let key_value_ids = key_values
+        .into_iter()
+        .map(|key_value| key_value.id)
+        .collect::<Vec<_>>();
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::id.eq_any(&key_value_ids))
+        .execute(conn)?;
+
+    // Delete object references
+    delete(collection_objects)
+        .filter(database::schema::collection_objects::object_id.eq(object_uuid))
+        .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .execute(conn)?;
+
+    // Get lowest object revision number
+    println!("{:#?}", staging_object);
+    let lowest_object_revision: Option<i64> = objects
+        .select(min(database::schema::objects::revision_number))
+        .filter(
+            database::schema::objects::shared_revision_id.eq(&staging_object.shared_revision_id),
+        )
+        .first::<Option<i64>>(conn)?;
+    println!("{:#?}", lowest_object_revision);
+
+    // Update object status to TRASH
+    match lowest_object_revision {
+        None => Err(Error::NotFound),
+        Some(lowest) => {
+            update(objects)
+                .filter(database::schema::objects::id.eq(object_uuid))
+                .set((
+                    database::schema::objects::object_status.eq(ObjectStatus::TRASH),
+                    database::schema::objects::revision_number.eq(lowest - 1),
+                ))
+                .execute(conn)?;
+
+            Ok(())
+        }
+    }
+}
+
+/// New deletion function with safety net to assure that object has a writeable reference at every time.
+pub fn safe_delete_object(
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    with_force: bool,
+    with_revisions: bool,
+    creator_id: uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), ArunaError> {
+    // Check if collection is versioned and return ArunaError if true and force == false.
+    if is_collection_versioned(conn, collection_uuid)? {
+        /*
+        if with_force {
+            // ToDo: If with_force == true
+            //         --> Delete object and update collection with increased version?
+        } else {
+            return Err(ArunaError::InvalidRequest(
+                "Cannot delete objects from versioned collection without force.".to_string(),
+            ));
+        }
+        */
+
+        return Err(ArunaError::InvalidRequest(
+            "Deletion of objects from versioned collection is prohibited.".to_string(),
+        ));
+    }
+
+    // Deletion with revisions
+    if with_revisions {
+        return if with_force {
+            // Check if writeable auto_update == true reference is available in provided collection
+            let has_auto_update_reference = get_all_references(conn, object_uuid, &true)?
+                .iter()
+                .filter(|reference| reference.collection_id == *collection_uuid)
+                .filter(|reference| reference.writeable)
+                .filter(|reference| reference.auto_update)
+                .count()
+                > 0;
+
+            if !has_auto_update_reference {
+                return Err(ArunaError::InvalidRequest(
+                    "Cannot delete all revisions without writeable auto_update reference."
+                        .to_string(),
+                ));
+            }
+
+            // Get all undeleted revisions and sort them descending by their object id
+            let mut undeleted_revisions = get_all_revisions(conn, object_uuid)?;
+            undeleted_revisions.sort_by(|a, b| b.revision_number.cmp(&a.revision_number)); // Sort descending by revision number
+
+            let undeleted_revision_ids = undeleted_revisions
+                .into_iter()
+                .filter(|revision| revision.object_status != ObjectStatus::TRASH)
+                .filter(|revision| revision.object_status != ObjectStatus::DELETED)
+                .map(|revision| revision.id)
+                .collect::<Vec<_>>();
+
+            for revision_id in undeleted_revision_ids {
+                safe_delete_object(
+                    &revision_id,
+                    collection_uuid,
+                    true,  // Already validated
+                    false, // Delete revisions individually top-down
+                    creator_id,
+                    conn,
+                )?;
+            }
+
+            Ok(())
+        } else {
+            Err(ArunaError::InvalidRequest(
+                "Permanent deletion of object with all revisions can only be executed with force."
+                    .to_string(),
+            ))
+        };
+    }
+
+    // Check if object has reference in provided collection
+    //   if not --> outdated revision or wrong collection id
+    return if let Some(object_reference) = collection_objects
+        .filter(database::schema::collection_objects::object_id.eq(object_uuid))
+        .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .first::<CollectionObject>(conn)
+        .optional()?
+    {
+        // Staging objects can be deleted without further notice, elevation or permissions
+        if object_reference.reference_status == ReferenceStatus::STAGING {
+            delete_staging_object(object_uuid, collection_uuid, conn)?;
+
+            return Ok(()); // Done.
+        }
+
+        // Check if the object to delete is just a read-only reference
+        if !object_reference.writeable {
+            // Just delete the read-only reference
+            delete(collection_objects)
+                .filter(database::schema::collection_objects::id.eq(&object_reference.id))
+                .execute(conn)?;
+
+            return Ok(()); // Done.
+        }
+
+        // Check if reference can be safely deleted without creating a dangling object (None or only read-only references over all revisions left)
+        let all_object_references = get_all_references(conn, object_uuid, &true)?;
+        let writeable_object_references_amount = all_object_references
+            .iter()
+            .filter(|reference| reference.writeable)
+            .count();
+
+        // Check number of writeable references of Object
+        if writeable_object_references_amount > 1 {
+            // If object has at least one another writeable reference in any revision or collection:
+            //   - Delete read-only references of specific object
+            //   - Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+            //   - Delete object reference (as another writeable reference exists somewhere)
+            let read_only_object_reference_ids = all_object_references
+                .iter()
+                .filter(|reference| !reference.writeable)
+                .filter(|reference| reference.object_id == *object_uuid)
+                .map(|reference| reference.id)
+                .collect::<Vec<_>>();
+
+            delete(collection_objects)
+                .filter(
+                    database::schema::collection_objects::id
+                        .eq_any(&read_only_object_reference_ids),
+                )
+                .execute(conn)?;
+
+            delete_object_and_bump_objectgroups(
+                &vec![*object_uuid],
+                collection_uuid,
+                &creator_id,
+                conn,
+            )?;
+
+            Ok(()) // Done.
+        } else {
+            // Check if object is the last undeleted revision
+            let mut undeleted_revisions = get_all_revisions(conn, object_uuid)?
+                .into_iter()
+                .filter(|revision| revision.id != *object_uuid)
+                .filter(|revision| revision.object_status != ObjectStatus::TRASH)
+                .filter(|revision| revision.object_status != ObjectStatus::DELETED)
+                .collect::<Vec<_>>();
+            undeleted_revisions.sort_by(|a, b| b.revision_number.cmp(&a.revision_number)); // Sort descending by revision number
+
+            // If there are undeleted revisions left:
+            if !undeleted_revisions.is_empty() {
+                // Handle deletion different for objects with auto_update == true
+                if object_reference.auto_update {
+                    // If reference is auto_update == true:
+                    //   - Delete read-only references of specific object
+                    //   - Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+                    //   - Update object reference to next lower revision and set object status to TRASH
+
+                    // Delete read-only references of specific object
+                    let read_only_object_reference_ids = all_object_references
+                        .into_iter()
+                        .filter(|reference| !reference.writeable)
+                        .filter(|reference| reference.object_id == *object_uuid)
+                        .map(|reference| reference.id)
+                        .collect::<Vec<_>>();
+
+                    delete(collection_objects)
+                        .filter(
+                            database::schema::collection_objects::id
+                                .eq_any(&read_only_object_reference_ids),
+                        )
+                        .execute(conn)?;
+
+                    // Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+                    delete_objectgroup_references_and_increase_revisions(
+                        &vec![*object_uuid],
+                        collection_uuid,
+                        &creator_id,
+                        conn,
+                    )?;
+
+                    // Update object reference to next lower available revision and set object status to TRASH
+                    let next_lower_revision = undeleted_revisions
+                        .first()
+                        .ok_or(ArunaError::DieselError(Error::RollbackTransaction))?;
+
+                    update(collection_objects)
+                        .filter(database::schema::collection_objects::id.eq(&object_reference.id))
+                        .set(
+                            database::schema::collection_objects::object_id
+                                .eq(&next_lower_revision.id),
+                        )
+                        .execute(conn)?;
+
+                    // Update object_status to "TRASH"
+                    update(objects)
+                        .filter(database::schema::objects::id.eq(&object_uuid))
+                        .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
+                        .execute(conn)?;
+
+                    Ok(())
+                } else {
+                    //ToDo: IS there a better way to handle deletion of objects with only a writeable static reference on another revision?
+                    Err(ArunaError::InvalidRequest("Cannot delete last static writeable reference of object with undeleted revisions.".to_string()))
+                }
+            } else {
+                // Check if with_force == true to permanently delete object (No references left and all revisions status == TRASH/DELETED)
+                if with_force {
+                    // Process:
+                    //   - Delete read-only references of specific object
+                    //   - Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+                    //   - Delete object reference and set object status to TRASH
+
+                    let read_only_object_reference_ids = all_object_references
+                        .into_iter()
+                        .filter(|reference| !reference.writeable)
+                        .filter(|reference| reference.object_id == *object_uuid)
+                        .map(|reference| reference.id)
+                        .collect::<Vec<_>>();
+
+                    delete(collection_objects)
+                        .filter(
+                            database::schema::collection_objects::id
+                                .eq_any(&read_only_object_reference_ids),
+                        )
+                        .execute(conn)?;
+
+                    delete_objectgroup_references_and_increase_revisions(
+                        &vec![*object_uuid],
+                        collection_uuid,
+                        &creator_id,
+                        conn,
+                    )?;
+
+                    // Delete reference as the object is "permanently" deleted
+                    delete(collection_objects)
+                        .filter(database::schema::collection_objects::id.eq(&object_reference.id))
+                        .execute(conn)?;
+
+                    // Update object_status to "TRASH"
+                    update(objects)
+                        .filter(database::schema::objects::id.eq(&object_uuid))
+                        .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
+                        .execute(conn)?;
+
+                    Ok(()) // Done.
+                } else {
+                    Err(ArunaError::InvalidRequest(
+                        "Use force to permanently delete last existing revision of the object."
+                            .to_string(),
+                    ))
+                }
+            }
+        }
+    } else {
+        // Get all writeable references of object and check for collection ids
+        let all_object_references = get_all_references(conn, object_uuid, &true)?;
+        let writeable_references = all_object_references
+            .clone()
+            .into_iter()
+            .filter(|reference| reference.writeable)
+            .collect::<Vec<_>>();
+
+        //Note: For each writeable reference it can be assumed that it is the original.
+        //        Does this imply that update/deletion of outdated revisions is also possible from collections
+        //        which "only" have a writeable static reference to an object revision?
+
+        // Object with no writeable references at all should never exist
+        if writeable_references.is_empty() {
+            Err(ArunaError::InvalidRequest(
+                "Dangling object detected.".to_string(),
+            ))
+        } else {
+            let writeable_collection_references = writeable_references
+                .into_iter()
+                .filter(|reference| reference.collection_id == *collection_uuid)
+                .collect::<Vec<_>>();
+
+            // Take a look if a writeable reference exists for another revision of the object
+            if !writeable_collection_references.is_empty() {
+                if writeable_collection_references
+                    .iter()
+                    .filter(|reference| reference.auto_update)
+                    .count()
+                    > 0
+                {
+                    // If writeable reference in collection is auto_update == true:
+                    //   - Delete read-only references of specific object
+                    //   - Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+                    //   - Set ObjectStatus to TRASH
+                    let read_only_object_reference_ids = all_object_references
+                        .iter()
+                        .filter(|reference| !reference.writeable)
+                        .filter(|reference| reference.object_id == *object_uuid)
+                        .map(|reference| reference.id)
+                        .collect::<Vec<_>>();
+
+                    delete(collection_objects)
+                        .filter(
+                            database::schema::collection_objects::id
+                                .eq_any(&read_only_object_reference_ids),
+                        )
+                        .execute(conn)?;
+
+                    delete_objectgroup_references_and_increase_revisions(
+                        &vec![*object_uuid],
+                        collection_uuid,
+                        &creator_id,
+                        conn,
+                    )?;
+
+                    // Update object_status to "TRASH"
+                    update(objects)
+                        .filter(database::schema::objects::id.eq(&object_uuid))
+                        .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
+                        .execute(conn)?;
+
+                    Ok(())
+                } else {
+                    // If writeable reference in collection is static:
+                    //   Assume that we can also manipulate/delete other revisions of the object:
+                    //     - Delete read-only references of specific object
+                    //     - Delete ObjectGroup references of specific object and bump ObjectGroup revisions
+                    //     - Set ObjectStatus to TRASH
+                    //   Assume that other revisions are may not be in the manipulation scope
+                    //     - Error that you need a writeable "auto_update == true" reference in the collection to delete outdated revisions
+
+                    Err(ArunaError::InvalidRequest(
+                        "Cannot delete other revisions without writeable auto_update reference in provided collection."
+                            .to_string(),
+                    ))
+                }
+            } else {
+                Err(ArunaError::InvalidRequest(
+                    "No writeable reference of object in provided collection found.".to_string(),
+                ))
+            }
+        }
+    };
+}
+
+///
 /// This is a helper method that deletes all specified objects (by id)
 /// it has two options (with_force) == true => allow for sideeffects in other collections
 /// otherwise this method will error
@@ -1745,6 +2225,7 @@ pub fn get_latest_obj(
 ///
 /// `Result<(), ArunaError>` - Will return empty Result or Error
 ///
+#[deprecated(since = "1.0.0", note = "please use `safe_delete_object` instead")]
 pub fn delete_multiple_objects(
     original_object_ids: Vec<uuid::Uuid>,
     coll_id: uuid::Uuid,
@@ -1886,11 +2367,11 @@ pub fn delete_multiple_objects(
 
     // Delete object_references and update object_groups for "deleteable" without the "reference onlys"
     for (d_coll_id, d_object_ids) in object_ids_per_coll {
-        delete_and_bump_objs(&d_object_ids, &d_coll_id, &creator_id, conn)?;
+        delete_object_and_bump_objectgroups(&d_object_ids, &d_coll_id, &creator_id, conn)?;
     }
 
     // Delete and bump the "ref_onlys"
-    delete_and_bump_objs(&ref_only, &coll_id, &creator_id, conn)?;
+    delete_object_and_bump_objectgroups(&ref_only, &coll_id, &creator_id, conn)?;
 
     // Update object_status to "TRASH"
     update(objects)
@@ -1917,7 +2398,7 @@ pub fn delete_multiple_objects(
 ///
 pub fn get_all_revisions(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_id: uuid::Uuid,
+    ref_object_id: &uuid::Uuid,
 ) -> Result<Vec<Object>, diesel::result::Error> {
     let shared_id = objects
         .filter(database::schema::objects::id.eq(ref_object_id))
@@ -1926,6 +2407,7 @@ pub fn get_all_revisions(
 
     let all_revision_objects = objects
         .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .order_by(database::schema::objects::revision_number.asc())
         .load::<Object>(conn)?;
 
     Ok(all_revision_objects)
@@ -2162,70 +2644,29 @@ pub fn get_object_ignore_coll(
     }))
 }
 
-/// Implement TryFrom for ObjectDto to ProtoObject
-///
-/// This can convert an ObjectDto to a ProtoObject via built-in try convert functions
-///
-impl TryFrom<ObjectDto> for ProtoObject {
-    type Error = ArunaError;
+fn delete_object_and_bump_objectgroups(
+    deletable_objects_uuids: &Vec<uuid::Uuid>,
+    target_collection: &uuid::Uuid,
+    creator_id: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), diesel::result::Error> {
+    // Remove object_group_object reference and update object_group
+    delete_objectgroup_references_and_increase_revisions(
+        deletable_objects_uuids,
+        target_collection,
+        creator_id,
+        conn,
+    )?;
 
-    fn try_from(object_dto: ObjectDto) -> Result<Self, Self::Error> {
-        // Transform db Source to proto Source
-        let proto_source = match object_dto.source {
-            None => None,
-            Some(source) => Some(ProtoSource {
-                identifier: source.link,
-                source_type: source.source_type as i32,
-            }),
-        };
-
-        // Transform origin_id and origin type to proto origin
-        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
-            None => None,
-            Some(origin_uuid) => Some(ProtoOrigin {
-                id: origin_uuid.to_string(),
-                r#type: object_dto.origin_type as i32,
-            }),
-        };
-
-        // Transform NaiveDateTime to Timestamp
-        let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
-
-        // Transform db Hash to proto Hash
-        let proto_hash = ProtoHash {
-            //alg: object_dto.hash.hash_type as i32,
-            alg: match object_dto.hash.hash_type {
-                HashType::MD5 => Hashalgorithm::Md5 as i32,
-                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
-                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
-                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
-                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
-            },
-            hash: object_dto.hash.hash,
-        };
-
-        // Construct proto Object
-        Ok(ProtoObject {
-            id: object_dto.object.id.to_string(),
-            filename: object_dto.object.filename,
-            labels: object_dto.labels,
-            hooks: object_dto.hooks,
-            created: Some(timestamp),
-            content_len: object_dto.object.content_len,
-            status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
-            origin: proto_origin,
-            data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
-            hash: Some(proto_hash),
-            rev_number: object_dto.object.revision_number,
-            source: proto_source,
-            latest: object_dto.latest,
-            auto_update: object_dto.update,
-        })
-    }
+    // Remove collection_object reference for specific collection
+    delete(collection_objects)
+        .filter(database::schema::collection_objects::object_id.eq_any(deletable_objects_uuids))
+        .filter(database::schema::collection_objects::collection_id.eq(target_collection))
+        .execute(conn)?;
+    Ok(())
 }
 
-fn delete_and_bump_objs(
+fn delete_objectgroup_references_and_increase_revisions(
     deletable_objects_uuids: &Vec<uuid::Uuid>,
     target_collection: &uuid::Uuid,
     creator_id: &uuid::Uuid,
@@ -2244,7 +2685,7 @@ fn delete_and_bump_objs(
         .load::<ObjectGroupObject>(conn)
         .optional()?;
 
-    // Only proceed if at least one reference exists
+    // Only proceed if at least one object_group_objects reference exists
     if let Some(coll_obj_grps) = all_coll_obj_grps {
         // Get object_group_ids
         let object_grp_ids = coll_obj_grps
@@ -2268,11 +2709,7 @@ fn delete_and_bump_objs(
             .filter(database::schema::object_group_objects::object_group_id.eq_any(new_ids))
             .execute(conn)?;
     }
-    // Remove collection_object reference for specific collection
-    delete(collection_objects)
-        .filter(database::schema::collection_objects::object_id.eq_any(deletable_objects_uuids))
-        .filter(database::schema::collection_objects::collection_id.eq(target_collection))
-        .execute(conn)?;
+
     Ok(())
 }
 
