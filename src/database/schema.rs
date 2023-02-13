@@ -257,7 +257,18 @@ diesel::table! {
         object_status -> ObjectStatus,
         dataclass -> Dataclass,
         source_id -> Nullable<Uuid>,
-        origin_id -> Nullable<Uuid>,
+        origin_id -> Uuid,
+    }
+}
+
+diesel::table! {
+    paths (id) {
+        id -> Uuid,
+        path -> Text,
+        shared_revision_id -> Uuid,
+        collection_id -> Uuid,
+        created_at -> Timestamp,
+        active -> Bool,
     }
 }
 
@@ -362,6 +373,7 @@ diesel::joinable!(object_locations -> endpoints (endpoint_id));
 diesel::joinable!(object_locations -> objects (object_id));
 diesel::joinable!(objects -> sources (source_id));
 diesel::joinable!(objects -> users (created_by));
+diesel::joinable!(paths -> collections (collection_id));
 diesel::joinable!(projects -> users (created_by));
 diesel::joinable!(required_labels -> collections (collection_id));
 diesel::joinable!(user_permissions -> projects (project_id));
@@ -385,6 +397,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     object_key_value,
     object_locations,
     objects,
+    paths,
     projects,
     pub_keys,
     required_labels,
