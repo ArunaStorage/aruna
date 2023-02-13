@@ -107,15 +107,6 @@ impl TryFrom<ObjectDto> for ProtoObject {
             }),
         };
 
-        // Transform origin_id and origin type to proto origin
-        let proto_origin: Option<ProtoOrigin> = match object_dto.object.origin_id {
-            None => None,
-            Some(origin_uuid) => Some(ProtoOrigin {
-                id: origin_uuid.to_string(),
-                r#type: object_dto.origin_type as i32,
-            }),
-        };
-
         // Transform NaiveDateTime to Timestamp
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
@@ -139,7 +130,10 @@ impl TryFrom<ObjectDto> for ProtoObject {
             created: Some(timestamp),
             content_len: object_dto.object.content_len,
             status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
-            origin: proto_origin,
+            origin: Some(ProtoOrigin {
+                r#type: todo!(),
+                id: object_dto.object.origin_id.to_string(),
+            }),
             data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
             hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,

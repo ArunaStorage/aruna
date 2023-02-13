@@ -42,7 +42,7 @@ pub struct Object {
     pub object_status: ObjectStatus,
     pub dataclass: Dataclass,
     pub source_id: Option<uuid::Uuid>,
-    pub origin_id: Option<uuid::Uuid>,
+    pub origin_id: uuid::Uuid,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Clone, Debug)]
