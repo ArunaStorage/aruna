@@ -27,9 +27,9 @@ use aruna_rust_api::api::storage::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
         CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
-        GetLatestObjectRevisionResponse, GetObjectByIdRequest, GetObjectRevisionsRequest,
-        GetObjectsRequest, InitializeNewObjectRequest, InitializeNewObjectResponse,
-        UpdateObjectRequest, UpdateObjectResponse,
+        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest,
+        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
     },
 };
 
@@ -124,11 +124,8 @@ impl TryFrom<ObjectDto> for ProtoObject {
             //alg: object_dto.hash.hash_type as i32,
             alg: match object_dto.hash.hash_type {
                 HashType::MD5 => Hashalgorithm::Md5 as i32,
-                HashType::SHA1 => Hashalgorithm::Sha1 as i32,
                 HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-                HashType::SHA512 => Hashalgorithm::Sha512 as i32,
-                HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
-                HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+                _ => Hashalgorithm::Unspecified as i32,
             },
             hash: object_dto.hash.hash,
         };
@@ -917,7 +914,7 @@ impl Database {
     pub fn get_latest_object_revision(
         &self,
         request: GetLatestObjectRevisionRequest,
-    ) -> Result<GetLatestObjectRevisionResponse, ArunaError> {
+    ) -> Result<Option<ObjectDto>, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
@@ -929,11 +926,7 @@ impl Database {
                 get_object(&lat_obj.id, &parsed_collection_id, false, conn)
             })?;
 
-        let mapped = latest_rev
-            .map(|e| e.try_into())
-            .map_or(Ok(None), |r| r.map(Some))?;
-
-        Ok(GetLatestObjectRevisionResponse { object: mapped })
+        Ok(latest_rev)
     }
 
     ///ToDo: Rust Doc

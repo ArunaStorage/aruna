@@ -454,11 +454,8 @@ pub fn grpc_to_db_hash_type(grpc_hash_type: &i32) -> Result<HashType, ArunaError
 pub fn db_to_grpc_hash_type(db_hash_type: &HashType) -> i32 {
     match db_hash_type {
         HashType::MD5 => Hashalgorithm::Md5 as i32,
-        HashType::SHA1 => Hashalgorithm::Sha1 as i32,
         HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-        HashType::SHA512 => Hashalgorithm::Sha512 as i32,
-        HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
-        HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+        _ => Hashalgorithm::Unspecified as i32,
     }
 }
 

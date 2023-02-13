@@ -1207,6 +1207,67 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
     }
+
+    /// GetObjectPath
+    ///
+    /// Status: BETA
+    ///
+    /// Get all object_paths for this object in a specific collection
+    /// !! Paths are collection specific !!
+    async fn get_object_path(
+        &self,
+        request: tonic::Request<GetObjectPathRequest>,
+    ) -> Result<tonic::Response<GetObjectPathResponse>, tonic::Status> {
+        todo!()
+    }
+    /// GetObjectPaths
+    ///
+    /// Status: BETA
+    ///
+    /// Get all object_paths for a specific collection
+    /// !! Paths are collection specific !!
+    async fn get_object_paths(
+        &self,
+        request: tonic::Request<GetObjectPathsRequest>,
+    ) -> Result<tonic::Response<GetObjectPathsResponse>, tonic::Status> {
+        todo!()
+    }
+    /// CreateObjectPath
+    ///
+    /// Status: BETA
+    ///
+    /// Create collection_specific object_paths for an object
+    /// !! Paths are collection specific !!
+    async fn create_object_path(
+        &self,
+        request: tonic::Request<CreateObjectPathRequest>,
+    ) -> Result<tonic::Response<CreateObjectPathResponse>, tonic::Status> {
+        todo!()
+    }
+    /// SetObjectPathVisibility
+    ///
+    /// Status: BETA
+    ///
+    /// Updates the visibility setting for an object_path (hide/unhide)
+    /// !! Paths are collection specific !!
+    async fn set_object_path_visibility(
+        &self,
+        request: tonic::Request<SetObjectPathVisibilityRequest>,
+    ) -> Result<tonic::Response<SetObjectPathVisibilityResponse>, tonic::Status> {
+        todo!()
+    }
+    /// GetObjectsByPath
+    ///
+    /// Status: BETA
+    ///
+    /// Gets a specific object by object_path
+    /// !! Paths are collection specific !!
+    async fn get_objects_by_path(
+        &self,
+        request: tonic::Request<GetObjectsByPathRequest>,
+    ) -> Result<tonic::Response<GetObjectsByPathResponse>, tonic::Status> {
+        todo!()
+    }
 }
 
 // This is a moveable version of the connect_object_endpoint
