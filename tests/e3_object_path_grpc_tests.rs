@@ -3,7 +3,9 @@ use crate::common::grpc_helpers::get_token_user_id;
 
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v1::{FinishObjectStagingRequest, GetObjectByIdRequest, InitializeNewObjectRequest, StageObject};
+use aruna_rust_api::api::storage::services::v1::{
+    FinishObjectStagingRequest, GetObjectByIdRequest, InitializeNewObjectRequest, StageObject,
+};
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
 use aruna_server::server::services::authz::Authz;
@@ -11,7 +13,6 @@ use aruna_server::server::services::object::ObjectServiceImpl;
 
 use serial_test::serial;
 use std::sync::Arc;
-use aruna_server::database::crud::object::get_object;
 
 mod common;
 
@@ -50,7 +51,7 @@ async fn create_object_with_path_grpc_test() {
         user_id.as_str(),
         common::oidc::ADMINTOKEN,
     )
-        .await;
+    .await;
     assert_eq!(add_perm.permission, Permission::None as i32);
 
     // Fast track collection creation
@@ -65,12 +66,11 @@ async fn create_object_with_path_grpc_test() {
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
 
@@ -113,6 +113,7 @@ async fn create_object_with_path_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -131,8 +132,7 @@ async fn create_object_with_path_grpc_test() {
             collection_id: init_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash:
-                "4ec2d656985e3d823b81cc2cd9b56ec27ab1303cfebaf5f95c37d2fe1661a779"
+                hash: "4ec2d656985e3d823b81cc2cd9b56ec27ab1303cfebaf5f95c37d2fe1661a779"
                     .to_string(),
             }),
             no_upload: false,
@@ -168,7 +168,9 @@ async fn create_object_with_path_grpc_test() {
 
     assert_eq!(custom_object.id, init_object_response.object_id);
     assert_eq!(custom_object_with_url.paths.len(), 1); // Only empty default path
-    assert!(custom_object_with_url.paths.contains(&"/my/little/pony".to_string()));
+    assert!(custom_object_with_url
+        .paths
+        .contains(&"/some/sub/path".to_string()));
     assert!(custom_object_with_url.url.is_empty());
 }
 

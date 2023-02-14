@@ -1133,12 +1133,12 @@ async fn delete_collection_grpc_test() {
     });
 
     let random_object = common::functions::create_object(&TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.to_string()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     let delete_collection_request = common::grpc_helpers::add_token(

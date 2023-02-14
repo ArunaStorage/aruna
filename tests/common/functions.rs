@@ -275,12 +275,13 @@ pub fn get_collection(col_id: String) -> CollectionOverview {
 
 #[derive(Default)]
 pub struct TCreateObject {
-    pub sub_path: Option<String>,
-    pub creator_id: Option<String>,
     pub collection_id: String,
-    pub default_endpoint_id: Option<String>,
     pub num_labels: i64,
     pub num_hooks: i64,
+    pub init_hash: Option<ApiHash>,
+    pub sub_path: Option<String>,
+    pub creator_id: Option<String>,
+    pub default_endpoint_id: Option<String>,
 }
 
 /// Creates an Object in the specified Collection.
@@ -333,6 +334,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: *object_info.init_hash,
     };
 
     let dummy_location = Location {
@@ -484,7 +486,6 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     };
 
     let sub_path = update.new_sub_path.unwrap_or_default();
-    let api_hash = *update.init_hash.clone();
 
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
@@ -511,7 +512,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
         is_specification: false,
-        hash: api_hash,
+        hash: *update.init_hash,
     };
 
     let update_response = db

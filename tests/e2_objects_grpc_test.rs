@@ -100,6 +100,7 @@ async fn create_objects_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -117,6 +118,7 @@ async fn create_objects_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -162,6 +164,7 @@ async fn create_objects_grpc_test() {
                 preferred_endpoint_id: "".to_string(),
                 multipart: false,
                 is_specification: false,
+                hash: None,
             }),
             common::oidc::REGULARTOKEN,
         );
@@ -335,6 +338,7 @@ async fn get_objects_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -472,6 +476,7 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -889,12 +894,10 @@ async fn update_outdated_revision_grpc_test() {
 
     // Fast track object creation
     let rev_0_object = common::functions::create_object(&TCreateObject {
-        sub_path: None,
-        creator_id: None,
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     // Create revision 1 of object
@@ -1090,12 +1093,10 @@ async fn concurrent_update_grpc_test() {
 
     // Fast track object creation
     let rev_0_object = common::functions::create_object(&TCreateObject {
-        sub_path: None,
-        creator_id: None,
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     assert_eq!(rev_0_object.rev_number, 0);
@@ -1305,12 +1306,11 @@ async fn object_references_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id),
         collection_id: source_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let rev_0_object = common::functions::create_object(&object_meta);
 
@@ -1748,12 +1748,11 @@ async fn add_labels_to_object_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: source_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let rev_0_object = common::functions::create_object(&object_meta);
 
@@ -2065,12 +2064,11 @@ async fn clone_object_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: source_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let rev_0_object = common::functions::create_object(&object_meta);
 
@@ -2360,12 +2358,11 @@ async fn delete_object_grpc_test() {
 
     // Fast track random object creation
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
 
@@ -2419,12 +2416,11 @@ async fn delete_object_grpc_test() {
 
         // Create random object
         let object_meta = TCreateObject {
-            sub_path: None,
             creator_id: Some(user_id.clone()),
             collection_id: random_collection.id.to_string(),
-            default_endpoint_id: None,
             num_labels: 0,
             num_hooks: 0,
+            ..Default::default()
         };
         let random_object = common::functions::create_object(&object_meta);
 
@@ -2627,6 +2623,7 @@ async fn delete_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multipart: false,
             is_specification: false,
+            hash: None,
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -2685,12 +2682,11 @@ async fn delete_object_grpc_test() {
 
     // Update object and delete staging object
     let random_object = common::functions::create_object(&TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     let update_object_request = common::grpc_helpers::add_token(
@@ -2819,12 +2815,11 @@ async fn delete_object_revisions_grpc_test() {
 
     // Fast track random object creation
     let object_meta = TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let rev_0_object = common::functions::create_object(&object_meta);
 
@@ -3074,12 +3069,11 @@ async fn delete_multiple_objects_grpc_test() {
         for _ in 1..3 {
             object_ids.push(
                 common::functions::create_object(&TCreateObject {
-                    sub_path: None,
                     creator_id: Some(user_id.clone()),
                     collection_id: random_collection.id.to_string(),
-                    default_endpoint_id: None,
                     num_labels: 0,
                     num_hooks: 0,
+                    ..Default::default()
                 })
                 .id,
             );
@@ -3196,12 +3190,11 @@ async fn delete_multiple_objects_grpc_test() {
         let mut object_ids = Vec::new();
         for _ in 1..3 {
             let mut source_object = common::functions::create_object(&TCreateObject {
-                sub_path: None,
                 creator_id: Some(user_id.clone()),
                 collection_id: random_collection.id.to_string(),
-                default_endpoint_id: None,
                 num_labels: 0,
                 num_hooks: 0,
+                ..Default::default()
             });
 
             for update_num in 1..=rng.gen_range(1..3) {
@@ -3310,12 +3303,11 @@ async fn delete_multiple_objects_grpc_test() {
 
     // Create single object with revisions and delete all of them in incorrect order
     let random_object = common::functions::create_object(&TCreateObject {
-        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        default_endpoint_id: None,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     let mut update_meta = TCreateUpdate {
