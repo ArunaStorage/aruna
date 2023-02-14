@@ -3,10 +3,7 @@ use crate::common::grpc_helpers::get_token_user_id;
 
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
-    GetObjectPathsRequest, InitializeNewObjectRequest, StageObject,
-};
+use aruna_rust_api::api::storage::services::v1::{CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest, SetObjectPathVisibilityRequest, StageObject};
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
 use aruna_server::server::services::authz::Authz;
@@ -178,7 +175,7 @@ async fn create_object_with_path_grpc_test() {
 /// The individual steps of this test function contains:
 /// 1) Creating an object with the default subpath
 /// 2) Try creating a duplicate default path for the same object
-/// 3) Creating an additional path for the same object
+/// 3) Try creating additional paths for the same object with different permissions
 #[ignore]
 #[tokio::test]
 #[serial(db)]
@@ -340,13 +337,157 @@ async fn create_additional_object_path_grpc_test() {
 
 /// The individual steps of this test function contains:
 /// 1) Creating an object with the default subpath
-/// 2) Creating some additional paths for the same object
-/// 3) Get each path individually
+/// 2) Try creating some additional paths with varying invalid formats/characters
+/// 3) Try creating some additional paths with varying valid formats/characters
+/// 4) Get all paths of object and validate the successfully created
 #[ignore]
 #[tokio::test]
 #[serial(db)]
 async fn get_object_path_grpc_test() {
-    todo!()
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Create random object with default subpath
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        ..Default::default()
+    };
+    let random_object = common::functions::create_object(&object_meta);
+
+    let static_path_part = format!("/{}/{}", random_project.name, random_collection.name);
+
+    let mut inner_create_path_request = CreateObjectPathRequest {
+        collection_id: random_collection.id.to_string(),
+        object_id: random_object.id.to_string(),
+        sub_path: "".to_string(),
+    };
+
+    // Requests with invalid paths
+    for invalid_path in vec![
+        "".to_string(),              // Duplicate of default
+        "/".to_string(),             // Empty path parts are not allowed
+        "//".to_string(),            // Empty path parts are not allowed
+        "path//".to_string(),        // Empty path parts are not allowed
+        "path//path/".to_string(),   // Empty path parts are not allowed
+        "$%&/path/".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
+        "custom\\path/".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
+        "some path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
+    ]
+    .iter()
+    {
+        inner_create_path_request.sub_path = invalid_path.to_string();
+
+        let create_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_create_path_request.clone()),
+            common::oidc::ADMINTOKEN,
+        );
+
+        let create_path_response = object_service.create_object_path(create_path_request).await;
+
+        assert!(create_path_response.is_err());
+    }
+
+    // Requests with valid paths in different formats
+    let mut fq_valid_paths = Vec::new();
+    for valid_path in vec![
+        "custom_path".to_string(),
+        "custom/path".to_string(),
+        "/custom/path".to_string(),
+        "custom/path/".to_string(),
+        "/custom/path/".to_string(),
+        "/my.custom/path/".to_string(),
+        "/my.custom-path/".to_string(),
+        "~my.custom-path~/".to_string(),
+        "~my.custom/_path~/.ver4.rc-3".to_string(),
+        "~my.custom/_path~/.ver4.rc-3/Final-For-Real".to_string(),
+    ]
+    .iter()
+    {
+        inner_create_path_request.sub_path = valid_path.to_string();
+        let create_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_create_path_request.clone()),
+            common::oidc::ADMINTOKEN,
+        );
+        let create_path_response = object_service
+            .create_object_path(create_path_request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        let fq_path = format!(
+            "{static_path_part}/{custom_path}/{}",
+            random_object.filename
+        )
+        .to_string();
+        assert_eq!(create_path_response.path, fq_path);
+
+        fq_valid_paths.push(fq_path);
+    }
+
+    // Get all paths of object and validate the successfully created
+    let get_object_path_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectPathRequest {
+            collection_id: random_collection.id.to_string(),
+            object_id: random_object.id.to_string(),
+            include_inactive: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_object_path_response = object_service
+        .get_object_path(get_object_path_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(
+        get_object_path_response.object_paths.len(),
+        fq_valid_paths.len() + 1
+    ); // Created + Default
+
+    for proto_path in get_object_path_response.object_paths {
+        assert!(fq_valid_paths.contains(&proto_path.path));
+    }
 }
 
 /// The individual steps of this test function contains:
