@@ -261,7 +261,7 @@ impl Database {
         );
 
         // Validate key_values
-        if !validate_key_values::<ObjectKeyValue>(key_value_pairs) {
+        if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
             return Err(ArunaError::InvalidRequest(
                 "labels or hooks are invalid".to_string(),
             ));
@@ -377,7 +377,7 @@ impl Database {
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
-                if let orig_id = returned_obj.origin_id {
+                let orig_id = returned_obj.origin_id;
                     // origin_id != object_id => Update
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
@@ -624,7 +624,7 @@ impl Database {
                             ))
                             .execute(conn)?;
                     }
-                }
+                
 
                 Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
             })?;
@@ -738,7 +738,7 @@ impl Database {
 
                     // Convert the object's labels and hooks to their database representation
                     // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
-                    let key_value_pairs = to_key_values::<ObjectKeyValue>(
+                    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
                         sobj.labels.clone(),
                         sobj.hooks.clone(),
                         new_obj_id,
@@ -747,7 +747,7 @@ impl Database {
                     // Validate labels and hooks and add path label handling
 
                     // Validate key_values
-                    if !validate_key_values::<ObjectKeyValue>(key_value_pairs) {
+                    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
                         return Err(ArunaError::InvalidRequest(
                             "labels or hooks are invalid".to_string(),
                         ));
@@ -902,7 +902,7 @@ impl Database {
             .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                 // Use the helper function to execute the request
                 let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
-                let proto_paths = if let Some(obj) = object {
+                let proto_paths = if let Some(obj) = object.clone() {
                     get_paths_proto(&obj.object.shared_revision_id, conn)?}
                     else{
                         Vec::new()
@@ -914,7 +914,7 @@ impl Database {
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
         
-        let path_strings = obj_paths.iter().map(|p| p.path).collect::<Vec<String>>();
+        let path_strings = obj_paths.iter().map(|p| p.path.clone()).collect::<Vec<String>>();
 
         Ok(ObjectWithUrl{ object: proto_object, url: "".to_string(), paths: path_strings })
 
@@ -1009,19 +1009,32 @@ impl Database {
     pub fn get_latest_object_revision(
         &self,
         request: GetLatestObjectRevisionRequest,
-    ) -> Result<Option<ObjectDto>, ArunaError> {
+    ) -> Result<ObjectWithUrl, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
-        let latest_rev = self
+        let (object_dto, obj_paths) = self
             .pg_connection
             .get()?
-            .transaction::<Option<ObjectDto>, Error, _>(|conn| {
+            .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                 let lat_obj = get_latest_obj(conn, parsed_object_id)?;
-                get_object(&lat_obj.id, &parsed_collection_id, false, conn)
+                let obj = get_object(&lat_obj.id, &parsed_collection_id, false, conn)?;
+
+                let proto_paths = if let Some(obj) = obj.clone() {
+                    get_paths_proto(&obj.object.shared_revision_id, conn)?}
+                    else{
+                        Vec::new()
+                    };
+                Ok((obj, proto_paths))
             })?;
 
-        Ok(latest_rev)
+            let proto_object: Option<ProtoObject> = object_dto
+            .map(|e| e.try_into())
+            .map_or(Ok(None), |r| r.map(Some))?;
+        
+        let path_strings = obj_paths.iter().map(|p| p.path.clone()).collect::<Vec<String>>();
+
+        Ok(ObjectWithUrl{ object: proto_object, url: "".to_string(), paths: path_strings })
     }
 
     ///ToDo: Rust Doc
@@ -1029,14 +1042,14 @@ impl Database {
     pub fn get_object_revisions(
         &self,
         request: GetObjectRevisionsRequest,
-    ) -> Result<Vec<ObjectDto>, ArunaError> {
+    ) -> Result<Vec<ObjectWithUrl>, ArunaError> {
         let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
         let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
         let all_revs = self
             .pg_connection
             .get()?
-            .transaction::<Vec<ObjectDto>, Error, _>(|conn| {
+            .transaction::<Vec<ObjectWithUrl>, Error, _>(|conn| {
                 // This is a safety measure to make sure on revision is referenced in the current collection
                 // Otherwise get_object_ignore_coll could be used to break safety measures / permission boundaries
                 let all = get_all_revisions(conn, &parsed_object_id)?;
@@ -1053,12 +1066,20 @@ impl Database {
 
                 // Query and return all revisions
                 Ok(if issomewherereferenced.is_some() {
+
+                    let obj_paths = if let Some(first_obj) = all.first() {
+                        get_paths_proto(&first_obj.shared_revision_id, conn)?.iter().map(|e| e.path.to_string()).collect::<Vec<String>>()
+                    }else{
+                        Vec::new()
+                    };
+                        
+
                     all.iter()
                         .filter_map(|obj| match get_object_ignore_coll(&obj.id, conn) {
-                            Ok(opt) => opt.map(Ok),
+                            Ok(opt) => opt.map(|e| Ok(ObjectWithUrl{ object: Some(e.try_into()?), url: "".to_string(), paths: obj_paths.clone() })),
                             Err(e) => Some(Err(e)),
                         })
-                        .collect::<Result<Vec<ObjectDto>, _>>()?
+                        .collect::<Result<Vec<ObjectWithUrl>, _>>()?
                 } else {
                     Vec::new()
                 })
@@ -1071,7 +1092,7 @@ impl Database {
     pub fn get_objects(
         &self,
         request: GetObjectsRequest,
-    ) -> Result<Option<Vec<ObjectDto>>, ArunaError> {
+    ) -> Result<Option<Vec<ObjectWithUrl>>, ArunaError> {
         // Parse the page_request and get pagesize / lastuuid
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         // Parse the query to a `ParsedQuery`
@@ -1087,14 +1108,14 @@ impl Database {
         let ret_objects = self
             .pg_connection
             .get()?
-            .transaction::<Option<Vec<ObjectDto>>, Error, _>(|conn| {
+            .transaction::<Option<Vec<ObjectWithUrl>>, Error, _>(|conn| {
                 // First build a "boxed" base request to which additional parameters can be added later
                 let mut base_request = colobj::collection_objects.into_boxed();
                 // Filter collection_id
                 base_request = base_request.filter(colobj::collection_id.eq(&query_collection_id));
 
                 // Create returnvector of CollectionOverviewsDb
-                let mut return_vec: Vec<ObjectDto> = Vec::new();
+                let mut return_vec: Vec<ObjectWithUrl> = Vec::new();
                 // If pagesize is not unlimited set it to pagesize or default = 20
                 if let Some(pg_size) = pagesize {
                     base_request = base_request.limit(pg_size);
@@ -1174,7 +1195,9 @@ impl Database {
                         if let Some(obj) =
                             get_object(&s_obj.object_id, &query_collection_id, false, conn)?
                         {
-                            return_vec.push(obj);
+                            let proto_paths =
+                                get_paths_proto(&obj.object.shared_revision_id, conn)?.iter().map(|p| p.path.clone()).collect::<Vec<String>>();
+                            return_vec.push(ObjectWithUrl { object: Some(obj.try_into()?), url: "".to_string(), paths: proto_paths });
                         }
                     }
                     Ok(Some(return_vec))
@@ -2835,15 +2858,15 @@ pub fn construct_path_string(
 
         let modified_path = if subpath.starts_with("/") {
             if subpath.ends_with("/") {
-                subpath
+                subpath.to_string()
             } else {
-                &format!("{subpath}/")
+                format!("{subpath}/")
             }
         } else {
             if subpath.ends_with("/") {
-                &format!("/{subpath}")
+                format!("/{subpath}")
             } else {
-                &format!("/{subpath}/")
+                format!("/{subpath}/")
             }
         };
 
@@ -2878,8 +2901,8 @@ pub fn create_path_db(
 pub fn get_paths_proto(
     shared_rev_id: &uuid::Uuid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<(Vec<ProtoPath>), ArunaError> {
+) -> Result<Vec<ProtoPath>, ArunaError> {
     let p = paths.filter(database::schema::paths::shared_revision_id.eq(shared_rev_id)).load::<Path>(conn)?;
-    Ok(p.iter().map(|pth| ProtoPath{ path: pth.path, visibility: pth.active }).collect::<Vec<_>>())
+    Ok(p.iter().map(|pth| ProtoPath{ path: pth.path.clone(), visibility: pth.active }).collect::<Vec<_>>())
 }
 

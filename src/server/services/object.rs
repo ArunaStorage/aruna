@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -714,7 +713,7 @@ impl ObjectService for ObjectServiceImpl {
                 .await
                 .map_err(ArunaError::from)??;
 
-        let object_data = match proto_object_url.object {
+        let object_data = match proto_object_url.object.clone() {
             Some(p) => p,
             None => {
                 return Err(tonic::Status::invalid_argument("object not found"));
@@ -785,37 +784,38 @@ impl ObjectService for ObjectServiceImpl {
             .await
             .map_err(ArunaError::from)??;
 
-        let result = if let Some(objectdtos) = response {
-            let mut retvec = Vec::new();
+        let result = if let Some(object_with_urls) = response {
+            for mut object_add_url in object_with_urls.clone() {
+                let object_info = if let Some(info) = object_add_url.object {
+                    info
+                } else {
+                    Object::default()
+                };
 
-            for objdto in objectdtos {
-                let url = if request.get_ref().with_url {
+                if request.get_ref().with_url {
                     // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&objdto.object.id).await?;
+                    let (mut data_proxy, location) = self
+                        .try_connect_object_endpoint(
+                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
+                        )
+                        .await?;
                     // Get download url from data proxy endpoint
-                    data_proxy
+                    object_add_url.url = data_proxy
                         .create_presigned_download(CreatePresignedDownloadRequest {
                             location: Some(location),
                             is_public: false,
-                            filename: objdto.object.filename.clone(),
+                            filename: object_info.filename.clone(),
                             range: Some(Range {
                                 start: 0,
-                                end: objdto.object.content_len,
+                                end: object_info.content_len,
                             }),
                         })
                         .await?
                         .into_inner()
-                        .url
-                } else {
-                    "".to_string()
+                        .url;
                 };
-                retvec.push(ObjectWithUrl {
-                    object: Some(Object::try_from(objdto)?),
-                    url,
-                });
             }
-            retvec
+            object_with_urls
         } else {
             Vec::new()
         };
@@ -855,36 +855,36 @@ impl ObjectService for ObjectServiceImpl {
             .map_err(ArunaError::from)??;
 
         let result = {
-            let mut retvec = Vec::new();
-
-            for objdto in response {
-                let url = if request.get_ref().with_url {
+            for mut object_add_url in response.clone() {
+                if request.get_ref().with_url {
+                    let object_info = if let Some(info) = object_add_url.object {
+                        info
+                    } else {
+                        Object::default()
+                    };
                     // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&objdto.object.id).await?;
+                    let (mut data_proxy, location) = self
+                        .try_connect_object_endpoint(
+                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
+                        )
+                        .await?;
                     // Get download url from data proxy endpoint
-                    data_proxy
+                    object_add_url.url = data_proxy
                         .create_presigned_download(CreatePresignedDownloadRequest {
                             location: Some(location),
                             is_public: false,
-                            filename: objdto.object.filename.clone(),
+                            filename: object_info.filename.clone(),
                             range: Some(Range {
                                 start: 0,
-                                end: objdto.object.content_len,
+                                end: object_info.content_len,
                             }),
                         })
                         .await?
                         .into_inner()
-                        .url
-                } else {
-                    "".to_string()
+                        .url;
                 };
-                retvec.push(ObjectWithUrl {
-                    object: Some(Object::try_from(objdto)?),
-                    url,
-                });
             }
-            retvec
+            response
         };
 
         // Return gRPC response after everything succeeded
@@ -914,14 +914,15 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.get_latest_object_revision(request.into_inner())
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let db_resp = task::spawn_blocking(move || {
+            database_clone.get_latest_object_revision(request.into_inner())
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
+        let response = Response::new(GetLatestObjectRevisionResponse {
+            object: Some(db_resp),
+        });
         // Return gRPC response after everything succeeded
         log::info!("Sending GetLatestObjectRevisionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
