@@ -21,7 +21,7 @@ use aruna_rust_api::api::storage::services::v1::{
 use aruna_rust_api::api::storage::{
     models::v1::{
         Hash as ProtoHash, Hashalgorithm, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
-        OriginType, Source as ProtoSource,
+        Source as ProtoSource,
     },
     services::v1::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
@@ -65,7 +65,6 @@ pub struct ObjectDto {
     pub hooks: Vec<KeyValue>,
     pub hash: ApiHash,
     pub source: Option<Source>,
-    pub origin_type: OriginType,
     pub latest: bool,
     pub update: bool,
 }
@@ -77,7 +76,6 @@ impl PartialEq for ObjectDto {
             && self.hooks == other.hooks
             && self.hash == other.hash
             && self.source == other.source
-            && self.origin_type == other.origin_type
             && self.latest == other.latest
             && self.update == other.update
     }
@@ -131,7 +129,6 @@ impl TryFrom<ObjectDto> for ProtoObject {
             content_len: object_dto.object.content_len,
             status: db_to_grpc_object_status(object_dto.object.object_status) as i32,
             origin: Some(ProtoOrigin {
-                r#type: todo!(),
                 id: object_dto.object.origin_id.to_string(),
             }),
             data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
@@ -206,7 +203,7 @@ impl Database {
             object_status: ObjectStatus::INITIALIZING,
             dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
             source_id: source.as_ref().map(|src| src.id),
-            origin_id: Some(object_uuid),
+            origin_id: object_uuid,
         };
 
         // Define the join table entry collection <--> object
@@ -327,7 +324,7 @@ impl Database {
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
-                if let Some(orig_id) = returned_obj.origin_id {
+                if let orig_id = returned_obj.origin_id {
                     // origin_id != object_id => Update
                     if orig_id != returned_obj.id {
                         // Get all revisions of the object it could be that an older version still has "auto_update" set
@@ -461,7 +458,7 @@ impl Database {
                         let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
                             .filter(
                                 database::schema::object_group_objects::object_id.eq(
-                                    &returned_obj.origin_id.unwrap_or_default()
+                                    &returned_obj.origin_id
                                 )
                             )
                             .select(database::schema::object_group_objects::object_group_id)
@@ -650,7 +647,7 @@ impl Database {
                         object_status: ObjectStatus::UNAVAILABLE, // Is a staging object
                         dataclass: grpc_to_db_dataclass(&sobj.dataclass),
                         source_id: source.as_ref().map(|source| source.id),
-                        origin_id: Some(parsed_old_id),
+                        origin_id: parsed_old_id,
                     };
 
                     // Define new object hash depending if update contains data re-upload
@@ -1681,7 +1678,7 @@ pub fn clone_object(
     db_object.id = uuid::Uuid::new_v4();
     db_object.shared_revision_id = uuid::Uuid::new_v4();
     db_object.revision_number = 0;
-    db_object.origin_id = Some(object_uuid);
+    db_object.origin_id = object_uuid;
     db_object.created_by = *creator_uuid;
     db_object.created_at = Local::now().naive_local();
 
@@ -1737,8 +1734,7 @@ pub fn clone_object(
         content_len: db_object.content_len,
         status: db_object.object_status as i32,
         origin: Some(ProtoOrigin {
-            r#type: 2,
-            id: db_object.origin_id.unwrap_or_default().to_string(),
+            id: db_object.origin_id.to_string(),
         }),
         data_class: db_object.dataclass as i32,
         hash: Some(ProtoHash {
@@ -2490,8 +2486,6 @@ pub fn get_object(
         .filter(database::schema::objects::id.eq(&object_uuid))
         .first::<Object>(conn)?;
 
-    let origin_type = get_obj_origin_type(&object, conn)?;
-
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
@@ -2546,7 +2540,6 @@ pub fn get_object(
                 labels,
                 hooks,
                 hash: object_hash,
-                origin_type,
                 source,
                 latest,
                 update: colobj.auto_update,
@@ -2560,7 +2553,6 @@ pub fn get_object(
             hooks,
             hash: object_hash,
             source,
-            origin_type,
             latest: false,
             update: false,
         })),
@@ -2593,8 +2585,6 @@ pub fn get_object_ignore_coll(
         .filter(database::schema::objects::id.eq(&object_uuid))
         .first::<Object>(conn)?;
 
-    let origin_type = get_obj_origin_type(&object, conn)?;
-
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
@@ -2624,7 +2614,6 @@ pub fn get_object_ignore_coll(
         labels,
         hooks,
         hash: object_hash,
-        origin_type,
         source,
         latest,
         update: false, // Always false might not include any collection_info
@@ -2713,52 +2702,4 @@ pub fn check_if_obj_in_coll(
         .unwrap_or(0);
 
     result == (object_ids.len() as i64)
-}
-
-/// Checks the origin type of an object as this kind of information is
-/// not stored explicitly.
-///
-/// ## Arguments:
-///
-/// * `src_object`: `&aruna_rust_api::api::storage::models::Object` - The source object
-/// * `conn`: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-///
-/// ## Returns:
-///
-/// `Result<aruna_rust_api::aruna::aruna::api::storage::models::v1::OriginType, diesel::result::Error>` -
-/// The origin type of the object or a database error if something went
-/// wrong retrieving the revision 0 object.
-///
-fn get_obj_origin_type(
-    src_object: &Object,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<OriginType, Error> {
-    // Get revision 0 of object to determine origin type
-    let rev_0_object: Object = if src_object.revision_number == 0 {
-        src_object.clone()
-    } else {
-        let shared_id = objects
-            .filter(database::schema::objects::id.eq(src_object.id))
-            .select(database::schema::objects::shared_revision_id)
-            .first::<uuid::Uuid>(conn)?;
-
-        let rev_0: Object = objects
-            .filter(database::schema::objects::shared_revision_id.eq(&shared_id))
-            .filter(database::schema::objects::revision_number.eq(0))
-            .first::<Object>(conn)?;
-
-        rev_0 //ToDo: What if revision 0 already deleted?
-    };
-
-    // Check origin type
-    match rev_0_object.origin_id {
-        None => Err(Error::NotFound), // Should not exist.
-        Some(origin_uuid) => {
-            if origin_uuid == rev_0_object.id {
-                Ok(OriginType::User)
-            } else {
-                Ok(OriginType::Objclone)
-            }
-        }
-    }
 }
