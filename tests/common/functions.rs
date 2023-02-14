@@ -275,6 +275,7 @@ pub fn get_collection(col_id: String) -> CollectionOverview {
 
 #[derive(Default)]
 pub struct TCreateObject {
+    pub sub_path: Option<String>,
     pub creator_id: Option<String>,
     pub collection_id: String,
     pub default_endpoint_id: Option<String>,
@@ -298,11 +299,11 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     } else {
         uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
     };
+    let sub_path = &object_info.sub_path.unwrap_or_default();
 
     // Initialize Object with random values
     let object_id = uuid::Uuid::new_v4();
     let object_filename = format!("DummyFile.{}", rand_string(5));
-    let object_description = rand_string(30);
     let object_length = thread_rng().gen_range(1..1073741824);
     let upload_id = uuid::Uuid::new_v4();
     let dummy_labels = (0..object_info.num_labels)
@@ -321,13 +322,12 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let init_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: object_filename.to_string(),
-            description: object_description,
-            collection_id: collection_id.to_string(),
             content_len: object_length,
             source: None,
             dataclass: DataClass::Private as i32,
             labels: dummy_labels,
             hooks: dummy_hooks,
+            sub_path: sub_path.to_string(),
         }),
         collection_id: object_info.collection_id.to_string(),
         preferred_endpoint_id: endpoint_id.to_string(),
@@ -443,7 +443,8 @@ pub struct TCreateUpdate {
     pub original_object: Object,
     pub collection_id: String,
     pub new_name: String,
-    pub new_description: String,
+    pub new_sub_path: Option<String>,
+    pub init_hash: Option<ApiHash>,
     pub content_len: i64,
     pub num_labels: i64,
     pub num_hooks: i64,
@@ -457,7 +458,6 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
 
     // ParseTCreateUpdate
-
     let dummy_labels = (0..update.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -477,17 +477,14 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         update.new_name.to_string()
     };
 
-    let update_descr = if update.new_description.is_empty() {
-        "This is an updated object description".to_string()
-    } else {
-        update.new_description.to_string()
-    };
-
     let update_len = if update.content_len == 0 {
         rand_int(123555)
     } else {
         update.content_len
     };
+
+    let sub_path = update.new_sub_path.unwrap_or_default();
+    let api_hash = *update.init_hash.clone();
 
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
@@ -502,19 +499,19 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         collection_id: update.collection_id.to_string(),
         object: Some(StageObject {
             filename: update_name.to_string(),
-            description: update_descr,
-            collection_id: update.collection_id.to_string(),
             content_len: update_len,
             source: None,
             dataclass: 2,
             labels: dummy_labels.clone(),
             hooks: dummy_hooks.clone(),
+            sub_path,
         }),
         force: true,
         reupload: true,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
         is_specification: false,
+        hash: api_hash,
     };
 
     let update_response = db

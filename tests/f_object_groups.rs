@@ -40,6 +40,7 @@ fn create_object_group_test() {
         .map(|_| {
             create_object(
                 &(TCreateObject {
+                    sub_path: None,
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),
@@ -162,6 +163,7 @@ fn update_object_group_test() {
         .map(|_| {
             create_object(
                 &(TCreateObject {
+                    sub_path: None,
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),
@@ -340,6 +342,7 @@ fn delete_object_group_test() {
         .map(|_| {
             create_object(
                 &(TCreateObject {
+                    sub_path: None,
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),

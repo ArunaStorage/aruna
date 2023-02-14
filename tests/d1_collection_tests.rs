@@ -429,8 +429,6 @@ fn update_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -439,6 +437,7 @@ fn update_collection_test() {
                 value: "obj_1_value".to_string(),
             }],
             hooks: Vec::new(),
+            sub_path: "".to_string(),
         }),
         collection_id: col_id.to_string(),
         preferred_endpoint_id: endpoint_uuid.to_string(),
@@ -477,8 +476,6 @@ fn update_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -487,6 +484,7 @@ fn update_collection_test() {
                 value: "obj_2_value".to_string(),
             }],
             hooks: Vec::new(),
+            sub_path: "".to_string(),
         }),
         collection_id: col_id.to_string(),
         preferred_endpoint_id: endpoint_uuid.to_string(),
@@ -645,8 +643,7 @@ fn pin_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -693,8 +690,7 @@ fn pin_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -818,8 +814,7 @@ fn delete_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1_del".to_string(),
-            description: "test_obj_1_descr_del".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -868,14 +863,14 @@ fn delete_collection_test() {
         target_collection_id: result_2.collection_id,
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
     let _obj_ref = db.create_object_reference(obj_ref_req);
     // Add some objects and an objectgroup
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -1010,8 +1005,7 @@ pub fn test_collection_materialized_views_stats() {
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: collection_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 1337,
             source: None,
             dataclass: DataClass::Private as i32,

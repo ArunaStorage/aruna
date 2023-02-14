@@ -89,8 +89,7 @@ async fn create_objects_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "file.test".to_string(),
-                description: "Test file with dummy data.".to_string(),
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -152,9 +151,7 @@ async fn create_objects_grpc_test() {
             tonic::Request::new(InitializeNewObjectRequest {
                 object: Some(StageObject {
                     filename: "test.file".to_string(),
-                    description: format!("Object created with {:#?} permission.", permission)
-                        .to_string(),
-                    collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                    sub_path: "".to_string(),
                     content_len: 123456,
                     source: None,
                     dataclass: DataClass::Private as i32,
@@ -327,8 +324,7 @@ async fn get_objects_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "TestObject".to_string(),
-                description: "Test object".to_string(),
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -376,8 +372,7 @@ async fn get_objects_grpc_test() {
             collection_id: collection_id.clone(),
             object: Some(StageObject {
                 filename: "UpdatedTestObject".to_string(),
-                description: "Updated test object".to_string(),
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -389,6 +384,7 @@ async fn get_objects_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -465,8 +461,7 @@ async fn update_staging_object_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "original.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -512,8 +507,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: init_object_response.collection_id.clone(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -525,6 +519,7 @@ async fn update_staging_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -674,8 +669,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -690,6 +684,7 @@ async fn update_staging_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -740,8 +735,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                description: "New description of object".to_string(),
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -756,6 +750,7 @@ async fn update_staging_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -795,8 +790,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -811,6 +805,7 @@ async fn update_staging_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -894,6 +889,7 @@ async fn update_outdated_revision_grpc_test() {
 
     // Fast track object creation
     let rev_0_object = common::functions::create_object(&TCreateObject {
+        sub_path: None,
         creator_id: None,
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -908,8 +904,7 @@ async fn update_outdated_revision_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "file.name".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 123456,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -924,6 +919,7 @@ async fn update_outdated_revision_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -975,8 +971,7 @@ async fn update_outdated_revision_grpc_test() {
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
             filename: "file.name".to_string(),
-            description: "".to_string(),   // No use.
-            collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+            sub_path: "".to_string(),
             content_len: 123456,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -994,6 +989,7 @@ async fn update_outdated_revision_grpc_test() {
         multi_part: false,
         is_specification: false,
         force: false,
+        hash: None,
     };
     let update_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(inner_update_request.clone()),
@@ -1094,6 +1090,7 @@ async fn concurrent_update_grpc_test() {
 
     // Fast track object creation
     let rev_0_object = common::functions::create_object(&TCreateObject {
+        sub_path: None,
         creator_id: None,
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -1110,8 +1107,7 @@ async fn concurrent_update_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "file.name".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 123456,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1129,6 +1125,7 @@ async fn concurrent_update_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1145,8 +1142,7 @@ async fn concurrent_update_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "force.update".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 654321,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1164,6 +1160,7 @@ async fn concurrent_update_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: true,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1230,6 +1227,7 @@ async fn concurrent_update_grpc_test() {
         tonic::Request::new(GetLatestObjectRevisionRequest {
             collection_id: random_collection.id.to_string(),
             object_id: rev_0_object.id.to_string(),
+            with_url: false,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1239,7 +1237,7 @@ async fn concurrent_update_grpc_test() {
         .unwrap()
         .into_inner();
 
-    let latest_object = get_latest_revision_response.object.unwrap();
+    let latest_object = get_latest_revision_response.object.unwrap().object.unwrap();
 
     // Validate that latest object revision is forced concurrent update
     assert_eq!(latest_object.id, rev_2_object.id);
@@ -1307,6 +1305,7 @@ async fn object_references_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id),
         collection_id: source_collection.id.to_string(),
         default_endpoint_id: None,
@@ -1323,6 +1322,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_st_collection.id.to_string(),
             writeable: false,
             auto_update: false,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1340,6 +1340,7 @@ async fn object_references_grpc_test() {
             target_collection_id: wr_st_collection.id.to_string(),
             writeable: true,
             auto_update: false,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1357,6 +1358,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_au_collection.id.to_string(),
             writeable: false,
             auto_update: true,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1374,6 +1376,7 @@ async fn object_references_grpc_test() {
             target_collection_id: wr_au_collection.id.to_string(),
             writeable: true,
             auto_update: true,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1428,8 +1431,7 @@ async fn object_references_grpc_test() {
             collection_id: source_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "reference.update.01".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 111222,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1441,6 +1443,7 @@ async fn object_references_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1524,8 +1527,7 @@ async fn object_references_grpc_test() {
             collection_id: wr_au_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "reference.update.02".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 222111,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1537,6 +1539,7 @@ async fn object_references_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1621,6 +1624,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_st_collection.id.to_string(),
             writeable: false,
             auto_update: false,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1637,8 +1641,7 @@ async fn object_references_grpc_test() {
             collection_id: wr_st_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "outdated.reference.update".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 121212,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1650,6 +1653,7 @@ async fn object_references_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1664,8 +1668,7 @@ async fn object_references_grpc_test() {
             collection_id: ro_au_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "read-only.reference.update".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 212121,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1677,6 +1680,7 @@ async fn object_references_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1744,6 +1748,7 @@ async fn add_labels_to_object_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: source_collection.id.to_string(),
         default_endpoint_id: None,
@@ -1760,6 +1765,7 @@ async fn add_labels_to_object_grpc_test() {
             target_collection_id: read_only_collection.id.to_string(),
             writeable: false,
             auto_update: true,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1777,6 +1783,7 @@ async fn add_labels_to_object_grpc_test() {
             target_collection_id: writeable_collection.id.to_string(),
             writeable: true,
             auto_update: true,
+            sub_path: "".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1917,8 +1924,7 @@ async fn add_labels_to_object_grpc_test() {
             collection_id: source_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // Collection Id in StageObject is deprecated
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1930,6 +1936,7 @@ async fn add_labels_to_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -2058,6 +2065,7 @@ async fn clone_object_grpc_test() {
 
     // Fast track object creation
     let object_meta = TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: source_collection.id.to_string(),
         default_endpoint_id: None,
@@ -2238,10 +2246,10 @@ async fn clone_object_grpc_test() {
         original_object: rev_0_object,
         collection_id: source_collection.id.to_string(),
         new_name: "updated.object".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 1234,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     // Sleep 1 second to have differing created_at timestamps with cloned objects
@@ -2290,10 +2298,10 @@ async fn clone_object_grpc_test() {
         original_object: clone_rev_0_object,
         collection_id: target_collection.id.to_string(),
         new_name: "clone.update".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 123456,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     assert_eq!(clone_rev_1.origin.unwrap().r#type, 2); // Still OriginType::Objclone
@@ -2352,6 +2360,7 @@ async fn delete_object_grpc_test() {
 
     // Fast track random object creation
     let object_meta = TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -2410,6 +2419,7 @@ async fn delete_object_grpc_test() {
 
         // Create random object
         let object_meta = TCreateObject {
+            sub_path: None,
             creator_id: Some(user_id.clone()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: None,
@@ -2606,8 +2616,7 @@ async fn delete_object_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "stage.object".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // No use.
+                sub_path: "".to_string(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -2676,6 +2685,7 @@ async fn delete_object_grpc_test() {
 
     // Update object and delete staging object
     let random_object = common::functions::create_object(&TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -2689,8 +2699,7 @@ async fn delete_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "stage.update".to_string(),
-                description: "".to_string(),   // No use.
-                collection_id: "".to_string(), // No use.
+                sub_path: "".to_string(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -2702,6 +2711,7 @@ async fn delete_object_grpc_test() {
             multi_part: false,
             is_specification: false,
             force: false,
+            hash: None,
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -2747,10 +2757,10 @@ async fn delete_object_grpc_test() {
         original_object: random_object.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "rev1.object".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 1234,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     });
 
     assert_ne!(updated_object.id, staging_object_id);
@@ -2809,6 +2819,7 @@ async fn delete_object_revisions_grpc_test() {
 
     // Fast track random object creation
     let object_meta = TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -2822,10 +2833,10 @@ async fn delete_object_revisions_grpc_test() {
         original_object: rev_0_object.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "rev1.object".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 1234,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let rev_1_object = common::functions::update_object(&update_meta);
 
@@ -2909,10 +2920,10 @@ async fn delete_object_revisions_grpc_test() {
         original_object: random_object.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 123,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let random_object_rev_1 = common::functions::update_object(&update_meta);
 
@@ -3063,6 +3074,7 @@ async fn delete_multiple_objects_grpc_test() {
         for _ in 1..3 {
             object_ids.push(
                 common::functions::create_object(&TCreateObject {
+                    sub_path: None,
                     creator_id: Some(user_id.clone()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: None,
@@ -3184,6 +3196,7 @@ async fn delete_multiple_objects_grpc_test() {
         let mut object_ids = Vec::new();
         for _ in 1..3 {
             let mut source_object = common::functions::create_object(&TCreateObject {
+                sub_path: None,
                 creator_id: Some(user_id.clone()),
                 collection_id: random_collection.id.to_string(),
                 default_endpoint_id: None,
@@ -3197,10 +3210,10 @@ async fn delete_multiple_objects_grpc_test() {
                     original_object: source_object.clone(),
                     collection_id: random_collection.id.to_string(),
                     new_name: format!("object-update.{}", update_num).to_string(),
-                    new_description: "".to_string(), // No use.
                     content_len: rng.gen_range(1234..123456),
                     num_labels: 0,
                     num_hooks: 0,
+                    ..Default::default()
                 });
 
                 source_object = updated_object;
@@ -3297,6 +3310,7 @@ async fn delete_multiple_objects_grpc_test() {
 
     // Create single object with revisions and delete all of them in incorrect order
     let random_object = common::functions::create_object(&TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,
@@ -3308,10 +3322,10 @@ async fn delete_multiple_objects_grpc_test() {
         original_object: random_object.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
-        new_description: "".to_string(), // No use.
         content_len: 123,
         num_labels: 0,
         num_hooks: 0,
+        ..Default::default()
     };
     let random_object_rev_1 = common::functions::update_object(&update_meta);
 

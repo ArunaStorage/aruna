@@ -1133,6 +1133,7 @@ async fn delete_collection_grpc_test() {
     });
 
     let random_object = common::functions::create_object(&TCreateObject {
+        sub_path: None,
         creator_id: Some(user_id.to_string()),
         collection_id: random_collection.id.to_string(),
         default_endpoint_id: None,

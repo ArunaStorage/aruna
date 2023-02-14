@@ -68,8 +68,7 @@ fn create_object_test() {
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: collection_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 1234,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -170,7 +169,6 @@ fn update_object_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -224,6 +222,7 @@ fn update_object_with_reference_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -240,7 +239,6 @@ fn update_object_with_reference_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -306,7 +304,6 @@ fn object_revision_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -328,12 +325,13 @@ fn object_revision_test() {
     let get_latest = GetLatestObjectRevisionRequest {
         collection_id: rand_collection.id,
         object_id: object.id,
+        with_url: false,
     };
 
     let latest = db.get_latest_object_revision(get_latest).unwrap();
 
     // Test if both updates will point to the "latest"
-    assert_eq!(latest.object.unwrap().id, update_2.id);
+    assert_eq!(latest.object.unwrap().object.unwrap().id, update_2.id);
 }
 
 #[test]
@@ -373,7 +371,6 @@ fn object_revisions_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -457,6 +454,7 @@ fn update_object_get_references_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -473,7 +471,6 @@ fn update_object_get_references_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -548,6 +545,7 @@ fn delete_object_test() {
     // Create a single object
     let single_id = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -583,6 +581,7 @@ fn delete_object_test() {
     // New single object
     let single_id = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -598,8 +597,7 @@ fn delete_object_test() {
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
             filename: "Update".to_string(),
-            description: "Update".to_string(),
-            collection_id: random_collection.id.to_string(),
+            sub_path: "".to_string(),
             content_len: 0,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -611,6 +609,7 @@ fn delete_object_test() {
         is_specification: false,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
+        hash: None, //ToDo: Implement?
     };
 
     let new_id = uuid::Uuid::new_v4();
@@ -682,6 +681,7 @@ fn get_objects_test() {
         .map(|_| {
             create_object(
                 &(TCreateObject {
+                    sub_path: None,
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),
@@ -730,6 +730,7 @@ fn get_object_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -778,6 +779,7 @@ fn get_object_primary_location_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -815,6 +817,7 @@ fn get_object_primary_location_with_endpoint_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -853,6 +856,7 @@ fn get_object_locations() {
 
     let new_obj = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -898,6 +902,7 @@ fn clone_object_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -911,7 +916,6 @@ fn clone_object_test() {
         original_object: new_obj.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        new_description: "File.next.description2".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -964,6 +968,7 @@ fn delete_multiple_objects_test() {
 
     let rnd_obj_1_rev_0 = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -979,6 +984,7 @@ fn delete_multiple_objects_test() {
         target_collection_id: random_collection2.id.clone(),
         writeable: false,
         auto_update: false,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref_2).unwrap();
@@ -988,13 +994,13 @@ fn delete_multiple_objects_test() {
         original_object: rnd_obj_1_rev_0.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        new_description: "File.next.description2".to_string(),
         content_len: 123456,
         ..Default::default()
     });
 
     let rnd_obj_2_rev_0 = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -1005,6 +1011,7 @@ fn delete_multiple_objects_test() {
 
     let rnd_obj_3_rev_0 = create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
@@ -1020,6 +1027,7 @@ fn delete_multiple_objects_test() {
         target_collection_id: random_collection2.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -1110,6 +1118,7 @@ fn delete_object_from_versioned_collection_test() {
     // Create random object in collection
     create_object(
         &(TCreateObject {
+            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
