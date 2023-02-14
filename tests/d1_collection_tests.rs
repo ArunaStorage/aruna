@@ -443,6 +443,7 @@ fn update_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -490,6 +491,7 @@ fn update_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -657,6 +659,7 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -704,6 +707,7 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -828,6 +832,7 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -884,6 +889,7 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -1022,6 +1028,7 @@ pub fn test_collection_materialized_views_stats() {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let init_object_response = db

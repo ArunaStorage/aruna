@@ -85,6 +85,7 @@ fn create_object_test() {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let init_object_response = db
@@ -545,12 +546,12 @@ fn delete_object_test() {
     // Create a single object
     let single_id = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -581,12 +582,12 @@ fn delete_object_test() {
     // New single object
     let single_id = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -681,12 +682,12 @@ fn get_objects_test() {
         .map(|_| {
             create_object(
                 &(TCreateObject {
-                    sub_path: None,
                     creator_id: Some(creator.to_string()),
                     collection_id: random_collection.id.to_string(),
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0..4),
                     num_hooks: thread_rng().gen_range(0..4),
+                    ..Default::default()
                 }),
             )
             .id
@@ -730,12 +731,12 @@ fn get_object_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -779,12 +780,12 @@ fn get_object_primary_location_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -817,12 +818,12 @@ fn get_object_primary_location_with_endpoint_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -856,12 +857,12 @@ fn get_object_locations() {
 
     let new_obj = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -902,12 +903,12 @@ fn clone_object_test() {
 
     let new_obj = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
@@ -968,12 +969,12 @@ fn delete_multiple_objects_test() {
 
     let rnd_obj_1_rev_0 = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
@@ -1000,23 +1001,23 @@ fn delete_multiple_objects_test() {
 
     let rnd_obj_2_rev_0 = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
     let rnd_obj_3_rev_0 = create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
@@ -1118,12 +1119,12 @@ fn delete_object_from_versioned_collection_test() {
     // Create random object in collection
     create_object(
         &(TCreateObject {
-            sub_path: None,
             creator_id: Some(creator.to_string()),
             collection_id: random_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
