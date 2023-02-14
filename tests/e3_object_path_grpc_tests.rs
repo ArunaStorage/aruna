@@ -4,7 +4,8 @@ use crate::common::grpc_helpers::get_token_user_id;
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
-    FinishObjectStagingRequest, GetObjectByIdRequest, InitializeNewObjectRequest, StageObject,
+    CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
+    GetObjectPathsRequest, InitializeNewObjectRequest, StageObject,
 };
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
@@ -103,7 +104,7 @@ async fn create_object_with_path_grpc_test() {
             object: Some(StageObject {
                 filename: "test.file".to_string(),
                 sub_path: "/some/sub/path".to_string(),
-                content_len: 123456,
+                content_len: 3210,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
@@ -182,7 +183,159 @@ async fn create_object_with_path_grpc_test() {
 #[tokio::test]
 #[serial(db)]
 async fn create_additional_object_path_grpc_test() {
-    todo!()
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Create random object with default subpath
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        ..Default::default()
+    };
+    let random_object = common::functions::create_object(&object_meta);
+
+    // Try create duplicate empty path for object
+    let create_path_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectPathRequest {
+            collection_id: random_collection.id.to_string(),
+            object_id: random_object.id.to_string(),
+            sub_path: "".to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let create_path_response = object_service.create_object_path(create_path_request).await;
+
+    assert!(create_path_response.is_err()); // Duplicate paths are not allowed.
+
+    // Try to create additional paths with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create additional custom path for object
+        let create_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CreateObjectPathRequest {
+                collection_id: random_collection.id.to_string(),
+                object_id: random_object.id.to_string(),
+                sub_path: format!("/{permission}/").to_string(),
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let create_path_response = object_service.create_object_path(create_path_request).await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                assert!(create_path_response.is_err())
+            }
+            Permission::Modify | Permission::Admin => {
+                assert!(create_path_response.is_ok());
+
+                // Validate path creation/existence
+                let fq_path = format!(
+                    "/{}/{}/{:?}/{}",
+                    random_project.name,
+                    random_collection.name,
+                    *permission,
+                    random_object.filename
+                )
+                .to_string();
+                let response_path = create_path_response.unwrap().into_inner().path;
+
+                assert_eq!(response_path, fq_path);
+
+                // Get object and validate empty default path
+                let get_object_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectByIdRequest {
+                        collection_id: random_collection.id.to_string(),
+                        object_id: random_object.id.to_string(),
+                        with_url: false,
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+                let get_object_response = object_service
+                    .get_object_by_id(get_object_request)
+                    .await
+                    .unwrap()
+                    .into_inner();
+
+                let object_with_url = get_object_response.object.unwrap();
+
+                assert!(object_with_url.paths.contains(&fq_path))
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectPathsRequest {
+            collection_id: random_collection.id.to_string(),
+            include_inactive: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let get_paths_response = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(get_paths_response.object_paths.len(), 3) // Default, Modify/Write and Admin
 }
 
 /// The individual steps of this test function contains:
