@@ -1214,7 +1214,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_object_path(
         &self,
-        request: tonic::Request<GetObjectPathRequest>,
+        _request: tonic::Request<GetObjectPathRequest>,
     ) -> Result<tonic::Response<GetObjectPathResponse>, tonic::Status> {
         todo!()
     }
@@ -1226,7 +1226,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_object_paths(
         &self,
-        request: tonic::Request<GetObjectPathsRequest>,
+        _request: tonic::Request<GetObjectPathsRequest>,
     ) -> Result<tonic::Response<GetObjectPathsResponse>, tonic::Status> {
         todo!()
     }
@@ -1238,7 +1238,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn create_object_path(
         &self,
-        request: tonic::Request<CreateObjectPathRequest>,
+        _request: tonic::Request<CreateObjectPathRequest>,
     ) -> Result<tonic::Response<CreateObjectPathResponse>, tonic::Status> {
         todo!()
     }
@@ -1250,7 +1250,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn set_object_path_visibility(
         &self,
-        request: tonic::Request<SetObjectPathVisibilityRequest>,
+        _request: tonic::Request<SetObjectPathVisibilityRequest>,
     ) -> Result<tonic::Response<SetObjectPathVisibilityResponse>, tonic::Status> {
         todo!()
     }
@@ -1262,7 +1262,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_objects_by_path(
         &self,
-        request: tonic::Request<GetObjectsByPathRequest>,
+        _request: tonic::Request<GetObjectsByPathRequest>,
     ) -> Result<tonic::Response<GetObjectsByPathResponse>, tonic::Status> {
         todo!()
     }
