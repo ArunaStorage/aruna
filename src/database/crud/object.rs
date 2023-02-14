@@ -3,6 +3,8 @@ use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 
+use aruna_rust_api::api::storage::services::v1::ObjectWithUrl;
+use aruna_rust_api::api::storage::services::v1::Path as ProtoPath;
 use chrono::Local;
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
@@ -48,7 +50,7 @@ use crate::database::models::enums::{
     HashType, KeyValueType, ObjectStatus, ReferenceStatus, SourceType,
 };
 use crate::database::models::object::{
-    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
+    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source
 };
 use regex::Regex;
 
@@ -281,7 +283,7 @@ impl Database {
                 key_value_pairs.push(ObjectKeyValue {
                     id: uuid::Uuid::new_v4(),
                     object_id: object.id,
-                    key: "app.aruna-storage.org/path".to_string(),
+                    key: "app.aruna-storage.org/new_path".to_string(),
                     value: fq_path,
                     key_value_type: KeyValueType::LABEL,
                 });
@@ -339,10 +341,14 @@ impl Database {
 
                 // Get fq_path from label
                 let path_label = object_key_value.filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
-                 .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/path")).first::<ObjectKeyValue>(conn)?;
+                 .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path")).first::<ObjectKeyValue>(conn).optional()?;
 
-                create_path_db(&path_label.value
-                    , &returned_obj.shared_revision_id, &req_coll_uuid, conn)?;
+                if let Some(p_lbl) = path_label {
+                    create_path_db(&p_lbl.value
+                        , &returned_obj.shared_revision_id, &req_coll_uuid, conn)?;
+                    // Delete the label afterwards
+                    delete(object_key_value).filter(database::schema::object_key_value::id.eq(p_lbl.id)).execute(conn)?;       
+                };
 
                 // Update hash if (re-)upload and request contains hash
                 if !request.no_upload && request.hash.is_some() {
@@ -738,6 +744,45 @@ impl Database {
                         new_obj_id,
                     );
 
+                    // Validate labels and hooks and add path label handling
+
+                    // Validate key_values
+                    if !validate_key_values::<ObjectKeyValue>(key_value_pairs) {
+                        return Err(ArunaError::InvalidRequest(
+                            "labels or hooks are invalid".to_string(),
+                        ));
+                    };
+
+                    // Get fq_path
+                    let fq_path = construct_path_string(
+                        &collection_object.collection_id,
+                        &new_object.filename,
+                        &sobj.sub_path,
+                        conn,
+                    )?;
+
+                    // Check if path already exists
+                    let exists = paths.filter(database::schema::paths::path.eq(&fq_path)).first::<Path>(conn).optional()?;
+                    
+                    // If it already exists
+                    if let Some(existing) = exists {
+                        // Check if the existing is not associated with the current shared_revision_id -> Error
+                        // else -> do nothing
+                        if existing.shared_revision_id != new_object.shared_revision_id {
+                            return Err(ArunaError::InvalidRequest("Invalid path, already exists for different object hierarchy".to_string()))
+                        }
+                    // If path not exists -> Add label
+                    }else{
+                        key_value_pairs.push(ObjectKeyValue {
+                            id: uuid::Uuid::new_v4(),
+                            object_id: new_obj_id,
+                            key: "app.aruna-storage.org/new_path".to_string(),
+                            value: fq_path,
+                            key_value_type: KeyValueType::LABEL,
+                        });
+                    }
+
+
                     // Insert entities which are always created on update
                     diesel::insert_into(objects)
                         .values(&new_object)
@@ -845,22 +890,34 @@ impl Database {
     pub fn get_object(
         &self,
         request: &GetObjectByIdRequest,
-    ) -> Result<Option<ProtoObject>, ArunaError> {
+    ) -> Result<ObjectWithUrl, ArunaError> {
         // Check if id in request has valid format
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
         let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Read object from database
-        let object_dto = self
+        let (object_dto, obj_paths) = self
             .pg_connection
             .get()?
-            .transaction::<Option<ObjectDto>, Error, _>(|conn| {
+            .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                 // Use the helper function to execute the request
-                get_object(&object_uuid, &collection_uuid, true, conn)
+                let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
+                let proto_paths = if let Some(obj) = object {
+                    get_paths_proto(&obj.object.shared_revision_id, conn)?}
+                    else{
+                        Vec::new()
+                    };
+                Ok((object, proto_paths))
+                
             })?;
-        object_dto
+        let proto_object: Option<ProtoObject> = object_dto
             .map(|e| e.try_into())
-            .map_or(Ok(None), |r| r.map(Some))
+            .map_or(Ok(None), |r| r.map(Some))?;
+        
+        let path_strings = obj_paths.iter().map(|p| p.path).collect::<Vec<String>>();
+
+        Ok(ObjectWithUrl{ object: proto_object, url: "".to_string(), paths: path_strings })
+
     }
 
     ///ToDo: Rust Doc
@@ -2816,3 +2873,13 @@ pub fn create_path_db(
 
     Ok(())
 }
+
+
+pub fn get_paths_proto(
+    shared_rev_id: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(Vec<ProtoPath>), ArunaError> {
+    let p = paths.filter(database::schema::paths::shared_revision_id.eq(shared_rev_id)).load::<Path>(conn)?;
+    Ok(p.iter().map(|pth| ProtoPath{ path: pth.path, visibility: pth.active }).collect::<Vec<_>>())
+}
+

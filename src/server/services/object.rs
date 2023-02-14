@@ -709,11 +709,12 @@ impl ObjectService for ObjectServiceImpl {
         // Get object and its location
         let database_clone = self.database.clone();
         let request_clone = inner_request.clone();
-        let proto_object = task::spawn_blocking(move || database_clone.get_object(&request_clone))
-            .await
-            .map_err(ArunaError::from)??;
+        let mut proto_object_url =
+            task::spawn_blocking(move || database_clone.get_object(&request_clone))
+                .await
+                .map_err(ArunaError::from)??;
 
-        let proto_object = match proto_object {
+        let object_data = match proto_object_url.object {
             Some(p) => p,
             None => {
                 return Err(tonic::Status::invalid_argument("object not found"));
@@ -730,29 +731,25 @@ impl ObjectService for ObjectServiceImpl {
                 let data_proxy_request = CreatePresignedDownloadRequest {
                     location: Some(location),
                     is_public: false,
-                    filename: proto_object.filename.clone(),
+                    filename: object_data.filename.clone(),
                     range: Some(Range {
                         start: 0,
-                        end: proto_object.content_len,
+                        end: object_data.content_len,
                     }),
                 };
 
+                proto_object_url.url = data_proxy
+                    .create_presigned_download(data_proxy_request)
+                    .await?
+                    .into_inner()
+                    .url;
+
                 GetObjectByIdResponse {
-                    object: Some(ObjectWithUrl {
-                        object: Some(proto_object),
-                        url: data_proxy
-                            .create_presigned_download(data_proxy_request)
-                            .await?
-                            .into_inner()
-                            .url,
-                    }),
+                    object: Some(proto_object_url),
                 }
             }
             false => GetObjectByIdResponse {
-                object: Some(ObjectWithUrl {
-                    object: Some(proto_object),
-                    url: "".to_string(),
-                }),
+                object: Some(proto_object_url),
             },
         };
 
