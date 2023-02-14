@@ -61,7 +61,7 @@ CREATE TABLE external_user_ids (
 -- Table with projects which acts as logical space for collections
 CREATE TABLE projects (
     id UUID PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
     flag INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -105,7 +105,8 @@ CREATE TABLE collections (
     dataclass DATACLASS,
     project_id UUID NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    UNIQUE(name, project_id)
 );
 -- Table with the key-value pairs associated with specific collections
 CREATE TABLE collection_key_value (
@@ -141,7 +142,7 @@ CREATE TABLE objects (
     object_status OBJECT_STATUS NOT NULL DEFAULT 'INITIALIZING',
     dataclass DATACLASS NOT NULL DEFAULT 'PRIVATE',
     source_id UUID REFERENCES sources(id),
-    origin_id UUID,
+    origin_id UUID NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -281,6 +282,17 @@ CREATE TABLE notification_stream_groups (
     resource_id UUID NOT NULL,
     resource_type RESOURCES NOT NULL,
     notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE paths (
+    id UUID PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE, -- /project-name/collection-name/user-defined-path/lorem.txt
+    shared_revision_id UUID NOT NULL,
+    collection_id UUID NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    active BOOL NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+    UNIQUE (path)
 );
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
