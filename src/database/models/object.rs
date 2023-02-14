@@ -2,6 +2,7 @@ use super::auth::*;
 use super::enums::*;
 use super::traits::IsKeyValue;
 use super::traits::ToDbKeyValue;
+use crate::database::models::collection::Collection;
 use crate::database::schema::*;
 use uuid;
 
@@ -124,6 +125,18 @@ impl ToDbKeyValue for ObjectKeyValue {
             key_value_type: kv_type,
         }
     }
+}
+
+#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
+#[diesel(table_name = paths)]
+#[diesel(belongs_to(Collection))]
+pub struct Path {
+    pub id: uuid::Uuid,
+    pub path: String,
+    pub shared_revision_id: uuid::Uuid,
+    pub collection_id: uuid::Uuid,
+    pub created_at: chrono::NaiveDateTime,
+    pub active: bool,
 }
 
 #[cfg(test)]

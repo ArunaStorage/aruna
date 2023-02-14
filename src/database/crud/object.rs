@@ -10,6 +10,9 @@ use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
 use r2d2::PooledConnection;
 
+use crate::database::models::auth::Project;
+use crate::database::models::collection::Collection;
+use crate::database::models::object::Path;
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
@@ -47,15 +50,27 @@ use crate::database::models::enums::{
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
+use regex::Regex;
 
 use crate::database::schema::{
-    collection_object_groups::dsl::*, collection_objects::dsl::*, endpoints::dsl::*,
-    hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, sources::dsl::*,
+    collection_object_groups::dsl::*, collection_objects::dsl::*, collections::dsl::*,
+    endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
+    object_locations::dsl::*, objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*,
 };
 
 use super::objectgroups::bump_revisisions;
+use super::utils::validate_key_values;
 use super::utils::{grpc_to_db_dataclass, ParsedQuery};
+
+lazy_static! {
+    /// This unwrap should be okay if this Regex is covered and used in tests
+    /// Only two cases result in failure for Regex::new
+    /// 1. Invalid regex syntax
+    /// 2. Too large Regex
+    /// Both cases should be checked in tests and should result in safe behaviour because
+    /// the string is static.
+    static ref RE: Regex = Regex::new(r"^/?([\w~\-.]+/?[\w~\-.]*)+/?$").unwrap();
+}
 
 // Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
@@ -233,20 +248,44 @@ impl Database {
             id: uuid::Uuid::new_v4(),
             hash: "".to_string(), //Note: Empty hash will be updated later
             object_id: object.id,
-            hash_type: HashType::MD5, //Note: Default. Will be updated later
+            hash_type: HashType::SHA256, //Note: Default. Will be updated later
         };
 
         // Convert the object's labels and hooks to their database representation
-        let key_value_pairs = to_key_values::<ObjectKeyValue>(
+        let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
             staging_object.labels,
             staging_object.hooks,
             object_uuid,
         );
 
+        // Validate key_values
+        if !validate_key_values::<ObjectKeyValue>(key_value_pairs) {
+            return Err(ArunaError::InvalidRequest(
+                "labels or hooks are invalid".to_string(),
+            ));
+        };
+
+        // Create and validate path
+
         // Insert all defined objects into the database
         self.pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
+                let fq_path = construct_path_string(
+                    &collection_object.collection_id,
+                    &object.filename,
+                    &staging_object.sub_path,
+                    conn,
+                )?;
+
+                key_value_pairs.push(ObjectKeyValue {
+                    id: uuid::Uuid::new_v4(),
+                    object_id: object.id,
+                    key: "app.aruna-storage.org/path".to_string(),
+                    value: fq_path,
+                    key_value_type: KeyValueType::LABEL,
+                });
+
                 if let Some(sour) = source {
                     diesel::insert_into(sources).values(&sour).execute(conn)?;
                 }
@@ -296,6 +335,14 @@ impl Database {
                 ::update(objects.filter(database::schema::objects::id.eq(req_object_uuid)))
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     .get_result::<Object>(conn)?;
+
+
+                // Get fq_path from label
+                let path_label = object_key_value.filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
+                 .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/path")).first::<ObjectKeyValue>(conn)?;
+
+                create_path_db(&path_label.value
+                    , &returned_obj.shared_revision_id, &req_coll_uuid, conn)?;
 
                 // Update hash if (re-)upload and request contains hash
                 if !request.no_upload && request.hash.is_some() {
@@ -2702,4 +2749,70 @@ pub fn check_if_obj_in_coll(
         .unwrap_or(0);
 
     result == (object_ids.len() as i64)
+}
+
+pub fn construct_path_string(
+    collection_uuid: &uuid::Uuid,
+    fname: &str,
+    subpath: &str,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<String, ArunaError> {
+    let col = collections
+        .filter(database::schema::collections::id.eq(collection_uuid))
+        .first::<Collection>(conn)?;
+
+    let proj_name = projects
+        .filter(database::schema::projects::id.eq(col.project_id))
+        .first::<Project>(conn)?
+        .name;
+
+    let col_name = col.name;
+
+    let fq_path = if !subpath.is_empty() {
+        if !RE.is_match(subpath) {
+            return Err(ArunaError::InvalidRequest(
+            "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
+                .to_string(),
+        ));
+        }
+
+        let modified_path = if subpath.starts_with("/") {
+            if subpath.ends_with("/") {
+                subpath
+            } else {
+                &format!("{subpath}/")
+            }
+        } else {
+            if subpath.ends_with("/") {
+                &format!("/{subpath}")
+            } else {
+                &format!("/{subpath}/")
+            }
+        };
+
+        format!("/{proj_name}/{col_name}{modified_path}{fname}")
+    } else {
+        format!("/{proj_name}/{col_name}/{fname}")
+    };
+
+    Ok(fq_path)
+}
+
+pub fn create_path_db(
+    fq_path: &str,
+    shared_rev_id: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), ArunaError> {
+    let path_obj = Path {
+        id: uuid::Uuid::new_v4(),
+        path: fq_path.to_string(),
+        shared_revision_id: shared_rev_id.clone(),
+        collection_id: collection_uuid.clone(),
+        created_at: Local::now().naive_local(),
+        active: true,
+    };
+    diesel::insert_into(paths).values(path_obj).execute(conn)?;
+
+    Ok(())
 }

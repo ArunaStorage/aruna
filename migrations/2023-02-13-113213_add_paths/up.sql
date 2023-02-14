@@ -7,5 +7,10 @@ CREATE TABLE paths (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     active BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-    UNIQUE (path, shared_revision_id, collection_id)
+    UNIQUE (path)
 );
+
+-- Add unique constraint for collection name and project_id 
+ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id UNIQUE (project_id, name);
+-- Add unique constraint for project name
+ALTER TABLE projects ADD CONSTRAINT unique_project_name UNIQUE (name);

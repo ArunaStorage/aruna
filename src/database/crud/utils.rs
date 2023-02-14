@@ -135,6 +135,27 @@ where
     )
 }
 
+/// This is a generic validation function for all kinds of key_values
+///
+/// ## Arguments
+///
+/// * `key_values` - A vector containing DbKeyValues
+///
+/// ## Returns
+///
+/// * `bool` - true if validated, false if not
+/// * `Vec<KeyValue>` - A vector containing the hook key-value pairs
+///
+pub fn validate_key_values<T>(key_values: Vec<T>) -> bool
+where
+    T: IsKeyValue,
+{
+    // For now we only check if all keys do not contain the aruna substring -> this is a reserved name
+    key_values
+        .into_iter()
+        .all(|e| !e.get_key().contains("aruna"))
+}
+
 /// This helper function maps gRPC permissions to
 /// associated DB user_rights, it is mainly used in the creation of new api_tokens
 ///
