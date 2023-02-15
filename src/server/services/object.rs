@@ -1214,10 +1214,34 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_object_path(
         &self,
-        _request: tonic::Request<GetObjectPathRequest>,
+        request: tonic::Request<GetObjectPathRequest>,
     ) -> Result<tonic::Response<GetObjectPathResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetObjectPathRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid context for the object
+                UserRights::READ,       // User needs at least read permission to get a path
+            )
+            .await?;
+
+        // Get Objectpath from database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.get_object_path(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??,
+        );
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetObjectPathResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// GetObjectPaths
     ///
     /// Status: BETA
@@ -1226,10 +1250,34 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_object_paths(
         &self,
-        _request: tonic::Request<GetObjectPathsRequest>,
+        request: tonic::Request<GetObjectPathsRequest>,
     ) -> Result<tonic::Response<GetObjectPathsResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetObjectPathsRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid context for the object
+                UserRights::READ,       // User needs at least read permission to get a path
+            )
+            .await?;
+
+        // Get Objectpaths from database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.get_object_paths(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??,
+        );
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetObjectPathsResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// CreateObjectPath
     ///
     /// Status: BETA
@@ -1238,10 +1286,34 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn create_object_path(
         &self,
-        _request: tonic::Request<CreateObjectPathRequest>,
+        request: tonic::Request<CreateObjectPathRequest>,
     ) -> Result<tonic::Response<CreateObjectPathResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received CreateObjectPathRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid context for the object
+                UserRights::WRITE,      // User needs at least read permission to get a path
+            )
+            .await?;
+
+        // Create Objectpaths in database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.create_object_path(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??,
+        );
+        // Return gRPC response after everything succeeded
+        log::info!("Sending CreateObjectPathResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// SetObjectPathVisibility
     ///
     /// Status: BETA
@@ -1250,10 +1322,36 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn set_object_path_visibility(
         &self,
-        _request: tonic::Request<SetObjectPathVisibilityRequest>,
+        request: tonic::Request<SetObjectPathVisibilityRequest>,
     ) -> Result<tonic::Response<SetObjectPathVisibilityResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received SetObjectPathVisibilityRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid context for the object
+                UserRights::WRITE,      // User needs at least read permission to get a path
+            )
+            .await?;
+
+        // Create Objectpaths in database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.set_object_path_visibility(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+        // Return gRPC response after everything succeeded
+        log::info!("Sending SetObjectPathVisibilityResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// GetObjectsByPath
     ///
     /// Status: BETA
@@ -1262,9 +1360,32 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_objects_by_path(
         &self,
-        _request: tonic::Request<GetObjectsByPathRequest>,
+        request: tonic::Request<GetObjectsByPathRequest>,
     ) -> Result<tonic::Response<GetObjectsByPathResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetObjectsByPathRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let target_collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        self.authz
+            .collection_authorize(
+                request.metadata(),
+                target_collection_uuid, // This is the collection uuid context for the object
+                UserRights::READ,       // User needs at least read permission to get a path
+            )
+            .await?;
+
+        // Create Objectpaths in database
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || database_clone.get_objects_by_path(request.into_inner()))
+                .await
+                .map_err(ArunaError::from)??,
+        );
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetObjectsByPathResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 }
 

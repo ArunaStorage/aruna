@@ -3,7 +3,11 @@ use crate::common::grpc_helpers::get_token_user_id;
 
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v1::{CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest, SetObjectPathVisibilityRequest, StageObject};
+use aruna_rust_api::api::storage::services::v1::{
+    CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
+    GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest,
+    SetObjectPathVisibilityRequest, StageObject,
+};
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
 use aruna_server::server::services::authz::Authz;
