@@ -1,12 +1,12 @@
-use crate::common::functions::{TCreateCollection, TCreateObject};
+use crate::common::functions::{TCreateCollection, TCreateObject, TCreateUpdate};
 use crate::common::grpc_helpers::get_token_user_id;
 
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
     CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
-    GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest, Path,
-    SetObjectPathVisibilityRequest, StageObject,
+    GetObjectPathRequest, GetObjectPathsRequest, GetObjectsByPathRequest,
+    InitializeNewObjectRequest, Path, SetObjectPathVisibilityRequest, StageObject,
 };
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
@@ -752,12 +752,225 @@ async fn set_object_path_visibility_grpc_test() {
 }
 
 /// The individual steps of this test function contains:
-/// 1) Creating an object with the default subpath
-/// 2) Creating some additional paths for the same object
-/// 3) Get object via each path individually
+/// 1) Creating an object with the default subpath and another custom path
+/// 2) Get object via each path individually for different permissions
+/// 3) Update the object to create another revision
+/// 4) Create another custom sub path for the latest revision
+/// 5) Get object via each path individually with/without revisions
 #[ignore]
 #[tokio::test]
 #[serial(db)]
 async fn get_object_by_path_grpc_test() {
-    todo!()
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+
+    // Create random object with default subpath
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    };
+    let rev_0_object = common::functions::create_object(&object_meta);
+    let rev_0_default_path = format!("{static_path_part}/{}", rev_0_object.filename).to_string();
+
+    // Create additional custom sub path with the revision 0 object
+    let create_path_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectPathRequest {
+            collection_id: random_collection.id.to_string(),
+            object_id: rev_0_object.id.to_string(),
+            sub_path: "rev_0/custom/".to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let rev_0_custom_path = object_service
+        .create_object_path(create_path_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .path
+        .unwrap();
+
+    // Get object through the default path and the additional custom path for different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Get object through available paths
+        for object_path in vec![
+            rev_0_default_path.to_string(),
+            rev_0_custom_path.path.to_string(),
+        ]
+        .iter()
+        {
+            let get_object_by_path_request = common::grpc_helpers::add_token(
+                tonic::Request::new(GetObjectsByPathRequest {
+                    collection_id: random_collection.id.to_string(),
+                    path: object_path.to_string(),
+                    with_revisions: false, // Also only one revision exists.
+                }),
+                common::oidc::REGULARTOKEN,
+            );
+
+            let get_object_by_path_response = object_service
+                .get_objects_by_path(get_object_by_path_request)
+                .await;
+
+            match *permission {
+                Permission::None | Permission::Read | Permission::Append => {
+                    // Request should fail with insufficient permissions
+                    assert!(get_object_by_path_response.is_err());
+                }
+                Permission::Modify | Permission::Admin => {
+                    assert!(get_object_by_path_response.is_ok());
+
+                    // Extract object from response
+                    let proto_object =
+                        get_object_by_path_response.unwrap().into_inner().object[0].clone();
+
+                    assert_eq!(proto_object, rev_0_object);
+                }
+                _ => panic!("Unspecified permission is not allowed."),
+            }
+        }
+    }
+
+    // Update object and create another custom path with latest revision
+    let rev_1_object = common::functions::update_object(&TCreateUpdate {
+        original_object: rev_0_object.clone(),
+        collection_id: random_collection.id.to_string(),
+        new_name: rev_0_object.filename.to_string(), // Same filename, no custom sub path. Maybe just updated data.
+        ..Default::default()
+    });
+
+    // Create additional custom sub path with the revision 1 object
+    let create_path_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectPathRequest {
+            collection_id: random_collection.id.to_string(),
+            object_id: rev_1_object.id.to_string(),
+            sub_path: "rev_1/custom/".to_string(),
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let rev_1_custom_path = object_service
+        .create_object_path(create_path_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .path
+        .unwrap();
+
+    // Get latest object through available paths
+    for object_path in vec![
+        rev_0_default_path.to_string(),
+        rev_0_custom_path.path.to_string(),
+        rev_1_custom_path.path.to_string(),
+    ]
+    .iter()
+    {
+        let get_object_by_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectsByPathRequest {
+                collection_id: random_collection.id.to_string(),
+                path: object_path.to_string(),
+                with_revisions: false,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        // Extract object from response
+        let proto_object = object_service
+            .get_objects_by_path(get_object_by_path_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object[0]
+            .clone();
+
+        assert_eq!(proto_object, rev_1_object); // Objects should be equal.
+    }
+
+    // Get all object revisions through available paths
+    for object_path in vec![
+        rev_0_default_path.to_string(),
+        rev_0_custom_path.path.to_string(),
+        rev_1_custom_path.path.to_string(),
+    ]
+    .iter()
+    {
+        let get_object_by_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectsByPathRequest {
+                collection_id: random_collection.id.to_string(),
+                path: object_path.to_string(),
+                with_revisions: true,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        // Extract objects from response
+        let proto_objects = object_service
+            .get_objects_by_path(get_object_by_path_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object;
+
+        assert_eq!(proto_objects.len(), 2); // Only contain revision 0 and 1
+        assert!(proto_objects.contains(&rev_0_object));
+        assert!(proto_objects.contains(&rev_1_object));
+    }
 }
