@@ -332,7 +332,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
             dataclass: DataClass::Private as i32,
             labels: dummy_labels,
             hooks: dummy_hooks,
-            sub_path: sub_path.to_string(),
+            sub_path,
         }),
         collection_id: object_info.collection_id.to_string(),
         preferred_endpoint_id: endpoint_id.to_string(),

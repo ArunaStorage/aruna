@@ -797,7 +797,6 @@ impl Database {
 
                     // Check if path already exists
                     let exists = paths.filter(database::schema::paths::path.eq(&fq_path)).first::<Path>(conn).optional()?;
-                    
                     // If it already exists
                     if let Some(existing) = exists {
                         // Check if the existing is not associated with the current shared_revision_id -> Error
@@ -1736,31 +1735,33 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
-
                 // Get the object to aquire shared revision
-                let get_obj = objects.filter(database::schema::objects::id.eq(obj_id)).first::<Object>(conn)?;
+                let get_obj = objects
+                    .filter(database::schema::objects::id.eq(obj_id))
+                    .first::<Object>(conn)?;
 
                 // Get all paths
-                let obj_paths = paths.filter(database::schema::paths::collection_id.eq(col_id)).filter(database::schema::paths::shared_revision_id.eq(&get_obj.shared_revision_id)).load::<Path>(conn).optional()?;
+                let obj_paths = paths
+                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .filter(
+                        database::schema::paths::shared_revision_id.eq(&get_obj.shared_revision_id),
+                    )
+                    .load::<Path>(conn)
+                    .optional()?;
 
                 // Filter paths for active / not active, map to protopath
                 match obj_paths {
                     Some(pths) => {
-                        Ok(pths.iter().filter_map(|p| 
+                        Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive {
+                            if request.include_inactive || p.active{
                                 Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
-                            // Else only include active
                             }else{
-                                if p.active {
-                                    Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
-                                }else{
-                                    None
-                                }
+                                None
                             }
                     ).collect::<Vec<ProtoPath>>())
-                    },
-                    None => {Ok(Vec::new())}
+                    }
+                    None => Ok(Vec::new()),
                 }
             })?;
 
@@ -1782,26 +1783,24 @@ impl Database {
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
                 // Get all paths for collection
-                let obj_paths = paths.filter(database::schema::paths::collection_id.eq(col_id)).load::<Path>(conn).optional()?;
+                let obj_paths = paths
+                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .load::<Path>(conn)
+                    .optional()?;
 
                 // Filter paths fo
                 match obj_paths {
                     Some(pths) => {
-                        Ok(pths.iter().filter_map(|p| 
+                        Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive {
+                            if request.include_inactive || p.active{
                                 Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
-                            // Else only include active
                             }else{
-                                if p.active {
-                                    Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
-                                }else{
-                                    None
-                                }
+                                None
                             }
                     ).collect::<Vec<ProtoPath>>())
-                    },
-                    None => {Ok(Vec::new())}
+                    }
+                    None => Ok(Vec::new()),
                 }
             })?;
 
@@ -1937,10 +1936,9 @@ impl Database {
                 let mut results: Vec<ProtoObject> = Vec::new();
                 for t_id in target_ids {
                     let t_obj = get_object(&t_id, &col_id, false, conn)?;
-                    match t_obj {
-                        Some(ob) => results.push(ob.try_into()?),
-                        _ => {}
-                    }
+                    if let Some(ob) = t_obj {
+                        results.push(ob.try_into()?)
+                    };
                 }
                 Ok(results)
             })?;

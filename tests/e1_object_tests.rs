@@ -3,7 +3,7 @@ mod common;
 use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
+    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
@@ -290,7 +290,7 @@ fn update_object_with_reference_test() {
     let resp = db.get_objects(get_obj).unwrap().unwrap();
     let some_object = resp[0].clone();
 
-    assert_eq!(some_object.object.unwrap().id.to_string(), update_2.id);
+    assert_eq!(some_object.object.unwrap().id, update_2.id);
 }
 
 #[test]
@@ -441,14 +441,8 @@ fn object_revisions_test() {
     assert!(resp_2.len() == 3);
 
     assert!(common::functions::compare_it(
-        resp_1
-            .into_iter()
-            .map(|ele| MyObjectWithUrl(ele))
-            .collect::<Vec<_>>(),
-        resp_2
-            .into_iter()
-            .map(|ele| MyObjectWithUrl(ele))
-            .collect::<Vec<_>>()
+        resp_1.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>(),
+        resp_2.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>()
     ))
 }
 
@@ -533,7 +527,7 @@ fn update_object_get_references_test() {
     let resp = db.get_objects(get_obj).unwrap().unwrap();
     let some_object = resp[0].clone();
 
-    assert_eq!(some_object.object.unwrap().id.to_string(), update_2.id);
+    assert_eq!(some_object.object.unwrap().id, update_2.id);
 
     // Get references test
 
@@ -1112,7 +1106,7 @@ fn delete_multiple_objects_test() {
     assert_eq!(resp.len(), 1);
     for object_with_url in resp {
         let proto_object = object_with_url.object.unwrap();
-        if proto_object.id.to_string() == rnd_obj_1_rev_0.id {
+        if proto_object.id == rnd_obj_1_rev_0.id {
             assert_eq!(
                 proto_object.status,
                 db_to_grpc_object_status(ObjectStatus::AVAILABLE) as i32
