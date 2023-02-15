@@ -44,12 +44,12 @@ async fn create_object_with_path_grpc_test() {
     let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
 
     // Fast track project creation
-    let project_id = common::functions::create_project(None).id;
+    let random_project = common::functions::create_project(None);
 
     // Fast track adding user to project
     let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
     let add_perm = common::grpc_helpers::add_project_permission(
-        project_id.as_str(),
+        random_project.id.as_str(),
         user_id.as_str(),
         common::oidc::ADMINTOKEN,
     )
@@ -58,13 +58,16 @@ async fn create_object_with_path_grpc_test() {
 
     // Fast track collection creation
     let collection_meta = TCreateCollection {
-        project_id: project_id.clone(),
+        project_id: random_project.id.to_string(),
         num_labels: 0,
         num_hooks: 0,
         col_override: None,
         creator_id: Some(user_id.clone()),
     };
     let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -75,6 +78,8 @@ async fn create_object_with_path_grpc_test() {
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
+    let random_object_default_path =
+        format!("{static_path_part}/{}", random_object.filename).to_string();
 
     // Get object and validate empty default path
     let get_object_request = common::grpc_helpers::add_token(
@@ -96,7 +101,9 @@ async fn create_object_with_path_grpc_test() {
 
     assert_eq!(default_object.id, random_object.id);
     assert_eq!(default_object_with_url.paths.len(), 1); // Only empty default path
-    assert!(default_object_with_url.paths.contains(&"".to_string()));
+    assert!(default_object_with_url
+        .paths
+        .contains(&random_object_default_path));
     assert!(default_object_with_url.url.is_empty());
 
     // Create object with custom sub_path
@@ -104,7 +111,7 @@ async fn create_object_with_path_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "test.file".to_string(),
-                sub_path: "/some/sub/path".to_string(),
+                sub_path: "/some/path".to_string(),
                 content_len: 3210,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -147,8 +154,11 @@ async fn create_object_with_path_grpc_test() {
     let finish_object_response = object_service
         .finish_object_staging(finish_object_request)
         .await;
-
     assert!(finish_object_response.is_ok());
+
+    let random_object = finish_object_response.unwrap().into_inner().object.unwrap();
+    let random_object_custom_path =
+        format!("{static_path_part}/some/path/{}", random_object.filename).to_string();
 
     // Get object and validate path creation
     let get_object_request = common::grpc_helpers::add_token(
@@ -169,10 +179,10 @@ async fn create_object_with_path_grpc_test() {
     let custom_object = custom_object_with_url.object.unwrap();
 
     assert_eq!(custom_object.id, init_object_response.object_id);
-    assert_eq!(custom_object_with_url.paths.len(), 1); // Only empty default path
+    assert_eq!(custom_object_with_url.paths.len(), 1); // Only custom path
     assert!(custom_object_with_url
         .paths
-        .contains(&"/some/sub/path".to_string()));
+        .contains(&random_object_custom_path));
     assert!(custom_object_with_url.url.is_empty());
 }
 
@@ -394,6 +404,9 @@ async fn get_object_path_grpc_test() {
     };
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+
     // Create random object with default subpath
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
@@ -403,8 +416,6 @@ async fn get_object_path_grpc_test() {
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
-
-    let static_path_part = format!("/{}/{}", random_project.name, random_collection.name);
 
     let mut inner_create_path_request = CreateObjectPathRequest {
         collection_id: random_collection.id.to_string(),
@@ -571,17 +582,16 @@ async fn set_object_path_visibility_grpc_test() {
     };
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+
     // Create random object with default subpath
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
-
-    let static_path_part = format!("/{}/{}", random_project.name, random_collection.name);
 
     let mut inner_create_path_request = CreateObjectPathRequest {
         collection_id: random_collection.id.to_string(),
@@ -733,11 +743,7 @@ async fn set_object_path_visibility_grpc_test() {
     let all_paths = get_paths_response.object_paths;
     for path in vec!["path_01", "path_02", "path_03", "path_04", "path_05"].iter() {
         let mut proto_path = Path {
-            path: format!(
-                "{static_path_part}/{path}/{}",
-                random_object.filename
-            )
-            .to_string(),
+            path: format!("{static_path_part}/{path}/{}", random_object.filename).to_string(),
             visibility: true,
         };
 
