@@ -2014,6 +2014,7 @@ pub fn update_object_in_place(
 
     delete(object_key_value)
         .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
+        .filter(database::schema::object_key_value::key.not_ilike("%app.aruna-storage.org%"))
         .execute(conn)?;
     insert_into(object_key_value)
         .values(&key_value_pairs)
