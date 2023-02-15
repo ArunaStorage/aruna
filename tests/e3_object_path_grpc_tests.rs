@@ -3,13 +3,16 @@ use crate::common::grpc_helpers::get_token_user_id;
 
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v1::{CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest, SetObjectPathVisibilityRequest, StageObject};
+use aruna_rust_api::api::storage::services::v1::{
+    CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
+    GetObjectPathRequest, GetObjectPathsRequest, InitializeNewObjectRequest,
+    SetObjectPathVisibilityRequest, StageObject,
+};
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
 use aruna_server::server::services::authz::Authz;
 use aruna_server::server::services::object::ObjectServiceImpl;
 
-use aruna_server::database::crud::object::get_object;
 use serial_test::serial;
 use std::sync::Arc;
 
@@ -76,8 +79,8 @@ async fn create_object_with_path_grpc_test() {
     // Get object and validate empty default path
     let get_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(GetObjectByIdRequest {
-            collection_id: init_object_response.collection_id.clone(),
-            object_id: init_object_response.object_id.clone(),
+            collection_id: random_collection.id.to_string(),
+            object_id: random_object.id.to_string(),
             with_url: false,
         }),
         common::oidc::ADMINTOKEN,
@@ -163,7 +166,7 @@ async fn create_object_with_path_grpc_test() {
         .into_inner();
 
     let custom_object_with_url = get_object_response.object.unwrap();
-    let custom_object = default_object_with_url.object.unwrap();
+    let custom_object = custom_object_with_url.object.unwrap();
 
     assert_eq!(custom_object.id, init_object_response.object_id);
     assert_eq!(custom_object_with_url.paths.len(), 1); // Only empty default path
@@ -257,7 +260,7 @@ async fn create_additional_object_path_grpc_test() {
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
-            random_project.as_str(),
+            random_project.id.as_str(),
             user_id.as_str(),
             permission,
             common::oidc::ADMINTOKEN,
@@ -270,7 +273,7 @@ async fn create_additional_object_path_grpc_test() {
             tonic::Request::new(CreateObjectPathRequest {
                 collection_id: random_collection.id.to_string(),
                 object_id: random_object.id.to_string(),
-                sub_path: format!("/{permission}/").to_string(),
+                sub_path: format!("/{:?}/", permission).to_string(),
             }),
             common::oidc::REGULARTOKEN,
         );
@@ -293,7 +296,12 @@ async fn create_additional_object_path_grpc_test() {
                     random_object.filename
                 )
                 .to_string();
-                let response_path = create_path_response.unwrap().into_inner().path;
+                let response_path = create_path_response
+                    .unwrap()
+                    .into_inner()
+                    .path
+                    .unwrap()
+                    .path;
 
                 assert_eq!(response_path, fq_path);
 
@@ -456,12 +464,21 @@ async fn get_object_path_grpc_test() {
             .unwrap()
             .into_inner();
 
-        let fq_path = format!(
-            "{static_path_part}/{custom_path}/{}",
-            random_object.filename
-        )
-        .to_string();
-        assert_eq!(create_path_response.path, fq_path);
+        let fq_path = if valid_path.starts_with("/") {
+            if valid_path.ends_with("/") {
+                format!("{static_path_part}{valid_path}{}", random_object.filename).to_string()
+            } else {
+                format!("{static_path_part}{valid_path}/{}", random_object.filename).to_string()
+            }
+        } else {
+            if valid_path.ends_with("/") {
+                format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
+            } else {
+                format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
+            }
+        };
+
+        assert_eq!(create_path_response.path.unwrap().path, fq_path);
 
         fq_valid_paths.push(fq_path);
     }

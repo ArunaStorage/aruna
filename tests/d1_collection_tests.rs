@@ -539,8 +539,8 @@ fn update_collection_test() {
 
     let normal_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_001".to_string(),
+        description: "First collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
             value: "test_value".to_owned(),
@@ -560,8 +560,8 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_fail".to_string(),
+        description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
             value: "test_value_2".to_owned(),
@@ -587,8 +587,8 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_versioned".to_string(),
+        description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
             value: "test_value_2".to_owned(),
@@ -620,8 +620,8 @@ fn pin_collection_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_update".to_owned(),
-        description: "this_is_a_demo_collection_update".to_owned(),
+        name: "pin_collection_test_collection_001".to_owned(),
+        description: "Collection created in update_collection_test()".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
         labels: vec![KeyValue {

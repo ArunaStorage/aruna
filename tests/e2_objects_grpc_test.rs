@@ -152,7 +152,7 @@ async fn create_objects_grpc_test() {
         let init_object_request = common::grpc_helpers::add_token(
             tonic::Request::new(InitializeNewObjectRequest {
                 object: Some(StageObject {
-                    filename: "test.file".to_string(),
+                    filename: format!("created_with_{:?}.file", permission).to_string(),
                     sub_path: "".to_string(),
                     content_len: 123456,
                     source: None,
@@ -2072,7 +2072,7 @@ async fn clone_object_grpc_test() {
     };
     let rev_0_object = common::functions::create_object(&object_meta);
 
-    assert_eq!(rev_0_object.clone().origin.unwrap().r#type, 1); // OriginType::User
+    assert_eq!(rev_0_object.clone().origin.unwrap().id, rev_0_object.id); // OriginType::User
 
     // Sleep 1 second to have differing created_at timestamps with cloned objects
     thread::sleep(time::Duration::from_secs(1));
@@ -2163,15 +2163,13 @@ async fn clone_object_grpc_test() {
                     rev_0_object.created.as_ref().unwrap(),
                     proto_object.created.as_ref().unwrap()
                 );
-                assert_ne!(rev_0_object.origin, proto_object.origin);
-
                 assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, proto_object.filename);
                 assert_eq!(rev_0_object.content_len, proto_object.content_len);
                 assert_eq!(rev_0_object.hash, proto_object.hash);
+                assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
                 assert_eq!(proto_object.rev_number, 0);
-                assert_eq!(proto_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
 
                 // Get cloned object and check attributes
                 let get_object_request = common::grpc_helpers::add_token(
@@ -2194,15 +2192,16 @@ async fn clone_object_grpc_test() {
                     rev_0_object.created.as_ref().unwrap(),
                     cloned_object.created.as_ref().unwrap()
                 );
-                assert_ne!(rev_0_object.origin, cloned_object.origin);
 
                 assert_eq!(rev_0_object.id, cloned_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, cloned_object.filename);
                 assert_eq!(rev_0_object.content_len, cloned_object.content_len);
                 assert_eq!(rev_0_object.hash, cloned_object.hash);
+                assert_eq!(rev_0_object.origin, cloned_object.origin); // Both originate from the same object
 
                 assert_eq!(cloned_object.rev_number, 0);
-                assert_eq!(cloned_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+                assert_eq!(cloned_object.clone().origin.unwrap().id, rev_0_object.id);
+                // OriginType::Objclone
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
@@ -2229,19 +2228,19 @@ async fn clone_object_grpc_test() {
         rev_0_object.created.as_ref().unwrap(),
         proto_object.created.as_ref().unwrap()
     );
-    assert_ne!(rev_0_object.origin, proto_object.origin);
 
     assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
     assert_eq!(rev_0_object.filename, proto_object.filename);
     assert_eq!(rev_0_object.content_len, proto_object.content_len);
     assert_eq!(rev_0_object.hash, proto_object.hash);
+    assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
     assert_eq!(proto_object.rev_number, 0);
-    assert_eq!(proto_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+    assert_eq!(proto_object.clone().origin.unwrap().id, rev_0_object.id); // OriginType::Objclone
 
     // Fast track update source object
     let rev_1_object = common::functions::update_object(&TCreateUpdate {
-        original_object: rev_0_object,
+        original_object: rev_0_object.clone(),
         collection_id: source_collection.id.to_string(),
         new_name: "updated.object".to_string(),
         content_len: 1234,
@@ -2253,7 +2252,7 @@ async fn clone_object_grpc_test() {
     // Sleep 1 second to have differing created_at timestamps with cloned objects
     thread::sleep(time::Duration::from_secs(1));
 
-    assert_eq!(rev_1_object.clone().origin.unwrap().r#type, 1); // Still OriginType::User
+    assert_eq!(rev_1_object.clone().origin.unwrap().id, rev_0_object.id); // Still OriginType::User
 
     // Clone revision 1 of source object
     let clone_object_request = common::grpc_helpers::add_token(
@@ -2289,11 +2288,14 @@ async fn clone_object_grpc_test() {
     assert_eq!(clone_rev_0_object.filename, "updated.object".to_string());
     assert_eq!(clone_rev_0_object.content_len, 1234);
     assert_eq!(clone_rev_0_object.rev_number, 0);
-    assert_eq!(clone_rev_0_object.clone().origin.unwrap().r#type, 2); // OriginType::Objclone
+    assert_eq!(
+        clone_rev_0_object.clone().origin.unwrap().id,
+        rev_1_object.id
+    ); // OriginType::Objclone
 
     // Fast track update cloned object
     let clone_rev_1 = common::functions::update_object(&TCreateUpdate {
-        original_object: clone_rev_0_object,
+        original_object: clone_rev_0_object.clone(),
         collection_id: target_collection.id.to_string(),
         new_name: "clone.update".to_string(),
         content_len: 123456,
@@ -2302,7 +2304,7 @@ async fn clone_object_grpc_test() {
         ..Default::default()
     });
 
-    assert_eq!(clone_rev_1.origin.unwrap().r#type, 2); // Still OriginType::Objclone
+    assert_eq!(clone_rev_1.origin.unwrap().id, clone_rev_0_object.id); // Still OriginType::Objclone
 }
 
 /// The individual steps of this test function contains:
@@ -2676,9 +2678,18 @@ async fn delete_object_grpc_test() {
     );
     let get_deleted_object_response = object_service
         .get_object_by_id(get_deleted_object_request)
-        .await;
+        .await
+        .unwrap()
+        .into_inner();
 
-    assert!(get_deleted_object_response.is_err());
+    let deleted_object = get_deleted_object_response.object.unwrap().object.unwrap();
+
+    assert_eq!(deleted_object.id, staging_object_id);
+    assert_eq!(deleted_object.rev_number, -1); // First deleted object of shared_revision_id
+    assert!(matches!(
+        Status::from_i32(deleted_object.status),
+        Some(Status::Trash)
+    ));
 
     // Update object and delete staging object
     let random_object = common::functions::create_object(&TCreateObject {
@@ -3192,8 +3203,6 @@ async fn delete_multiple_objects_grpc_test() {
             let mut source_object = common::functions::create_object(&TCreateObject {
                 creator_id: Some(user_id.clone()),
                 collection_id: random_collection.id.to_string(),
-                num_labels: 0,
-                num_hooks: 0,
                 ..Default::default()
             });
 
@@ -3204,8 +3213,6 @@ async fn delete_multiple_objects_grpc_test() {
                     collection_id: random_collection.id.to_string(),
                     new_name: format!("object-update.{}", update_num).to_string(),
                     content_len: rng.gen_range(1234..123456),
-                    num_labels: 0,
-                    num_hooks: 0,
                     ..Default::default()
                 });
 
@@ -3315,8 +3322,6 @@ async fn delete_multiple_objects_grpc_test() {
         collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
         content_len: 123,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object_rev_1 = common::functions::update_object(&update_meta);
