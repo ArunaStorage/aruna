@@ -300,7 +300,11 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     } else {
         uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
     };
-    let sub_path = &object_info.sub_path.unwrap_or_default();
+    let sub_path = if let Some(whatev) = &object_info.sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
+    };
 
     // Initialize Object with random values
     let object_id = uuid::Uuid::new_v4();
@@ -334,7 +338,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
-        hash: *object_info.init_hash,
+        hash: object_info.init_hash.clone(),
     };
 
     let dummy_location = Location {
@@ -403,7 +407,7 @@ pub fn get_object(collection_id: String, object_id: String) -> Object {
     };
     let object = db.get_object(&get_request).unwrap();
 
-    object.unwrap()
+    object.object.unwrap()
 }
 
 /// GetReferences wrapper for simplified use in tests.
@@ -485,8 +489,11 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         update.content_len
     };
 
-    let sub_path = update.new_sub_path.unwrap_or_default();
-
+    let sub_path = if let Some(whatev) = &update.new_sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
+    };
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
     let updated_upload_id = uuid::Uuid::new_v4();
@@ -512,7 +519,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
         is_specification: false,
-        hash: *update.init_hash,
+        hash: update.init_hash.clone(),
     };
 
     let update_response = db
