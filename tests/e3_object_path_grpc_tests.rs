@@ -518,15 +518,303 @@ async fn get_object_path_grpc_test() {
 }
 
 /// The individual steps of this test function contains:
-/// 1) Creating an object with the default subpath
-/// 2) Creating some additional paths for the same object
-/// 3) Get all active object paths
-/// 4) Get all object paths including the inactive
+/// 1) Creating multiple objects with the default subpath and a custom subpath
+/// 2) Get active/all object paths for validation
+/// 3) Modify the visibility of some paths
+/// 4) Get active/all object paths for validation
+/// 5) Update objects and create subpaths for latest revisions
+/// 6) Get active/all object paths for validation
 #[ignore]
 #[tokio::test]
 #[serial(db)]
 async fn get_object_paths_grpc_test() {
-    todo!()
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+
+    // Vector to save all created objects/paths for easier validation
+    let mut created_objects = Vec::new();
+    let mut created_paths = Vec::new();
+
+    // Create multiple objects with a default and a custom path
+    for _ in 0..3 {
+        let random_object = common::functions::create_object(&TCreateObject {
+            collection_id: random_collection.id.to_string(),
+            creator_id: Some(user_id.clone()),
+            ..Default::default()
+        });
+
+        // Add default path to vector
+        created_paths.push(
+            format!("{static_path_part}/{}", random_object.filename).to_string(),
+        );
+
+        // Create custom path
+        let create_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CreateObjectPathRequest {
+                collection_id: random_collection.id.to_string(),
+                object_id: random_object.id.to_string(),
+                sub_path: "custom/".to_string(),
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+
+        created_paths.push(
+            object_service
+                .create_object_path(create_path_request)
+                .await
+                .unwrap()
+                .into_inner()
+                .path
+                .unwrap()
+                .path,
+        );
+
+        // Save object_id for later updates
+        created_objects.push(random_object.id);
+    }
+
+    // Reusable inner request
+    let mut inner_get_paths_request = GetObjectPathsRequest {
+        collection_id: random_collection.id.to_string(),
+        include_inactive: false,
+    };
+
+    // Get active/all paths for validation once for different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Get only active paths of collection
+        inner_get_paths_request.include_inactive = false;
+        let get_active_paths_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_get_paths_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let get_active_paths_response = object_service
+            .get_object_paths(get_active_paths_request)
+            .await;
+
+        // Get all paths of collection
+        inner_get_paths_request.include_inactive = true;
+        let get_all_paths_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_get_paths_request.clone()),
+            common::oidc::REGULARTOKEN,
+        );
+        let get_all_paths_response = object_service
+            .get_object_paths(get_all_paths_request)
+            .await;
+
+        match *permission {
+            Permission::None => {
+                // Request should fail with insufficient permissions
+                assert!(get_active_paths_response.is_err());
+                assert!(get_all_paths_response.is_err())
+            }
+            Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
+                assert!(get_active_paths_response.is_ok());
+                assert!(get_all_paths_response.is_ok());
+
+                let active_paths = get_active_paths_response.unwrap().into_inner().object_paths;
+                assert_eq!(active_paths.len(), 6); // 3 objects with default and custom path
+
+                for active_path in active_paths {
+                    assert!(created_paths.contains(&active_path.path)) // Created and received paths are equal
+                }
+
+                let all_paths = get_all_paths_response.unwrap().into_inner().object_paths;
+                assert_eq!(all_paths.len(), 6); // 3 objects with default and custom path
+
+                for path in all_paths {
+                    assert!(created_paths.contains(&path.path)) // Created and received paths are equal
+                }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Modify visibility of default paths
+    let modified_paths = created_paths
+        .clone()
+        .into_iter()
+        .filter(|path| !path.contains("custom/"))
+        .collect::<Vec<_>>();
+
+    for default_path in &modified_paths {
+        let set_visibility_request = common::grpc_helpers::add_token(
+            tonic::Request::new(SetObjectPathVisibilityRequest {
+                collection_id: random_collection.id.to_string(),
+                object_id: "".to_string(), // No use. Deprecated with 1.0.0-rc.3
+                path: default_path.to_string(),
+                visibility: false,
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+
+        let set_visibility_response = object_service
+            .set_object_path_visibility(set_visibility_request)
+            .await;
+
+        assert!(set_visibility_response.is_ok());
+    }
+
+    // Get active paths od collection for validation
+    inner_get_paths_request.include_inactive = false;
+    let get_active_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let active_paths = object_service
+        .get_object_paths(get_active_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(active_paths.len(), 3); // Only three custom paths are still active
+    for active_path in &active_paths {
+        assert!(active_path.visibility);
+        assert!(!modified_paths.contains(&active_path.path));
+    }
+
+    // Get all paths of collection for validation
+    inner_get_paths_request.include_inactive = true;
+    let get_active_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let all_paths = object_service
+        .get_object_paths(get_active_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(all_paths.len(), 6); // 3 default paths and 3 custom paths
+    for path in all_paths {
+        if modified_paths.contains(&path.path) {
+            assert!(!path.visibility);
+        } else if created_paths.contains(&path.path) {
+            assert!(path.visibility);
+        } else {
+            panic!("Path should not exist in this collection: {}", path.path);
+        }
+    }
+
+    // Update objects and create custom paths again
+    for object_id in created_objects {
+        let source_object =
+            common::functions::get_object(random_collection.id.to_string(), object_id.to_string());
+
+        let updated_object = common::functions::update_object(&TCreateUpdate {
+            original_object: source_object.clone(),
+            collection_id: random_collection.id.to_string(),
+            new_name: source_object.filename.to_string(),
+            new_sub_path: Some("revision/".to_string()),
+            ..Default::default()
+        });
+
+        // Save newly created revision sub paths
+        created_paths.push(format!("{static_path_part}/revision/{}", updated_object.filename).to_string());
+    }
+
+    // Get active paths od collection for validation
+    inner_get_paths_request.include_inactive = false;
+    let get_active_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let active_paths = object_service
+        .get_object_paths(get_active_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(active_paths.len(), 6); // 2 custom paths active per object
+    for active_path in &active_paths {
+        assert!(active_path.visibility);
+        assert!(!modified_paths.contains(&active_path.path));
+    }
+
+    // Get all paths of collection for validation
+    inner_get_paths_request.include_inactive = true;
+    let get_all_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    let all_paths = object_service
+        .get_object_paths(get_all_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(all_paths.len(), 9); // 3 default paths and 6 custom paths
+    for path in all_paths {
+        if modified_paths.contains(&path.path) {
+            assert!(!path.visibility);
+        } else if created_paths.contains(&path.path) {
+            assert!(path.visibility);
+        } else {
+            panic!("Path should not exist in this collection: {}", path.path);
+        }
+    }
 }
 
 /// The individual steps of this test function contains:
