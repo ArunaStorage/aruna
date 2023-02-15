@@ -14,6 +14,7 @@ use r2d2::PooledConnection;
 
 use crate::database::models::auth::Project;
 use crate::database::models::collection::Collection;
+use crate::database::models::collection::CollectionVersion;
 use crate::database::models::object::Path;
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
@@ -55,9 +56,9 @@ use crate::database::models::object::{
 use regex::Regex;
 
 use crate::database::schema::{
-    collection_object_groups::dsl::*, collection_objects::dsl::*, collections::dsl::*,
+    collection_object_groups::dsl::*, collection_objects::dsl::*, collections::dsl::*, collection_version::dsl::*,
     endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*,
+    object_locations::dsl::*, objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*, 
 };
 
 use super::objectgroups::bump_revisisions;
@@ -71,7 +72,7 @@ lazy_static! {
     /// 2. Too large Regex
     /// Both cases should be checked in tests and should result in safe behaviour because
     /// the string is static.
-    static ref RE: Regex = Regex::new(r"^/?([\w~\-.]+/?[\w~\-.]*)+/?$").unwrap();
+    static ref PATH_SCHEMA: Regex = Regex::new(r"^/?([\w~\-.]+/?[\w~\-.]*)+/?$").unwrap();
 }
 
 // Struct to hold a database object with all its assets
@@ -2895,6 +2896,13 @@ pub fn construct_path_string(
         .filter(database::schema::collections::id.eq(collection_uuid))
         .first::<Collection>(conn)?;
 
+    let version_name = if let Some(v_id) = col.version_id {
+        let v_db = collection_version.filter(database::schema::collection_version::id.eq(v_id)).first::<CollectionVersion>(conn)?;
+        format!("{}.{}.{}", v_db.major, v_db.minor, v_db.patch)
+    }else{
+        "latest".to_string()
+    };
+
     let proj_name = projects
         .filter(database::schema::projects::id.eq(col.project_id))
         .first::<Project>(conn)?
@@ -2903,7 +2911,7 @@ pub fn construct_path_string(
     let col_name = col.name;
 
     let fq_path = if !subpath.is_empty() {
-        if !RE.is_match(subpath) {
+        if !PATH_SCHEMA.is_match(subpath) {
             return Err(ArunaError::InvalidRequest(
             "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
                 .to_string(),
@@ -2922,9 +2930,9 @@ pub fn construct_path_string(
             format!("/{subpath}/")
         };
 
-        format!("/{proj_name}/{col_name}{modified_path}{fname}")
+        format!("/{proj_name}/{col_name}/{version_name}{modified_path}{fname}")
     } else {
-        format!("/{proj_name}/{col_name}/{fname}")
+        format!("/{proj_name}/{col_name}/{version_name}/{fname}")
     };
 
     Ok(fq_path)
