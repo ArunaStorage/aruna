@@ -13,7 +13,6 @@ use aruna_server::database;
 use aruna_server::server::services::authz::Authz;
 use aruna_server::server::services::object::ObjectServiceImpl;
 
-use aruna_server::database::crud::object::get_object;
 use serial_test::serial;
 use std::sync::Arc;
 
@@ -80,8 +79,8 @@ async fn create_object_with_path_grpc_test() {
     // Get object and validate empty default path
     let get_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(GetObjectByIdRequest {
-            collection_id: init_object_response.collection_id.clone(),
-            object_id: init_object_response.object_id.clone(),
+            collection_id: random_collection.id.to_string(),
+            object_id: random_object.id.to_string(),
             with_url: false,
         }),
         common::oidc::ADMINTOKEN,
@@ -167,7 +166,7 @@ async fn create_object_with_path_grpc_test() {
         .into_inner();
 
     let custom_object_with_url = get_object_response.object.unwrap();
-    let custom_object = default_object_with_url.object.unwrap();
+    let custom_object = custom_object_with_url.object.unwrap();
 
     assert_eq!(custom_object.id, init_object_response.object_id);
     assert_eq!(custom_object_with_url.paths.len(), 1); // Only empty default path
@@ -261,7 +260,7 @@ async fn create_additional_object_path_grpc_test() {
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
-            random_project.as_str(),
+            random_project.id.as_str(),
             user_id.as_str(),
             permission,
             common::oidc::ADMINTOKEN,
@@ -274,7 +273,7 @@ async fn create_additional_object_path_grpc_test() {
             tonic::Request::new(CreateObjectPathRequest {
                 collection_id: random_collection.id.to_string(),
                 object_id: random_object.id.to_string(),
-                sub_path: format!("/{permission}/").to_string(),
+                sub_path: format!("/{:?}/", permission).to_string(),
             }),
             common::oidc::REGULARTOKEN,
         );
@@ -297,7 +296,12 @@ async fn create_additional_object_path_grpc_test() {
                     random_object.filename
                 )
                 .to_string();
-                let response_path = create_path_response.unwrap().into_inner().path;
+                let response_path = create_path_response
+                    .unwrap()
+                    .into_inner()
+                    .path
+                    .unwrap()
+                    .path;
 
                 assert_eq!(response_path, fq_path);
 
@@ -460,12 +464,21 @@ async fn get_object_path_grpc_test() {
             .unwrap()
             .into_inner();
 
-        let fq_path = format!(
-            "{static_path_part}/{custom_path}/{}",
-            random_object.filename
-        )
-        .to_string();
-        assert_eq!(create_path_response.path, fq_path);
+        let fq_path = if valid_path.starts_with("/") {
+            if valid_path.ends_with("/") {
+                format!("{static_path_part}{valid_path}{}", random_object.filename).to_string()
+            } else {
+                format!("{static_path_part}{valid_path}/{}", random_object.filename).to_string()
+            }
+        } else {
+            if valid_path.ends_with("/") {
+                format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
+            } else {
+                format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
+            }
+        };
+
+        assert_eq!(create_path_response.path.unwrap().path, fq_path);
 
         fq_valid_paths.push(fq_path);
     }
@@ -511,11 +524,227 @@ async fn get_object_paths_grpc_test() {
 /// 1) Creating an object with the default subpath
 /// 2) Creating some additional paths for the same object
 /// 3) Modify visibility of some paths
+/// 4) Get all paths of object
+/// 5) Get all active paths of object
 #[ignore]
 #[tokio::test]
 #[serial(db)]
 async fn set_object_path_visibility_grpc_test() {
-    todo!()
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: None,
+        creator_id: Some(user_id.clone()),
+    };
+    let random_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Create random object with default subpath
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: random_collection.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        ..Default::default()
+    };
+    let random_object = common::functions::create_object(&object_meta);
+
+    let static_path_part = format!("/{}/{}", random_project.name, random_collection.name);
+
+    let mut inner_create_path_request = CreateObjectPathRequest {
+        collection_id: random_collection.id.to_string(),
+        object_id: random_object.id.to_string(),
+        sub_path: "".to_string(),
+    };
+
+    for valid_path in vec![
+        "path_01".to_string(),
+        "path_02".to_string(),
+        "path_03".to_string(),
+        "path_04".to_string(),
+        "path_05".to_string(),
+    ]
+    .iter()
+    {
+        inner_create_path_request.sub_path = valid_path.to_string();
+        let create_path_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_create_path_request.clone()),
+            common::oidc::ADMINTOKEN,
+        );
+        let create_path_response = object_service
+            .create_object_path(create_path_request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        let fq_path =
+            format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string();
+        assert_eq!(create_path_response.path.unwrap().path, fq_path);
+    }
+
+    // Set visibility of some paths to inactive
+    let mut inner_set_visibility_request = SetObjectPathVisibilityRequest {
+        collection_id: random_collection.id.to_string(),
+        object_id: random_object.id.to_string(),
+        path: "".to_string(),
+        visibility: false,
+    };
+
+    for set_visibility_path in vec![
+        "path_02".to_string(),
+        "path_03".to_string(),
+        "path_04".to_string(),
+    ]
+    .iter()
+    {
+        inner_set_visibility_request.path = set_visibility_path.to_string();
+
+        let set_visibility_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_set_visibility_request.clone()),
+            common::oidc::ADMINTOKEN,
+        );
+
+        let set_visibility_response = object_service
+            .set_object_path_visibility(set_visibility_request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        let inactive_path = set_visibility_response.path.unwrap();
+        let fq_path = format!(
+            "{static_path_part}/{set_visibility_path}/{}",
+            random_object.filename
+        );
+
+        assert_eq!(inactive_path.path, fq_path);
+        assert_eq!(inactive_path.visibility, false);
+    }
+
+    // Set visibility of one path to active again
+    let fq_path = format!("{static_path_part}/path_03/{}", random_object.filename);
+    inner_set_visibility_request.path = fq_path.to_string();
+    inner_set_visibility_request.visibility = true;
+
+    let set_visibility_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_set_visibility_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let set_visibility_response = object_service
+        .set_object_path_visibility(set_visibility_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let inactive_path = set_visibility_response.path.unwrap();
+    let fq_path = format!(
+        "{static_path_part}/{}/{}",
+        "path_03".to_string(),
+        random_object.filename
+    );
+
+    assert_eq!(inactive_path.path, fq_path);
+    assert_eq!(inactive_path.visibility, false);
+
+    // Get all active paths of object
+    let mut inner_get_paths_request = GetObjectPathsRequest {
+        collection_id: random_collection.id.to_string(),
+        include_inactive: false,
+    };
+
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_paths_response = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let active_paths = get_paths_response.object_paths;
+    assert_eq!(active_paths.len(), 3); // Contains only the three active paths
+
+    for active_path in vec![
+        "path_01".to_string(),
+        "path_03".to_string(),
+        "path_05".to_string(),
+    ]
+    .iter()
+    {
+        let proto_path = Path {
+            path: format!(
+                "{static_path_part}/{active_path}/{}",
+                random_object.filename
+            )
+            .to_string(),
+            visibility: true,
+        };
+
+        assert!(active_paths.contains(&proto_path));
+    }
+
+    // Get all paths of object and validate visibility
+    inner_get_paths_request.include_inactive = true;
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_get_paths_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let get_paths_response = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let all_paths = get_paths_response.object_paths;
+    for path in vec!["path_01", "path_02", "path_03", "path_04", "path_05"].iter() {
+        let mut proto_path = Path {
+            path: format!("{static_path_part}/{path}/{}", random_object.filename).to_string(),
+            visibility: true,
+        };
+
+        proto_path.visibility = match *path {
+            "path_01" | "path_03" | "path_05" => true,
+            "path_02" | "path_04" => false,
+            _ => panic!("Received sub path which should not exist."),
+        };
+
+        assert!(all_paths.contains(&proto_path));
+    }
 }
 
 /// The individual steps of this test function contains:
