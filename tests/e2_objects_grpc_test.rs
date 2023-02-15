@@ -3211,7 +3211,7 @@ async fn delete_multiple_objects_grpc_test() {
                 let updated_object = common::functions::update_object(&TCreateUpdate {
                     original_object: source_object.clone(),
                     collection_id: random_collection.id.to_string(),
-                    new_name: format!("object-update.{}", update_num).to_string(),
+                    new_name: format!("update.{}.{}", source_object.id, update_num).to_string(),
                     content_len: rng.gen_range(1234..123456),
                     ..Default::default()
                 });
