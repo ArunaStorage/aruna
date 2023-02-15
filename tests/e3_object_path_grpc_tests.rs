@@ -475,18 +475,16 @@ async fn get_object_path_grpc_test() {
             .unwrap()
             .into_inner();
 
-        let fq_path = if valid_path.starts_with("/") {
-            if valid_path.ends_with("/") {
+        let fq_path = if valid_path.starts_with('/') {
+            if valid_path.ends_with('/') {
                 format!("{static_path_part}{valid_path}{}", random_object.filename).to_string()
             } else {
                 format!("{static_path_part}{valid_path}/{}", random_object.filename).to_string()
             }
+        } else if valid_path.ends_with('/') {
+            format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
         } else {
-            if valid_path.ends_with("/") {
-                format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
-            } else {
-                format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
-            }
+            format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
         };
 
         assert_eq!(create_path_response.path.unwrap().path, fq_path);
@@ -659,7 +657,7 @@ async fn set_object_path_visibility_grpc_test() {
         );
 
         assert_eq!(inactive_path.path, fq_path);
-        assert_eq!(inactive_path.visibility, false);
+        assert!(!inactive_path.visibility);
     }
 
     // Set visibility of one path to active again
@@ -681,12 +679,11 @@ async fn set_object_path_visibility_grpc_test() {
     let inactive_path = set_visibility_response.path.unwrap();
     let fq_path = format!(
         "{static_path_part}/{}/{}",
-        "path_03".to_string(),
-        random_object.filename
+        "path_03", random_object.filename
     );
 
     assert_eq!(inactive_path.path, fq_path);
-    assert_eq!(inactive_path.visibility, false);
+    assert!(!inactive_path.visibility);
 
     // Get all active paths of object
     let mut inner_get_paths_request = GetObjectPathsRequest {

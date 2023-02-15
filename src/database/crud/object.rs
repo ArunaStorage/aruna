@@ -3,8 +3,6 @@ use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use aruna_rust_api::api::storage::services::v1::ObjectWithUrl;
-use aruna_rust_api::api::storage::services::v1::Path as ProtoPath;
 use chrono::Local;
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
@@ -20,8 +18,10 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
 use aruna_rust_api::api::storage::services::v1::{
-    AddLabelsToObjectRequest, AddLabelsToObjectResponse, DeleteObjectsRequest,
-    DeleteObjectsResponse, GetReferencesRequest, GetReferencesResponse, ObjectReference,
+    AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
+    CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
+    GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesRequest,
+    GetReferencesResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
     SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
 use aruna_rust_api::api::storage::{
@@ -33,9 +33,10 @@ use aruna_rust_api::api::storage::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
         CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
-        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsRequest,
-        InitializeNewObjectRequest, InitializeNewObjectResponse, UpdateObjectRequest,
-        UpdateObjectResponse,
+        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
+        GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
+        InitializeNewObjectResponse, SetObjectPathVisibilityRequest,
+        SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
 
@@ -56,9 +57,10 @@ use crate::database::models::object::{
 use regex::Regex;
 
 use crate::database::schema::{
-    collection_object_groups::dsl::*, collection_objects::dsl::*, collections::dsl::*, collection_version::dsl::*,
-    endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*, object_key_value::dsl::*,
-    object_locations::dsl::*, objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*, 
+    collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
+    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
+    projects::dsl::*, sources::dsl::*,
 };
 
 use super::objectgroups::bump_revisisions;
@@ -795,7 +797,6 @@ impl Database {
 
                     // Check if path already exists
                     let exists = paths.filter(database::schema::paths::path.eq(&fq_path)).first::<Path>(conn).optional()?;
-                    
                     // If it already exists
                     if let Some(existing) = exists {
                         // Check if the existing is not associated with the current shared_revision_id -> Error
@@ -1719,6 +1720,230 @@ impl Database {
             .map_or(Ok(None), |r| r.map(Some))?;
 
         Ok(SetHooksOfObjectResponse { object: mapped })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn get_object_path(
+        &self,
+        request: GetObjectPathRequest,
+    ) -> Result<GetObjectPathResponse, ArunaError> {
+        // Parse collection and object id
+        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let db_paths = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                // Get the object to aquire shared revision
+                let get_obj = objects
+                    .filter(database::schema::objects::id.eq(obj_id))
+                    .first::<Object>(conn)?;
+
+                // Get all paths
+                let obj_paths = paths
+                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .filter(
+                        database::schema::paths::shared_revision_id.eq(&get_obj.shared_revision_id),
+                    )
+                    .load::<Path>(conn)
+                    .optional()?;
+
+                // Filter paths for active / not active, map to protopath
+                match obj_paths {
+                    Some(pths) => {
+                        Ok(pths.iter().filter_map(|p|
+                            // If request indicated include inactive -> use all
+                            if request.include_inactive || p.active{
+                                Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
+                            }else{
+                                None
+                            }
+                    ).collect::<Vec<ProtoPath>>())
+                    }
+                    None => Ok(Vec::new()),
+                }
+            })?;
+
+        Ok(GetObjectPathResponse {
+            object_paths: db_paths,
+        })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn get_object_paths(
+        &self,
+        request: GetObjectPathsRequest,
+    ) -> Result<GetObjectPathsResponse, ArunaError> {
+        // Parse collection and object id
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let db_paths = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                // Get all paths for collection
+                let obj_paths = paths
+                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .load::<Path>(conn)
+                    .optional()?;
+
+                // Filter paths fo
+                match obj_paths {
+                    Some(pths) => {
+                        Ok(pths.iter().filter_map(|p|
+                            // If request indicated include inactive -> use all
+                            if request.include_inactive || p.active{
+                                Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
+                            }else{
+                                None
+                            }
+                    ).collect::<Vec<ProtoPath>>())
+                    }
+                    None => Ok(Vec::new()),
+                }
+            })?;
+
+        Ok(GetObjectPathsResponse {
+            object_paths: db_paths,
+        })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn create_object_path(
+        &self,
+        request: CreateObjectPathRequest,
+    ) -> Result<CreateObjectPathResponse, ArunaError> {
+        // Parse collection and object id
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
+
+        let db_path = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<ProtoPath>, Error, _>(|conn| {
+                // Get the object to aquire shared revision
+                let get_obj = objects
+                    .filter(database::schema::objects::id.eq(obj_id))
+                    .first::<Object>(conn)?;
+                // Construct path string
+                let new_path =
+                    construct_path_string(&col_id, &get_obj.filename, &request.sub_path, conn)?;
+                // Create path in database
+                create_path_db(&new_path, &get_obj.shared_revision_id, &col_id, conn)?;
+                // Query path
+                paths
+                    .filter(database::schema::paths::path.eq(&new_path))
+                    .first::<Path>(conn)
+                    .optional()
+                    .map(|res| {
+                        res.map(|elem| ProtoPath {
+                            path: elem.path.to_string(),
+                            visibility: elem.active,
+                        })
+                    })
+            })?;
+
+        Ok(CreateObjectPathResponse { path: db_path })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn set_object_path_visibility(
+        &self,
+        request: SetObjectPathVisibilityRequest,
+    ) -> Result<SetObjectPathVisibilityResponse, ArunaError> {
+        // Parse collection and object id
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let db_path = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
+                let old_path = paths
+                    .filter(database::schema::paths::path.eq(&request.path))
+                    .first::<Path>(conn)?;
+
+                if old_path.collection_id != col_id {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Path is not part of collection: {col_id}"
+                    )));
+                }
+
+                let res = update(paths)
+                    .filter(database::schema::paths::path.eq(&request.path))
+                    .set(database::schema::paths::active.eq(request.visibility))
+                    .get_result::<Path>(conn)
+                    .optional()?;
+
+                Ok(res.map(|p| ProtoPath {
+                    path: p.path.to_string(),
+                    visibility: p.active,
+                }))
+            })?;
+
+        Ok(SetObjectPathVisibilityResponse { path: db_path })
+    }
+
+    /// ToDo: Rust Doc
+    pub fn get_objects_by_path(
+        &self,
+        request: GetObjectsByPathRequest,
+    ) -> Result<GetObjectsByPathResponse, ArunaError> {
+        // Parse collection and object id
+        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
+        let db_objects = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<ProtoObject>, ArunaError, _>(|conn| {
+                let get_path = paths
+                    .filter(database::schema::paths::path.eq(&request.path))
+                    .first::<Path>(conn)?;
+
+                if get_path.collection_id != col_id {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Path is not part of collection: {col_id}"
+                    )));
+                }
+
+                let raw_objects = objects
+                    .filter(
+                        database::schema::objects::shared_revision_id
+                            .eq(get_path.shared_revision_id),
+                    )
+                    .load::<Object>(conn)
+                    .optional()?
+                    .unwrap_or_default();
+
+                let obj_ids = raw_objects
+                    .iter()
+                    .map(|e| e.id)
+                    .collect::<Vec<uuid::Uuid>>();
+
+                let refs = collection_objects
+                    .filter(database::schema::collection_objects::collection_id.eq(&col_id))
+                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_ids))
+                    .load::<CollectionObject>(conn)?;
+
+                let target_ids = if !request.with_revisions {
+                    refs.iter()
+                        .map(|c_obj| c_obj.object_id)
+                        .collect::<Vec<uuid::Uuid>>()
+                } else {
+                    obj_ids
+                };
+
+                let mut results: Vec<ProtoObject> = Vec::new();
+                for t_id in target_ids {
+                    let t_obj = get_object(&t_id, &col_id, false, conn)?;
+                    if let Some(ob) = t_obj {
+                        results.push(ob.try_into()?)
+                    };
+                }
+                Ok(results)
+            })?;
+
+        Ok(GetObjectsByPathResponse { object: db_objects })
     }
 }
 
@@ -2897,9 +3122,11 @@ pub fn construct_path_string(
         .first::<Collection>(conn)?;
 
     let version_name = if let Some(v_id) = col.version_id {
-        let v_db = collection_version.filter(database::schema::collection_version::id.eq(v_id)).first::<CollectionVersion>(conn)?;
+        let v_db = collection_version
+            .filter(database::schema::collection_version::id.eq(v_id))
+            .first::<CollectionVersion>(conn)?;
         format!("{}.{}.{}", v_db.major, v_db.minor, v_db.patch)
-    }else{
+    } else {
         "latest".to_string()
     };
 
