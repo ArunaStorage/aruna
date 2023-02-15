@@ -106,7 +106,7 @@ CREATE TABLE collections (
     project_id UUID NOT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (created_by) REFERENCES users(id),
-    UNIQUE(name, project_id)
+    UNIQUE(name, project_id, version_id)
 );
 -- Table with the key-value pairs associated with specific collections
 CREATE TABLE collection_key_value (
