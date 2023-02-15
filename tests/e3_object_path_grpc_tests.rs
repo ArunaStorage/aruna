@@ -433,10 +433,10 @@ async fn get_object_path_grpc_test() {
         "//path/".to_string(),       // Empty path parts are not allowed
         "//path//".to_string(),      // Empty path parts are not allowed
         "path//path".to_string(),    // Empty path parts are not allowed
-        "$%&/path/".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no special characters
+        "$%&/path/".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no special characters
         "custom\\path/".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no backslashes
-        "some path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no whitespace
-        "some|path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no pipe
+        "some path".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no whitespace
+        "some|path".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no pipe
     ]
     .iter()
     {
@@ -458,8 +458,7 @@ async fn get_object_path_grpc_test() {
     }
 
     // Vector to save created paths for easier validation (already includes object default path)
-    let mut fq_valid_paths =
-        vec![format!("{static_path_part}/{}", random_object.filename).to_string()];
+    let mut fq_valid_paths = vec![format!("{static_path_part}/{}", random_object.filename)];
 
     // Requests with valid paths in different formats
     for valid_path in vec![
@@ -481,9 +480,7 @@ async fn get_object_path_grpc_test() {
             tonic::Request::new(inner_create_path_request.clone()),
             common::oidc::ADMINTOKEN,
         );
-        let create_path_response = object_service
-            .create_object_path(create_path_request)
-            .await;
+        let create_path_response = object_service.create_object_path(create_path_request).await;
 
         if create_path_response.is_err() {
             // Hint in the terminal output which path failed the test.
