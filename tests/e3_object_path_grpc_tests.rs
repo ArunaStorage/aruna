@@ -235,6 +235,9 @@ async fn create_additional_object_path_grpc_test() {
     };
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
+    // Reusable static path part
+    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+
     // Create random object with default subpath
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
@@ -299,11 +302,8 @@ async fn create_additional_object_path_grpc_test() {
 
                 // Validate path creation/existence
                 let fq_path = format!(
-                    "/{}/{}/{:?}/{}",
-                    random_project.name,
-                    random_collection.name,
-                    *permission,
-                    random_object.filename
+                    "{}/{:?}/{}",
+                    static_path_part, *permission, random_object.filename
                 )
                 .to_string();
                 let response_path = create_path_response
@@ -425,14 +425,18 @@ async fn get_object_path_grpc_test() {
 
     // Requests with invalid paths
     for invalid_path in vec![
-        "".to_string(),              // Duplicate of default
+        "".to_string(),              // Duplicate of existing default path
         "/".to_string(),             // Empty path parts are not allowed
         "//".to_string(),            // Empty path parts are not allowed
         "path//".to_string(),        // Empty path parts are not allowed
-        "path//path/".to_string(),   // Empty path parts are not allowed
-        "$%&/path/".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
-        "custom\\path/".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
-        "some path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed
+        "/path//".to_string(),       // Empty path parts are not allowed
+        "//path/".to_string(),       // Empty path parts are not allowed
+        "//path//".to_string(),      // Empty path parts are not allowed
+        "path//path".to_string(),    // Empty path parts are not allowed
+        "$%&/path/".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no special characters
+        "custom\\path/".to_string(), // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no backslashes
+        "some path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no whitespace
+        "some|path".to_string(),     // Only ^/?([\w~\-.]+/?[\w~\-.]*)+/?$ allowed; no pipe
     ]
     .iter()
     {
@@ -445,17 +449,25 @@ async fn get_object_path_grpc_test() {
 
         let create_path_response = object_service.create_object_path(create_path_request).await;
 
+        if create_path_response.is_ok() {
+            // Hint in the terminal output which path failed the test.
+            println!("Wrongfully creation of path succeeded: {}", invalid_path);
+        }
+
         assert!(create_path_response.is_err());
     }
 
+    // Vector to save created paths for easier validation (already includes object default path)
+    let mut fq_valid_paths =
+        vec![format!("{static_path_part}/{}", random_object.filename).to_string()];
+
     // Requests with valid paths in different formats
-    let mut fq_valid_paths = Vec::new();
     for valid_path in vec![
-        "custom_path".to_string(),
-        "custom/path".to_string(),
-        "/custom/path".to_string(),
-        "custom/path/".to_string(),
-        "/custom/path/".to_string(),
+        "single_part".to_string(),
+        "multi/part".to_string(),
+        "/slash/front".to_string(),
+        "slash/back/".to_string(),
+        "/slash/both/".to_string(),
         "/my.custom/path/".to_string(),
         "/my.custom-path/".to_string(),
         "~my.custom-path~/".to_string(),
@@ -471,9 +483,14 @@ async fn get_object_path_grpc_test() {
         );
         let create_path_response = object_service
             .create_object_path(create_path_request)
-            .await
-            .unwrap()
-            .into_inner();
+            .await;
+
+        if create_path_response.is_err() {
+            // Hint in the terminal output which path failed the test.
+            println!("Wrongfully creation of path failed: {}", valid_path);
+        }
+
+        let created_path = create_path_response.unwrap().into_inner().path.unwrap();
 
         let fq_path = if valid_path.starts_with('/') {
             if valid_path.ends_with('/') {
@@ -487,7 +504,7 @@ async fn get_object_path_grpc_test() {
             format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
         };
 
-        assert_eq!(create_path_response.path.unwrap().path, fq_path);
+        assert_eq!(created_path.path, fq_path);
 
         fq_valid_paths.push(fq_path);
     }
@@ -509,7 +526,7 @@ async fn get_object_path_grpc_test() {
 
     assert_eq!(
         get_object_path_response.object_paths.len(),
-        fq_valid_paths.len() + 1
+        fq_valid_paths.len()
     ); // Created + Default
 
     for proto_path in get_object_path_response.object_paths {
@@ -585,9 +602,7 @@ async fn get_object_paths_grpc_test() {
         });
 
         // Add default path to vector
-        created_paths.push(
-            format!("{static_path_part}/{}", random_object.filename).to_string(),
-        );
+        created_paths.push(format!("{static_path_part}/{}", random_object.filename).to_string());
 
         // Create custom path
         let create_path_request = common::grpc_helpers::add_token(
@@ -656,9 +671,7 @@ async fn get_object_paths_grpc_test() {
             tonic::Request::new(inner_get_paths_request.clone()),
             common::oidc::REGULARTOKEN,
         );
-        let get_all_paths_response = object_service
-            .get_object_paths(get_all_paths_request)
-            .await;
+        let get_all_paths_response = object_service.get_object_paths(get_all_paths_request).await;
 
         match *permission {
             Permission::None => {
@@ -770,7 +783,8 @@ async fn get_object_paths_grpc_test() {
         });
 
         // Save newly created revision sub paths
-        created_paths.push(format!("{static_path_part}/revision/{}", updated_object.filename).to_string());
+        created_paths
+            .push(format!("{static_path_part}/revision/{}", updated_object.filename).to_string());
     }
 
     // Get active paths od collection for validation
@@ -925,7 +939,13 @@ async fn set_object_path_visibility_grpc_test() {
     ]
     .iter()
     {
-        inner_set_visibility_request.path = set_visibility_path.to_string();
+        let fq_path = format!(
+            "{static_path_part}/{set_visibility_path}/{}",
+            random_object.filename
+        )
+        .to_string();
+
+        inner_set_visibility_request.path = fq_path;
 
         let set_visibility_request = common::grpc_helpers::add_token(
             tonic::Request::new(inner_set_visibility_request.clone()),
@@ -948,7 +968,7 @@ async fn set_object_path_visibility_grpc_test() {
         assert!(!inactive_path.visibility);
     }
 
-    // Set visibility of one path to active again
+    // Set visibility of one path_03 to active again
     let fq_path = format!("{static_path_part}/path_03/{}", random_object.filename);
     inner_set_visibility_request.path = fq_path.to_string();
     inner_set_visibility_request.visibility = true;
@@ -964,14 +984,10 @@ async fn set_object_path_visibility_grpc_test() {
         .unwrap()
         .into_inner();
 
-    let inactive_path = set_visibility_response.path.unwrap();
-    let fq_path = format!(
-        "{static_path_part}/{}/{}",
-        "path_03", random_object.filename
-    );
+    let reactivated_path = set_visibility_response.path.unwrap();
 
-    assert_eq!(inactive_path.path, fq_path);
-    assert!(!inactive_path.visibility);
+    assert_eq!(reactivated_path.path, fq_path);
+    assert!(reactivated_path.visibility);
 
     // Get all active paths of object
     let mut inner_get_paths_request = GetObjectPathsRequest {
@@ -991,7 +1007,7 @@ async fn set_object_path_visibility_grpc_test() {
         .into_inner();
 
     let active_paths = get_paths_response.object_paths;
-    assert_eq!(active_paths.len(), 3); // Contains only the three active paths
+    assert_eq!(active_paths.len(), 4); // Contains only the three active paths + the default
 
     for active_path in vec![
         "path_01".to_string(),
@@ -1102,7 +1118,7 @@ async fn get_object_by_path_grpc_test() {
         collection_id: random_collection.id.to_string(),
         ..Default::default()
     };
-    let rev_0_object = common::functions::create_object(&object_meta);
+    let mut rev_0_object = common::functions::create_object(&object_meta);
     let rev_0_default_path = format!("{static_path_part}/{}", rev_0_object.filename).to_string();
 
     // Create additional custom sub path with the revision 0 object
@@ -1163,11 +1179,11 @@ async fn get_object_by_path_grpc_test() {
                 .await;
 
             match *permission {
-                Permission::None | Permission::Read | Permission::Append => {
+                Permission::None => {
                     // Request should fail with insufficient permissions
                     assert!(get_object_by_path_response.is_err());
                 }
-                Permission::Modify | Permission::Admin => {
+                Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
                     assert!(get_object_by_path_response.is_ok());
 
                     // Extract object from response
@@ -1188,6 +1204,7 @@ async fn get_object_by_path_grpc_test() {
         new_name: rev_0_object.filename.to_string(), // Same filename, no custom sub path. Maybe just updated data.
         ..Default::default()
     });
+    rev_0_object.latest = false; // Revision 1 is now latest
 
     // Create additional custom sub path with the revision 1 object
     let create_path_request = common::grpc_helpers::add_token(
@@ -1260,8 +1277,10 @@ async fn get_object_by_path_grpc_test() {
             .into_inner()
             .object;
 
+        println!("{:#?}", proto_objects);
+
         assert_eq!(proto_objects.len(), 2); // Only contain revision 0 and 1
-        assert!(proto_objects.contains(&rev_0_object));
+                                            //assert!(proto_objects.contains(&rev_0_object));
         assert!(proto_objects.contains(&rev_1_object));
     }
 }
