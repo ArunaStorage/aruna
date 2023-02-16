@@ -366,18 +366,21 @@ impl Database {
                     // Updates must increase the semver
                     // Updates for "historic" versions are not allowed
                     if let Some(v) = &old_overview.coll_version {
-                        if Version::from(v.clone()) >= request.version.clone().unwrap() {
+                        if Version::from(v.clone()) >= request.version.clone().unwrap_or_default() {
                             return Err(ArunaError::InvalidRequest(
                                 "New version must be greater than old one".to_string(),
                             ));
                         }
                     }
+
                     // Create new "Version" database struct
                     let new_version = request
                         .version
                         .clone()
                         .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
-                        .unwrap();
+                        .ok_or(ArunaError::InvalidRequest(
+                            "Unable to create collection version".to_string(),
+                        ))?;
 
                     // Create new Uuid for collection
                     let new_coll_uuid = uuid::Uuid::new_v4();
@@ -916,7 +919,7 @@ fn transform_collection_overviewdb(
 fn pin_collection_to_version(
     origin_collection: uuid::Uuid,
     creator_user: uuid::Uuid,
-    new_collection_overview: CollectionOverviewDb,
+    collection_overview: CollectionOverviewDb,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<CollectionOverview, ArunaError> {
     // Imports for all collection related tables
@@ -931,6 +934,9 @@ fn pin_collection_to_version(
     use crate::database::schema::objects::dsl as obj;
     use crate::database::schema::required_labels::dsl as rlbl;
     use diesel::prelude::*;
+
+    let mut new_collection_overview = collection_overview.clone();
+
     // Query the original objects from the origin collection
     let original_objects: Vec<Object> = clobj::collection_objects
         .filter(clobj::collection_id.eq(origin_collection))
@@ -964,9 +970,21 @@ fn pin_collection_to_version(
     // Inserts for collection
     // First new version
     if let Some(vers) = &new_collection_overview.coll_version {
-        insert_into(clversion::collection_version)
-            .values(vers)
-            .execute(conn)?;
+        let existing_version: Option<CollectionVersion> = clversion::collection_version
+            .filter(clversion::major.eq(vers.major))
+            .filter(clversion::minor.eq(vers.minor))
+            .filter(clversion::patch.eq(vers.patch))
+            .first::<CollectionVersion>(conn)
+            .optional()?;
+
+        if let Some(ex_ver) = existing_version.clone() {
+            new_collection_overview.coll.version_id = Some(ex_ver.id);
+            new_collection_overview.coll_version = existing_version;
+        } else {
+            insert_into(clversion::collection_version)
+                .values(vers)
+                .execute(conn)?;
+        }
     }
     // Then collection -> depends on version
     insert_into(col::collections)
