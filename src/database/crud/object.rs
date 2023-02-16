@@ -1293,6 +1293,11 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
+                // Return error if target collection already has a version
+                if is_collection_versioned(conn, &target_collection_uuid) {
+                    Err(ArunaError::InvalidRequest("Adding objects to collection with version is forbidden.".to_string()))
+                }
+
                 // Get collection_object association of original object
                 let original_reference: CollectionObject = collection_objects
                     .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
