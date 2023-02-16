@@ -74,7 +74,7 @@ lazy_static! {
     /// 2. Too large Regex
     /// Both cases should be checked in tests and should result in safe behaviour because
     /// the string is static.
-    static ref PATH_SCHEMA: Regex = Regex::new(r"^/?([\w~\-.]+/?[\w~\-.]*)+/?$").unwrap();
+    static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+/?)*$").unwrap();
 }
 
 // Struct to hold a database object with all its assets
@@ -1295,7 +1295,9 @@ impl Database {
             .transaction::<_, Error, _>(|conn| {
                 // Return error if target collection already has a version
                 if is_collection_versioned(conn, &target_collection_uuid) {
-                    Err(ArunaError::InvalidRequest("Adding objects to collection with version is forbidden.".to_string()))
+                    Err(ArunaError::InvalidRequest(
+                        "Adding objects to collection with version is forbidden.".to_string(),
+                    ))
                 }
 
                 // Get collection_object association of original object
@@ -1973,7 +1975,7 @@ pub fn update_object_in_place(
     object_uuid: &uuid::Uuid,
     user_uuid: &uuid::Uuid,
     stage_object: &StageObject,
-) -> Result<Object, Error> {
+) -> Result<Object, ArunaError> {
     // Get mutable object record from database
     let mut old_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -2016,6 +2018,13 @@ pub fn update_object_in_place(
         stage_object.hooks.clone(),
         *object_uuid,
     );
+
+    // Validate key_values
+    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
+        return Err(ArunaError::InvalidRequest(
+            "labels or hooks are invalid".to_string(),
+        ));
+    };
 
     delete(object_key_value)
         .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
