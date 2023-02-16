@@ -867,7 +867,7 @@ async fn pin_collection_grpc_test() {
 
     let mut versioned_collection_option: Option<CollectionOverview> = None;
     // Pin collection with varying permissions
-    for permission in vec![
+    for (index, permission) in vec![
         Permission::None,
         Permission::Read,
         Permission::Append,
@@ -875,6 +875,7 @@ async fn pin_collection_grpc_test() {
         Permission::Admin,
     ]
     .iter()
+    .enumerate()
     {
         // Fast track permission edit
         let edit_perm = common::grpc_helpers::edit_project_permission(
@@ -891,7 +892,7 @@ async fn pin_collection_grpc_test() {
             tonic::Request::new(PinCollectionVersionRequest {
                 collection_id: random_collection.id.to_string(),
                 version: Some(Version {
-                    major: 3,
+                    major: index as i32,
                     minor: 2,
                     patch: 1,
                 }),
@@ -908,8 +909,6 @@ async fn pin_collection_grpc_test() {
                 assert!(pin_collection_response.is_err());
             }
             Permission::Modify | Permission::Admin => {
-                assert!(pin_collection_response.is_ok());
-
                 // Validate collection information returned from pin
                 let collection = pin_collection_response
                     .unwrap()
@@ -989,8 +988,8 @@ async fn pin_collection_grpc_test() {
                 collection_id: versioned_collection.id.to_string(),
                 version: Some(Version {
                     major: 4,
-                    minor: 0,
-                    patch: 0,
+                    minor: 5,
+                    patch: 7,
                 }),
             }),
             common::oidc::REGULARTOKEN, // At this point has project ADMIN permissions
@@ -998,8 +997,6 @@ async fn pin_collection_grpc_test() {
         let pin_collection_response = collection_service
             .pin_collection_version(pin_collection_grpc_request)
             .await;
-
-        assert!(pin_collection_response.is_ok());
 
         let ultra_versioned_collection = pin_collection_response
             .unwrap()
