@@ -74,7 +74,7 @@ lazy_static! {
     /// 2. Too large Regex
     /// Both cases should be checked in tests and should result in safe behaviour because
     /// the string is static.
-    static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+/?)*$").unwrap();
+    static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)*/?$").unwrap();
 }
 
 // Struct to hold a database object with all its assets

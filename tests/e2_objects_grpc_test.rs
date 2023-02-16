@@ -630,10 +630,21 @@ async fn update_staging_object_grpc_test() {
     assert_eq!(rev_0_staging_object.hash, rev_0_staging_object_updated.hash);
 
     // Labels/Hooks should be the same as they were not updated
-    assert_eq!(
-        rev_0_staging_object.labels,
-        rev_0_staging_object_updated.labels
-    );
+    // except internal ...
+
+    'outer: for old_label in rev_0_staging_object.labels {
+        for new_label in rev_0_staging_object_updated.labels.clone() {
+            if old_label == new_label {
+                continue 'outer;
+            } else if old_label.key == "app.aruna-storage.org/new_path".to_string()
+                && new_label.key == "app.aruna-storage.org/new_path".to_string()
+            {
+                continue 'outer;
+            }
+        }
+        panic!("No corresponding label found for old: {:#?}", old_label)
+    }
+
     assert_eq!(
         rev_0_staging_object.hooks,
         rev_0_staging_object_updated.hooks
