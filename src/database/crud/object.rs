@@ -1292,12 +1292,12 @@ impl Database {
         // Transaction time
         self.pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<_, ArunaError, _>(|conn| {
                 // Return error if target collection already has a version
-                if is_collection_versioned(conn, &target_collection_uuid) {
-                    Err(ArunaError::InvalidRequest(
+                if is_collection_versioned(conn, &target_collection_uuid)? {
+                    return Err(ArunaError::InvalidRequest(
                         "Adding objects to collection with version is forbidden.".to_string(),
-                    ))
+                    ));
                 }
 
                 // Get collection_object association of original object
