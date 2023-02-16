@@ -153,7 +153,7 @@ where
     // For now we only check if all keys do not contain the aruna substring -> this is a reserved name
     key_values
         .into_iter()
-        .all(|e| !e.get_key().contains("aruna"))
+        .all(|e| !e.get_key().to_lowercase().contains("aruna"))
 }
 
 /// This helper function maps gRPC permissions to

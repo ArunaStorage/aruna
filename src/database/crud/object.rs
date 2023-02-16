@@ -714,7 +714,7 @@ impl Database {
 
                     if let Some(reference) = reference_opt {
                         if reference.reference_status == ReferenceStatus::STAGING {
-                            return Ok(update_object_in_place(conn, &parsed_old_id, creator_uuid, sobj)?);
+                            return Ok(update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj)?);
                         }
 
                         if !reference.writeable {
@@ -1974,6 +1974,7 @@ pub fn update_object_in_place(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     object_uuid: &uuid::Uuid,
     user_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
     stage_object: &StageObject,
 ) -> Result<Object, ArunaError> {
     // Get mutable object record from database
@@ -2013,7 +2014,7 @@ pub fn update_object_in_place(
     } // else, do nothing.
 
     // Replace labels/hooks
-    let key_value_pairs = to_key_values::<ObjectKeyValue>(
+    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
         stage_object.labels.clone(),
         stage_object.hooks.clone(),
         *object_uuid,
@@ -2026,9 +2027,42 @@ pub fn update_object_in_place(
         ));
     };
 
+    // Add internal labels to key_value_pairs
+    // Get fq_path
+    let fq_path = construct_path_string(
+        &collection_uuid,
+        &stage_object.filename,
+        &stage_object.sub_path,
+        conn,
+    )?;
+
+    // Check if path already exists
+    let exists = paths
+        .filter(database::schema::paths::path.eq(&fq_path))
+        .first::<Path>(conn)
+        .optional()?;
+    // If it already exists
+    if let Some(existing) = exists {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        if existing.shared_revision_id != old_object.shared_revision_id {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path, already exists for different object hierarchy".to_string(),
+            ));
+        }
+    // If path not exists -> Add label
+    } else {
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: object_uuid.clone(),
+            key: "app.aruna-storage.org/new_path".to_string(),
+            value: fq_path,
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
+
     delete(object_key_value)
         .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
-        .filter(database::schema::object_key_value::key.not_ilike("%app.aruna-storage.org%"))
         .execute(conn)?;
     insert_into(object_key_value)
         .values(&key_value_pairs)
