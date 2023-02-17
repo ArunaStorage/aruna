@@ -3168,8 +3168,6 @@ async fn delete_multiple_objects_grpc_test() {
     let random_object = common::functions::create_object(&TCreateObject {
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     });
 
@@ -3192,7 +3190,7 @@ async fn delete_multiple_objects_grpc_test() {
 
     let object_ids = vec![
         random_object_rev_1.id,
-        random_object_rev_3.id,
+        random_object_rev_3.id.clone(),
         random_object.id,
         random_object_rev_2.id,
     ];
@@ -3222,7 +3220,23 @@ async fn delete_multiple_objects_grpc_test() {
         .delete_objects(delete_multiple_objects_request)
         .await;
 
-    assert!(delete_multiple_objects_response.is_ok());
+    assert!(delete_multiple_objects_response.is_err());
+
+    let object_ids = vec![random_object_rev_3.id.clone()];
+    inner_delete_request = DeleteObjectsRequest {
+        object_ids: object_ids.clone(),
+        collection_id: random_collection.id.to_string(),
+        with_revisions: false,
+        force: false,
+    };
+    let delete_multiple_objects_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_delete_request.clone()),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_multiple_objects_response = object_service
+        .delete_objects(delete_multiple_objects_request)
+        .await;
+    delete_multiple_objects_response.unwrap();
 
     // Validate deletion:
     //   - Get all references of object and check that there are none left
