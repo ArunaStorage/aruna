@@ -27,7 +27,9 @@ use aruna_server::{
 };
 use serial_test::serial;
 
-use crate::common::functions::{TCreateCollection, TCreateObject, TCreateUpdate};
+use crate::common::functions::{
+    get_object_status_raw, TCreateCollection, TCreateObject, TCreateUpdate,
+};
 use crate::common::grpc_helpers::get_token_user_id;
 
 mod common;
@@ -2438,7 +2440,7 @@ async fn delete_object_grpc_test() {
         let random_object = common::functions::create_object(&object_meta);
 
         // Try to normally delete object without force
-        let mut inner_delete_object_request = DeleteObjectRequest {
+        let inner_delete_object_request = DeleteObjectRequest {
             object_id: random_object.id.to_string(),
             collection_id: random_collection.id.to_string(),
             with_revisions: false,
@@ -2452,13 +2454,13 @@ async fn delete_object_grpc_test() {
         let delete_object_response = object_service.delete_object(delete_object_request).await;
 
         match *permission {
-            Permission::None
-            | Permission::Read
-            | Permission::Append
-            | Permission::Modify
-            | Permission::Admin => {
+            Permission::None | Permission::Read => {
                 // Request should fail with insufficient permissions and/or not using force to delete last undeleted revision
                 assert!(delete_object_response.is_err());
+            }
+            Permission::Append | Permission::Modify | Permission::Admin => {
+                // Request should fail with insufficient permissions and/or not using force to delete last undeleted revision
+                assert!(delete_object_response.is_ok());
 
                 // Validate that object still exists
                 let get_object_request = common::grpc_helpers::add_token(
@@ -2484,7 +2486,7 @@ async fn delete_object_grpc_test() {
                 assert_eq!(proto_object.id, random_object.id);
                 assert_eq!(
                     Status::from_i32(proto_object.status).unwrap(),
-                    Status::Available
+                    Status::Trash
                 );
 
                 let all_references_request = common::grpc_helpers::add_token(
@@ -2495,7 +2497,7 @@ async fn delete_object_grpc_test() {
                     }),
                     common::oidc::ADMINTOKEN,
                 );
-                assert_ne!(
+                assert_eq!(
                     object_service
                         .get_references(all_references_request)
                         .await
@@ -2507,114 +2509,6 @@ async fn delete_object_grpc_test() {
                         .count(),
                     0
                 ); // At least one writeable reference exist. Could also be less than 0 but that is very improbable...
-            }
-            _ => panic!("Unspecified permission is not allowed."),
-        }
-
-        // Delete with force and match permissions
-        inner_delete_object_request.force = true;
-
-        let force_delete_object_request = common::grpc_helpers::add_token(
-            tonic::Request::new(inner_delete_object_request.clone()),
-            common::oidc::REGULARTOKEN,
-        );
-        let force_delete_object_response = object_service
-            .delete_object(force_delete_object_request)
-            .await;
-
-        match *permission {
-            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
-                // Request should fail with insufficient permissions
-                assert!(force_delete_object_response.is_err());
-
-                // Validate that object still exists
-                let get_object_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetObjectByIdRequest {
-                        collection_id: random_collection.id.to_string(),
-                        object_id: random_object.id.to_string(),
-                        with_url: false,
-                    }),
-                    common::oidc::ADMINTOKEN,
-                );
-                let get_object_response = object_service.get_object_by_id(get_object_request).await;
-
-                assert!(get_object_response.is_ok());
-
-                let proto_object = get_object_response
-                    .unwrap()
-                    .into_inner()
-                    .object
-                    .unwrap()
-                    .object
-                    .unwrap();
-
-                assert_eq!(proto_object.id, random_object.id);
-                assert_eq!(
-                    Status::from_i32(proto_object.status).unwrap(),
-                    Status::Available
-                );
-
-                let all_references_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetReferencesRequest {
-                        collection_id: random_collection.id.to_string(),
-                        object_id: random_object.id.to_string(),
-                        with_revisions: true,
-                    }),
-                    common::oidc::ADMINTOKEN,
-                );
-                let all_references = object_service
-                    .get_references(all_references_request)
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .references;
-
-                assert_ne!(all_references.len(), 0); // At least one reference
-            }
-            Permission::Admin => {
-                assert!(force_delete_object_response.is_ok());
-
-                // Validate object got deleted
-                let get_object_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetObjectByIdRequest {
-                        collection_id: random_collection.id.to_string(),
-                        object_id: random_object.id.to_string(),
-                        with_url: false,
-                    }),
-                    common::oidc::ADMINTOKEN,
-                );
-                let get_object_response = object_service.get_object_by_id(get_object_request).await;
-
-                assert!(get_object_response.is_ok()); // Objects are not removed directly.
-
-                let proto_object = get_object_response
-                    .unwrap()
-                    .into_inner()
-                    .object
-                    .unwrap()
-                    .object
-                    .unwrap();
-
-                let all_references_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetReferencesRequest {
-                        collection_id: random_collection.id.to_string(),
-                        object_id: random_object.id.to_string(),
-                        with_revisions: true,
-                    }),
-                    common::oidc::ADMINTOKEN,
-                );
-                let all_references = object_service
-                    .get_references(all_references_request)
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .references;
-
-                assert_eq!(all_references.len(), 0);
-                assert_eq!(
-                    Status::from_i32(proto_object.status).unwrap(),
-                    Status::Trash
-                );
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
@@ -2895,40 +2789,15 @@ async fn delete_object_revisions_grpc_test() {
         rev_2_object.id.to_string(),
         true,
     );
-    assert_eq!(object_references.len(), 1); // Still the auto_update reference exists
-    assert_eq!(
-        object_references.first().unwrap().object_id,
-        rev_1_object.id
-    ); // Object reference now points to revision 1 as latest
+    assert_eq!(object_references.len(), 0); // No references should exist
 
-    inner_delete_request.object_id = rev_0_object.id.to_string();
-    let delete_rev_0_request = common::grpc_helpers::add_token(
-        tonic::Request::new(inner_delete_request.clone()),
-        common::oidc::ADMINTOKEN,
-    );
-    let delete_rev_0_response = object_service.delete_object(delete_rev_0_request).await;
-
-    assert!(delete_rev_0_response.is_ok());
-
-    inner_delete_request.object_id = rev_1_object.id.to_string();
-    inner_delete_request.force = true;
-    let delete_rev_1_request = common::grpc_helpers::add_token(
-        tonic::Request::new(inner_delete_request.clone()),
-        common::oidc::ADMINTOKEN,
-    );
-    let delete_rev_1_response = object_service.delete_object(delete_rev_1_request).await;
-
-    assert!(delete_rev_1_response.is_ok());
-
-    let rev_1_deleted = common::functions::get_object(
-        random_collection.id.to_string(),
-        rev_1_object.id.to_string(),
-    );
-    assert_eq!(rev_1_deleted.id, rev_1_object.id);
-    assert_eq!(
-        Status::from_i32(rev_1_deleted.status).unwrap(),
-        Status::Trash
-    ); // Validate deletion
+    // Check status of all 3 objects
+    let mut raw_db_object = get_object_status_raw(&rev_0_object.id);
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+    raw_db_object = get_object_status_raw(&rev_1_object.id);
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+    raw_db_object = get_object_status_raw(&rev_2_object.id);
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
 
     // Create object with multiple revisions and delete them in one request
     let random_object = common::functions::create_object(&object_meta);
@@ -3102,7 +2971,7 @@ async fn delete_multiple_objects_grpc_test() {
         }
 
         // Try delete objects without force
-        let mut inner_delete_request = DeleteObjectsRequest {
+        let inner_delete_request = DeleteObjectsRequest {
             object_ids: object_ids.clone(),
             collection_id: random_collection.id.to_string(),
             with_revisions: false,
@@ -3116,25 +2985,13 @@ async fn delete_multiple_objects_grpc_test() {
             .delete_objects(delete_multiple_objects_request)
             .await;
 
-        // Try delete objects with force
-        inner_delete_request.force = true;
-        let force_delete_multiple_objects_request = common::grpc_helpers::add_token(
-            tonic::Request::new(inner_delete_request.clone()),
-            common::oidc::REGULARTOKEN,
-        );
-        let force_delete_multiple_objects_response = object_service
-            .delete_objects(force_delete_multiple_objects_request)
-            .await;
-
         match *permission {
-            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
+            Permission::None | Permission::Read => {
                 // Request should fail with insufficient permissions
                 assert!(delete_multiple_objects_response.is_err());
-                assert!(force_delete_multiple_objects_response.is_err());
             }
-            Permission::Admin => {
-                assert!(delete_multiple_objects_response.is_err());
-                assert!(force_delete_multiple_objects_response.is_ok());
+            Permission::Append | Permission::Modify | Permission::Admin => {
+                assert!(delete_multiple_objects_response.is_ok());
 
                 // Validate deletion:
                 //   - Get all references of object and check that there are none left
@@ -3234,7 +3091,7 @@ async fn delete_multiple_objects_grpc_test() {
         }
 
         // Try delete objects without force
-        let mut inner_delete_request = DeleteObjectsRequest {
+        let inner_delete_request = DeleteObjectsRequest {
             object_ids: object_ids.clone(),
             collection_id: random_collection.id.to_string(),
             with_revisions: true,
@@ -3248,25 +3105,13 @@ async fn delete_multiple_objects_grpc_test() {
             .delete_objects(delete_multiple_objects_request)
             .await;
 
-        // Try delete objects with force
-        inner_delete_request.force = true;
-        let force_delete_multiple_objects_request = common::grpc_helpers::add_token(
-            tonic::Request::new(inner_delete_request.clone()),
-            common::oidc::REGULARTOKEN,
-        );
-        let force_delete_multiple_objects_response = object_service
-            .delete_objects(force_delete_multiple_objects_request)
-            .await;
-
         match *permission {
-            Permission::None | Permission::Read | Permission::Append | Permission::Modify => {
+            Permission::None | Permission::Read => {
                 // Request should fail with insufficient permissions
                 assert!(delete_multiple_objects_response.is_err());
-                assert!(force_delete_multiple_objects_response.is_err());
             }
-            Permission::Admin => {
-                assert!(delete_multiple_objects_response.is_err());
-                assert!(force_delete_multiple_objects_response.is_ok());
+            Permission::Admin | Permission::Append | Permission::Modify => {
+                assert!(delete_multiple_objects_response.is_ok());
 
                 // Validate deletion:
                 //   - Get all references of object and check that there are none left

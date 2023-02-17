@@ -586,8 +586,8 @@ fn delete_object_test() {
     )
     .id;
 
-    // Simple delete single revision object without revision or force --> Error as last revision has to be deleted with force
-    let mut delreq = DeleteObjectRequest {
+    // Simple delete single revision object without revision or force
+    let delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.clone().id,
         with_revisions: false,
@@ -595,11 +595,7 @@ fn delete_object_test() {
     };
 
     let resp = db.delete_object(delreq.clone(), creator);
-    assert!(resp.is_err());
 
-    // Simple delete without revision or force --> Error as last revision has to be deleted with force
-    delreq.force = true;
-    let resp = db.delete_object(delreq, creator);
     assert!(resp.is_ok());
 
     let raw_db_object = get_object_status_raw(&single_id);
@@ -665,25 +661,31 @@ fn delete_object_test() {
         .unwrap();
 
     // Simple delete with revisions / with force
-    let delreq = DeleteObjectRequest {
+    let mut delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.id,
         with_revisions: true,
         force: true,
     };
 
-    println!("\nAbout to delete all revisions with the revision 0 id of an object.");
-    let resp = db.delete_object(delreq, creator);
+    //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
+    let resp = db.delete_object(delreq.clone(), creator);
 
-    assert!(resp.is_ok());
+    // Should error because single_id is "old" revision
+    assert!(resp.is_err());
 
-    let raw_db_object = get_object_status_raw(&single_id);
+    delreq.object_id = staging_finished.clone().object.unwrap().id;
+
+    //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
+    let _resp = db.delete_object(delreq.clone(), creator).unwrap();
+
+    // Revision Should also be deleted
+    let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
 
-    // Revision Should also be deleted
-    let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
+    let raw_db_object = get_object_status_raw(&single_id);
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
@@ -1078,17 +1080,6 @@ fn delete_multiple_objects_test() {
     let resp = db.delete_objects(del_req, creator);
     println!("{:#?}", resp);
 
-    // This should fail without force as with_revisions can only be executed with force
-    assert!(resp.is_err());
-
-    let del_req = DeleteObjectsRequest {
-        object_ids: ids,
-        collection_id: random_collection.id.to_string(),
-        with_revisions: false,
-        force: true,
-    };
-    let resp = db.delete_objects(del_req, creator);
-
     assert!(resp.is_ok());
 
     let get_obj = GetObjectsRequest {
@@ -1099,17 +1090,17 @@ fn delete_multiple_objects_test() {
     };
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    // - obj_1_rev_0 available
+    // - obj_1_rev_0 not available
     // - obj_1_rev_1 deleted
     // - obj_2_rev_0 deleted
     // - obj_3_rev_0 moved to random_collection2
-    assert_eq!(resp.len(), 1);
+    assert_eq!(resp.len(), 0);
     for object_with_url in resp {
         let proto_object = object_with_url.object.unwrap();
         if proto_object.id == rnd_obj_1_rev_0.id {
             assert_eq!(
                 proto_object.status,
-                db_to_grpc_object_status(ObjectStatus::AVAILABLE) as i32
+                db_to_grpc_object_status(ObjectStatus::TRASH) as i32
             )
         } else {
             panic!(

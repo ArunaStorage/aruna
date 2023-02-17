@@ -731,7 +731,7 @@ impl Database {
                         created_at: chrono::Utc::now().naive_utc(),
                         created_by: *creator_uuid,
                         content_len: sobj.content_len,
-                        object_status: ObjectStatus::UNAVAILABLE, // Is a staging object
+                        object_status: ObjectStatus::INITIALIZING, // Is a staging object
                         dataclass: grpc_to_db_dataclass(&sobj.dataclass),
                         source_id: source.as_ref().map(|source| source.id),
                         origin_id: parsed_old_id,
@@ -1549,9 +1549,9 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                safe_delete_object(
-                    &parsed_object_id,
-                    &parsed_collection_id,
+                delete_multiple_objects(
+                    vec![parsed_object_id],
+                    parsed_collection_id,
                     request.force,
                     request.with_revisions,
                     creator_id,
@@ -1612,9 +1612,9 @@ impl Database {
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
                 for object_uuid in parsed_object_ids {
-                    safe_delete_object(
-                        &object_uuid,
-                        &parsed_collection_id,
+                    delete_multiple_objects(
+                        vec![object_uuid],
+                        parsed_collection_id,
                         request.force,
                         request.with_revisions,
                         creator_id,
@@ -2309,7 +2309,8 @@ pub fn delete_staging_object(
 }
 
 /// New deletion function with safety net to assure that object has a writeable reference at every time.
-pub fn safe_delete_object(
+#[deprecated(since = "1.0.0", note = "please use `delete_multiple_objects` instead")]
+pub fn _safe_delete_object(
     object_uuid: &uuid::Uuid,
     collection_uuid: &uuid::Uuid,
     with_force: bool,
@@ -2365,16 +2366,16 @@ pub fn safe_delete_object(
                 .map(|revision| revision.id)
                 .collect::<Vec<_>>();
 
-            for revision_id in undeleted_revision_ids {
-                safe_delete_object(
-                    &revision_id,
-                    collection_uuid,
-                    true,  // Already validated
-                    false, // Delete revisions individually top-down
-                    creator_id,
-                    conn,
-                )?;
-            }
+            //for revision_id in undeleted_revision_ids {
+            delete_multiple_objects(
+                undeleted_revision_ids,
+                collection_uuid.clone(),
+                true,  // Already validated
+                false, // Delete revisions individually top-down
+                creator_id,
+                conn,
+            )?;
+            //}
 
             Ok(())
         } else {
@@ -2664,7 +2665,6 @@ pub fn safe_delete_object(
 ///
 /// `Result<(), ArunaError>` - Will return empty Result or Error
 ///
-#[deprecated(since = "1.0.0", note = "please use `safe_delete_object` instead")]
 pub fn delete_multiple_objects(
     original_object_ids: Vec<uuid::Uuid>,
     coll_id: uuid::Uuid,
@@ -2673,152 +2673,344 @@ pub fn delete_multiple_objects(
     creator_id: uuid::Uuid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
-    let object_ids = if with_revisions {
+    if is_collection_versioned(conn, &coll_id)? {
+        return Err(ArunaError::InvalidRequest(
+            "Deletion of objects from versioned collection is prohibited.".to_string(),
+        ));
+    }
+
+    // Query ALL revisions as DB objects
+    let object_revisions = {
         let shared_ids = objects
             .filter(database::schema::objects::id.eq_any(&original_object_ids))
             .select(database::schema::objects::shared_revision_id)
             .load::<uuid::Uuid>(conn)?;
-
         objects
             .filter(database::schema::objects::shared_revision_id.eq_any(&shared_ids))
-            .select(database::schema::objects::id)
-            .load::<uuid::Uuid>(conn)?
-    } else {
-        original_object_ids.clone()
+            .load::<Object>(conn)?
     };
+
+    // Get all object_ids for object_revisions
+    // And extract the list of original_database_objects
+    let mut original_database_objects = Vec::new();
+    let mut object_id_shared_rev_id: HashMap<uuid::Uuid, uuid::Uuid> = HashMap::new();
+
+    let object_revision_ids = object_revisions
+        .iter()
+        .map(|obj_rev| {
+            object_id_shared_rev_id.insert(obj_rev.id, obj_rev.shared_revision_id);
+            if original_object_ids.contains(&obj_rev.id) {
+                original_database_objects.push(obj_rev.clone())
+            };
+            obj_rev.id
+        })
+        .collect::<Vec<uuid::Uuid>>();
 
     // This will query all references and Error if no reference exists
     let references = collection_objects
-        .filter(database::schema::collection_objects::object_id.eq_any(&object_ids))
+        .filter(database::schema::collection_objects::object_id.eq_any(&object_revision_ids))
         .load::<CollectionObject>(conn)?;
 
-    // This contains all references per object_id
-    let mut object_refs_per_obj: HashMap<uuid::Uuid, Vec<CollectionObject>> = HashMap::new();
-    // This contains all specific references for "this" collection
-    let mut object_refs_for_col = Vec::new();
+    // Check if object has writeable reference or not and is referenced at all
 
-    // Populate object_refs_per_obj && object_refs_for_col
-    for colref in references {
-        match object_refs_per_obj.get_mut(&colref.object_id) {
-            Some(arr) => {
-                arr.push(colref.clone());
-            }
-            None => {
-                object_refs_per_obj.insert(colref.object_id, vec![colref.clone()]);
+    let mut references_to_delete = Vec::new();
+    let mut objects_to_trash = Vec::new();
+
+    let mut writeable_objects = Vec::new();
+    let mut staging_objects = Vec::new();
+
+    'outer: for original_db_obj in original_database_objects.clone() {
+        for reference in references.clone() {
+            if original_db_obj.id == reference.object_id {
+                if reference.writeable {
+                    if reference.reference_status == ReferenceStatus::STAGING {
+                        staging_objects.push(original_db_obj);
+                    } else {
+                        writeable_objects.push(original_db_obj);
+                    }
+                } else {
+                    // Read only references can be deleted directly
+                    references_to_delete.push(reference);
+                }
+                continue 'outer;
             }
         }
-        if colref.collection_id == coll_id {
-            object_refs_for_col.push(colref)
-        }
+        return Err(ArunaError::InvalidRequest(format!(
+            "Object: {} is not referenced in collection: {}",
+            original_db_obj.id, coll_id
+        )));
     }
 
-    // This contains all UUIDs that should only be deleted by reference
-    let mut ref_only: Vec<uuid::Uuid> = Vec::new();
+    // Read-only:
+    // - force / with_revisions: does not matter
+    // Writeable:
+    // force / with_revisions
+    // 1. + / + :
+    // Get all revisions, get all references -> Delete both
+    // 2. + / - :
+    // Delete all reference to this object set to trash
+    // (Check if last reference?)
+    // 3. - / + :
+    // Delete all references (collection_specific) to these revisions
+    // (Check if last reference?)
+    // 4. - / - :
+    // Delete only the one reference (collection_specific)
+    // (Check if last reference?)
 
-    for (k, v) in object_refs_per_obj.clone() {
-        // This can have two reasons:
-        // A. An object_id was specified that is not present in the collection
-        // B. A revision of an object is not referenced in the current collection but in another one
-
-        if object_refs_per_obj.len() != object_refs_for_col.len() {
-            let mut in_collection = false;
-            for col_ref in &v {
-                if col_ref.collection_id == coll_id {
-                    in_collection = true;
-                }
-            }
-            if !in_collection {
-                // A or B
-                if original_object_ids.contains(&k) {
-                    // A
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "ObjectID {} not part of collection: {}",
-                        k, coll_id
-                    )));
-                } else {
-                    // B
-                    if !with_force {
-                        let refed_colls = v.iter().map(|e| e.collection_id).collect::<Vec<_>>();
-                        return Err(ArunaError::InvalidRequest(format!(
-                            "Object with ID {} is still referenced in collection(s): {:#?}",
-                            k, refed_colls
-                        )));
+    if with_revisions {
+        if with_force {
+            // Case 1:
+            // If with_revision + with_force
+            // Delete ALL references to this history
+            // Trash all objects in this history
+            for writeable_object in writeable_objects.clone() {
+                for current_object in object_revisions.clone() {
+                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                        for reference in references.clone() {
+                            if reference.object_id == current_object.id {
+                                references_to_delete.push(reference.clone())
+                            };
+                        }
+                        objects_to_trash.push(current_object)
                     }
                 }
             }
-        }
+        } else {
+            for writeable_object in writeable_objects.clone() {
+                let mut potential_trash = Vec::new();
+                let mut other_reference_found = false;
 
-        // If it has more than 1 reference (This could create a dangling reference)
-        if v.is_empty() {
-            // Assume it is the only writeable
-            let mut is_only_writeable = true;
-            // Iterate through all other refs
-            for other_refs in &v {
-                // If another reference is writeable
-                if other_refs.collection_id != coll_id && other_refs.writeable {
-                    is_only_writeable = false;
-                    // This object has other "writeable" targets ->
-                    // Delete only the reference, regardless of force or not
-                    // add it to the reference only list (-> we can delete this reference only)
-                    // Add to ref_only
-                    ref_only.push(k);
-                    // Remove from hashmap (This should only delete the ref not the object itself)
-                    object_refs_per_obj.remove(&k);
+                for current_object in object_revisions.clone() {
+                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                        for reference in references.clone() {
+                            if reference.object_id == current_object.id {
+                                if reference.collection_id == coll_id {
+                                    references_to_delete.push(reference.clone())
+                                } else {
+                                    other_reference_found = true;
+                                    potential_trash = Vec::new();
+                                }
+                            }
+                        }
+
+                        if !other_reference_found {
+                            potential_trash.push(current_object)
+                        }
+                    }
                 }
-                if other_refs.collection_id == coll_id && !other_refs.writeable {
-                    // It is not writeable -> Delete only the reference
-                    is_only_writeable = false;
-                    // Add to ref_only
-                    ref_only.push(k);
-                    // Remove from hashmap (This should only delete the ref not the object itself)
-                    object_refs_per_obj.remove(&k);
-                }
+                objects_to_trash.append(&mut potential_trash)
             }
-            // If it is the only writeable and force is not used
-            if is_only_writeable && !with_force {
-                return Err(ArunaError::InvalidRequest(format!(
-                    "Object with ID {} is the last writeable reference while referenced in other collection(s), delete references or use force",
-                    k
-                )));
+        }
+    } else {
+        if with_force {
+            for writeable_object in writeable_objects.clone() {
+                let mut potential_trash = Vec::new();
+                let mut other_reference_found = false;
+
+                for current_object in object_revisions.clone() {
+                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                        // Mark ALL references to this object_id for deletion
+                        for reference in references.clone() {
+                            if current_object.id == writeable_object.id {
+                                references_to_delete.push(reference.clone())
+                            } else {
+                                other_reference_found = true;
+                                potential_trash = Vec::new();
+                            }
+                        }
+                        if !other_reference_found {
+                            potential_trash.push(current_object)
+                        }
+                    }
+                }
+                objects_to_trash.push(writeable_object);
+                objects_to_trash.append(&mut potential_trash)
+            }
+        } else {
+            for writeable_object in writeable_objects.clone() {
+                let mut potential_trash = Vec::new();
+                let mut other_reference_found = false;
+
+                for current_object in object_revisions.clone() {
+                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                        // Mark ALL references to this object_id for deletion
+                        for reference in references.clone() {
+                            if current_object.id == writeable_object.id {
+                                if reference.collection_id == coll_id {
+                                    references_to_delete.push(reference.clone())
+                                } else {
+                                    other_reference_found = true;
+                                    potential_trash = Vec::new();
+                                }
+                            }
+                        }
+                        if !other_reference_found {
+                            potential_trash.push(current_object)
+                        }
+                    }
+                }
+                objects_to_trash.push(writeable_object);
+                objects_to_trash.append(&mut potential_trash)
             }
         }
     }
 
-    let mut object_ids_per_coll: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
-    let mut object_ids_to_delete = Vec::new();
+    // DELETE staging objects
+    for staging_object in staging_objects {
+        delete_staging_object(&staging_object.id, &coll_id, conn)?;
+    }
 
-    for v in object_refs_per_obj.values() {
-        for e in v {
-            if e.collection_id == coll_id {
-                object_ids_to_delete.push(e.object_id)
-            }
+    // Extract object_ids from references, ordered by collection_id
+    let mut references_per_collection: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
 
-            match object_ids_per_coll.get_mut(&e.collection_id) {
-                Some(arr) => {
-                    arr.push(e.object_id);
-                }
-                None => {
-                    object_ids_per_coll.insert(e.collection_id, vec![e.object_id]);
-                }
-            }
+    for ref_to_delete in references_to_delete.clone() {
+        if let Some(references_per_coll) =
+            references_per_collection.get_mut(&ref_to_delete.collection_id)
+        {
+            references_per_coll.push(ref_to_delete.object_id)
+        } else {
+            references_per_collection
+                .insert(ref_to_delete.collection_id, vec![ref_to_delete.object_id]);
         }
     }
 
-    // Delete object_references and update object_groups for "deleteable" without the "reference onlys"
-    for (d_coll_id, d_object_ids) in object_ids_per_coll {
-        delete_object_and_bump_objectgroups(&d_object_ids, &d_coll_id, &creator_id, conn)?;
+    // Delete references and bump object_groups from collections
+    for (target_collection, objects_per_collection) in references_per_collection {
+        delete_object_and_bump_objectgroups(
+            &objects_per_collection,
+            &target_collection,
+            &creator_id,
+            conn,
+        )?;
     }
 
-    // Delete and bump the "ref_onlys"
-    delete_object_and_bump_objectgroups(&ref_only, &coll_id, &creator_id, conn)?;
+    let object_ids_to_trash = objects_to_trash
+        .iter()
+        .map(|obj| obj.id)
+        .collect::<Vec<_>>();
 
-    // Update object_status to "TRASH"
+    // Update Object and redact information
     update(objects)
-        .filter(database::schema::objects::id.eq_any(&object_ids_to_delete))
-        .set(database::schema::objects::object_status.eq(ObjectStatus::TRASH))
+        .filter(database::schema::objects::id.eq_any(&object_ids_to_trash))
+        .set((
+            database::schema::objects::object_status.eq(ObjectStatus::TRASH),
+            database::schema::objects::filename.eq("DELETED"),
+            database::schema::objects::content_len.eq(0),
+        ))
         .execute(conn)?;
 
-    // TODO: Should this also delete key_values etc. ?
+    // Remove all labels
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::object_id.eq_any(&object_ids_to_trash))
+        .execute(conn)?;
+
+    // Add internal labels to indicate when and who has deleted this object
+    let update_labels = {
+        let mut key_values = Vec::new();
+        for obj_to_trash in object_ids_to_trash {
+            key_values.push(ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: obj_to_trash,
+                key: "app.aruna-storage.org/deleted_at".to_string(),
+                value: Local::now().naive_local().to_string(),
+                key_value_type: KeyValueType::LABEL,
+            });
+            key_values.push(ObjectKeyValue {
+                id: uuid::Uuid::new_v4(),
+                object_id: obj_to_trash,
+                key: "app.aruna-storage.org/deleted_by".to_string(),
+                value: creator_id.to_string(),
+                key_value_type: KeyValueType::LABEL,
+            });
+        }
+        key_values
+    };
+
+    insert_into(object_key_value)
+        .values(&update_labels)
+        .execute(conn)?;
+
+    let mut shared_revisions_per_collection: HashMap<uuid::Uuid, HashMap<uuid::Uuid, i32>> =
+        HashMap::new();
+    let mut shared_revision_per_collection_to_delete: HashMap<
+        uuid::Uuid,
+        HashMap<uuid::Uuid, i32>,
+    > = HashMap::new();
+
+    let mut relevant_collections = references
+        .iter()
+        .map(|c| c.collection_id)
+        .collect::<Vec<uuid::Uuid>>();
+    relevant_collections.sort();
+    relevant_collections.dedup();
+
+    //dbg!(references.clone(), object_id_shared_rev_id.clone());
+
+    for rel_col in relevant_collections {
+        for reference in references.clone() {
+            if reference.collection_id == rel_col {
+                let sh_rev_id = object_id_shared_rev_id.get(&reference.object_id).ok_or(
+                    ArunaError::InvalidRequest(format!(
+                        "Shared revision can not be found for object_id {} ",
+                        reference.object_id
+                    )),
+                )?; // Should never occur
+                if let Some(sr_id) = shared_revisions_per_collection.get_mut(&rel_col) {
+                    if let Some(sr_count) = sr_id.get_mut(&sh_rev_id) {
+                        *sr_count += 1;
+                    } else {
+                        sr_id.insert(sh_rev_id.clone(), 1);
+                    }
+                } else {
+                    shared_revisions_per_collection
+                        .insert(rel_col, HashMap::from([(sh_rev_id.clone(), 1)]));
+                };
+            }
+        }
+
+        for reference in references_to_delete.clone() {
+            if reference.collection_id == rel_col {
+                let sh_rev_id = object_id_shared_rev_id.get(&reference.object_id).ok_or(
+                    ArunaError::InvalidRequest("Shared revision does not exist".to_string()),
+                )?; // Should never occur
+                if let Some(sr_id) = shared_revision_per_collection_to_delete.get_mut(&rel_col) {
+                    if let Some(sr_count) = sr_id.get_mut(&sh_rev_id) {
+                        *sr_count += 1;
+                    } else {
+                        sr_id.insert(sh_rev_id.clone(), 1);
+                    }
+                } else {
+                    shared_revision_per_collection_to_delete
+                        .insert(rel_col, HashMap::from([(sh_rev_id.clone(), 1)]));
+                };
+            }
+        }
+    }
+
+    for (col_id, shared_counts_deleted) in shared_revision_per_collection_to_delete {
+        let mut shared_revisions_to_delete = Vec::new();
+        let shared_counts_before =
+            shared_revisions_per_collection
+                .get(&col_id)
+                .ok_or(ArunaError::InvalidRequest(
+                    "Shared revision does not exist".to_string(),
+                ))?;
+
+        for (sh_rev_id, counts_deleted) in shared_counts_deleted {
+            if let Some(counts_before) = shared_counts_before.get(&sh_rev_id) {
+                if counts_before.clone() - counts_deleted == 0 {
+                    shared_revisions_to_delete.push(sh_rev_id);
+                }
+            }
+        }
+
+        delete(paths)
+            .filter(database::schema::paths::collection_id.eq(&col_id))
+            .filter(database::schema::paths::shared_revision_id.eq_any(&shared_revisions_to_delete))
+            .execute(conn)?;
+    }
+
+    // object_id_shared_rev_id
 
     Ok(())
 }
