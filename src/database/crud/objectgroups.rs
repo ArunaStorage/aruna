@@ -596,90 +596,109 @@ impl Database {
 
         // Deletion transaction
         self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
-            // Get the ObjectGroup to be deleted from the database
-            let queried_group = object_groups
-                .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
-                .first::<ObjectGroup>(conn)?;
+            // Query the relevant object groups from the database
+            let queried_groups = if true { // request.with_revisions {
+                // If with_revisions == true:
+                //  - Query all revisions of provided object group and delete them descending
+                let og_shared_revision_id = object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
+                    .select(crate::database::schema::object_groups::shared_revision_id)
+                    .first::<uuid::Uuid>(conn)?;
 
-            if let Some(object_group_name) = queried_group.name {
-                // Check if specified ObjectGroup revision is already deleted
-                match object_group_name.as_str() {
-                    "DELETED" => {
-                        // Do nothing. Revision is already deleted.
-                    }
-                    _ => {
-                        // Delete key values of object group
-                        delete(object_group_key_value)
-                            .filter(
-                                crate::database::schema::object_group_key_value::object_group_id.eq(
-                                    object_group_uuid
-                                )
-                            )
-                            .execute(conn)?;
+                object_groups
+                    .filter(crate::database::schema::object_groups::shared_revision_id.eq(&og_shared_revision_id))
+                    .order_by(crate::database::schema::object_groups::revision_number.desc())
+                    .load::<ObjectGroup>(conn)?
+            } else {
+                // If with_revisions == false:
+                //  - Create vector only with provided object group
+                vec![object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
+                    .first::<ObjectGroup>(conn)?]
+            };
 
-                        // Delete collection_object_groups
-                        delete(collection_object_groups)
-                            .filter(
-                                crate::database::schema::collection_object_groups::object_group_id.eq(
-                                    object_group_uuid
+            // Loop over queried object groups and delete them individually
+            for queried_group in queried_groups {
+                if let Some(object_group_name) = queried_group.name {
+                    // Check if specified ObjectGroup revision is already deleted
+                    match object_group_name.as_str() {
+                        "DELETED" => {
+                            // Do nothing. Revision is already deleted.
+                        }
+                        _ => {
+                            // Delete key values of object group
+                            delete(object_group_key_value)
+                                .filter(
+                                    crate::database::schema::object_group_key_value::object_group_id.eq(
+                                        object_group_uuid
+                                    )
                                 )
-                            )
-                            .execute(conn)?;
+                                .execute(conn)?;
 
-                        // Delete object_group_objects
-                        delete(object_group_objects)
-                            .filter(
-                                crate::database::schema::object_group_objects::object_group_id.eq(
-                                    object_group_uuid
+                            // Delete collection_object_groups
+                            delete(collection_object_groups)
+                                .filter(
+                                    crate::database::schema::collection_object_groups::object_group_id.eq(
+                                        object_group_uuid
+                                    )
                                 )
-                            )
-                            .execute(conn)?;
+                                .execute(conn)?;
 
-                        // Rename ObjectGroup revision name and description to "DELETED"
-                        update(object_groups)
-                            .filter(
-                                crate::database::schema::object_groups::id.eq(object_group_uuid)
-                            )
-                            .set((
-                                crate::database::schema::object_groups::name.eq(
-                                    "DELETED".to_string()
-                                ),
-                                crate::database::schema::object_groups::description.eq(
-                                    "DELETED".to_string()
-                                ),
-                            ))
-                            .execute(conn)?;
+                            // Delete object_group_objects
+                            delete(object_group_objects)
+                                .filter(
+                                    crate::database::schema::object_group_objects::object_group_id.eq(
+                                        object_group_uuid
+                                    )
+                                )
+                                .execute(conn)?;
 
-                        // Count undeleted ObjectGroup revisions
-                        let undeleted = object_groups
-                            .select(
-                                diesel::dsl::count(crate::database::schema::object_groups::name)
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::shared_revision_id.eq(
-                                    queried_group.shared_revision_id
+                            // Rename ObjectGroup revision name and description to "DELETED"
+                            update(object_groups)
+                                .filter(
+                                    crate::database::schema::object_groups::id.eq(object_group_uuid)
                                 )
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::name.ne(
-                                    "DELETED".to_string()
-                                )
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::description.ne(
-                                    "DELETED".to_string()
-                                )
-                            )
-                            .first::<i64>(conn)?;
+                                .set((
+                                    crate::database::schema::object_groups::name.eq(
+                                        "DELETED".to_string()
+                                    ),
+                                    crate::database::schema::object_groups::description.eq(
+                                        "DELETED".to_string()
+                                    ),
+                                ))
+                                .execute(conn)?;
 
-                        if undeleted == 0 {
-                            delete(object_groups)
+                            // Count undeleted ObjectGroup revisions
+                            let undeleted = object_groups
+                                .select(
+                                    diesel::dsl::count(crate::database::schema::object_groups::name)
+                                )
                                 .filter(
                                     crate::database::schema::object_groups::shared_revision_id.eq(
                                         queried_group.shared_revision_id
                                     )
                                 )
-                                .execute(conn)?;
+                                .filter(
+                                    crate::database::schema::object_groups::name.ne(
+                                        "DELETED".to_string()
+                                    )
+                                )
+                                .filter(
+                                    crate::database::schema::object_groups::description.ne(
+                                        "DELETED".to_string()
+                                    )
+                                )
+                                .first::<i64>(conn)?;
+
+                            if undeleted == 0 {
+                                delete(object_groups)
+                                    .filter(
+                                        crate::database::schema::object_groups::shared_revision_id.eq(
+                                            queried_group.shared_revision_id
+                                        )
+                                    )
+                                    .execute(conn)?;
+                            }
                         }
                     }
                 }
