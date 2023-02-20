@@ -1304,6 +1304,13 @@ impl Database {
                     ));
                 }
 
+                // Auto_update reference can only be created for latest revision to ensure reference consistency
+                if request.auto_update && !original_reference.is_latest {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create auto_update reference for non-latest revision.".to_string(),
+                    ));
+                }
+
                 let collection_object = CollectionObject {
                     id: uuid::Uuid::new_v4(),
                     collection_id: target_collection_uuid,
