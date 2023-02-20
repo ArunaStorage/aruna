@@ -12,6 +12,18 @@ use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::ArunaError;
 use crate::error::TypeConversionError::PROTOCONVERSION;
 
+use regex::Regex;
+lazy_static! {
+    /// This unwrap should be okay if this Regex is covered and used in tests
+    /// Only two cases result in failure for Regex::new
+    /// 1. Invalid regex syntax
+    /// 2. Too large Regex
+    /// Both cases should be checked in tests and should result in safe behaviour because
+    /// the string is static.
+    pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[\w~\-.]+$").unwrap();
+    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)*/?$").unwrap();
+}
+
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
 /// This converts types with the `as` keyword. It should be safe
 /// because hours, minutes etc. should never exceed the u8 bounds.

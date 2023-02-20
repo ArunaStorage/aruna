@@ -85,6 +85,13 @@ impl Database {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::required_labels::dsl::*;
 
+        // Validate collection name against regex schema
+        if !NAME_SCHEMA.is_match(request.name.as_str()) {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid collection name. Only ^[\\w~\\-.]+$ characters allowed.".to_string(),
+            ));
+        }
+
         // Create new collection uuid
         let collection_uuid = uuid::Uuid::new_v4();
         // Create new "shared_version_uuid"
@@ -343,8 +350,17 @@ impl Database {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::required_labels::dsl as reqlbl;
+
+        // Validate collection name against regex schema
+        if !NAME_SCHEMA.is_match(request.name.as_str()) {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid collection name. Only ^[\\w~\\-.]+$ characters allowed.".to_string(),
+            ));
+        }
+
         // Query the old collection id that should be updated
         let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+
         // Execute request in transaction
         let ret_collections = self
             .pg_connection

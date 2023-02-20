@@ -54,7 +54,6 @@ use crate::database::models::enums::{
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
-use regex::Regex;
 
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
@@ -64,18 +63,7 @@ use crate::database::schema::{
 };
 
 use super::objectgroups::bump_revisisions;
-use super::utils::validate_key_values;
-use super::utils::{grpc_to_db_dataclass, ParsedQuery};
-
-lazy_static! {
-    /// This unwrap should be okay if this Regex is covered and used in tests
-    /// Only two cases result in failure for Regex::new
-    /// 1. Invalid regex syntax
-    /// 2. Too large Regex
-    /// Both cases should be checked in tests and should result in safe behaviour because
-    /// the string is static.
-    static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)*/?$").unwrap();
-}
+use super::utils::*;
 
 // Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
