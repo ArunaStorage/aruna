@@ -709,7 +709,6 @@ async fn get_object_paths_grpc_test() {
         let set_visibility_request = common::grpc_helpers::add_token(
             tonic::Request::new(SetObjectPathVisibilityRequest {
                 collection_id: random_collection.id.to_string(),
-                object_id: "".to_string(), // No use. Deprecated with 1.0.0-rc.3
                 path: default_path.to_string(),
                 visibility: false,
             }),
@@ -924,7 +923,6 @@ async fn set_object_path_visibility_grpc_test() {
     // Set visibility of some paths to inactive
     let mut inner_set_visibility_request = SetObjectPathVisibilityRequest {
         collection_id: random_collection.id.to_string(),
-        object_id: random_object.id.to_string(),
         path: "".to_string(),
         visibility: false,
     };

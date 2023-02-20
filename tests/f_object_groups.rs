@@ -403,6 +403,7 @@ fn delete_object_group_test() {
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_0.id.to_string(),
         collection_id: random_collection.id.to_string(),
+        with_revisions: false,
     })
     .unwrap();
 
@@ -438,6 +439,7 @@ fn delete_object_group_test() {
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_1.id.to_string(),
         collection_id: random_collection.id.to_string(),
+        with_revisions: false,
     })
     .unwrap();
 
