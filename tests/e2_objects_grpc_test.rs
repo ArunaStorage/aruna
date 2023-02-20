@@ -72,18 +72,8 @@ async fn create_objects_grpc_test() {
     // Create random collection
     let random_collection = common::functions::create_collection(TCreateCollection {
         project_id: random_project.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
-        col_override: Some(CreateNewCollectionRequest {
-            name: "create_objects_grpc_test() Collection".to_string(),
-            description: "Lorem Ipsum Dolor".to_string(),
-            project_id: random_project.id.to_string(),
-            labels: vec![],
-            hooks: vec![],
-            label_ontology: None,
-            dataclass: DataClass::Private as i32,
-        }),
         creator_id: Some(user_id.to_string()),
+        ..Default::default()
     });
 
     // Init object in non-existing collection --> Error

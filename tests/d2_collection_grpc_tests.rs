@@ -198,10 +198,8 @@ async fn get_collection_grpc_test() {
     // Fast track collection creation
     let random_collection = common::functions::create_collection(TCreateCollection {
         project_id: random_project.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
-        col_override: None,
         creator_id: Some(user_id.clone()),
+        ..Default::default()
     });
 
     // Get collection information with varying permissions

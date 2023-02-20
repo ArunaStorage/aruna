@@ -690,7 +690,6 @@ fn delete_object_test() {
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
 }
 
-/*
 #[test]
 #[ignore]
 #[serial(db)]
@@ -742,7 +741,6 @@ fn get_objects_test() {
 
     assert_eq!(get_response.len(), 64);
 }
-*/
 
 #[test]
 #[ignore]
@@ -964,7 +962,7 @@ fn clone_object_test() {
 
     let cloned = resp.object.unwrap();
 
-    assert!(cloned.id != update_2.id);
+    assert_ne!(cloned.id, update_2.id);
     assert_eq!(cloned.rev_number, 0);
     println!("{:#?}", cloned.id);
     println!("{:#?}", cloned.origin.clone().unwrap().id);
