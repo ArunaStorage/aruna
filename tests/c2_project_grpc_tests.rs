@@ -35,7 +35,7 @@ async fn create_project_grpc_test() {
     // Create gPC Request for project creation
     let create_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateProjectRequest {
-            name: "Test Project".to_string(),
+            name: "Test-Project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -171,11 +171,11 @@ async fn update_project_grpc_test() {
     // Fast track project creation
     let orig_project = common::functions::create_project(None);
 
-    // Create gPC Request to update single project name and description
+    // Create gRPC Request to update single project name and description
     let update_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateProjectRequest {
             project_id: orig_project.id.to_string(),
-            name: "Updated Project".to_string(),
+            name: "Updated-Project".to_string(),
             description: "This project was updated in update_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -190,7 +190,7 @@ async fn update_project_grpc_test() {
     let updated_project = update_project_response.project.unwrap();
 
     assert_eq!(orig_project.id, updated_project.id);
-    assert_eq!(updated_project.name, "Updated Project".to_string());
+    assert_eq!(updated_project.name, "Updated-Project".to_string());
     assert_eq!(
         updated_project.description,
         "This project was updated in update_project_grpc_test().".to_string()

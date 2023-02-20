@@ -59,7 +59,7 @@ fn update_project_test() {
     assert!(!project_id.is_nil());
 
     // Update empty project metadata
-    let updated_name = "Updated Project Name".to_string();
+    let updated_name = "Updated-Project-Name".to_string();
     let updated_description = "Updated project description".to_string();
     let update_request = UpdateProjectRequest {
         project_id: project_id.to_string(),
@@ -163,8 +163,8 @@ fn add_remove_project_user_test() {
 
     // Create project
     let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
+        name: "add_remove_project_user_test_project".to_string(),
+        description: "Project created for add_remove_project_user_test()".to_string(),
     };
     let create_response = db.create_project(create_request, creator).unwrap();
 

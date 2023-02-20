@@ -3,7 +3,7 @@ mod common;
 use crate::common::functions::{get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, Version,
+    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
@@ -66,8 +66,8 @@ fn create_object_test() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "Object creation test project collection".to_string(),
-        description: "Test collection used in object creation test.".to_string(),
+        name: "create_object_test_collection".to_string(),
+        description: "Test collection used in create_object_test().".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],
@@ -644,7 +644,6 @@ fn delete_object_test() {
         .update_object(&updatereq, &None, &creator, uuid::Uuid::default(), new_id)
         .unwrap();
 
-    println!("Finish object update for revision 1 before deletion.");
     let staging_finished = db
         .finish_object_staging(
             &FinishObjectStagingRequest {

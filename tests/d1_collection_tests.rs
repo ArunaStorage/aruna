@@ -974,8 +974,9 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create fresh Project
     let create_project_request = CreateProjectRequest {
-        name: "Object creation test project".to_string(),
-        description: "Test project used in object creation test.".to_string(),
+        name: "test_collection_materialized_views_stats_project".to_string(),
+        description: "Collection created for test_collection_materialized_views_stats()"
+            .to_string(),
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
@@ -985,8 +986,8 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "Object creation test project collection".to_string(),
-        description: "Test collection used in object creation test.".to_string(),
+        name: "test_collection_materialized_views_stats_collection".to_string(),
+        description: "Test collection used in materialized view stats test.".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],

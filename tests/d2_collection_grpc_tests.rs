@@ -74,7 +74,7 @@ async fn create_collection_grpc_test() {
 
     // Create gRPC request for collection creation
     let mut create_collection_request = CreateNewCollectionRequest {
-        name: "Test Collection".to_string(),
+        name: "Test-Collection".to_string(),
         description: "".to_string(),
         project_id: random_project.id.to_string(),
         labels: vec![KeyValue {
@@ -329,7 +329,7 @@ async fn get_collections_grpc_test() {
     {
         let create_collection_request = common::grpc_helpers::add_token(
             tonic::Request::new(CreateNewCollectionRequest {
-                name: format!("Test Collection 00{}", index).to_string(),
+                name: format!("Test-Collection-00{}", index).to_string(),
                 description: "Created for get_collections_grpc_test().".to_string(),
                 project_id: random_project.id.to_string(),
                 labels: labels.clone(),
@@ -527,7 +527,7 @@ async fn get_collections_grpc_test() {
         .collection_overviews;
 
     assert_eq!(collections.len(), 1);
-    assert_eq!(collections[0].name, "Test Collection 000".to_string());
+    assert_eq!(collections[0].name, "Test-Collection-000".to_string());
     assert_eq!(
         collections[0].description,
         "Created for get_collections_grpc_test().".to_string()
@@ -608,7 +608,7 @@ async fn update_collection_grpc_test() {
         let update_collection_grpc_request = common::grpc_helpers::add_token(
             tonic::Request::new(UpdateCollectionRequest {
                 collection_id: random_collection.id.to_string(),
-                name: "Test Collection".to_string(),
+                name: "Test-Collection".to_string(),
                 description: format!(
                     "Collection updated with permission {}",
                     permission.as_str_name()
@@ -644,7 +644,7 @@ async fn update_collection_grpc_test() {
                     .unwrap();
 
                 assert_eq!(collection.id, random_collection.id);
-                assert_eq!(collection.name, "Test Collection".to_string());
+                assert_eq!(collection.name, "Test-Collection".to_string());
                 assert_eq!(
                     collection.description,
                     format!(
@@ -676,7 +676,7 @@ async fn update_collection_grpc_test() {
     let pin_update_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateCollectionRequest {
             collection_id: random_collection.id.to_string(),
-            name: "Test Collection".to_string(),
+            name: "Test-Collection".to_string(),
             description: "Collection updated with version 1.2.3.".to_string(),
             labels: vec![KeyValue {
                 key: "is_versioned".to_string(),
@@ -702,7 +702,7 @@ async fn update_collection_grpc_test() {
     let versioned_collection = pin_update_collection_response.collection.unwrap();
 
     assert_ne!(versioned_collection.id, random_collection.id); // Versioned collection is deep clone with individual id
-    assert_eq!(versioned_collection.name, "Test Collection".to_string());
+    assert_eq!(versioned_collection.name, "Test-Collection".to_string());
     assert_eq!(
         versioned_collection.description,
         "Collection updated with version 1.2.3.".to_string()
@@ -729,7 +729,7 @@ async fn update_collection_grpc_test() {
     let update_versioned_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateCollectionRequest {
             collection_id: versioned_collection.id.to_string(),
-            name: "Test Collection".to_string(),
+            name: "Test-Collection".to_string(),
             description: "Versioned collection updated without version.".to_string(),
             labels: vec![KeyValue {
                 key: "is_versioned".to_string(),
@@ -752,7 +752,7 @@ async fn update_collection_grpc_test() {
     let update_versioned_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateCollectionRequest {
             collection_id: versioned_collection.id.to_string(),
-            name: "Test Collection".to_string(),
+            name: "Test-Collection".to_string(),
             description: "Versioned collection updated without version.".to_string(),
             labels: vec![KeyValue {
                 key: "is_versioned".to_string(),
@@ -803,7 +803,7 @@ async fn pin_collection_grpc_test() {
     // Create and get collection
     let create_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateNewCollectionRequest {
-            name: "pin_collection_grpc_test()".to_string(),
+            name: "pin_collection_grpc_test_collection".to_string(),
             description: "Some description.".to_string(),
             project_id: random_project.id.to_string(),
             labels: vec![],
