@@ -1297,6 +1297,13 @@ impl Database {
                     )
                     .first::<CollectionObject>(conn)?;
 
+                // Check if reference is staging object
+                if original_reference.reference_status == ReferenceStatus::STAGING {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create reference of object while in staging phase.".to_string(),
+                    ));
+                }
+
                 let collection_object = CollectionObject {
                     id: uuid::Uuid::new_v4(),
                     collection_id: target_collection_uuid,
