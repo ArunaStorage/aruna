@@ -2,6 +2,8 @@ use std::time::SystemTime;
 use std::{env, time::Duration};
 
 use anyhow::Context;
+use base64::engine::general_purpose;
+use base64::Engine;
 use chrono::{DateTime, Utc};
 
 use hmac::{Hmac, Mac};
@@ -49,7 +51,7 @@ impl PresignHandler {
         let expiry_data_rfc3339 = expiry_data.to_rfc3339();
 
         let salt = rand::thread_rng().gen::<[u8; 32]>();
-        let base_64_salt = base64::encode(salt);
+        let base_64_salt = general_purpose::STANDARD.encode(salt);
 
         let sign_query_params = SignedParamsQuery {
             signature: "".to_string(),
@@ -66,7 +68,7 @@ impl PresignHandler {
         mac.update(query_signature.as_bytes());
         let result = mac.finalize();
         let signature = result.into_bytes();
-        let signature_base64 = base64::encode(signature);
+        let signature_base64 = general_purpose::STANDARD.encode(signature);
 
         url.query_pairs_mut()
             .append_pair("salt", base_64_salt.as_str());
@@ -98,13 +100,14 @@ impl PresignHandler {
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let query_signature = self.query_signature_string(sign_query_params.clone(), path);
 
-        let signature_hmac_key = match base64::decode(sign_query_params.signature) {
-            Ok(value) => value,
-            Err(err) => {
-                log::error!("{}", err);
-                return Err(Box::new(err));
-            }
-        };
+        let signature_hmac_key =
+            match general_purpose::STANDARD.decode(&sign_query_params.signature) {
+                Ok(value) => value,
+                Err(err) => {
+                    log::error!("{}", err);
+                    return Err(Box::new(err));
+                }
+            };
 
         let mut mac = HmacSha256::new_from_slice(self.secret.as_bytes()).unwrap();
         mac.update(query_signature.as_bytes());
