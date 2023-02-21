@@ -1464,7 +1464,7 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<ProtoObject, Error, _>(|conn| {
-                let proto_object = clone_object(
+                let (proto_object, _) = clone_object(
                     conn,
                     creator_uuid,
                     object_uuid,
@@ -2108,7 +2108,7 @@ pub fn clone_object(
     object_uuid: uuid::Uuid,
     source_collection_uuid: uuid::Uuid,
     target_collection_uuid: uuid::Uuid,
-) -> Result<ProtoObject, Error> {
+) -> Result<(ProtoObject, uuid::Uuid), Error> {
     // Get original object, collection_object reference, key_values, hash and source
     let mut db_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -2183,27 +2183,30 @@ pub fn clone_object(
     };
 
     // Return ProtoObject
-    Ok(ProtoObject {
-        id: db_object.id.to_string(),
-        filename: db_object.filename,
-        labels,
-        hooks,
-        created: Some(timestamp),
-        content_len: db_object.content_len,
-        status: db_object.object_status as i32,
-        origin: Some(ProtoOrigin {
-            id: db_object.origin_id.to_string(),
-        }),
-        data_class: db_object.dataclass as i32,
-        hash: Some(ProtoHash {
-            alg: db_to_grpc_hash_type(&db_hash.hash_type),
-            hash: db_hash.hash,
-        }),
-        rev_number: db_object.revision_number,
-        source: proto_source,
-        latest: db_collection_object.is_latest,
-        auto_update: db_collection_object.auto_update,
-    })
+    Ok((
+        ProtoObject {
+            id: db_object.id.to_string(),
+            filename: db_object.filename,
+            labels,
+            hooks,
+            created: Some(timestamp),
+            content_len: db_object.content_len,
+            status: db_object.object_status as i32,
+            origin: Some(ProtoOrigin {
+                id: db_object.origin_id.to_string(),
+            }),
+            data_class: db_object.dataclass as i32,
+            hash: Some(ProtoHash {
+                alg: db_to_grpc_hash_type(&db_hash.hash_type),
+                hash: db_hash.hash,
+            }),
+            rev_number: db_object.revision_number,
+            source: proto_source,
+            latest: db_collection_object.is_latest,
+            auto_update: db_collection_object.auto_update,
+        },
+        db_object.shared_revision_id,
+    ))
 }
 
 /// This is a helper method that queries the "latest" object based on the current object_uuid.
