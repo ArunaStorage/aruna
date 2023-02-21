@@ -18,7 +18,7 @@ use crate::database::models::collection::{
     RequiredLabel,
 };
 use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, ReferenceStatus};
-use crate::database::models::object::{Object, ObjectKeyValue};
+use crate::database::models::object::{Object, ObjectKeyValue, Path};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::database::schema::collections::dsl::collections;
@@ -41,6 +41,7 @@ use diesel::result::Error;
 use diesel::{delete, prelude::*};
 use diesel::{insert_into, update};
 use r2d2::PooledConnection;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 /// Helper struct that contains a `CollectionOverviewDb`
@@ -959,11 +960,6 @@ fn pin_collection_to_version(
         .inner_join(obj::objects)
         .select(Object::as_select())
         .load::<Object>(conn)?;
-    // Get ids of original objects
-    let original_objects_ids = original_objects
-        .iter()
-        .map(|elem| elem.id)
-        .collect::<Vec<_>>();
     // Get all original object_groups
     let original_object_groups: Vec<ObjectGroup> = colobjgrp::collection_object_groups
         .inner_join(objgrp::object_groups)
@@ -1031,20 +1027,33 @@ fn pin_collection_to_version(
     let mut new_obj_grp_objs = Vec::new();
     // Mapping table with key = original_uuid and value = new_uuid
     let mut object_mapping_table = HashMap::new();
+    // Mapping table with key: original shared_revision_id and value: new shared_revision_id
+    let mut revision_id_mapping = HashMap::new();
     // Mapping table for objectgroups with key = original_uuid and value = new_uuid
     let mut object_group_mappings = HashMap::new();
     // Clone each object from old to new collection
-    for obj_id in original_objects_ids {
-        let new_obj = clone_object(
+    for orig_obj in original_objects.clone() {
+        let (new_obj, new_revision_id) = clone_object(
             conn,
             &creator_user,
-            obj_id,
+            orig_obj.id,
             origin_collection,
             new_collection_overview.coll.id,
         )?;
-        object_mapping_table.insert(obj_id, uuid::Uuid::parse_str(&new_obj.id)?);
+
+        match revision_id_mapping.entry(orig_obj.shared_revision_id.clone()) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(_) => {
+                revision_id_mapping.insert(orig_obj.shared_revision_id, new_revision_id);
+            }
+        };
+
+        object_mapping_table.insert(orig_obj.id, uuid::Uuid::parse_str(&new_obj.id)?);
         new_objects.push(new_obj);
     }
+    // Clone and adjust existing paths belonging to the shared_revision_ids of the objects
+    pin_paths_to_version(&new_collection_overview, revision_id_mapping, conn)?;
+
     // Iterate through objectgroups
     for obj_grp in original_object_groups {
         // Create copy of objectgroup
@@ -1152,6 +1161,78 @@ fn pin_collection_to_version(
         ),
         version: mapped_version,
     })
+}
+
+/// Clones all the existing paths of the objects contained in the
+/// collection to be pinned and adjusts the paths records to the cloned objects
+/// of the pinned collection.
+///
+/// ## Arguments
+///
+/// * `pin_collection`:
+/// * `old_objects`:
+/// * `...`:
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+///
+/// ## Returns
+///
+/// * Result<(), ArunaError>: Just returns empty Ok() if succeeds; ArunaError else.
+///
+fn pin_paths_to_version(
+    pin_collection: &CollectionOverviewDb,
+    revision_id_mapping: HashMap<uuid::Uuid, uuid::Uuid>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<(), ArunaError> {
+    use crate::database::schema::paths::dsl as paths_dsl;
+    use crate::database::schema::paths::dsl::paths;
+
+    // Create new version string
+    let new_version = match &pin_collection.coll_version {
+        None => Err(ArunaError::InvalidRequest(
+            "Pin request without version should not reach this point...".to_string(),
+        )),
+        Some(new_version) => Ok(format!(
+            "{}.{}.{}",
+            new_version.major, new_version.minor, new_version.patch
+        )),
+    }?;
+
+    // Fetch all paths belonging to the provided shared_revision_ids
+    let old_paths = paths
+        .filter(
+            paths_dsl::shared_revision_id.eq_any(&revision_id_mapping.keys().collect::<Vec<_>>()),
+        )
+        .load::<Path>(conn)?;
+
+    // Adjust paths to cloned objects
+    let mut modified_paths = Vec::new();
+    for old_path in old_paths {
+        // Split path in mutable parts for easier modification/replacement
+        let mut path_parts = old_path.path.split("/").collect::<Vec<_>>();
+
+        // Replace collection name in case of pin with collection update
+        path_parts[2] = pin_collection.coll.name.as_str();
+
+        // Replace old version string with new version string
+        path_parts[3] = new_version.as_str();
+
+        // Created new path record and save in vector for later insertion
+        modified_paths.push(Path {
+            id: uuid::Uuid::new_v4(),
+            path: path_parts.join("/").to_string(),
+            shared_revision_id: *revision_id_mapping
+                .get(&old_path.shared_revision_id)
+                .ok_or(ArunaError::InvalidRequest("Could not map old object to new  ".to_string()))?,
+            collection_id: pin_collection.coll.id.clone(),
+            created_at: Local::now().naive_local(),
+            active: true,
+        });
+    }
+
+    // Insert all modified paths at once
+    insert_into(paths).values(&modified_paths).execute(conn)?;
+
+    Ok(())
 }
 
 /// Helper function that checks if the "new" label ontology is fullfilled by the existing collection
