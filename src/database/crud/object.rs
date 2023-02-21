@@ -2114,15 +2114,19 @@ pub fn clone_object(
         .filter(database::schema::objects::id.eq(&object_uuid))
         .first::<Object>(conn)?;
 
+    // Get original collection_object reference
     let mut db_collection_object: CollectionObject = CollectionObject::belonging_to(&db_object)
         .filter(database::schema::collection_objects::collection_id.eq(&source_collection_uuid))
         .first::<CollectionObject>(conn)?;
 
+    // Get key_values
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
+    // Get object hash
     let mut db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
 
+    // Get object source
     let db_source: Option<Source> = match &db_object.source_id {
         None => None,
         Some(src_id) => Some(
@@ -2132,11 +2136,16 @@ pub fn clone_object(
         ),
     };
 
+    // Get object locations
+    let mut db_locations = object_locations
+        .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+        .load::<ObjectLocation>(conn)?;
+
     // Modify object
     db_object.id = uuid::Uuid::new_v4();
     db_object.shared_revision_id = uuid::Uuid::new_v4();
     db_object.revision_number = 0;
-    db_object.origin_id = object_uuid;
+    db_object.origin_id = object_uuid.clone();
     db_object.created_by = *creator_uuid;
     db_object.created_at = Local::now().naive_local();
 
@@ -2155,17 +2164,28 @@ pub fn clone_object(
         kv.object_id = db_object.id;
     }
 
-    //ToDo: What about object location cloning?
+    // Modify object locations
+    for location in &mut db_locations {
+        location.id = uuid::Uuid::new_v4();
+        location.object_id = db_object.id.clone();
+    }
 
-    // Insert object, hash, key_Values and references
-    diesel::insert_into(objects)
+    // Insert cloned object, hash, key_Values and references
+    insert_into(objects)
         .values(&db_object)
         .execute(conn)?;
-    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
-    diesel::insert_into(object_key_value)
+    // Insert cloned locations
+    insert_into(object_locations)
+        .values(&db_locations)
+        .execute(conn)?;
+    // Insert cloned hash
+    insert_into(hashes).values(&db_hash).execute(conn)?;
+    // Insert cloned key_Values
+    insert_into(object_key_value)
         .values(&db_object_key_values)
         .execute(conn)?;
-    diesel::insert_into(collection_objects)
+    // Insert reference for cloned object
+    insert_into(collection_objects)
         .values(&db_collection_object)
         .execute(conn)?;
 
