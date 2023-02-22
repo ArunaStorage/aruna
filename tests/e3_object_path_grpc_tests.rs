@@ -257,7 +257,7 @@ async fn create_additional_object_path_grpc_test() {
     );
     let create_path_response = object_service.create_object_path(create_path_request).await;
 
-    assert!(create_path_response.is_err()); // Duplicate paths are not allowed.
+    assert!(create_path_response.is_ok()); // Duplicate paths are ignored on creation.
 
     // Try to create additional paths with different permissions
     for permission in vec![
@@ -409,8 +409,6 @@ async fn get_object_path_grpc_test() {
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
@@ -423,7 +421,6 @@ async fn get_object_path_grpc_test() {
 
     // Requests with invalid paths
     for invalid_path in vec![
-        "".to_string(),              // Duplicate of existing default path
         "/".to_string(),             // Empty path parts are not allowed
         "//".to_string(),            // Empty path parts are not allowed
         "path//".to_string(),        // Empty path parts are not allowed
@@ -448,7 +445,7 @@ async fn get_object_path_grpc_test() {
         let create_path_response = object_service.create_object_path(create_path_request).await;
 
         if create_path_response.is_ok() {
-            // Hint in the terminal output which path failed the test.
+            // Hint in the terminal output which custom path failed the test.
             println!("Wrongfully creation of path succeeded: {}", invalid_path);
         }
 
@@ -460,6 +457,7 @@ async fn get_object_path_grpc_test() {
 
     // Requests with valid paths in different formats
     for valid_path in vec![
+        "".to_string(), // Duplicate of existing default path are ignored
         "single_part".to_string(),
         "multi/part".to_string(),
         "/slash/front".to_string(),
@@ -478,25 +476,28 @@ async fn get_object_path_grpc_test() {
             tonic::Request::new(inner_create_path_request.clone()),
             common::oidc::ADMINTOKEN,
         );
-        let create_path_response = object_service.create_object_path(create_path_request).await;
+        let created_path = object_service
+            .create_object_path(create_path_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .path
+            .unwrap();
 
-        if create_path_response.is_err() {
-            // Hint in the terminal output which path failed the test.
-            println!("Wrongfully creation of path failed: {}", valid_path);
-        }
-
-        let created_path = create_path_response.unwrap().into_inner().path.unwrap();
-
-        let fq_path = if valid_path.starts_with('/') {
+        let fq_path = if valid_path.is_empty() {
+            format!("{static_path_part}/{}", random_object.filename).to_string()
+        } else if valid_path.starts_with('/') {
             if valid_path.ends_with('/') {
                 format!("{static_path_part}{valid_path}{}", random_object.filename).to_string()
             } else {
                 format!("{static_path_part}{valid_path}/{}", random_object.filename).to_string()
             }
-        } else if valid_path.ends_with('/') {
-            format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
         } else {
-            format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
+            if valid_path.ends_with('/') {
+                format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
+            } else {
+                format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
+            }
         };
 
         assert_eq!(created_path.path, fq_path);
@@ -521,8 +522,8 @@ async fn get_object_path_grpc_test() {
 
     assert_eq!(
         get_object_path_response.object_paths.len(),
-        fq_valid_paths.len()
-    ); // Created + Default
+        fq_valid_paths.len() - 1
+    ); // 11 created and default ignored
 
     for proto_path in get_object_path_response.object_paths {
         assert!(fq_valid_paths.contains(&proto_path.path));

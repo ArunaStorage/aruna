@@ -1288,44 +1288,111 @@ impl Database {
                     ));
                 }
 
-                // Get collection_object association of original object
-                let original_reference: CollectionObject = collection_objects
+                // Get object and collection_object association of provided object uuid
+                let original_object = objects
+                    .filter(database::schema::objects::id.eq(&object_uuid))
+                    .first::<Object>(conn)?;
+
+                let original_reference: Option<CollectionObject> = collection_objects
                     .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
                     .filter(
                         database::schema::collection_objects::collection_id
                             .eq(&source_collection_uuid),
                     )
-                    .first::<CollectionObject>(conn)?;
+                    .first::<CollectionObject>(conn)
+                    .optional()?;
 
-                // Check if reference is staging object
-                if original_reference.reference_status == ReferenceStatus::STAGING {
-                    return Err(ArunaError::InvalidRequest(
-                        "Cannot create reference of object while in staging phase.".to_string(),
-                    ));
-                }
+                let target_reference = if let Some(object_reference) = original_reference {
+                    // Check if existing reference is staging object
+                    if object_reference.reference_status == ReferenceStatus::STAGING {
+                        return Err(ArunaError::InvalidRequest(
+                            format!("Cannot create reference of object {object_uuid} while in staging phase.")));
+                    }
 
-                // Auto_update reference can only be created for latest revision to ensure reference consistency
-                if request.auto_update && !original_reference.is_latest {
-                    return Err(ArunaError::InvalidRequest(
-                        "Cannot create auto_update reference for non-latest revision.".to_string(),
-                    ));
-                }
+                    // Auto_update reference can only be created for latest revision to ensure reference consistency
+                    //   In the case that existing reference is auto_update == false and is_latest == true -> Overwrite
+                    if request.auto_update {
+                        if object_reference.is_latest {
+                            if !object_reference.auto_update {
+                                // Update existing reference to auto_update == true
+                                update(collection_objects)
+                                    .filter(database::schema::collection_objects::id.eq(&object_reference.id))
+                                    .set(database::schema::collection_objects::auto_update.eq(&true))
+                                    .execute(conn)?;
 
-                let collection_object = CollectionObject {
-                    id: uuid::Uuid::new_v4(),
-                    collection_id: target_collection_uuid,
-                    object_id: object_uuid,
-                    is_latest: original_reference.is_latest,
-                    is_specification: original_reference.is_specification,
-                    auto_update: request.auto_update,
-                    writeable: request.writeable,
-                    reference_status: original_reference.reference_status,
+                                return Ok(());
+                            } // else do nothing
+                        } else {
+                            return Err(ArunaError::InvalidRequest(
+                                "Cannot create auto_update reference for non-latest revision.".to_string(),
+                            ));
+                        }
+                    }
+
+                    CollectionObject {
+                        id: uuid::Uuid::new_v4(),
+                        collection_id: target_collection_uuid,
+                        object_id: object_uuid,
+                        is_latest: object_reference.is_latest,
+                        is_specification: object_reference.is_specification,
+                        auto_update: request.auto_update,
+                        writeable: request.writeable,
+                        reference_status: object_reference.reference_status,
+                    }
+                } else {
+                    let all_references = get_all_references(conn, &object_uuid, &true)?;
+
+                    if all_references
+                        .iter()
+                        .filter(|object_reference| object_reference.writeable)
+                        .filter(|object_reference| object_reference.collection_id == source_collection_uuid)
+                        .count() < 1
+                    {
+                        return Err(ArunaError::InvalidRequest(format!("No writeable reference for object {object_uuid} could be found in the source collection.")))
+                    }
+
+                    // Check if provided object is latest revision
+                    let is_latest_revision = get_latest_obj(conn, object_uuid.clone())?.id == object_uuid;
+
+                    // Can only create auto_update references for latest revision
+                    if request.auto_update && !is_latest_revision {
+                        return Err(ArunaError::InvalidRequest(
+                            "Cannot create auto_update reference for non-latest revision.".to_string(),
+                        ));
+                    };
+
+                    CollectionObject {
+                        id: uuid::Uuid::new_v4(),
+                        collection_id: target_collection_uuid,
+                        object_id: object_uuid,
+                        is_latest: is_latest_revision,
+                        is_specification: false, // Default as this should not be guessed
+                        auto_update: request.auto_update,
+                        writeable: request.writeable,
+                        reference_status: ReferenceStatus::OK,
+                    }
                 };
 
-                // Insert borrowed object reference
+                // Insert new object reference
+                //   --> Error if specific object revision already has reference in collection
                 diesel::insert_into(collection_objects)
-                    .values(collection_object)
-                    .execute(conn)?;
+                    .values(&target_reference)
+                    .get_result::<CollectionObject>(conn)?;
+
+                // Construct path string
+                let fq_path = construct_path_string(
+                    &target_collection_uuid,
+                    &original_object.filename,
+                    &request.sub_path,
+                    conn,
+                )?;
+
+                create_path_db(
+                    &fq_path,
+                    &original_object.shared_revision_id,
+                    &target_collection_uuid,
+                    conn,
+                )?;
 
                 Ok(())
             })?;
@@ -3447,7 +3514,14 @@ pub fn create_path_db(
         created_at: Local::now().naive_local(),
         active: true,
     };
-    diesel::insert_into(paths).values(path_obj).execute(conn)?;
+
+    if let None = paths
+        .filter(database::schema::paths::path.eq(fq_path))
+        .first::<Path>(conn)
+        .optional()?
+    {
+        diesel::insert_into(paths).values(path_obj).execute(conn)?;
+    };
 
     Ok(())
 }
