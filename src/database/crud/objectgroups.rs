@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 
+use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{check_all_for_db_kv, ParsedQuery};
+use crate::database::models::collection::CollectionObject;
+use crate::database::models::enums::ReferenceStatus;
 use crate::database::models::{
     collection::CollectionObjectGroup,
     object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
     views::ObjectGroupStat,
 };
+use crate::database::schema::collection_objects::dsl::collection_objects;
 use crate::error::ArunaError;
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectGroupRequest, AddLabelsToObjectGroupResponse,
@@ -62,7 +66,6 @@ impl Database {
         use crate::database::schema::object_groups::dsl::*;
 
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let new_obj_grp_uuid = uuid::Uuid::new_v4();
 
         let database_obj_group = ObjectGroup {
@@ -117,22 +120,41 @@ impl Database {
             .unique()
             .collect::<Vec<uuid::Uuid>>();
 
-        //Insert all defined object_groups into the database
+        // Insert all defined object_groups into the database
         let overview = self
             .pg_connection
             .get()?
-            .transaction::<ObjectGroupDb, Error, _>(|conn| {
-                diesel::insert_into(object_groups)
+            .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
+                // Validate that request does not contain staging objects
+                if collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .load::<CollectionObject>(conn)
+                    .optional()?
+                    .unwrap_or_default()
+                    .len()
+                    > 0
+                {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create object group with staging objects.".to_string(),
+                    ));
+                }
+
+                insert_into(object_groups)
                     .values(&database_obj_group)
                     .execute(conn)?;
-                diesel::insert_into(object_group_key_value)
+                insert_into(object_group_key_value)
                     .values(&key_values)
                     .execute(conn)?;
-                diesel::insert_into(collection_object_groups)
+                insert_into(collection_object_groups)
                     .values(&collection_object_group)
                     .execute(conn)?;
+
                 if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                    return Err(diesel::result::Error::NotFound);
+                    return Err(ArunaError::DieselError(Error::NotFound));
                 }
 
                 diesel::insert_into(object_group_objects)
@@ -141,7 +163,7 @@ impl Database {
 
                 let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-                grp.ok_or(diesel::NotFound)
+                grp.ok_or(ArunaError::DieselError(Error::NotFound))
             })?;
 
         // Return already complete gRPC response
@@ -149,6 +171,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn update_object_group(
         &self,
         request: &UpdateObjectGroupRequest,
@@ -160,9 +183,7 @@ impl Database {
         use crate::database::schema::object_groups::dsl::*;
 
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let parsed_old_id = uuid::Uuid::parse_str(&request.group_id)?;
-
         let new_obj_grp_uuid = uuid::Uuid::new_v4();
 
         let mut database_obj_group = ObjectGroup {
@@ -221,7 +242,25 @@ impl Database {
         let overview = self
             .pg_connection
             .get()?
-            .transaction::<ObjectGroupDb, Error, _>(|conn| {
+            .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
+                // Validate that request does not contain staging objects
+                if collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .load::<CollectionObject>(conn)
+                    .optional()?
+                    .unwrap_or_default()
+                    .len()
+                    > 0
+                {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create object group with staging objects.".to_string(),
+                    ));
+                }
+
                 let old_grp = object_groups
                     .filter(crate::database::schema::object_groups::id.eq(parsed_old_id))
                     .first::<ObjectGroup>(conn)?;
@@ -239,7 +278,7 @@ impl Database {
                     .values(&collection_object_group)
                     .execute(conn)?;
                 if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                    return Err(diesel::result::Error::NotFound);
+                    return Err(ArunaError::DieselError(Error::NotFound));
                 }
 
                 diesel::insert_into(object_group_objects)
@@ -248,7 +287,7 @@ impl Database {
 
                 let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-                grp.ok_or(diesel::NotFound)
+                grp.ok_or(ArunaError::DieselError(diesel::NotFound))
             })?;
 
         // Return already complete gRPC response
@@ -256,6 +295,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn get_object_group_by_id(
         &self,
         request: &GetObjectGroupByIdRequest,
@@ -276,6 +316,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn get_object_groups_from_object(
         &self,
         request: &GetObjectGroupsFromObjectRequest,
@@ -314,6 +355,7 @@ impl Database {
             object_groups: Some(ogoverview),
         })
     }
+
     pub fn get_object_groups(
         &self,
         request: GetObjectGroupsRequest,
@@ -464,6 +506,7 @@ impl Database {
             object_groups: ogoverview,
         })
     }
+
     pub fn get_object_group_history(
         &self,
         request: GetObjectGroupHistoryRequest,
@@ -520,6 +563,7 @@ impl Database {
             object_groups: Some(ogoverview),
         })
     }
+
     pub fn get_object_group_objects(
         &self,
         request: GetObjectGroupObjectsRequest,
@@ -582,6 +626,7 @@ impl Database {
             object_group_objects: ogobjects,
         })
     }
+
     pub fn delete_object_group(
         &self,
         request: DeleteObjectGroupRequest,
@@ -710,6 +755,7 @@ impl Database {
         // Return already complete gRPC response
         Ok(DeleteObjectGroupResponse {})
     }
+
     pub fn add_labels_to_object_group(
         &self,
         request: AddLabelsToObjectGroupRequest,
