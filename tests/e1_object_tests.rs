@@ -732,7 +732,7 @@ fn delete_object_references_test() {
         auto_update: true,
         sub_path: "".to_string(),
     })
-        .unwrap();
+    .unwrap();
 
     // Delete target collection reference
     db.delete_object(
@@ -744,13 +744,12 @@ fn delete_object_references_test() {
         },
         creator,
     )
-        .unwrap();
+    .unwrap();
 
     let undeleted = get_object(source_collection.id.to_string(), new_obj.id.to_string());
 
     assert_ne!(undeleted.filename, "DELETED".to_string())
 }
-
 
 #[test]
 #[ignore]

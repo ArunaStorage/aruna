@@ -2238,9 +2238,7 @@ pub fn clone_object(
     }
 
     // Insert cloned object, hash, key_Values and references
-    insert_into(objects)
-        .values(&db_object)
-        .execute(conn)?;
+    insert_into(objects).values(&db_object).execute(conn)?;
     // Insert cloned locations
     insert_into(object_locations)
         .values(&db_locations)

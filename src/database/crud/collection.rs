@@ -1222,7 +1222,9 @@ fn pin_paths_to_version(
             path: path_parts.join("/").to_string(),
             shared_revision_id: *revision_id_mapping
                 .get(&old_path.shared_revision_id)
-                .ok_or(ArunaError::InvalidRequest("Could not map old object to new  ".to_string()))?,
+                .ok_or(ArunaError::InvalidRequest(
+                    "Could not map old object to newly created.".to_string(),
+                ))?,
             collection_id: pin_collection.coll.id.clone(),
             created_at: Local::now().naive_local(),
             active: true,

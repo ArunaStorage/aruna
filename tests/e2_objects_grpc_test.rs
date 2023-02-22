@@ -2247,8 +2247,6 @@ async fn clone_object_grpc_test() {
         collection_id: source_collection.id.to_string(),
         new_name: "updated.object".to_string(),
         content_len: 1234,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     });
 
@@ -2302,8 +2300,6 @@ async fn clone_object_grpc_test() {
         collection_id: target_collection.id.to_string(),
         new_name: "clone.update".to_string(),
         content_len: 123456,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     });
 
@@ -2660,8 +2656,6 @@ async fn delete_object_grpc_test() {
         collection_id: random_collection.id.to_string(),
         new_name: "rev1.object".to_string(),
         content_len: 1234,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     });
 
@@ -2735,8 +2729,6 @@ async fn delete_object_revisions_grpc_test() {
         collection_id: random_collection.id.to_string(),
         new_name: "rev1.object".to_string(),
         content_len: 1234,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let rev_1_object = common::functions::update_object(&update_meta);
@@ -2797,8 +2789,6 @@ async fn delete_object_revisions_grpc_test() {
         collection_id: random_collection.id.to_string(),
         new_name: "random_update.01".to_string(),
         content_len: 123,
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object_rev_1 = common::functions::update_object(&update_meta);
