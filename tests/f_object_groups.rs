@@ -521,14 +521,14 @@ fn object_group_staging_object_test() {
         ..Default::default()
     });
 
-    let mut polluted_object_ids = vec![staging_object.id.clone()];
+    let mut polluted_object_ids = vec![staging_object.id];
     polluted_object_ids.append(&mut object_ids);
 
     // Try create object group with staging object in data objects
     let mut create_request = CreateObjectGroupRequest {
         name: "object_group_staging_object_test.fail".to_string(),
         description: "Created within object_group_staging_object_test().".to_string(),
-        collection_id: random_collection.id.to_string(),
+        collection_id: random_collection.id,
         object_ids: polluted_object_ids.clone(),
         meta_object_ids: vec![],
         labels: vec![],

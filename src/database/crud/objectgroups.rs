@@ -126,7 +126,7 @@ impl Database {
             .get()?
             .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
                 // Validate that request does not contain staging objects
-                if collection_objects
+                if !collection_objects
                     .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
                     .filter(
                         database::schema::collection_objects::reference_status
@@ -135,8 +135,7 @@ impl Database {
                     .load::<CollectionObject>(conn)
                     .optional()?
                     .unwrap_or_default()
-                    .len()
-                    > 0
+                    .is_empty()
                 {
                     return Err(ArunaError::InvalidRequest(
                         "Cannot create object group with staging objects.".to_string(),
@@ -244,7 +243,7 @@ impl Database {
             .get()?
             .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
                 // Validate that request does not contain staging objects
-                if collection_objects
+                if !collection_objects
                     .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
                     .filter(
                         database::schema::collection_objects::reference_status
@@ -253,8 +252,7 @@ impl Database {
                     .load::<CollectionObject>(conn)
                     .optional()?
                     .unwrap_or_default()
-                    .len()
-                    > 0
+                    .is_empty()
                 {
                     return Err(ArunaError::InvalidRequest(
                         "Cannot create object group with staging objects.".to_string(),
