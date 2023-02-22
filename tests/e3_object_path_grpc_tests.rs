@@ -4,9 +4,10 @@ use crate::common::grpc_helpers::get_token_user_id;
 use aruna_rust_api::api::storage::models::v1::{DataClass, Hash, Hashalgorithm, Permission};
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectPathRequest, FinishObjectStagingRequest, GetObjectByIdRequest,
-    GetObjectPathRequest, GetObjectPathsRequest, GetObjectsByPathRequest,
-    InitializeNewObjectRequest, Path, SetObjectPathVisibilityRequest, StageObject,
+    CreateObjectPathRequest, CreateObjectReferenceRequest, DeleteObjectRequest,
+    FinishObjectStagingRequest, GetObjectByIdRequest, GetObjectPathRequest, GetObjectPathsRequest,
+    GetObjectsByPathRequest, InitializeNewObjectRequest, Path, SetObjectPathVisibilityRequest,
+    StageObject,
 };
 use aruna_server::config::ArunaServerConfig;
 use aruna_server::database;
@@ -350,6 +351,199 @@ async fn create_additional_object_path_grpc_test() {
         .into_inner();
 
     assert_eq!(get_paths_response.object_paths.len(), 3) // Default, Modify/Write and Admin
+}
+
+/// The individual steps of this test function contains:
+/// 1) Creating an object with the default subpath
+/// 2) Create reference of object in another collection with default subpath
+/// 3) Create reference of object in another collection with custom subpath
+/// 4) Update object and static reference older revision with duplicate subpath
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn create_object_path_with_reference_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Read test config relative to binary
+    let config = ArunaServerConfig::new();
+
+    // Initialize instance default data proxy endpoint
+    let default_endpoint = db
+        .clone()
+        .init_default_endpoint(config.config.default_endpoint)
+        .unwrap();
+
+    // Init object service
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let collection_meta = TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    };
+    let source_collection = common::functions::create_collection(collection_meta.clone());
+    let target_collection = common::functions::create_collection(collection_meta.clone());
+
+    // Reusable static path parts
+    let static_path_part = format!("/{}/{}/latest", random_project.name, target_collection.name);
+
+    // Create random object with default subpath
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.clone()),
+        collection_id: source_collection.id.to_string(),
+        ..Default::default()
+    };
+    let random_object = common::functions::create_object(&object_meta);
+
+    // Create object reference with default subpath in target collection
+    let mut inner_create_reference_request = CreateObjectReferenceRequest {
+        object_id: random_object.id.to_string(),
+        collection_id: source_collection.id.to_string(),
+        target_collection_id: target_collection.id.to_string(),
+        writeable: true,
+        auto_update: true,
+        sub_path: "".to_string(),
+    };
+    let default_path_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_create_reference_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    object_service
+        .create_object_reference(default_path_reference_request)
+        .await
+        .unwrap();
+
+    // Get paths of target collection to validate default path of object
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectPathsRequest {
+            collection_id: target_collection.id.to_string(),
+            include_inactive: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let target_collection_paths = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
+    assert_eq!(
+        target_collection_paths.first().unwrap().path,
+        format!("{static_path_part}/{}", random_object.filename).to_string()
+    );
+
+    // Update object and create static reference on revision 0 in same collection with default subpath
+    common::functions::update_object(&TCreateUpdate {
+        original_object: random_object.clone(),
+        collection_id: source_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    inner_create_reference_request.object_id = random_object.id.to_string();
+    inner_create_reference_request.auto_update = false;
+
+    let default_path_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_create_reference_request.clone()),
+        common::oidc::ADMINTOKEN,
+    );
+    object_service
+        .create_object_reference(default_path_reference_request)
+        .await
+        .unwrap();
+
+    // Get paths of target collection to validate default path of object
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectPathsRequest {
+            collection_id: target_collection.id.to_string(),
+            include_inactive: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let target_collection_paths = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    // Target collection should now have two references but still only the default path for the object
+    assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
+    assert_eq!(
+        target_collection_paths.first().unwrap().path,
+        format!("{static_path_part}/{}", random_object.filename).to_string()
+    );
+
+    // Remove object from target collection which includes removal of all its paths
+    let delete_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteObjectRequest {
+            object_id: random_object.id.to_string(),
+            collection_id: target_collection.id.to_string(),
+            with_revisions: false,
+            force: false,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    object_service
+        .delete_object(delete_reference_request)
+        .await
+        .unwrap();
+
+    dbg!(common::functions::get_object(
+        source_collection.id.to_string(),
+        random_object.id.to_string()
+    ));
+
+    // Create object reference with custom subpath in target collection
+    inner_create_reference_request.sub_path = "custom/".to_string();
+    let custom_path_reference_request = common::grpc_helpers::add_token(
+        tonic::Request::new(inner_create_reference_request),
+        common::oidc::ADMINTOKEN,
+    );
+    object_service
+        .create_object_reference(custom_path_reference_request)
+        .await
+        .unwrap();
+
+    // Get paths of target collection to validate default path of object
+    let get_paths_request = common::grpc_helpers::add_token(
+        tonic::Request::new(GetObjectPathsRequest {
+            collection_id: target_collection.id.to_string(),
+            include_inactive: true,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let target_collection_paths = object_service
+        .get_object_paths(get_paths_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_paths;
+
+    assert_eq!(target_collection_paths.len(), 1); // Only custom subpath of object
+    assert_eq!(
+        target_collection_paths.first().unwrap().path,
+        format!("{static_path_part}/custom/{}", random_object.filename).to_string()
+    );
 }
 
 /// The individual steps of this test function contains:
