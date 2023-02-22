@@ -2874,7 +2874,9 @@ pub fn delete_multiple_objects(
                         }
                     }
                 }
-                objects_to_trash.push(writeable_object);
+                if !other_reference_found {
+                    objects_to_trash.push(writeable_object);
+                }
                 objects_to_trash.append(&mut potential_trash)
             }
         }
