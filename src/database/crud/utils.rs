@@ -21,7 +21,7 @@ lazy_static! {
     /// Both cases should be checked in tests and should result in safe behaviour because
     /// the string is static.
     pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[\w~\-.]+$").unwrap();
-    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)*/?$").unwrap();
+    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)+/?$").unwrap();
 }
 
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
