@@ -16,7 +16,7 @@ use aruna_rust_api::api::storage::{
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
-use aruna_server::database::models::enums::{EndpointType, ObjectStatus};
+use aruna_server::database::models::enums::{EndpointType, ObjectStatus, ReferenceStatus};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
@@ -392,6 +392,100 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     assert!(finished_object.auto_update);
 
     finished_object
+}
+
+/// Creates an Object in the specified Collection.
+/// Fills everything with random values.
+#[allow(dead_code)]
+pub fn create_staging_object(object_info: &TCreateObject) -> Object {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator_id = if let Some(c_id) = &object_info.creator_id {
+        uuid::Uuid::parse_str(c_id).unwrap()
+    } else {
+        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+    };
+    let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
+    let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
+        uuid::Uuid::parse_str(e_id).unwrap()
+    } else {
+        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
+    };
+    let sub_path = if let Some(whatev) = &object_info.sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
+    };
+
+    // Initialize Object with random values
+    let object_id = uuid::Uuid::new_v4();
+    let object_filename = format!("DummyFile.{}", rand_string(5));
+    let object_length = thread_rng().gen_range(1..1073741824);
+    let upload_id = uuid::Uuid::new_v4();
+    let dummy_labels = (0..object_info.num_labels)
+        .map(|num| KeyValue {
+            key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("label_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+    let dummy_hooks = (0..object_info.num_hooks)
+        .map(|num| KeyValue {
+            key: format!("hook_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("hook_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+
+    let init_request = InitializeNewObjectRequest {
+        object: Some(StageObject {
+            filename: object_filename.to_string(),
+            content_len: object_length,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: dummy_labels,
+            hooks: dummy_hooks,
+            sub_path,
+        }),
+        collection_id: object_info.collection_id.to_string(),
+        preferred_endpoint_id: endpoint_id.to_string(),
+        multipart: false,
+        is_specification: false,
+        hash: object_info.init_hash.clone(),
+    };
+
+    let dummy_location = Location {
+        r#type: LocationType::S3 as i32,
+        bucket: collection_id.to_string(),
+        path: object_id.to_string(),
+    };
+    let init_response = db
+        .create_object(
+            &init_request,
+            &creator_id,
+            &dummy_location,
+            upload_id.to_string(),
+            endpoint_id,
+            object_id,
+        )
+        .unwrap();
+
+    let staging_object = get_object(collection_id.to_string(), init_response.object_id);
+    let staging_object_uuid = uuid::Uuid::parse_str(staging_object.id.as_str()).unwrap();
+
+    // Validate Object creation
+    assert_eq!(staging_object.id, object_id.to_string());
+    assert!(matches!(
+        grpc_to_db_object_status(&staging_object.status),
+        ObjectStatus::INITIALIZING
+    ));
+    assert_eq!(staging_object.rev_number, 0);
+    assert_eq!(staging_object.filename, object_filename);
+    assert_eq!(staging_object.content_len, object_length);
+    assert_eq!(
+        db.get_reference_status(&staging_object_uuid, &collection_id)
+            .unwrap(),
+        ReferenceStatus::STAGING
+    );
+
+    staging_object
 }
 
 /// GetObjectById wrapper for simplified use in tests.
