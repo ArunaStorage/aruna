@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::functions::{get_object_status_raw, TCreateCollection};
+use crate::common::functions::{get_object, get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
     DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
@@ -689,6 +689,68 @@ fn delete_object_test() {
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
 }
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_object_references_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let source_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let target_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: source_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            ..Default::default()
+        }),
+    );
+
+    db.create_object_reference(CreateObjectReferenceRequest {
+        object_id: new_obj.id.to_string(),
+        collection_id: source_collection.id.to_string(),
+        target_collection_id: target_collection.id.to_string(),
+        writeable: true,
+        auto_update: true,
+        sub_path: "".to_string(),
+    })
+        .unwrap();
+
+    // Delete target collection reference
+    db.delete_object(
+        DeleteObjectRequest {
+            object_id: new_obj.id.to_string(),
+            collection_id: target_collection.id.to_string(),
+            with_revisions: false,
+            force: false,
+        },
+        creator,
+    )
+        .unwrap();
+
+    let undeleted = get_object(source_collection.id.to_string(), new_obj.id.to_string());
+
+    assert_ne!(undeleted.filename, "DELETED".to_string())
+}
+
 
 #[test]
 #[ignore]
