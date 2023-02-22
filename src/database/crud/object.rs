@@ -702,7 +702,7 @@ impl Database {
 
                     if let Some(reference) = reference_opt {
                         if reference.reference_status == ReferenceStatus::STAGING {
-                            return Ok(update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj)?);
+                            return update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj);
                         }
 
                         if !reference.writeable {
@@ -1352,7 +1352,7 @@ impl Database {
                     }
 
                     // Check if provided object is latest revision
-                    let is_latest_revision = get_latest_obj(conn, object_uuid.clone())?.id == object_uuid;
+                    let is_latest_revision = get_latest_obj(conn, object_uuid)?.id == object_uuid;
 
                     // Can only create auto_update references for latest revision
                     if request.auto_update && !is_latest_revision {
@@ -2099,7 +2099,7 @@ pub fn update_object_in_place(
     // Add internal labels to key_value_pairs
     // Get fq_path
     let fq_path = construct_path_string(
-        &collection_uuid,
+        collection_uuid,
         &stage_object.filename,
         &stage_object.sub_path,
         conn,
@@ -2123,7 +2123,7 @@ pub fn update_object_in_place(
     } else {
         key_value_pairs.push(ObjectKeyValue {
             id: uuid::Uuid::new_v4(),
-            object_id: object_uuid.clone(),
+            object_id: *object_uuid,
             key: "app.aruna-storage.org/new_path".to_string(),
             value: fq_path,
             key_value_type: KeyValueType::LABEL,
@@ -2212,7 +2212,7 @@ pub fn clone_object(
     db_object.id = uuid::Uuid::new_v4();
     db_object.shared_revision_id = uuid::Uuid::new_v4();
     db_object.revision_number = 0;
-    db_object.origin_id = object_uuid.clone();
+    db_object.origin_id = object_uuid;
     db_object.created_by = *creator_uuid;
     db_object.created_at = Local::now().naive_local();
 
@@ -2234,7 +2234,7 @@ pub fn clone_object(
     // Modify object locations
     for location in &mut db_locations {
         location.id = uuid::Uuid::new_v4();
-        location.object_id = db_object.id.clone();
+        location.object_id = db_object.id;
     }
 
     // Insert cloned object, hash, key_Values and references
@@ -2459,7 +2459,7 @@ pub fn _safe_delete_object(
             //for revision_id in undeleted_revision_ids {
             delete_multiple_objects(
                 undeleted_revision_ids,
-                collection_uuid.clone(),
+                *collection_uuid,
                 true,  // Already validated
                 false, // Delete revisions individually top-down
                 creator_id,
@@ -2809,7 +2809,7 @@ pub fn delete_multiple_objects(
     let mut writeable_objects = Vec::new();
     let mut staging_objects = Vec::new();
 
-    'outer: for original_db_obj in original_database_objects.clone() {
+    'outer: for original_db_obj in original_database_objects {
         for reference in references.clone() {
             if original_db_obj.id == reference.object_id {
                 if reference.writeable {
@@ -2891,59 +2891,57 @@ pub fn delete_multiple_objects(
                 objects_to_trash.append(&mut potential_trash)
             }
         }
-    } else {
-        if with_force {
-            for writeable_object in writeable_objects.clone() {
-                let mut potential_trash = Vec::new();
-                let mut other_reference_found = false;
+    } else if with_force {
+        for writeable_object in writeable_objects.clone() {
+            let mut potential_trash = Vec::new();
+            let mut other_reference_found = false;
 
-                for current_object in object_revisions.clone() {
-                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
-                        // Mark ALL references to this object_id for deletion
-                        for reference in references.clone() {
-                            if current_object.id == writeable_object.id {
+            for current_object in object_revisions.clone() {
+                if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                    // Mark ALL references to this object_id for deletion
+                    for reference in references.clone() {
+                        if current_object.id == writeable_object.id {
+                            references_to_delete.push(reference.clone())
+                        } else {
+                            other_reference_found = true;
+                            potential_trash = Vec::new();
+                        }
+                    }
+                    if !other_reference_found {
+                        potential_trash.push(current_object)
+                    }
+                }
+            }
+            objects_to_trash.push(writeable_object);
+            objects_to_trash.append(&mut potential_trash)
+        }
+    } else {
+        for writeable_object in writeable_objects.clone() {
+            let mut potential_trash = Vec::new();
+            let mut other_reference_found = false;
+
+            for current_object in object_revisions.clone() {
+                if writeable_object.shared_revision_id == current_object.shared_revision_id {
+                    // Mark ALL references to this object_id for deletion
+                    for reference in references.clone() {
+                        if current_object.id == writeable_object.id {
+                            if reference.collection_id == coll_id {
                                 references_to_delete.push(reference.clone())
                             } else {
                                 other_reference_found = true;
                                 potential_trash = Vec::new();
                             }
                         }
-                        if !other_reference_found {
-                            potential_trash.push(current_object)
-                        }
+                    }
+                    if !other_reference_found {
+                        potential_trash.push(current_object)
                     }
                 }
+            }
+            if !other_reference_found {
                 objects_to_trash.push(writeable_object);
-                objects_to_trash.append(&mut potential_trash)
             }
-        } else {
-            for writeable_object in writeable_objects.clone() {
-                let mut potential_trash = Vec::new();
-                let mut other_reference_found = false;
-
-                for current_object in object_revisions.clone() {
-                    if writeable_object.shared_revision_id == current_object.shared_revision_id {
-                        // Mark ALL references to this object_id for deletion
-                        for reference in references.clone() {
-                            if current_object.id == writeable_object.id {
-                                if reference.collection_id == coll_id {
-                                    references_to_delete.push(reference.clone())
-                                } else {
-                                    other_reference_found = true;
-                                    potential_trash = Vec::new();
-                                }
-                            }
-                        }
-                        if !other_reference_found {
-                            potential_trash.push(current_object)
-                        }
-                    }
-                }
-                if !other_reference_found {
-                    objects_to_trash.push(writeable_object);
-                }
-                objects_to_trash.append(&mut potential_trash)
-            }
+            objects_to_trash.append(&mut potential_trash)
         }
     }
 
@@ -3048,14 +3046,14 @@ pub fn delete_multiple_objects(
                     )),
                 )?; // Should never occur
                 if let Some(sr_id) = shared_revisions_per_collection.get_mut(&rel_col) {
-                    if let Some(sr_count) = sr_id.get_mut(&sh_rev_id) {
+                    if let Some(sr_count) = sr_id.get_mut(sh_rev_id) {
                         *sr_count += 1;
                     } else {
-                        sr_id.insert(sh_rev_id.clone(), 1);
+                        sr_id.insert(*sh_rev_id, 1);
                     }
                 } else {
                     shared_revisions_per_collection
-                        .insert(rel_col, HashMap::from([(sh_rev_id.clone(), 1)]));
+                        .insert(rel_col, HashMap::from([(*sh_rev_id, 1)]));
                 };
             }
         }
@@ -3066,14 +3064,14 @@ pub fn delete_multiple_objects(
                     ArunaError::InvalidRequest("Shared revision does not exist".to_string()),
                 )?; // Should never occur
                 if let Some(sr_id) = shared_revision_per_collection_to_delete.get_mut(&rel_col) {
-                    if let Some(sr_count) = sr_id.get_mut(&sh_rev_id) {
+                    if let Some(sr_count) = sr_id.get_mut(sh_rev_id) {
                         *sr_count += 1;
                     } else {
-                        sr_id.insert(sh_rev_id.clone(), 1);
+                        sr_id.insert(*sh_rev_id, 1);
                     }
                 } else {
                     shared_revision_per_collection_to_delete
-                        .insert(rel_col, HashMap::from([(sh_rev_id.clone(), 1)]));
+                        .insert(rel_col, HashMap::from([(*sh_rev_id, 1)]));
                 };
             }
         }
@@ -3090,7 +3088,7 @@ pub fn delete_multiple_objects(
 
         for (sh_rev_id, counts_deleted) in shared_counts_deleted {
             if let Some(counts_before) = shared_counts_before.get(&sh_rev_id) {
-                if counts_before.clone() - counts_deleted == 0 {
+                if *counts_before - counts_deleted == 0 {
                     shared_revisions_to_delete.push(sh_rev_id);
                 }
             }
@@ -3513,10 +3511,11 @@ pub fn create_path_db(
         active: true,
     };
 
-    if let None = paths
+    if (paths
         .filter(database::schema::paths::path.eq(fq_path))
         .first::<Path>(conn)
-        .optional()?
+        .optional()?)
+    .is_none()
     {
         diesel::insert_into(paths).values(path_obj).execute(conn)?;
     };

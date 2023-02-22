@@ -594,7 +594,7 @@ fn delete_object_test() {
         force: false,
     };
 
-    let resp = db.delete_object(delreq.clone(), creator);
+    let resp = db.delete_object(delreq, creator);
 
     assert!(resp.is_ok());
 
@@ -676,7 +676,7 @@ fn delete_object_test() {
     delreq.object_id = staging_finished.clone().object.unwrap().id;
 
     //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
-    let _resp = db.delete_object(delreq.clone(), creator).unwrap();
+    let _resp = db.delete_object(delreq, creator).unwrap();
 
     // Revision Should also be deleted
     let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
@@ -738,7 +738,7 @@ fn delete_object_references_test() {
     db.delete_object(
         DeleteObjectRequest {
             object_id: new_obj.id.to_string(),
-            collection_id: target_collection.id.to_string(),
+            collection_id: target_collection.id,
             with_revisions: false,
             force: false,
         },
@@ -746,7 +746,7 @@ fn delete_object_references_test() {
     )
     .unwrap();
 
-    let undeleted = get_object(source_collection.id.to_string(), new_obj.id.to_string());
+    let undeleted = get_object(source_collection.id, new_obj.id);
 
     assert_ne!(undeleted.filename, "DELETED".to_string())
 }
@@ -1132,7 +1132,7 @@ fn delete_multiple_objects_test() {
     ];
 
     let del_req = DeleteObjectsRequest {
-        object_ids: ids.clone(),
+        object_ids: ids,
         collection_id: source_collection.id.to_string(),
         with_revisions: true,
         force: false,
@@ -1142,7 +1142,7 @@ fn delete_multiple_objects_test() {
 
     // Check random_collection objects
     let get_obj = GetObjectsRequest {
-        collection_id: source_collection.id.to_string(),
+        collection_id: source_collection.id,
         page_request: None,
         label_id_filter: None,
         with_url: false,
@@ -1179,7 +1179,7 @@ fn delete_multiple_objects_test() {
 
     // Check random_collection2 objects
     let get_obj = GetObjectsRequest {
-        collection_id: target_collection.id.to_string(),
+        collection_id: target_collection.id,
         page_request: None,
         label_id_filter: None,
         with_url: false,

@@ -75,7 +75,7 @@ async fn register_user_grpc_test() {
     assert!(!user_id.is_empty());
 
     let req = common::grpc_helpers::add_token(
-        tonic::Request::new(ActivateUserRequest { user_id: user_id }),
+        tonic::Request::new(ActivateUserRequest { user_id }),
         common::oidc::ADMINTOKEN,
     );
 

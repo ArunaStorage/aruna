@@ -447,7 +447,7 @@ async fn create_object_path_with_reference_grpc_test() {
     assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
     assert_eq!(
         target_collection_paths.first().unwrap().path,
-        format!("{static_path_part}/{}", random_object.filename).to_string()
+        format!("{static_path_part}/{}", random_object.filename)
     );
 
     // Update object and create static reference on revision 0 in same collection with default subpath
@@ -488,7 +488,7 @@ async fn create_object_path_with_reference_grpc_test() {
     assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
     assert_eq!(
         target_collection_paths.first().unwrap().path,
-        format!("{static_path_part}/{}", random_object.filename).to_string()
+        format!("{static_path_part}/{}", random_object.filename)
     );
 
     // Remove object from target collection which includes removal of all its paths
@@ -540,7 +540,7 @@ async fn create_object_path_with_reference_grpc_test() {
     assert_eq!(target_collection_paths.len(), 1); // Only custom subpath of object
     assert_eq!(
         target_collection_paths.first().unwrap().path,
-        format!("{static_path_part}/custom/{}", random_object.filename).to_string()
+        format!("{static_path_part}/custom/{}", random_object.filename)
     );
 }
 
@@ -684,12 +684,10 @@ async fn get_object_path_grpc_test() {
             } else {
                 format!("{static_path_part}{valid_path}/{}", random_object.filename).to_string()
             }
+        } else if valid_path.ends_with('/') {
+            format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
         } else {
-            if valid_path.ends_with('/') {
-                format!("{static_path_part}/{valid_path}{}", random_object.filename).to_string()
-            } else {
-                format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
-            }
+            format!("{static_path_part}/{valid_path}/{}", random_object.filename).to_string()
         };
 
         assert_eq!(created_path.path, fq_path);

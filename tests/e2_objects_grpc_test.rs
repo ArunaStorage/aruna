@@ -628,8 +628,8 @@ async fn update_staging_object_grpc_test() {
         for new_label in rev_0_staging_object_updated.labels.clone() {
             if old_label == new_label {
                 continue 'outer;
-            } else if old_label.key == "app.aruna-storage.org/new_path".to_string()
-                && new_label.key == "app.aruna-storage.org/new_path".to_string()
+            } else if old_label.key == *"app.aruna-storage.org/new_path"
+                && new_label.key == *"app.aruna-storage.org/new_path"
             {
                 continue 'outer;
             }

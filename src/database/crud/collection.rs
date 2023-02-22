@@ -952,7 +952,7 @@ fn pin_collection_to_version(
     use crate::database::schema::required_labels::dsl as rlbl;
     use diesel::prelude::*;
 
-    let mut new_collection_overview = collection_overview.clone();
+    let mut new_collection_overview = collection_overview;
 
     // Query the original objects from the origin collection
     let original_objects: Vec<Object> = clobj::collection_objects
@@ -1032,7 +1032,7 @@ fn pin_collection_to_version(
     // Mapping table for objectgroups with key = original_uuid and value = new_uuid
     let mut object_group_mappings = HashMap::new();
     // Clone each object from old to new collection
-    for orig_obj in original_objects.clone() {
+    for orig_obj in original_objects {
         let (new_obj, new_revision_id) = clone_object(
             conn,
             &creator_user,
@@ -1041,7 +1041,7 @@ fn pin_collection_to_version(
             new_collection_overview.coll.id,
         )?;
 
-        match revision_id_mapping.entry(orig_obj.shared_revision_id.clone()) {
+        match revision_id_mapping.entry(orig_obj.shared_revision_id) {
             Entry::Occupied(_) => {}
             Entry::Vacant(_) => {
                 revision_id_mapping.insert(orig_obj.shared_revision_id, new_revision_id);
@@ -1208,7 +1208,7 @@ fn pin_paths_to_version(
     let mut modified_paths = Vec::new();
     for old_path in old_paths {
         // Split path in mutable parts for easier modification/replacement
-        let mut path_parts = old_path.path.split("/").collect::<Vec<_>>();
+        let mut path_parts = old_path.path.split('/').collect::<Vec<_>>();
 
         // Replace collection name in case of pin with collection update
         path_parts[2] = pin_collection.coll.name.as_str();
@@ -1225,7 +1225,7 @@ fn pin_paths_to_version(
                 .ok_or(ArunaError::InvalidRequest(
                     "Could not map old object to newly created.".to_string(),
                 ))?,
-            collection_id: pin_collection.coll.id.clone(),
+            collection_id: pin_collection.coll.id,
             created_at: Local::now().naive_local(),
             active: true,
         });
