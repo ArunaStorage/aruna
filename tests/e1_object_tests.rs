@@ -13,7 +13,7 @@ use aruna_rust_api::api::storage::services::v1::{
     PinCollectionVersionRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
-use aruna_server::database::crud::utils::{db_to_grpc_object_status, grpc_to_db_object_status};
+use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::ObjectStatus;
 use common::functions::{
     create_collection, create_object, create_project, TCreateObject, TCreateUpdate,
@@ -1047,55 +1047,53 @@ fn delete_multiple_objects_test() {
     let random_project = create_project(None);
 
     // Create random collection
-    let random_collection = create_collection(TCreateCollection {
+    let source_collection = create_collection(TCreateCollection {
         project_id: random_project.id.to_string(),
-        col_override: None,
         ..Default::default()
     });
 
     // Create random collection 2
-    let random_collection2 = create_collection(TCreateCollection {
+    let target_collection = create_collection(TCreateCollection {
         project_id: random_project.id,
-        col_override: None,
         ..Default::default()
     });
 
+    // Create random object 1
     let rnd_obj_1_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0..4),
-            num_hooks: thread_rng().gen_range(0..4),
             ..Default::default()
         }),
     );
 
-    // Create auto_updating reference in col 2
-    let create_ref_2 = CreateObjectReferenceRequest {
+    // Create static read-only reference in collection 2
+    let create_ref_01 = CreateObjectReferenceRequest {
         object_id: rnd_obj_1_rev_0.id.clone(),
-        collection_id: random_collection.id.clone(),
-        target_collection_id: random_collection2.id.clone(),
+        collection_id: source_collection.id.clone(),
+        target_collection_id: target_collection.id.clone(),
         writeable: false,
         auto_update: false,
         sub_path: "".to_string(),
     };
 
-    let _resp = db.create_object_reference(create_ref_2).unwrap();
+    db.create_object_reference(create_ref_01).unwrap();
 
-    // Update Object again
+    // Update first object
     let rnd_obj_1_rev_1 = common::functions::update_object(&TCreateUpdate {
         original_object: rnd_obj_1_rev_0.clone(),
-        collection_id: random_collection.id.to_string(),
+        collection_id: source_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
         content_len: 123456,
         ..Default::default()
     });
 
+    // Create random object 2
     let rnd_obj_2_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
@@ -1103,10 +1101,11 @@ fn delete_multiple_objects_test() {
         }),
     );
 
+    // Create random object 3
     let rnd_obj_3_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
@@ -1115,62 +1114,73 @@ fn delete_multiple_objects_test() {
     );
 
     // Create auto_updating reference in col 2
-    let create_ref = CreateObjectReferenceRequest {
+    let create_ref_02 = CreateObjectReferenceRequest {
         object_id: rnd_obj_3_rev_0.id.clone(),
-        collection_id: random_collection.id.clone(),
-        target_collection_id: random_collection2.id.clone(),
+        collection_id: source_collection.id.clone(),
+        target_collection_id: target_collection.id.clone(),
         writeable: true,
         auto_update: true,
         sub_path: "".to_string(),
     };
 
-    let _resp = db.create_object_reference(create_ref).unwrap();
+    db.create_object_reference(create_ref_02).unwrap();
 
-    // Test deletes
-    let ids = vec![rnd_obj_1_rev_1.id, rnd_obj_2_rev_0.id, rnd_obj_3_rev_0.id];
+    // Delete some of the objects with a single call
+    let ids = vec![
+        rnd_obj_1_rev_1.id.to_string(),
+        rnd_obj_2_rev_0.id.to_string(),
+        rnd_obj_3_rev_0.id.to_string(),
+    ];
 
     let del_req = DeleteObjectsRequest {
         object_ids: ids.clone(),
-        collection_id: random_collection.id.to_string(),
+        collection_id: source_collection.id.to_string(),
         with_revisions: true,
         force: false,
     };
 
-    let resp = db.delete_objects(del_req, creator);
-    println!("{:#?}", resp);
+    db.delete_objects(del_req, creator).unwrap();
 
-    assert!(resp.is_ok());
-
+    // Check random_collection objects
     let get_obj = GetObjectsRequest {
-        collection_id: random_collection.id.to_string(),
+        collection_id: source_collection.id.to_string(),
         page_request: None,
         label_id_filter: None,
         with_url: false,
     };
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    // - obj_1_rev_0 not available
-    // - obj_1_rev_1 deleted
-    // - obj_2_rev_0 deleted
-    // - obj_3_rev_0 moved to random_collection2
+    // - obj_1_rev_0: moved read-only to collection 2
+    // - obj_1_rev_1: revision 1 is available read-only in collection 2
+    // - obj_2_rev_0: deleted
+    // - obj_3_rev_0: moved writeable to random_collection2
     assert_eq!(resp.len(), 0);
-    for object_with_url in resp {
-        let proto_object = object_with_url.object.unwrap();
-        if proto_object.id == rnd_obj_1_rev_0.id {
-            assert_eq!(
-                proto_object.status,
-                db_to_grpc_object_status(ObjectStatus::TRASH) as i32
-            )
-        } else {
-            panic!(
-                "This id {} should not be returned as existing object of collection {}.",
-                proto_object.id, random_collection.id
-            );
-        }
-    }
 
+    let obj_1_rev_0_check = db
+        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_1_rev_0.id.as_str()).unwrap())
+        .unwrap();
+    let obj_1_rev_1_check = db
+        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_1_rev_1.id.as_str()).unwrap())
+        .unwrap();
+    let obj_2_rev_0_check = db
+        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_2_rev_0.id.as_str()).unwrap())
+        .unwrap();
+    let obj_3_rev_0_check = db
+        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_3_rev_0.id.as_str()).unwrap())
+        .unwrap();
+
+    assert_eq!(obj_1_rev_0_check.object_status, ObjectStatus::AVAILABLE); // Read-only available in collection2
+    assert_eq!(obj_1_rev_1_check.object_status, ObjectStatus::AVAILABLE); // Revision 1 is still read-only in collection2
+
+    assert_eq!(obj_2_rev_0_check.filename, "DELETED".to_string());
+    assert_eq!(obj_2_rev_0_check.content_len, 0);
+    assert_eq!(obj_2_rev_0_check.object_status, ObjectStatus::TRASH); // Deleted with last reference
+
+    assert_eq!(obj_3_rev_0_check.object_status, ObjectStatus::AVAILABLE); // Writeable available in collection2
+
+    // Check random_collection2 objects
     let get_obj = GetObjectsRequest {
-        collection_id: random_collection2.id,
+        collection_id: target_collection.id.to_string(),
         page_request: None,
         label_id_filter: None,
         with_url: false,
@@ -1178,7 +1188,9 @@ fn delete_multiple_objects_test() {
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    assert_eq!(resp.len(), 2); // obj_1_rev_0 read-only reference and obj_3_rev_0 is moved here
+    // - rnd_obj_1_rev_0: read-only
+    // - rnd_obj_3_rev_0: writeable
+    assert_eq!(resp.len(), 2);
 }
 
 #[test]
