@@ -28,13 +28,19 @@ pub trait StorageBackend: Debug + Send + Sync {
     ///
     /// * `location` - The location of the object which to load
     /// * `ranges` - Optional: Set of ranges which to load from a larger file; work like HTTP range requests
+    /// * `encryption_key` - The encryption key that is stored in backend
     /// * `chunk_size` - Size of the individual chunks which are send
     /// * `sender` - The target for the individual chunks of data
+    /// * `decrypted` - Decrypt the data
+    /// * `decompress` - Decompress the data
     async fn download(
         &self,
         location: Location,
         range: Option<Range>,
+        encryption_key: Vec<u8>,
         sender: Sender<bytes::Bytes>,
+        decrypted: bool,
+        decompress: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     /// Initiates a multipart upload.
@@ -87,5 +93,29 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn create_bucket(
         &self,
         bucket: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+
+    /// Creates a bucket or the storage system equivalent
+    /// # Arguments
+    ///
+    /// * `location` - Storage location to hash
+    ///
+    /// Result will be two strings for MD5 and SHA256 hashes of the object
+    async fn hash_object(
+        &self,
+        location: Location,
+    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync + 'static>>;
+
+    async fn move_object(
+        &self,
+        from_location: Location,
+        to_location: Location,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+
+    async fn compress_encrypt_to_new_location(
+        &self,
+        from_location: Location,
+        to_location: Location,
+        encryption_key: Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 }

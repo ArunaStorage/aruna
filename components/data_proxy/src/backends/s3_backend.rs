@@ -15,7 +15,7 @@ use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
 
 use super::storage_backend::StorageBackend;
 
-const DOWNLOAD_CHUNK_SIZE: usize = 500000;
+const DOWNLOAD_CHUNK_SIZE: usize = 50_000_000;
 const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
 
 #[derive(Debug, Clone)]
@@ -87,7 +87,10 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         range: Option<Range>,
+        _encryption_key: Vec<u8>,
         sender: Sender<bytes::Bytes>,
+        _decrypted: bool,
+        _decompress: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut object = self
             .s3_client
@@ -231,6 +234,75 @@ impl StorageBackend for S3Backend {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         self.check_and_create_bucket(bucket).await
     }
+
+    async fn hash_object(
+        &self,
+        _location: Location,
+    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        todo!()
+    }
+
+    async fn move_object(
+        &self,
+        _from_location: Location,
+        _to_location: Location,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        todo!()
+    }
+
+    async fn compress_encrypt_to_new_location(
+        &self,
+        from_location: Location,
+        to_location: Location,
+        _encryption_key: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        // Read the object
+        let object = self
+            .s3_client
+            .get_object()
+            .set_bucket(Some(from_location.bucket))
+            .set_key(Some(from_location.path))
+            .send()
+            .await?;
+
+        let body_reader = object.body.into_async_read();
+
+        let mut buf_reader = BufReader::with_capacity(DOWNLOAD_CHUNK_SIZE, body_reader);
+
+        // Initialized Multipart
+        self.init_multipart_upload(to_location).await?;
+
+        loop {
+            let consumed_len = {
+                let buffer_result = buf_reader.fill_buf().await;
+                let buf = buffer_result?;
+                let buf_len = buf.len();
+                let bytes_buf = bytes::Bytes::copy_from_slice(buf);
+                if bytes_buf.len() == DOWNLOAD_CHUNK_SIZE {
+                    // "Middle part" -> padding needed
+                } else {
+                    // Last part
+                }
+                match sender.send(bytes_buf).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("{}", err);
+                        return Err(Box::new(err));
+                    }
+                }
+
+                buf_len
+            };
+
+            if consumed_len == 0 {
+                break;
+            }
+
+            buf_reader.consume(consumed_len);
+        }
+
+        Ok(())
+    }
 }
 
 impl S3Backend {
@@ -254,18 +326,5 @@ impl S3Backend {
                 }
             },
         }
-    }
-
-    async fn store_object_permanently(
-        &self,
-        bucket: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        // Get the "size" of the object
-        // Decide if multipart / or not
-
-        // Get object, encrypt / hash / compress
-        // Store in final place
-
-        todo!()
     }
 }
