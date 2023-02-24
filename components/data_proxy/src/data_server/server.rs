@@ -3,10 +3,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
-use crate::data_middleware::data_middlware::{
-    DownloadDataMiddleware, UploadMultiDataMiddleware, UploadSingleDataMiddleware,
-};
-use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
+use crate::data_middleware::data_middlware::DataMiddleware;
+use crate::data_middleware::hashing_middleware::HashingMiddleWare;
 use crate::presign_handler::signer::PresignHandler;
 use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 use actix_web::middleware::Logger;
@@ -103,15 +101,10 @@ async fn download(
     let bucket = path.0.clone();
     let key = path.1.clone();
 
-    let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
-    let (data_middleware_sender, mut object_handler_recv) = async_channel::bounded(10);
-
-    let downloader_middleware =
-        EmptyMiddlewareDownload::new(data_middleware_sender.clone(), data_middleware_recv.clone())
-            .await;
+    let (payload_sender, mut data_receiver) = async_channel::bounded(10);
 
     let stream = stream! {
-        while let Some(value) = object_handler_recv.next().await {
+        while let Some(value) = data_receiver.next().await {
             yield Ok(value);
         }
         //Type annotation of stream is ugly, therefor a pseudoerror is yielded, this should never be executed.
@@ -139,8 +132,6 @@ async fn download(
             .await?;
         Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
     });
-
-    tokio::spawn(async move { downloader_middleware.handle_stream().await });
 
     let response = HttpResponse::Ok()
         .append_header(ContentDisposition {
@@ -195,9 +186,9 @@ async fn single_upload(
     let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
     let (data_middleware_sender, object_handler_recv) = async_channel::bounded(10);
 
-    let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
+    let middleware = HashingMiddleWare::new(data_middleware_sender, data_middleware_recv).await;
     let payload_handler = handle_payload(payload, payload_sender);
-    let middleware_handler = UploadSingleDataMiddleware::handle_stream(&middleware);
+    let middleware_handler = middleware.handle_stream();
 
     let location = Location {
         bucket: path.0.to_string(),
@@ -266,12 +257,8 @@ async fn multi_upload(
         }
     };
 
-    let (payload_sender, data_middleware_recv) = async_channel::bounded(10);
-    let (data_middleware_sender, object_handler_recv) = async_channel::bounded(10);
-
-    let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
+    let (payload_sender, payload_recv) = async_channel::bounded(10);
     let payload_handler = handle_payload(payload, payload_sender);
-    let middleware_handler = UploadMultiDataMiddleware::handle_stream(&middleware);
 
     let location = Location {
         bucket: path.1.to_string(),
@@ -280,14 +267,14 @@ async fn multi_upload(
     };
 
     let s3_handler = server.storage_backend.upload_multi_object(
-        object_handler_recv,
+        payload_recv,
         location,
         upload_id,
         content_len,
         path.0,
     );
 
-    let (_, _, etag) = match try_join!(payload_handler, middleware_handler, s3_handler) {
+    let (_, etag) = match try_join!(payload_handler, s3_handler) {
         Ok(values) => values,
         Err(err) => {
             log::error!("{}", err);
@@ -301,7 +288,7 @@ async fn multi_upload(
 
 async fn handle_payload(
     mut payload: web::Payload,
-    sender: Sender<bytes::Bytes>,
+    sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let mut _count = 0;
     let mut _count_2 = 0;
@@ -314,13 +301,13 @@ async fn handle_payload(
             _count_2 += 1;
             let bytes_for_send = bytes::Bytes::from(bytes);
 
-            sender.send(bytes_for_send).await?;
+            sender.send(Ok(bytes_for_send)).await?;
             bytes = web::BytesMut::new();
         }
     }
 
     let bytes_for_send = bytes::Bytes::from(bytes);
-    sender.send(bytes_for_send).await?;
+    sender.send(Ok(bytes_for_send)).await?;
 
     Ok(())
 }
