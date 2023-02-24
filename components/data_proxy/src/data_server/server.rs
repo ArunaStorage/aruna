@@ -3,7 +3,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
-use crate::data_middleware::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
+use crate::data_middleware::data_middlware::{
+    DownloadDataMiddleware, UploadMultiDataMiddleware, UploadSingleDataMiddleware,
+};
 use crate::data_middleware::empty_middleware::{EmptyMiddlewareDownload, EmptyMiddlewareUpload};
 use crate::presign_handler::signer::PresignHandler;
 use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
@@ -195,7 +197,7 @@ async fn single_upload(
 
     let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
     let payload_handler = handle_payload(payload, payload_sender);
-    let middleware_handler = middleware.handle_stream();
+    let middleware_handler = UploadSingleDataMiddleware::handle_stream(&middleware);
 
     let location = Location {
         bucket: path.0.to_string(),
@@ -269,7 +271,7 @@ async fn multi_upload(
 
     let middleware = EmptyMiddlewareUpload::new(data_middleware_sender, data_middleware_recv).await;
     let payload_handler = handle_payload(payload, payload_sender);
-    let middleware_handler = middleware.handle_stream();
+    let middleware_handler = UploadMultiDataMiddleware::handle_stream(&middleware);
 
     let location = Location {
         bucket: path.1.to_string(),

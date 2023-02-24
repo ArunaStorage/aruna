@@ -1,7 +1,9 @@
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 
-use super::data_middlware::{DownloadDataMiddleware, UploadDataMiddleware};
+use super::data_middlware::{
+    DownloadDataMiddleware, UploadMultiDataMiddleware, UploadSingleDataMiddleware,
+};
 
 pub struct EmptyMiddlewareUpload {
     sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
@@ -23,7 +25,28 @@ impl EmptyMiddlewareUpload {
 }
 
 #[async_trait]
-impl UploadDataMiddleware for EmptyMiddlewareUpload {
+impl UploadMultiDataMiddleware for EmptyMiddlewareUpload {
+    async fn get_sender(
+        &self,
+    ) -> Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>> {
+        return self.sender.clone();
+    }
+    async fn get_receiver(&self) -> Receiver<bytes::Bytes> {
+        return self.recv.clone();
+    }
+    async fn handle_stream(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        while let Ok(data) = self.recv.recv().await {
+            self.sender.send(Ok(data)).await.unwrap();
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl UploadSingleDataMiddleware for EmptyMiddlewareUpload {
     async fn get_sender(
         &self,
     ) -> Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>> {

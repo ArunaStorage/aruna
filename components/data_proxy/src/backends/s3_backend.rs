@@ -255,4 +255,17 @@ impl S3Backend {
             },
         }
     }
+
+    async fn store_object_permanently(
+        &self,
+        bucket: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        // Get the "size" of the object
+        // Decide if multipart / or not
+
+        // Get object, encrypt / hash / compress
+        // Store in final place
+
+        todo!()
+    }
 }
