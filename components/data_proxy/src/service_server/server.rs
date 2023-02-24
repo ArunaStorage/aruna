@@ -6,8 +6,9 @@ use aruna_rust_api::api::internal::v1::{
     internal_proxy_service_server::{InternalProxyService, InternalProxyServiceServer},
     CreateBucketRequest, CreateBucketResponse, CreatePresignedDownloadRequest,
     CreatePresignedDownloadResponse, CreatePresignedUploadUrlRequest,
-    CreatePresignedUploadUrlResponse, FinishPresignedUploadRequest, FinishPresignedUploadResponse,
-    InitPresignedUploadRequest, InitPresignedUploadResponse, Location, LocationType,
+    CreatePresignedUploadUrlResponse, DeleteObjectRequest, DeleteObjectResponse,
+    FinishPresignedUploadRequest, FinishPresignedUploadResponse, InitPresignedUploadRequest,
+    InitPresignedUploadResponse, Location, LocationType, MoveObjectRequest, MoveObjectResponse,
 };
 
 use crate::{backends::storage_backend::StorageBackend, presign_handler::signer::PresignHandler};
@@ -206,5 +207,18 @@ impl InternalProxyService for InternalServerImpl {
         }
 
         return Ok(Response::new(CreateBucketResponse {}));
+    }
+
+    async fn delete_object(
+        &self,
+        _request: tonic::Request<DeleteObjectRequest>,
+    ) -> Result<tonic::Response<DeleteObjectResponse>, tonic::Status> {
+        todo!()
+    }
+    async fn move_object(
+        &self,
+        _request: tonic::Request<MoveObjectRequest>,
+    ) -> Result<tonic::Response<MoveObjectResponse>, tonic::Status> {
+        todo!()
     }
 }

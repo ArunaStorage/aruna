@@ -1,13 +1,12 @@
-use std::{env, str::FromStr};
+use std::env;
 
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
     model::{CompletedMultipartUpload, CompletedPart},
     types::ByteStream,
-    Client, Endpoint, Region,
+    Client, Region,
 };
-use http::Uri;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use std::convert::TryFrom;
@@ -32,7 +31,7 @@ impl S3Backend {
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)
             .region(Region::new("RegionOne"))
-            .endpoint_resolver(Endpoint::immutable(Uri::from_str(endpoint.as_str())?))
+            .endpoint_url(endpoint.as_str())
             .build();
 
         let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
