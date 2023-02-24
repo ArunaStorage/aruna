@@ -835,7 +835,7 @@ fn get_object_test() {
 
     // Get all objects
     let get_request = GetObjectByIdRequest {
-        collection_id: random_collection.id,
+        collection_id: random_collection.id.to_string(),
         object_id: new_obj.to_string(),
         with_url: false,
     };
@@ -846,7 +846,12 @@ fn get_object_test() {
     assert_eq!(get_obj.object.unwrap().id, new_obj);
 
     let get_obj_internal = db
-        .get_object_by_id(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .get_object_by_id(
+            &uuid::Uuid::parse_str(&new_obj).unwrap(),
+            &uuid::Uuid::parse_str(&random_collection.id.to_string()).unwrap(),
+        )
+        .unwrap()
+        .object
         .unwrap();
 
     assert_eq!(get_obj_internal.id.to_string(), new_obj);
@@ -1142,7 +1147,7 @@ fn delete_multiple_objects_test() {
 
     // Check random_collection objects
     let get_obj = GetObjectsRequest {
-        collection_id: source_collection.id,
+        collection_id: source_collection.id.to_string(),
         page_request: None,
         label_id_filter: None,
         with_url: false,
@@ -1155,18 +1160,14 @@ fn delete_multiple_objects_test() {
     // - obj_3_rev_0: moved writeable to random_collection2
     assert_eq!(resp.len(), 0);
 
-    let obj_1_rev_0_check = db
-        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_1_rev_0.id.as_str()).unwrap())
-        .unwrap();
-    let obj_1_rev_1_check = db
-        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_1_rev_1.id.as_str()).unwrap())
-        .unwrap();
-    let obj_2_rev_0_check = db
-        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_2_rev_0.id.as_str()).unwrap())
-        .unwrap();
-    let obj_3_rev_0_check = db
-        .get_object_by_id(&uuid::Uuid::parse_str(rnd_obj_3_rev_0.id.as_str()).unwrap())
-        .unwrap();
+    let obj_1_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_1_rev_0.id.to_string());
+    let obj_1_rev_1_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_1_rev_1.id.to_string());
+    let obj_2_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_2_rev_0.id.to_string());
+    let obj_3_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_3_rev_0.id.to_string());
 
     assert_eq!(obj_1_rev_0_check.object_status, ObjectStatus::AVAILABLE); // Read-only available in collection2
     assert_eq!(obj_1_rev_1_check.object_status, ObjectStatus::AVAILABLE); // Revision 1 is still read-only in collection2

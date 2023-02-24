@@ -506,11 +506,6 @@ async fn create_object_path_with_reference_grpc_test() {
         .await
         .unwrap();
 
-    dbg!(common::functions::get_object(
-        source_collection.id.to_string(),
-        random_object.id.to_string()
-    ));
-
     // Create object reference with custom subpath in target collection
     inner_create_reference_request.sub_path = "custom/".to_string();
     let custom_path_reference_request = common::grpc_helpers::add_token(

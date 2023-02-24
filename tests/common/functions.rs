@@ -14,12 +14,19 @@ use aruna_rust_api::api::storage::{
         GetCollectionByIdRequest, GetProjectRequest, InitializeNewObjectRequest, StageObject,
     },
 };
+
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::{EndpointType, ObjectStatus, ReferenceStatus};
+use aruna_server::database::models::object::Object as DbObject;
+use aruna_server::database::schema::objects::dsl::objects;
+
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+
+use diesel::result::Error;
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
 
@@ -502,6 +509,27 @@ pub fn get_object(collection_id: String, object_id: String) -> Object {
     let object = db.get_object(&get_request).unwrap();
 
     object.object.unwrap()
+}
+
+/// GetObjectById wrapper for simplified use in tests.
+#[allow(dead_code)]
+pub fn get_raw_db_object_by_id(object_id: &String) -> DbObject {
+    use diesel::prelude::*;
+
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let object_uuid = uuid::Uuid::parse_str(object_id).unwrap();
+
+    db.pg_connection
+        .get()
+        .unwrap()
+        .transaction::<DbObject, Error, _>(|conn| {
+            Ok(objects
+                .filter(database::schema::objects::id.eq(&object_uuid))
+                .first::<DbObject>(conn)
+                .unwrap())
+        })
+        .unwrap()
 }
 
 /// GetReferences wrapper for simplified use in tests.

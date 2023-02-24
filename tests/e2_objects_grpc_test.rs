@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{thread, time};
 
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hash, Hashalgorithm, KeyValue, Permission, Status,
+    DataClass, Hash, Hashalgorithm, KeyValue, Permission,
 };
 use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v1::{
@@ -2459,21 +2459,12 @@ async fn delete_object_grpc_test() {
                 );
                 let get_object_response = object_service.get_object_by_id(get_object_request).await;
 
-                assert!(get_object_response.is_ok());
+                assert!(get_object_response.is_err());
 
-                let proto_object = get_object_response
-                    .unwrap()
-                    .into_inner()
-                    .object
-                    .unwrap()
-                    .object
-                    .unwrap();
-
-                assert_eq!(proto_object.id, random_object.id);
-                assert_eq!(
-                    Status::from_i32(proto_object.status).unwrap(),
-                    Status::Trash
-                );
+                let trashed_object =
+                    common::functions::get_raw_db_object_by_id(&random_object.id.to_string());
+                assert_eq!(trashed_object.id.to_string(), random_object.id);
+                assert_eq!(trashed_object.object_status, ObjectStatus::TRASH);
 
                 let all_references_request = common::grpc_helpers::add_token(
                     tonic::Request::new(GetReferencesRequest {
@@ -2549,14 +2540,10 @@ async fn delete_object_grpc_test() {
 
     assert!(object_references.is_empty());
 
-    /*
-    let staging_object =
-        common::functions::get_object(random_collection.id.to_string(), staging_object_id);
-    assert!(matches!(
-        Status::from_i32(staging_object.status),
-        Some(Status::Trash)
-    ));
-    */
+    let staging_object = common::functions::get_raw_db_object_by_id(&staging_object_id);
+    assert_eq!(staging_object.id.to_string(), staging_object_id);
+    assert_eq!(staging_object.object_status, ObjectStatus::TRASH);
+    assert!(staging_object.revision_number < 0);
 
     // Try to get deleted initialize staging object --> Does not exist anymore
     let get_deleted_object_request = common::grpc_helpers::add_token(
@@ -2569,18 +2556,12 @@ async fn delete_object_grpc_test() {
     );
     let get_deleted_object_response = object_service
         .get_object_by_id(get_deleted_object_request)
-        .await
-        .unwrap()
-        .into_inner();
+        .await;
+    assert!(get_deleted_object_response.is_err());
 
-    let deleted_object = get_deleted_object_response.object.unwrap().object.unwrap();
-
-    assert_eq!(deleted_object.id, staging_object_id);
-    assert_eq!(deleted_object.rev_number, -1); // First deleted object of shared_revision_id
-    assert!(matches!(
-        Status::from_i32(deleted_object.status),
-        Some(Status::Trash)
-    ));
+    let trashed_object = common::functions::get_raw_db_object_by_id(&staging_object_id);
+    assert_eq!(trashed_object.id.to_string(), staging_object_id);
+    assert_eq!(trashed_object.object_status, ObjectStatus::TRASH);
 
     // Update object and delete staging object
     let random_object = common::functions::create_object(&TCreateObject {
@@ -2640,15 +2621,11 @@ async fn delete_object_grpc_test() {
 
     assert!(object_references.is_empty());
 
-    let staging_object = common::functions::get_object(
-        random_collection.id.to_string(),
-        staging_object_id.to_string(),
-    );
+    let staging_object = common::functions::get_raw_db_object_by_id(&staging_object_id.to_string());
 
-    assert!(matches!(
-        Status::from_i32(staging_object.status),
-        Some(Status::Trash)
-    ));
+    assert_eq!(staging_object.id.to_string(), staging_object_id);
+    assert_eq!(staging_object.object_status, ObjectStatus::TRASH);
+    assert!(staging_object.revision_number < 0);
 
     // Update object again and check if revision number is 1
     let updated_object = common::functions::update_object(&TCreateUpdate {
@@ -2755,15 +2732,9 @@ async fn delete_object_revisions_grpc_test() {
 
     assert!(delete_rev_2_response.is_ok());
 
-    let rev_2_deleted = common::functions::get_object(
-        random_collection.id.to_string(),
-        rev_2_object.id.to_string(),
-    );
-    assert_eq!(rev_2_deleted.id, rev_2_object.id);
-    assert_eq!(
-        Status::from_i32(rev_2_deleted.status).unwrap(),
-        Status::Trash
-    ); // Validate deletion
+    let rev_2_deleted = common::functions::get_raw_db_object_by_id(&rev_2_object.id.to_string());
+    assert_eq!(rev_2_deleted.id.to_string(), rev_2_object.id);
+    assert_eq!(rev_2_deleted.object_status, ObjectStatus::TRASH); // Validate deletion
 
     // Validate that latest reference should now point to revision 1
     let object_references = common::functions::get_object_references(
@@ -2848,21 +2819,12 @@ async fn delete_object_revisions_grpc_test() {
             common::oidc::ADMINTOKEN,
         );
         let get_object_response = object_service.get_object_by_id(get_object_request).await;
-        assert!(get_object_response.is_ok());
+        assert!(get_object_response.is_err());
 
-        let fetched_object = get_object_response
-            .unwrap()
-            .into_inner()
-            .object
-            .unwrap()
-            .object
-            .unwrap();
-
-        assert_eq!(trashed_object.id, fetched_object.id);
-        assert!(matches!(
-            Status::from_i32(fetched_object.status),
-            Some(Status::Trash)
-        )); // Object is in trash and waits to be removed
+        let trashed_db_object =
+            common::functions::get_raw_db_object_by_id(&trashed_object.id.to_string());
+        assert_eq!(trashed_db_object.id.to_string(), trashed_object.id);
+        assert_eq!(trashed_db_object.object_status, ObjectStatus::TRASH);
     }
 }
 
@@ -2998,26 +2960,17 @@ async fn delete_multiple_objects_grpc_test() {
                     let get_object_request = common::grpc_helpers::add_token(
                         tonic::Request::new(GetObjectByIdRequest {
                             collection_id: random_collection.id.to_string(),
-                            object_id: object_uuid,
+                            object_id: object_uuid.to_string(),
                             with_url: false,
                         }),
                         common::oidc::ADMINTOKEN,
                     );
                     let get_object_response =
                         object_service.get_object_by_id(get_object_request).await;
-                    assert!(get_object_response.is_ok());
+                    assert!(get_object_response.is_err());
 
-                    let trashed_object = get_object_response
-                        .unwrap()
-                        .into_inner()
-                        .object
-                        .unwrap()
-                        .object
-                        .unwrap();
-                    assert!(matches!(
-                        Status::from_i32(trashed_object.status),
-                        Some(Status::Trash)
-                    )); // Object is in trash and waits to be removed
+                    let trashed_object = common::functions::get_raw_db_object_by_id(&object_uuid);
+                    assert_eq!(trashed_object.object_status, ObjectStatus::TRASH)
                 }
             }
             _ => panic!("Unspecified permission is not allowed."),
@@ -3118,26 +3071,17 @@ async fn delete_multiple_objects_grpc_test() {
                     let get_object_request = common::grpc_helpers::add_token(
                         tonic::Request::new(GetObjectByIdRequest {
                             collection_id: random_collection.id.to_string(),
-                            object_id: object_uuid,
+                            object_id: object_uuid.to_string(),
                             with_url: false,
                         }),
                         common::oidc::ADMINTOKEN,
                     );
                     let get_object_response =
                         object_service.get_object_by_id(get_object_request).await;
-                    assert!(get_object_response.is_ok());
+                    assert!(get_object_response.is_err());
 
-                    let trashed_object = get_object_response
-                        .unwrap()
-                        .into_inner()
-                        .object
-                        .unwrap()
-                        .object
-                        .unwrap();
-                    assert!(matches!(
-                        Status::from_i32(trashed_object.status),
-                        Some(Status::Trash)
-                    )); // Object is in trash and waits to be removed
+                    let trashed_object = common::functions::get_raw_db_object_by_id(&object_uuid);
+                    assert_eq!(trashed_object.object_status, ObjectStatus::TRASH)
                 }
             }
             _ => panic!("Unspecified permission is not allowed."),
@@ -3239,6 +3183,10 @@ async fn delete_multiple_objects_grpc_test() {
             .references
             .is_empty());
 
+        let deleted_object = common::functions::get_raw_db_object_by_id(&object_uuid);
+
+        assert_eq!(deleted_object.object_status, ObjectStatus::TRASH);
+
         let get_object_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectByIdRequest {
                 collection_id: random_collection.id.to_string(),
@@ -3248,18 +3196,6 @@ async fn delete_multiple_objects_grpc_test() {
             common::oidc::ADMINTOKEN,
         );
         let get_object_response = object_service.get_object_by_id(get_object_request).await;
-        assert!(get_object_response.is_ok());
-
-        let trashed_object = get_object_response
-            .unwrap()
-            .into_inner()
-            .object
-            .unwrap()
-            .object
-            .unwrap();
-        assert!(matches!(
-            Status::from_i32(trashed_object.status),
-            Some(Status::Trash)
-        )); // Object is in trash and waits to be removed
+        assert!(get_object_response.is_err());
     }
 }
