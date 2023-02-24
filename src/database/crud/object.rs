@@ -1725,16 +1725,14 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                for object_uuid in parsed_object_ids {
-                    delete_multiple_objects(
-                        vec![object_uuid],
-                        parsed_collection_id,
-                        request.force,
-                        request.with_revisions,
-                        creator_id,
-                        conn,
-                    )?;
-                }
+                delete_multiple_objects(
+                    parsed_object_ids,
+                    parsed_collection_id,
+                    request.force,
+                    request.with_revisions,
+                    creator_id,
+                    conn,
+                )?;
 
                 Ok(())
             })?;
