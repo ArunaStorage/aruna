@@ -688,10 +688,10 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let object_uuid =
             uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+        let collection_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let _creator_id = self
             .authz
@@ -707,11 +707,11 @@ impl ObjectService for ObjectServiceImpl {
 
         // Get object and its location
         let database_clone = self.database.clone();
-        let request_clone = inner_request.clone();
-        let mut proto_object_url =
-            task::spawn_blocking(move || database_clone.get_object(&request_clone))
-                .await
-                .map_err(ArunaError::from)??;
+        let mut proto_object_url = task::spawn_blocking(move || {
+            database_clone.get_object_by_id(&object_uuid, &collection_uuid)
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         let object_data = match proto_object_url.object.clone() {
             Some(p) => p,

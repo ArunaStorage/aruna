@@ -601,6 +601,9 @@ impl Database {
                                             .eq(&ReferenceStatus::STAGING),
                                     )
                                     .execute(conn)?;
+
+                                return Ok(get_object_ignore_coll(&req_object_uuid, conn)?);
+                            // Only case the object does not have a reference anymore
                             } else {
                                 // Update staging reference of outdated object with is_latest == false and auto_update == false
                                 update(collection_objects)
@@ -927,6 +930,7 @@ impl Database {
                     };
                     Ok((object, proto_paths))
                 })?;
+
         let proto_object: Option<ProtoObject> = object_dto
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
@@ -943,21 +947,62 @@ impl Database {
         })
     }
 
-    ///ToDo: Rust Doc
-    pub fn get_object_by_id(&self, object_uuid: &uuid::Uuid) -> Result<Object, ArunaError> {
-        // Read object from database
-        let db_object = self
-            .pg_connection
-            .get()?
-            .transaction::<Object, Error, _>(|conn| {
-                let object = objects
-                    .filter(database::schema::objects::id.eq(object_uuid))
-                    .first::<Object>(conn)?;
+    /// Returns the object from the database in its gRPC format. This function ignores
+    /// whether the specific object has its own reference, and only checks whether any
+    /// revision of the object exists in the collection.
+    ///
+    /// ## Arguments
+    ///
+    /// * `request` - A gRPC request containing the needed information to get the specific object
+    ///
+    /// ## Returns
+    ///
+    /// * `Result<aruna_server::database::models::object::Object, ArunaError>` -
+    /// Database model object if the object with the provided id exists in the database.
+    ///
+    pub fn get_object_by_id(
+        &self,
+        object_uuid: &uuid::Uuid,
+        collection_uuid: &uuid::Uuid,
+    ) -> Result<ObjectWithUrl, ArunaError> {
+        // Read object and paths from database
+        let (object_dto, obj_paths) =
+            self.pg_connection
+                .get()?
+                .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), ArunaError, _>(|conn| {
+                    // Check if object exists in collection
+                    if !object_exists_in_collection(conn, &object_uuid, &collection_uuid, true)? {
+                        return Err(ArunaError::InvalidRequest(format!(
+                            "Object {object_uuid} does not exist in collection {collection_uuid}."
+                        )));
+                    }
 
-                Ok(object)
-            })?;
+                    // Try to get object without reference needed and its associated paths
+                    let object_dto_option = get_object_ignore_coll(&object_uuid, conn)?;
 
-        Ok(db_object)
+                    let proto_paths = if let Some(object_dto) = object_dto_option.clone() {
+                        get_paths_proto(&object_dto.object.shared_revision_id, conn)?
+                    } else {
+                        Vec::new()
+                    };
+
+                    Ok((object_dto_option, proto_paths))
+                })?;
+
+        let proto_object: Option<ProtoObject> = object_dto
+            .map(|e| e.try_into())
+            .map_or(Ok(None), |r| r.map(Some))?;
+
+        let path_strings = obj_paths
+            .iter()
+            .map(|p| p.path.clone())
+            .collect::<Vec<String>>();
+
+        Ok(ObjectWithUrl {
+            object: proto_object,
+            url: "".to_string(),
+            paths: path_strings,
+        })
     }
 
     ///ToDo: Rust Doc
@@ -2024,6 +2069,97 @@ impl Database {
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
+/// This functions checks if the specific object has any reference in the provided collection.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_uuid: &uuid::Uuid` - Unique object identifier
+/// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
+/// * `with_revisions: bool` - Flag if object revisions shall be included
+///
+/// ## Returns:
+///
+/// `Result<bool, ArunaError>` - True if any reference of the object exists in the collection; False else.
+///
+pub fn object_exists_in_collection(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    with_revisions: bool,
+) -> Result<bool, ArunaError> {
+    // Get references depending on the with_revisions parameter
+    let references: Vec<CollectionObject> = match with_revisions {
+        true => {
+            /*
+            SELECT col_objs.id FROM collection_objects as col_objs
+                WHERE col_objs.collection_id = ''
+                AND col_objs.object_id IN (
+                    SELECT obj1.id FROM objects as obj1
+                        WHERE obj1.shared_revision_id = (
+                            SELECT obj2.shared_revision_id FROM objects as obj2
+                                WHERE obj2.id = ''
+                    );
+                );
+            */
+
+            // Alias are needed to join a table with itself
+            // see: https://docs.diesel.rs/master/diesel/macro.alias.html
+            let (orig_obj, other_obj) = diesel::alias!(
+                database::schema::objects as orig_obj,
+                database::schema::objects as other_obj
+            );
+
+            orig_obj
+                .filter(
+                    orig_obj
+                        .field(database::schema::objects::id)
+                        .eq(object_uuid),
+                )
+                .inner_join(
+                    other_obj.on(orig_obj
+                        .field(database::schema::objects::shared_revision_id)
+                        .eq(other_obj.field(database::schema::objects::shared_revision_id))),
+                )
+                .inner_join(
+                    collection_objects.on(other_obj
+                        .field(database::schema::objects::id)
+                        .eq(database::schema::collection_objects::object_id)),
+                )
+                .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+                .select(CollectionObject::as_select())
+                .load::<CollectionObject>(conn)?
+
+            /*
+            let object_ids = objects
+                .filter(database::schema::objects::shared_revision_id.nullable().eq(
+                    objects::table()
+                        .filter(database::schema::objects::id.eq(object_uuid))
+                        .select(database::schema::objects::shared_revision_id)
+                        .single_value()
+                ))
+                .select(database::schema::objects::id)
+                .load::<uuid::Uuid>(conn)?;
+
+            // Select all references associated with the object ids in the specified collection
+            collection_objects
+                .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+                .filter(database::schema::collection_objects::object_id.eq_any(&object_ids))
+                .load::<CollectionObject>(conn)?
+            */
+        }
+        false => {
+            // If with revisions is false -> return just all collection_objects belonging to the current object
+            collection_objects
+                .filter(database::schema::collection_objects::object_id.eq(object_uuid))
+                .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+                .load::<CollectionObject>(conn)?
+        }
+    };
+
+    Ok(references.len() > 0)
+}
+
 /// This is a general helper function that can be use inside already open transactions
 /// to update an object in-place without creating a new revision. This should only be
 /// used for objects which are still/already in STAGING.
@@ -3283,17 +3419,7 @@ pub fn get_object(
                 update: colobj.auto_update,
             }))
         }
-        // Ok(None),
-        None => Ok(Some(ObjectDto {
-            // In case of concurrent object update finish on outdated revision no reference exists
-            object,
-            labels,
-            hooks,
-            hash: object_hash,
-            source,
-            latest: false,
-            update: false,
-        })),
+        None => Ok(None),
     }
 }
 
