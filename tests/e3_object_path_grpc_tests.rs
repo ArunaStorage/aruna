@@ -1426,7 +1426,7 @@ async fn get_object_by_path_grpc_test() {
             .object[0]
             .clone();
 
-        assert_eq!(proto_object, rev_1_object); // Objects should be equal.
+        assert_eq!(proto_object, rev_1_object); // Objects should be equal and always latest revision
     }
 
     // Get all object revisions through available paths

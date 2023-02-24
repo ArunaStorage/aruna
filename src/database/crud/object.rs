@@ -2030,6 +2030,7 @@ impl Database {
                         database::schema::objects::shared_revision_id
                             .eq(get_path.shared_revision_id),
                     )
+                    .order_by(database::schema::objects::revision_number.desc())
                     .load::<Object>(conn)
                     .optional()?
                     .unwrap_or_default();
@@ -2044,17 +2045,33 @@ impl Database {
                     .filter(database::schema::collection_objects::object_id.eq_any(&obj_ids))
                     .load::<CollectionObject>(conn)?;
 
-                let target_ids = if !request.with_revisions {
-                    refs.iter()
-                        .map(|c_obj| c_obj.object_id)
-                        .collect::<Vec<uuid::Uuid>>()
-                } else {
-                    obj_ids
-                };
+                let mut obj_with_ref = Vec::new();
+                let mut obj_without_ref = Vec::new();
+                'outer: for object_uuid in obj_ids {
+                    for object_ref in &refs {
+                        if object_uuid == object_ref.object_id {
+                            obj_with_ref.push(object_uuid);
+
+                            if !request.with_revisions {
+                                break 'outer;
+                            } else {
+                                continue 'outer;
+                            }
+                        }
+                    }
+
+                    obj_without_ref.push(object_uuid);
+                }
 
                 let mut results: Vec<ProtoObject> = Vec::new();
-                for t_id in target_ids {
-                    let t_obj = get_object(&t_id, &col_id, false, conn)?;
+                for ref_obj in obj_with_ref {
+                    let t_obj = get_object(&ref_obj, &col_id, false, conn)?;
+                    if let Some(ob) = t_obj {
+                        results.push(ob.try_into()?)
+                    };
+                }
+                for ref_obj in obj_without_ref {
+                    let t_obj = get_object_ignore_coll(&ref_obj, conn)?;
                     if let Some(ob) = t_obj {
                         results.push(ob.try_into()?)
                     };
