@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 
+use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{check_all_for_db_kv, ParsedQuery};
+use crate::database::models::collection::CollectionObject;
+use crate::database::models::enums::ReferenceStatus;
 use crate::database::models::{
     collection::CollectionObjectGroup,
     object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject},
     views::ObjectGroupStat,
 };
+use crate::database::schema::collection_objects::dsl::collection_objects;
 use crate::error::ArunaError;
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectGroupRequest, AddLabelsToObjectGroupResponse,
@@ -62,7 +66,6 @@ impl Database {
         use crate::database::schema::object_groups::dsl::*;
 
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let new_obj_grp_uuid = uuid::Uuid::new_v4();
 
         let database_obj_group = ObjectGroup {
@@ -117,22 +120,40 @@ impl Database {
             .unique()
             .collect::<Vec<uuid::Uuid>>();
 
-        //Insert all defined object_groups into the database
+        // Insert all defined object_groups into the database
         let overview = self
             .pg_connection
             .get()?
-            .transaction::<ObjectGroupDb, Error, _>(|conn| {
-                diesel::insert_into(object_groups)
+            .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
+                // Validate that request does not contain staging objects
+                if !collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .load::<CollectionObject>(conn)
+                    .optional()?
+                    .unwrap_or_default()
+                    .is_empty()
+                {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create object group with staging objects.".to_string(),
+                    ));
+                }
+
+                insert_into(object_groups)
                     .values(&database_obj_group)
                     .execute(conn)?;
-                diesel::insert_into(object_group_key_value)
+                insert_into(object_group_key_value)
                     .values(&key_values)
                     .execute(conn)?;
-                diesel::insert_into(collection_object_groups)
+                insert_into(collection_object_groups)
                     .values(&collection_object_group)
                     .execute(conn)?;
+
                 if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                    return Err(diesel::result::Error::NotFound);
+                    return Err(ArunaError::DieselError(Error::NotFound));
                 }
 
                 diesel::insert_into(object_group_objects)
@@ -141,7 +162,7 @@ impl Database {
 
                 let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-                grp.ok_or(diesel::NotFound)
+                grp.ok_or(ArunaError::DieselError(Error::NotFound))
             })?;
 
         // Return already complete gRPC response
@@ -149,6 +170,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn update_object_group(
         &self,
         request: &UpdateObjectGroupRequest,
@@ -160,9 +182,7 @@ impl Database {
         use crate::database::schema::object_groups::dsl::*;
 
         let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let parsed_old_id = uuid::Uuid::parse_str(&request.group_id)?;
-
         let new_obj_grp_uuid = uuid::Uuid::new_v4();
 
         let mut database_obj_group = ObjectGroup {
@@ -221,7 +241,24 @@ impl Database {
         let overview = self
             .pg_connection
             .get()?
-            .transaction::<ObjectGroupDb, Error, _>(|conn| {
+            .transaction::<ObjectGroupDb, ArunaError, _>(|conn| {
+                // Validate that request does not contain staging objects
+                if !collection_objects
+                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_uuids))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .load::<CollectionObject>(conn)
+                    .optional()?
+                    .unwrap_or_default()
+                    .is_empty()
+                {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot create object group with staging objects.".to_string(),
+                    ));
+                }
+
                 let old_grp = object_groups
                     .filter(crate::database::schema::object_groups::id.eq(parsed_old_id))
                     .first::<ObjectGroup>(conn)?;
@@ -239,7 +276,7 @@ impl Database {
                     .values(&collection_object_group)
                     .execute(conn)?;
                 if !check_if_obj_in_coll(&obj_uuids, &parsed_col_id, conn) {
-                    return Err(diesel::result::Error::NotFound);
+                    return Err(ArunaError::DieselError(Error::NotFound));
                 }
 
                 diesel::insert_into(object_group_objects)
@@ -248,7 +285,7 @@ impl Database {
 
                 let grp = query_object_group(new_obj_grp_uuid, conn)?;
 
-                grp.ok_or(diesel::NotFound)
+                grp.ok_or(ArunaError::DieselError(diesel::NotFound))
             })?;
 
         // Return already complete gRPC response
@@ -256,6 +293,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn get_object_group_by_id(
         &self,
         request: &GetObjectGroupByIdRequest,
@@ -276,6 +314,7 @@ impl Database {
             object_group: Some(overview.into()),
         })
     }
+
     pub fn get_object_groups_from_object(
         &self,
         request: &GetObjectGroupsFromObjectRequest,
@@ -314,6 +353,7 @@ impl Database {
             object_groups: Some(ogoverview),
         })
     }
+
     pub fn get_object_groups(
         &self,
         request: GetObjectGroupsRequest,
@@ -464,6 +504,7 @@ impl Database {
             object_groups: ogoverview,
         })
     }
+
     pub fn get_object_group_history(
         &self,
         request: GetObjectGroupHistoryRequest,
@@ -520,6 +561,7 @@ impl Database {
             object_groups: Some(ogoverview),
         })
     }
+
     pub fn get_object_group_objects(
         &self,
         request: GetObjectGroupObjectsRequest,
@@ -582,6 +624,7 @@ impl Database {
             object_group_objects: ogobjects,
         })
     }
+
     pub fn delete_object_group(
         &self,
         request: DeleteObjectGroupRequest,
@@ -596,90 +639,109 @@ impl Database {
 
         // Deletion transaction
         self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
-            // Get the ObjectGroup to be deleted from the database
-            let queried_group = object_groups
-                .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
-                .first::<ObjectGroup>(conn)?;
+            // Query the relevant object groups from the database
+            let queried_groups = if true { // request.with_revisions {
+                // If with_revisions == true:
+                //  - Query all revisions of provided object group and delete them descending
+                let og_shared_revision_id = object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
+                    .select(crate::database::schema::object_groups::shared_revision_id)
+                    .first::<uuid::Uuid>(conn)?;
 
-            if let Some(object_group_name) = queried_group.name {
-                // Check if specified ObjectGroup revision is already deleted
-                match object_group_name.as_str() {
-                    "DELETED" => {
-                        // Do nothing. Revision is already deleted.
-                    }
-                    _ => {
-                        // Delete key values of object group
-                        delete(object_group_key_value)
-                            .filter(
-                                crate::database::schema::object_group_key_value::object_group_id.eq(
-                                    object_group_uuid
-                                )
-                            )
-                            .execute(conn)?;
+                object_groups
+                    .filter(crate::database::schema::object_groups::shared_revision_id.eq(&og_shared_revision_id))
+                    .order_by(crate::database::schema::object_groups::revision_number.desc())
+                    .load::<ObjectGroup>(conn)?
+            } else {
+                // If with_revisions == false:
+                //  - Create vector only with provided object group
+                vec![object_groups
+                    .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
+                    .first::<ObjectGroup>(conn)?]
+            };
 
-                        // Delete collection_object_groups
-                        delete(collection_object_groups)
-                            .filter(
-                                crate::database::schema::collection_object_groups::object_group_id.eq(
-                                    object_group_uuid
+            // Loop over queried object groups and delete them individually
+            for queried_group in queried_groups {
+                if let Some(object_group_name) = queried_group.name {
+                    // Check if specified ObjectGroup revision is already deleted
+                    match object_group_name.as_str() {
+                        "DELETED" => {
+                            // Do nothing. Revision is already deleted.
+                        }
+                        _ => {
+                            // Delete key values of object group
+                            delete(object_group_key_value)
+                                .filter(
+                                    crate::database::schema::object_group_key_value::object_group_id.eq(
+                                        object_group_uuid
+                                    )
                                 )
-                            )
-                            .execute(conn)?;
+                                .execute(conn)?;
 
-                        // Delete object_group_objects
-                        delete(object_group_objects)
-                            .filter(
-                                crate::database::schema::object_group_objects::object_group_id.eq(
-                                    object_group_uuid
+                            // Delete collection_object_groups
+                            delete(collection_object_groups)
+                                .filter(
+                                    crate::database::schema::collection_object_groups::object_group_id.eq(
+                                        object_group_uuid
+                                    )
                                 )
-                            )
-                            .execute(conn)?;
+                                .execute(conn)?;
 
-                        // Rename ObjectGroup revision name and description to "DELETED"
-                        update(object_groups)
-                            .filter(
-                                crate::database::schema::object_groups::id.eq(object_group_uuid)
-                            )
-                            .set((
-                                crate::database::schema::object_groups::name.eq(
-                                    "DELETED".to_string()
-                                ),
-                                crate::database::schema::object_groups::description.eq(
-                                    "DELETED".to_string()
-                                ),
-                            ))
-                            .execute(conn)?;
+                            // Delete object_group_objects
+                            delete(object_group_objects)
+                                .filter(
+                                    crate::database::schema::object_group_objects::object_group_id.eq(
+                                        object_group_uuid
+                                    )
+                                )
+                                .execute(conn)?;
 
-                        // Count undeleted ObjectGroup revisions
-                        let undeleted = object_groups
-                            .select(
-                                diesel::dsl::count(crate::database::schema::object_groups::name)
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::shared_revision_id.eq(
-                                    queried_group.shared_revision_id
+                            // Rename ObjectGroup revision name and description to "DELETED"
+                            update(object_groups)
+                                .filter(
+                                    crate::database::schema::object_groups::id.eq(object_group_uuid)
                                 )
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::name.ne(
-                                    "DELETED".to_string()
-                                )
-                            )
-                            .filter(
-                                crate::database::schema::object_groups::description.ne(
-                                    "DELETED".to_string()
-                                )
-                            )
-                            .first::<i64>(conn)?;
+                                .set((
+                                    crate::database::schema::object_groups::name.eq(
+                                        "DELETED".to_string()
+                                    ),
+                                    crate::database::schema::object_groups::description.eq(
+                                        "DELETED".to_string()
+                                    ),
+                                ))
+                                .execute(conn)?;
 
-                        if undeleted == 0 {
-                            delete(object_groups)
+                            // Count undeleted ObjectGroup revisions
+                            let undeleted = object_groups
+                                .select(
+                                    diesel::dsl::count(crate::database::schema::object_groups::name)
+                                )
                                 .filter(
                                     crate::database::schema::object_groups::shared_revision_id.eq(
                                         queried_group.shared_revision_id
                                     )
                                 )
-                                .execute(conn)?;
+                                .filter(
+                                    crate::database::schema::object_groups::name.ne(
+                                        "DELETED".to_string()
+                                    )
+                                )
+                                .filter(
+                                    crate::database::schema::object_groups::description.ne(
+                                        "DELETED".to_string()
+                                    )
+                                )
+                                .first::<i64>(conn)?;
+
+                            if undeleted == 0 {
+                                delete(object_groups)
+                                    .filter(
+                                        crate::database::schema::object_groups::shared_revision_id.eq(
+                                            queried_group.shared_revision_id
+                                        )
+                                    )
+                                    .execute(conn)?;
+                            }
                         }
                     }
                 }
@@ -691,6 +753,7 @@ impl Database {
         // Return already complete gRPC response
         Ok(DeleteObjectGroupResponse {})
     }
+
     pub fn add_labels_to_object_group(
         &self,
         request: AddLabelsToObjectGroupRequest,

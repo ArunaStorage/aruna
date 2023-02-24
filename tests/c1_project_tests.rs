@@ -28,8 +28,8 @@ fn create_project_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
+        name: "create_project_test_project".to_string(),
+        description: "Project created in create_project_test()".to_string(),
     };
 
     let response = db.create_project(request, creator).unwrap();
@@ -59,7 +59,7 @@ fn update_project_test() {
     assert!(!project_id.is_nil());
 
     // Update empty project metadata
-    let updated_name = "Updated Project Name".to_string();
+    let updated_name = "Updated-Project-Name".to_string();
     let updated_description = "Updated project description".to_string();
     let update_request = UpdateProjectRequest {
         project_id: project_id.to_string(),
@@ -116,9 +116,9 @@ fn destroy_non_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
-    let _created_project = common::functions::create_project(None);
+    let created_project = common::functions::create_project(None);
     // Validate creation
-    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
+    let project_id = uuid::Uuid::parse_str(&created_project.id).unwrap();
     assert!(!project_id.is_nil());
 
     // Create collection in project
@@ -163,8 +163,8 @@ fn add_remove_project_user_test() {
 
     // Create project
     let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
+        name: "add_remove_project_user_test_project".to_string(),
+        description: "Project created for add_remove_project_user_test()".to_string(),
     };
     let create_response = db.create_project(create_request, creator).unwrap();
 
@@ -245,8 +245,8 @@ fn edit_project_user_permissions_test() {
 
     // Create project
     let create_request = CreateProjectRequest {
-        name: "".to_string(),
-        description: "".to_string(),
+        name: "edit_project_user_permissions_test_project".to_string(),
+        description: "Project created in edit_project_user_permissions_test()".to_string(),
     };
     let create_response = db.create_project(create_request, creator).unwrap();
 

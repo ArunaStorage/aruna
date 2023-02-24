@@ -619,8 +619,8 @@ fn get_user_projects_test() {
 
     // Create project as admin
     let crt_proj_req = CreateProjectRequest {
-        name: "testproj_1".to_string(),
-        description: "".to_string(),
+        name: "get_user_projects_test_project_001".to_string(),
+        description: "First project created in get_user_projects_test()".to_string(),
     };
     let proj_1 = db
         .create_project(
@@ -642,8 +642,8 @@ fn get_user_projects_test() {
 
     // Create project as user
     let crt_proj_req_2 = CreateProjectRequest {
-        name: "testproj_2".to_string(),
-        description: "".to_string(),
+        name: "get_user_projects_test_project_002".to_string(),
+        description: "Second project created in get_user_projects_test()".to_string(),
     };
     // This should add the user automatically
     let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();

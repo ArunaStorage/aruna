@@ -429,8 +429,6 @@ fn update_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -439,11 +437,13 @@ fn update_collection_test() {
                 value: "obj_1_value".to_string(),
             }],
             hooks: Vec::new(),
+            sub_path: "".to_string(),
         }),
         collection_id: col_id.to_string(),
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -477,8 +477,6 @@ fn update_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -487,11 +485,13 @@ fn update_collection_test() {
                 value: "obj_2_value".to_string(),
             }],
             hooks: Vec::new(),
+            sub_path: "".to_string(),
         }),
         collection_id: col_id.to_string(),
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -539,8 +539,8 @@ fn update_collection_test() {
 
     let normal_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_001".to_string(),
+        description: "First collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
             value: "test_value".to_owned(),
@@ -560,8 +560,8 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_fail".to_string(),
+        description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
             value: "test_value_2".to_owned(),
@@ -587,8 +587,8 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
+        name: "update_collection_test_collection_versioned".to_string(),
+        description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
             value: "test_value_2".to_owned(),
@@ -620,8 +620,8 @@ fn pin_collection_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_update".to_owned(),
-        description: "this_is_a_demo_collection_update".to_owned(),
+        name: "pin_collection_test_collection_001".to_owned(),
+        description: "Collection created in update_collection_test()".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
         labels: vec![KeyValue {
@@ -645,8 +645,7 @@ fn pin_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -660,6 +659,7 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -693,8 +693,7 @@ fn pin_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -708,6 +707,7 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -818,8 +818,7 @@ fn delete_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1_del".to_string(),
-            description: "test_obj_1_descr_del".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -833,6 +832,7 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
@@ -868,14 +868,14 @@ fn delete_collection_test() {
         target_collection_id: result_2.collection_id,
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
     let _obj_ref = db.create_object_reference(obj_ref_req);
     // Add some objects and an objectgroup
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -889,6 +889,7 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let obj_2_id = uuid::Uuid::new_v4();
@@ -973,8 +974,9 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create fresh Project
     let create_project_request = CreateProjectRequest {
-        name: "Object creation test project".to_string(),
-        description: "Test project used in object creation test.".to_string(),
+        name: "test_collection_materialized_views_stats_project".to_string(),
+        description: "Collection created for test_collection_materialized_views_stats()"
+            .to_string(),
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
@@ -984,8 +986,8 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "Object creation test project collection".to_string(),
-        description: "Test collection used in object creation test.".to_string(),
+        name: "test_collection_materialized_views_stats_collection".to_string(),
+        description: "Test collection used in materialized view stats test.".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],
@@ -1010,8 +1012,7 @@ pub fn test_collection_materialized_views_stats() {
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: collection_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 1337,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -1028,6 +1029,7 @@ pub fn test_collection_materialized_views_stats() {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let init_object_response = db

@@ -277,6 +277,7 @@ CREATE TABLE notification_stream_groups (
     resource_type RESOURCES NOT NULL,
     notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
 );
+
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
 CREATE MATERIALIZED VIEW collection_stats AS

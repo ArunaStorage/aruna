@@ -49,6 +49,13 @@ impl Database {
         use crate::database::schema::user_permissions::dsl as user_perm;
         use diesel::result::Error as dError;
 
+        // Validate project name against regex schema
+        if !NAME_SCHEMA.is_match(request.name.as_str()) {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid project name. Only ^[\\w~\\-.]+$ characters allowed.".to_string(),
+            ));
+        }
+
         // Create a new uuid for the project
         let project_id = uuid::Uuid::new_v4();
 
@@ -431,6 +438,14 @@ impl Database {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
+
+        // Validate project name against regex schema
+        if !NAME_SCHEMA.is_match(request.name.as_str()) {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid project name. Only ^[\\w~\\-.]+$ characters allowed.".to_string(),
+            ));
+        }
+
         // Get project_id
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
 

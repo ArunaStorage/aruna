@@ -142,9 +142,9 @@ impl Database {
         let expiry_time = request.expires_at.clone();
         // Parse it to Option<NaiveDateTime>
         let exp_time = match expiry_time {
-            Some(t) => t
-                .timestamp
-                .map(|t| chrono::NaiveDateTime::from_timestamp(t.seconds, 0)),
+            Some(t) => t.timestamp.map(|t| {
+                chrono::NaiveDateTime::from_timestamp_opt(t.seconds, 0).unwrap_or_default()
+            }),
             None => None,
         };
 

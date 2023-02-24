@@ -71,7 +71,15 @@ async fn register_user_grpc_test() {
 
     println!("{:#?}", resp);
     assert!(resp.is_ok());
-    assert!(!resp.unwrap().into_inner().user_id.is_empty());
+    let user_id = resp.unwrap().into_inner().user_id;
+    assert!(!user_id.is_empty());
+
+    let req = common::grpc_helpers::add_token(
+        tonic::Request::new(ActivateUserRequest { user_id }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let _resp = userservice.activate_user(req).await.unwrap();
 }
 
 #[ignore]

@@ -12,6 +12,18 @@ use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::ArunaError;
 use crate::error::TypeConversionError::PROTOCONVERSION;
 
+use regex::Regex;
+lazy_static! {
+    /// This unwrap should be okay if this Regex is covered and used in tests
+    /// Only two cases result in failure for Regex::new
+    /// 1. Invalid regex syntax
+    /// 2. Too large Regex
+    /// Both cases should be checked in tests and should result in safe behaviour because
+    /// the string is static.
+    pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[\w~\-.]+$").unwrap();
+    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[\w~\-.]+)+/?$").unwrap();
+}
+
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
 /// This converts types with the `as` keyword. It should be safe
 /// because hours, minutes etc. should never exceed the u8 bounds.
@@ -133,6 +145,27 @@ where
             })
             .collect::<Vec<KeyValue>>(),
     )
+}
+
+/// This is a generic validation function for all kinds of key_values
+///
+/// ## Arguments
+///
+/// * `key_values` - A vector containing DbKeyValues
+///
+/// ## Returns
+///
+/// * `bool` - true if validated, false if not
+/// * `Vec<KeyValue>` - A vector containing the hook key-value pairs
+///
+pub fn validate_key_values<T>(key_values: Vec<T>) -> bool
+where
+    T: IsKeyValue,
+{
+    // For now we only check if all keys do not contain the aruna substring -> this is a reserved name
+    key_values
+        .into_iter()
+        .all(|e| !e.get_key().to_lowercase().contains("aruna"))
 }
 
 /// This helper function maps gRPC permissions to
@@ -454,11 +487,8 @@ pub fn grpc_to_db_hash_type(grpc_hash_type: &i32) -> Result<HashType, ArunaError
 pub fn db_to_grpc_hash_type(db_hash_type: &HashType) -> i32 {
     match db_hash_type {
         HashType::MD5 => Hashalgorithm::Md5 as i32,
-        HashType::SHA1 => Hashalgorithm::Sha1 as i32,
         HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-        HashType::SHA512 => Hashalgorithm::Sha512 as i32,
-        HashType::MURMUR3A32 => Hashalgorithm::Murmur3a32 as i32,
-        HashType::XXHASH32 => Hashalgorithm::Xxhash32 as i32,
+        _ => Hashalgorithm::Unspecified as i32,
     }
 }
 

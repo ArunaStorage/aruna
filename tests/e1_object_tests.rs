@@ -1,15 +1,15 @@
 mod common;
 
-use crate::common::functions::{get_object_status_raw, TCreateCollection};
+use crate::common::functions::{get_object, get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash, Hashalgorithm, KeyValue, PageRequest, Version,
+    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
     CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
-    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest,
+    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, ObjectWithUrl,
     PinCollectionVersionRequest, StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
@@ -20,6 +20,30 @@ use common::functions::{
 };
 use rand::{thread_rng, Rng};
 use serial_test::serial;
+use std::hash::{Hash, Hasher};
+
+// Wrap struct to implement traits needed for generic comparison
+struct MyObjectWithUrl(ObjectWithUrl);
+
+impl Eq for MyObjectWithUrl {}
+
+impl PartialEq for MyObjectWithUrl {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.object == other.0.object
+            && self.0.url == other.0.url
+            && self.0.paths == other.0.paths
+    }
+}
+
+/// Implement hash for MyObjectWithUrl but only include proto object id ...
+impl Hash for MyObjectWithUrl {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match &self.0.object {
+            None => panic!("Nope."),
+            Some(obj) => obj.id.hash(state),
+        }
+    }
+}
 
 #[test]
 #[ignore]
@@ -31,8 +55,8 @@ fn create_object_test() {
 
     // Create Project
     let create_project_request = CreateProjectRequest {
-        name: "Object creation test project".to_string(),
-        description: "Test project used in object creation test.".to_string(),
+        name: "create_object_test_project_001".to_string(),
+        description: "Project created in create_object_test()".to_string(),
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
@@ -42,8 +66,8 @@ fn create_object_test() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "Object creation test project collection".to_string(),
-        description: "Test collection used in object creation test.".to_string(),
+        name: "create_object_test_collection".to_string(),
+        description: "Test collection used in create_object_test().".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],
@@ -68,8 +92,7 @@ fn create_object_test() {
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: collection_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 1234,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -86,6 +109,7 @@ fn create_object_test() {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let init_object_response = db
@@ -107,7 +131,7 @@ fn create_object_test() {
     assert_eq!(&init_object_response.upload_id, &upload_id);
 
     // Finish object staging
-    let finish_hash = Hash {
+    let finish_hash = DbHash {
         alg: Hashalgorithm::Sha256 as i32,
         hash: "f60b102aa455f085df91ffff53b3c0acd45c10f02782b953759ab10973707a92".to_string(),
     };
@@ -170,7 +194,6 @@ fn update_object_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -224,6 +247,7 @@ fn update_object_with_reference_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -240,7 +264,6 @@ fn update_object_with_reference_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -265,8 +288,9 @@ fn update_object_with_reference_test() {
     };
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
+    let some_object = resp[0].clone();
 
-    assert_eq!(resp[0].object.id.to_string(), update_2.id);
+    assert_eq!(some_object.object.unwrap().id, update_2.id);
 }
 
 #[test]
@@ -306,7 +330,6 @@ fn object_revision_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -328,6 +351,7 @@ fn object_revision_test() {
     let get_latest = GetLatestObjectRevisionRequest {
         collection_id: rand_collection.id,
         object_id: object.id,
+        with_url: false,
     };
 
     let latest = db.get_latest_object_revision(get_latest).unwrap();
@@ -373,7 +397,6 @@ fn object_revisions_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -416,7 +439,11 @@ fn object_revisions_test() {
 
     println!("Revisions: {:#?}", resp_2);
     assert!(resp_2.len() == 3);
-    assert!(common::functions::compare_it(resp_1, resp_2))
+
+    assert!(common::functions::compare_it(
+        resp_1.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>(),
+        resp_2.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>()
+    ))
 }
 
 #[test]
@@ -457,6 +484,7 @@ fn update_object_get_references_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -473,7 +501,6 @@ fn update_object_get_references_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        new_description: "File.next.description".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -498,8 +525,9 @@ fn update_object_get_references_test() {
     };
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
+    let some_object = resp[0].clone();
 
-    assert_eq!(resp[0].object.id.to_string(), update_2.id);
+    assert_eq!(some_object.object.unwrap().id, update_2.id);
 
     // Get references test
 
@@ -512,7 +540,7 @@ fn update_object_get_references_test() {
     let get_refs_resp_1 = db.get_references(&get_refs).unwrap();
 
     println!("Refs: {:#?}", get_refs_resp_1.references);
-    assert!(get_refs_resp_1.references.len() == 2);
+    assert_eq!(get_refs_resp_1.references.len(), 2);
 
     let get_refs = GetReferencesRequest {
         collection_id: rand_collection.id,
@@ -553,24 +581,21 @@ fn delete_object_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
 
-    // Simple delete single revision object without revision or force --> Error as last revision has to be deleted with force
-    let mut delreq = DeleteObjectRequest {
+    // Simple delete single revision object without revision or force
+    let delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.clone().id,
         with_revisions: false,
         force: false,
     };
 
-    let resp = db.delete_object(delreq.clone(), creator);
-    assert!(resp.is_err());
-
-    // Simple delete without revision or force --> Error as last revision has to be deleted with force
-    delreq.force = true;
     let resp = db.delete_object(delreq, creator);
+
     assert!(resp.is_ok());
 
     let raw_db_object = get_object_status_raw(&single_id);
@@ -588,6 +613,7 @@ fn delete_object_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -598,8 +624,7 @@ fn delete_object_test() {
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
             filename: "Update".to_string(),
-            description: "Update".to_string(),
-            collection_id: random_collection.id.to_string(),
+            sub_path: "".to_string(),
             content_len: 0,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -611,6 +636,7 @@ fn delete_object_test() {
         is_specification: false,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
+        hash: None, //ToDo: Implement?
     };
 
     let new_id = uuid::Uuid::new_v4();
@@ -618,7 +644,6 @@ fn delete_object_test() {
         .update_object(&updatereq, &None, &creator, uuid::Uuid::default(), new_id)
         .unwrap();
 
-    println!("Finish object update for revision 1 before deletion.");
     let staging_finished = db
         .finish_object_staging(
             &FinishObjectStagingRequest {
@@ -635,28 +660,95 @@ fn delete_object_test() {
         .unwrap();
 
     // Simple delete with revisions / with force
-    let delreq = DeleteObjectRequest {
+    let mut delreq = DeleteObjectRequest {
         object_id: single_id.clone(),
         collection_id: random_collection.id,
         with_revisions: true,
         force: true,
     };
 
-    println!("\nAbout to delete all revisions with the revision 0 id of an object.");
-    let resp = db.delete_object(delreq, creator);
+    //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
+    let resp = db.delete_object(delreq.clone(), creator);
 
-    assert!(resp.is_ok());
+    // Should error because single_id is "old" revision
+    assert!(resp.is_err());
 
-    let raw_db_object = get_object_status_raw(&single_id);
+    delreq.object_id = staging_finished.clone().object.unwrap().id;
 
-    // Should delete the object
-    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+    //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
+    let _resp = db.delete_object(delreq, creator).unwrap();
 
     // Revision Should also be deleted
     let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+
+    let raw_db_object = get_object_status_raw(&single_id);
+
+    // Should delete the object
+    assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn delete_object_references_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let source_collection = create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create random collection 2
+    let target_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    let new_obj = create_object(
+        &(TCreateObject {
+            creator_id: Some(creator.to_string()),
+            collection_id: source_collection.id.to_string(),
+            default_endpoint_id: Some(endpoint_id.to_string()),
+            ..Default::default()
+        }),
+    );
+
+    db.create_object_reference(CreateObjectReferenceRequest {
+        object_id: new_obj.id.to_string(),
+        collection_id: source_collection.id.to_string(),
+        target_collection_id: target_collection.id.to_string(),
+        writeable: true,
+        auto_update: true,
+        sub_path: "".to_string(),
+    })
+    .unwrap();
+
+    // Delete target collection reference
+    db.delete_object(
+        DeleteObjectRequest {
+            object_id: new_obj.id.to_string(),
+            collection_id: target_collection.id,
+            with_revisions: false,
+            force: false,
+        },
+        creator,
+    )
+    .unwrap();
+
+    let undeleted = get_object(source_collection.id, new_obj.id);
+
+    assert_ne!(undeleted.filename, "DELETED".to_string())
 }
 
 #[test]
@@ -687,6 +779,7 @@ fn get_objects_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0..4),
                     num_hooks: thread_rng().gen_range(0..4),
+                    ..Default::default()
                 }),
             )
             .id
@@ -735,24 +828,30 @@ fn get_object_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
 
     // Get all objects
     let get_request = GetObjectByIdRequest {
-        collection_id: random_collection.id,
+        collection_id: random_collection.id.to_string(),
         object_id: new_obj.to_string(),
         with_url: false,
     };
 
     let get_obj = db.get_object(&get_request).unwrap();
 
-    assert!(get_obj.is_some());
-    assert_eq!(get_obj.unwrap().id, new_obj);
+    assert!(get_obj.object.is_some());
+    assert_eq!(get_obj.object.unwrap().id, new_obj);
 
     let get_obj_internal = db
-        .get_object_by_id(&uuid::Uuid::parse_str(&new_obj).unwrap())
+        .get_object_by_id(
+            &uuid::Uuid::parse_str(&new_obj).unwrap(),
+            &uuid::Uuid::parse_str(&random_collection.id.to_string()).unwrap(),
+        )
+        .unwrap()
+        .object
         .unwrap();
 
     assert_eq!(get_obj_internal.id.to_string(), new_obj);
@@ -783,6 +882,7 @@ fn get_object_primary_location_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -820,6 +920,7 @@ fn get_object_primary_location_with_endpoint_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -858,6 +959,7 @@ fn get_object_locations() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     )
     .id;
@@ -903,6 +1005,7 @@ fn clone_object_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
@@ -911,7 +1014,6 @@ fn clone_object_test() {
         original_object: new_obj.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        new_description: "File.next.description2".to_string(),
         content_len: 123456,
         ..Default::default()
     });
@@ -926,7 +1028,7 @@ fn clone_object_test() {
 
     let cloned = resp.object.unwrap();
 
-    assert!(cloned.id != update_2.id);
+    assert_ne!(cloned.id, update_2.id);
     assert_eq!(cloned.rev_number, 0);
     println!("{:#?}", cloned.id);
     println!("{:#?}", cloned.origin.clone().unwrap().id);
@@ -949,136 +1051,136 @@ fn delete_multiple_objects_test() {
     let random_project = create_project(None);
 
     // Create random collection
-    let random_collection = create_collection(TCreateCollection {
+    let source_collection = create_collection(TCreateCollection {
         project_id: random_project.id.to_string(),
-        col_override: None,
         ..Default::default()
     });
 
     // Create random collection 2
-    let random_collection2 = create_collection(TCreateCollection {
+    let target_collection = create_collection(TCreateCollection {
         project_id: random_project.id,
-        col_override: None,
         ..Default::default()
     });
 
+    // Create random object 1
     let rnd_obj_1_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
-            num_labels: thread_rng().gen_range(0..4),
-            num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
-    // Create auto_updating reference in col 2
-    let create_ref_2 = CreateObjectReferenceRequest {
+    // Create static read-only reference in collection 2
+    let create_ref_01 = CreateObjectReferenceRequest {
         object_id: rnd_obj_1_rev_0.id.clone(),
-        collection_id: random_collection.id.clone(),
-        target_collection_id: random_collection2.id.clone(),
+        collection_id: source_collection.id.clone(),
+        target_collection_id: target_collection.id.clone(),
         writeable: false,
         auto_update: false,
+        sub_path: "".to_string(),
     };
 
-    let _resp = db.create_object_reference(create_ref_2).unwrap();
+    db.create_object_reference(create_ref_01).unwrap();
 
-    // Update Object again
+    // Update first object
     let rnd_obj_1_rev_1 = common::functions::update_object(&TCreateUpdate {
         original_object: rnd_obj_1_rev_0.clone(),
-        collection_id: random_collection.id.to_string(),
+        collection_id: source_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        new_description: "File.next.description2".to_string(),
         content_len: 123456,
         ..Default::default()
     });
 
+    // Create random object 2
     let rnd_obj_2_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
+    // Create random object 3
     let rnd_obj_3_rev_0 = create_object(
         &(TCreateObject {
             creator_id: Some(creator.to_string()),
-            collection_id: random_collection.id.to_string(),
+            collection_id: source_collection.id.to_string(),
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
     // Create auto_updating reference in col 2
-    let create_ref = CreateObjectReferenceRequest {
+    let create_ref_02 = CreateObjectReferenceRequest {
         object_id: rnd_obj_3_rev_0.id.clone(),
-        collection_id: random_collection.id.clone(),
-        target_collection_id: random_collection2.id.clone(),
+        collection_id: source_collection.id.clone(),
+        target_collection_id: target_collection.id.clone(),
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
 
-    let _resp = db.create_object_reference(create_ref).unwrap();
+    db.create_object_reference(create_ref_02).unwrap();
 
-    // Test deletes
-    let ids = vec![rnd_obj_1_rev_1.id, rnd_obj_2_rev_0.id, rnd_obj_3_rev_0.id];
+    // Delete some of the objects with a single call
+    let ids = vec![
+        rnd_obj_1_rev_1.id.to_string(),
+        rnd_obj_2_rev_0.id.to_string(),
+        rnd_obj_3_rev_0.id.to_string(),
+    ];
 
     let del_req = DeleteObjectsRequest {
-        object_ids: ids.clone(),
-        collection_id: random_collection.id.to_string(),
+        object_ids: ids,
+        collection_id: source_collection.id.to_string(),
         with_revisions: true,
         force: false,
     };
 
-    let resp = db.delete_objects(del_req, creator);
-    println!("{:#?}", resp);
+    db.delete_objects(del_req, creator).unwrap();
 
-    // This should fail without force as with_revisions can only be executed with force
-    assert!(resp.is_err());
-
-    let del_req = DeleteObjectsRequest {
-        object_ids: ids,
-        collection_id: random_collection.id.to_string(),
-        with_revisions: false,
-        force: true,
-    };
-    let resp = db.delete_objects(del_req, creator);
-
-    assert!(resp.is_ok());
-
+    // Check random_collection objects
     let get_obj = GetObjectsRequest {
-        collection_id: random_collection.id.to_string(),
+        collection_id: source_collection.id.to_string(),
         page_request: None,
         label_id_filter: None,
         with_url: false,
     };
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    // - obj_1_rev_0 available
-    // - obj_1_rev_1 deleted
-    // - obj_2_rev_0 deleted
-    // - obj_3_rev_0 moved to random_collection2
-    assert_eq!(resp.len(), 1);
-    for object_dto in resp {
-        if object_dto.object.id.to_string() == rnd_obj_1_rev_0.id {
-            assert!(matches!(
-                object_dto.object.object_status,
-                ObjectStatus::AVAILABLE
-            ))
-        } else {
-            panic!(
-                "This id {} should not be returned as existing object of collection {}.",
-                object_dto.object.id, random_collection.id
-            );
-        }
-    }
+    // - obj_1_rev_0: moved read-only to collection 2
+    // - obj_1_rev_1: revision 1 is available read-only in collection 2
+    // - obj_2_rev_0: deleted
+    // - obj_3_rev_0: moved writeable to random_collection2
+    assert_eq!(resp.len(), 0);
 
+    let obj_1_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_1_rev_0.id.to_string());
+    let obj_1_rev_1_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_1_rev_1.id.to_string());
+    let obj_2_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_2_rev_0.id.to_string());
+    let obj_3_rev_0_check =
+        common::functions::get_raw_db_object_by_id(&rnd_obj_3_rev_0.id.to_string());
+
+    assert_eq!(obj_1_rev_0_check.object_status, ObjectStatus::AVAILABLE); // Read-only available in collection2
+    assert_eq!(obj_1_rev_1_check.object_status, ObjectStatus::AVAILABLE); // Revision 1 is still read-only in collection2
+
+    assert_eq!(obj_2_rev_0_check.filename, "DELETED".to_string());
+    assert_eq!(obj_2_rev_0_check.content_len, 0);
+    assert_eq!(obj_2_rev_0_check.object_status, ObjectStatus::TRASH); // Deleted with last reference
+
+    assert_eq!(obj_3_rev_0_check.object_status, ObjectStatus::AVAILABLE); // Writeable available in collection2
+
+    // Check random_collection2 objects
     let get_obj = GetObjectsRequest {
-        collection_id: random_collection2.id,
+        collection_id: target_collection.id,
         page_request: None,
         label_id_filter: None,
         with_url: false,
@@ -1086,7 +1188,9 @@ fn delete_multiple_objects_test() {
 
     let resp = db.get_objects(get_obj).unwrap().unwrap();
 
-    assert_eq!(resp.len(), 2); // obj_1_rev_0 read-only reference and obj_3_rev_0 is moved here
+    // - rnd_obj_1_rev_0: read-only
+    // - rnd_obj_3_rev_0: writeable
+    assert_eq!(resp.len(), 2);
 }
 
 #[test]
@@ -1115,6 +1219,7 @@ fn delete_object_from_versioned_collection_test() {
             default_endpoint_id: Some(endpoint_id.to_string()),
             num_labels: thread_rng().gen_range(0..4),
             num_hooks: thread_rng().gen_range(0..4),
+            ..Default::default()
         }),
     );
 
@@ -1146,7 +1251,14 @@ fn delete_object_from_versioned_collection_test() {
 
     // Try to delete objects from versioned collection
     let delete_request = DeleteObjectRequest {
-        object_id: collection_objects.first().unwrap().object.id.to_string(),
+        object_id: collection_objects
+            .first()
+            .unwrap()
+            .object
+            .as_ref()
+            .unwrap()
+            .id
+            .to_string(),
         collection_id: versioned_collection.id,
         with_revisions: false,
         force: true,
