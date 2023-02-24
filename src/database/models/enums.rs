@@ -6,7 +6,7 @@ use std::str::FromStr;
 use tonic::{Code, Status};
 
 #[derive(Debug, DbEnum, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[DieselTypePath = "sql_types::ObjectStatus"]
+#[ExistingTypePath = "sql_types::ObjectStatus"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum ObjectStatus {
     INITIALIZING,
@@ -18,7 +18,7 @@ pub enum ObjectStatus {
 }
 
 #[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[DieselTypePath = "sql_types::EndpointType"]
+#[ExistingTypePath = "sql_types::EndpointType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum EndpointType {
     S3,
@@ -50,7 +50,7 @@ impl FromStr for EndpointType {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[DieselTypePath = "sql_types::Dataclass"]
+#[ExistingTypePath = "sql_types::Dataclass"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Dataclass {
     PUBLIC,
@@ -60,7 +60,7 @@ pub enum Dataclass {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[DieselTypePath = "sql_types::SourceType"]
+#[ExistingTypePath = "sql_types::SourceType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum SourceType {
     URL,
@@ -77,7 +77,7 @@ impl SourceType {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[DieselTypePath = "sql_types::HashType"]
+#[ExistingTypePath = "sql_types::HashType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum HashType {
     MD5,
@@ -102,7 +102,7 @@ impl HashType {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq)]
-#[DieselTypePath = "sql_types::KeyValueType"]
+#[ExistingTypePath = "sql_types::KeyValueType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum KeyValueType {
     LABEL,
@@ -110,14 +110,14 @@ pub enum KeyValueType {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy)]
-#[DieselTypePath = "sql_types::IdentityProviderType"]
+#[ExistingTypePath = "sql_types::IdentityProviderType"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum IdentityProviderType {
     OIDC,
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[DieselTypePath = "sql_types::UserRights"]
+#[ExistingTypePath = "sql_types::UserRights"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum UserRights {
     NONE,
@@ -129,7 +129,7 @@ pub enum UserRights {
 }
 
 #[derive(Debug, DbEnum, PartialEq, Eq, Clone, Copy)]
-#[DieselTypePath = "sql_types::Resources"]
+#[ExistingTypePath = "sql_types::Resources"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum Resources {
     PROJECT,
@@ -139,7 +139,7 @@ pub enum Resources {
 }
 
 #[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd)]
-#[DieselTypePath = "sql_types::ReferenceStatus"]
+#[ExistingTypePath = "sql_types::ReferenceStatus"]
 #[DbValueStyle = "UPPERCASE"]
 pub enum ReferenceStatus {
     STAGING,
