@@ -971,14 +971,14 @@ impl Database {
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), ArunaError, _>(|conn| {
                     // Check if object exists in collection
-                    if !object_exists_in_collection(conn, &object_uuid, &collection_uuid, true)? {
+                    if !object_exists_in_collection(conn, object_uuid, collection_uuid, true)? {
                         return Err(ArunaError::InvalidRequest(format!(
                             "Object {object_uuid} does not exist in collection {collection_uuid}."
                         )));
                     }
 
                     // Try to get object without reference needed and its associated paths
-                    let object_dto_option = get_object_ignore_coll(&object_uuid, conn)?;
+                    let object_dto_option = get_object_ignore_coll(object_uuid, conn)?;
 
                     let proto_paths = if let Some(object_dto) = object_dto_option.clone() {
                         get_paths_proto(&object_dto.object.shared_revision_id, conn)?
@@ -2172,7 +2172,7 @@ pub fn object_exists_in_collection(
         }
     };
 
-    Ok(references.len() > 0)
+    Ok(!references.is_empty())
 }
 
 /// This is a general helper function that can be use inside already open transactions
