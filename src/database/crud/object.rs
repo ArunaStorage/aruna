@@ -2523,14 +2523,12 @@ pub fn delete_staging_object(
         .execute(conn)?;
 
     // Get lowest object revision number
-    println!("{:#?}", staging_object);
     let lowest_object_revision: Option<i64> = objects
         .select(min(database::schema::objects::revision_number))
         .filter(
             database::schema::objects::shared_revision_id.eq(&staging_object.shared_revision_id),
         )
         .first::<Option<i64>>(conn)?;
-    println!("{:#?}", lowest_object_revision);
 
     // Update object status to TRASH
     match lowest_object_revision {

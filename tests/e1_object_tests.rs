@@ -636,7 +636,7 @@ fn delete_object_test() {
         is_specification: false,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
-        hash: None, //ToDo: Implement?
+        hash: None, // Note: Maybe has to be refactored for future hash validation
     };
 
     let new_id = uuid::Uuid::new_v4();

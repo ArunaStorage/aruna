@@ -103,7 +103,6 @@ impl ArunaServerConfig {
     /// If the parameter is mandatory the
     ///
     fn load_config_env() -> Result<EnvConfig, VarError> {
-        //ToDo: Implement loading of mandatory/optional environmental variables
         //let env_var = env::var("ENV_VAR")?; //Note: Mandatory
 
         /* Note: Optional
