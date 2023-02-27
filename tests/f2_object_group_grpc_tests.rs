@@ -4,8 +4,8 @@ use crate::common::grpc_helpers::get_token_user_id;
 use aruna_rust_api::api::storage::models::v1::Permission;
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectGroupRequest, GetObjectGroupByIdRequest, GetObjectGroupObjectsRequest,
-    GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
+    CreateObjectGroupRequest, GetObjectGroupByIdRequest, GetObjectGroupHistoryRequest,
+    GetObjectGroupObjectsRequest, GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
 };
 
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -608,6 +608,167 @@ async fn get_object_groups_from_object_grpc_test() {
 
                 for object_group in fetched_object_groups {
                     assert!(object_group_ids.contains(&object_group.id))
+                }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+}
+
+/// The individual steps of this test function contains:
+/// 1. Get object group revisions with different permissions
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn get_object_group_history_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Init object group service
+    let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    });
+
+    // Create random data and meta object
+    let data_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+    let meta_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Create initial object group
+    let create_object_group_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectGroupRequest {
+            name: "Dummy-Object-Group".to_string(),
+            description: "Revision 0 created in get_object_group_history_grpc_test.".to_string(),
+            collection_id: random_collection.id.to_string(),
+            object_ids: vec![data_object.id.to_string()],
+            meta_object_ids: vec![meta_object.id.to_string()],
+            labels: vec![],
+            hooks: vec![],
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let rev_0_group = object_group_service
+        .create_object_group(create_object_group_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_group
+        .unwrap();
+
+    // Randomly update object group to create revisions
+    let mut object_group_revision_ids = vec![rev_0_group.id.to_string()];
+    let mut source_object_group = rev_0_group;
+    for i in 1..3 {
+        let update_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(UpdateObjectGroupRequest {
+                group_id: source_object_group.id.to_string(),
+                name: "Dummy-Object-Group".to_string(),
+                description: format!("Revision {i} created in get_object_group_history_grpc_test."),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![data_object.id.to_string()],
+                meta_object_ids: vec![meta_object.id.to_string()],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let updated_object_group = object_group_service
+            .update_object_group(update_object_group_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object_group
+            .unwrap();
+
+        // Save id of object group revision
+        object_group_revision_ids.push(updated_object_group.id.to_string());
+
+        // Use new revision as source for new update
+        source_object_group = updated_object_group;
+    }
+
+    // Try to fetch object group revisions with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create object group which will be updated
+        let get_object_group_history_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectGroupHistoryRequest {
+                collection_id: random_collection.id.to_string(),
+                group_id: rev_0_group.id.to_string(),
+                page_request: None,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let get_object_groups_response = object_group_service
+            .get_object_group_history(get_object_group_history_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None => {
+                assert!(get_object_groups_response.is_err());
+            }
+            Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
+                // Validate object group fetch
+                let fetched_object_groups = get_object_groups_response
+                    .unwrap()
+                    .into_inner()
+                    .object_groups
+                    .unwrap()
+                    .object_group_overviews;
+
+                assert_eq!(fetched_object_groups.len(), 5);
+
+                for object_group in fetched_object_groups {
+                    assert!(object_group_revision_ids.contains(&object_group.id))
                 }
             }
             _ => panic!("Unspecified permission is not allowed."),
