@@ -1,12 +1,12 @@
 use crate::common::functions::{TCreateCollection, TCreateObject};
 use crate::common::grpc_helpers::get_token_user_id;
 
-use aruna_rust_api::api::storage::models::v1::{KeyValue, Permission};
+use aruna_rust_api::api::storage::models::v1::{KeyValue, LabelOrIdQuery, Permission};
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectGroupRequest, CreateObjectGroupRequest, DeleteObjectGroupRequest,
     GetObjectGroupByIdRequest, GetObjectGroupHistoryRequest, GetObjectGroupObjectsRequest,
-    GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
+    GetObjectGroupsFromObjectRequest, GetObjectGroupsRequest, UpdateObjectGroupRequest,
 };
 
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -608,6 +608,217 @@ async fn get_object_groups_from_object_grpc_test() {
 
                 for object_group in fetched_object_groups {
                     assert!(object_group_ids.contains(&object_group.id))
+                }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+}
+
+/// The individual steps of this test function contains:
+/// 1. Get multiple object groups with different permissions
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn get_object_groups_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Init object group service
+    let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    });
+
+    // Create random data and meta objects
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    };
+
+    let data_object_ids = vec![common::functions::create_object(&object_meta).id];
+    let meta_object_ids = vec![common::functions::create_object(&object_meta).id];
+
+    // Create object groups which will be queried
+    let mut all_object_group_ids = Vec::new();
+    let mut inner_create_request = CreateObjectGroupRequest {
+        name: "Dummy object group 00{}".to_string(),
+        description: "Created in get_object_groups_grpc_test.".to_string(),
+        collection_id: random_collection.id.to_string(),
+        object_ids: data_object_ids.clone(),
+        meta_object_ids: meta_object_ids.clone(),
+        labels: vec![],
+        hooks: vec![],
+    };
+    for i in 0..5 {
+        inner_create_request.name = format!("Dummy object group 00{i}");
+
+        if i % 2 == 0 {
+            inner_create_request.labels = vec![KeyValue {
+                key: "validated".to_string(),
+                value: "true".to_string(),
+            }];
+        } else {
+            inner_create_request.labels = vec![];
+        }
+
+        let create_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(inner_create_request.clone()),
+            common::oidc::ADMINTOKEN,
+        );
+
+        all_object_group_ids.push(
+            object_group_service
+                .create_object_group(create_object_group_request)
+                .await
+                .unwrap()
+                .into_inner()
+                .object_group
+                .unwrap()
+                .id,
+        );
+    }
+
+    // Try to fetch multiple object groups with with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create basic request to generally fetch object groups of collection
+        let get_all_object_groups_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectGroupsRequest {
+                collection_id: random_collection.id.to_string(),
+                page_request: None,
+                label_id_filter: None,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let get_all_object_groups_response = object_group_service
+            .get_object_groups(get_all_object_groups_request)
+            .await;
+
+        // Create request to fetch object groups filtered by id
+        let id_filtered_object_group_ids = vec![
+            all_object_group_ids[0].to_string(),
+            all_object_group_ids[2].to_string(),
+        ];
+        let get_id_filtered_object_groups_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectGroupsRequest {
+                collection_id: random_collection.id.to_string(),
+                page_request: None,
+                label_id_filter: Some(LabelOrIdQuery {
+                    labels: None,
+                    ids: id_filtered_object_group_ids.clone(),
+                }),
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let get_id_filtered_object_groups_response = object_group_service
+            .get_object_groups(get_id_filtered_object_groups_request)
+            .await;
+
+        // Create request to fetch object groups filtered by label (should be the 'index % 2 == 0' elements of the vector)
+        let label_filtered_object_group_ids = vec![
+            all_object_group_ids[1].to_string(),
+            all_object_group_ids[3].to_string(),
+        ];
+        let get_label_filtered_object_groups_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectGroupsRequest {
+                collection_id: random_collection.id.to_string(),
+                page_request: None,
+                label_id_filter: Some(LabelOrIdQuery {
+                    labels: None,
+                    ids: label_filtered_object_group_ids.clone(),
+                }),
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let get_label_filtered_object_groups_response = object_group_service
+            .get_object_groups(get_label_filtered_object_groups_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None => {
+                assert!(get_all_object_groups_response.is_err());
+                assert!(get_id_filtered_object_groups_response.is_err());
+                assert!(get_label_filtered_object_groups_response.is_err());
+            }
+            Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
+                // Validate object group fetch
+                let all_object_groups = get_all_object_groups_response
+                    .unwrap()
+                    .into_inner()
+                    .object_groups
+                    .unwrap()
+                    .object_group_overviews;
+
+                assert_eq!(all_object_groups.len(), 5);
+                for object_group in all_object_groups {
+                    assert!(all_object_group_ids.contains(&object_group.id))
+                }
+
+                let id_filtered_object_groups = get_id_filtered_object_groups_response
+                    .unwrap()
+                    .into_inner()
+                    .object_groups
+                    .unwrap()
+                    .object_group_overviews;
+
+                assert_eq!(id_filtered_object_groups.len(), 2);
+                for object_group in id_filtered_object_groups {
+                    assert!(id_filtered_object_group_ids.contains(&object_group.id))
+                }
+
+                let label_filtered_object_groups = get_label_filtered_object_groups_response
+                    .unwrap()
+                    .into_inner()
+                    .object_groups
+                    .unwrap()
+                    .object_group_overviews;
+
+                assert_eq!(label_filtered_object_groups.len(), 2);
+                for object_group in label_filtered_object_groups {
+                    assert!(label_filtered_object_group_ids.contains(&object_group.id))
                 }
             }
             _ => panic!("Unspecified permission is not allowed."),
