@@ -3188,12 +3188,14 @@ pub fn delete_multiple_objects(
     for rel_col in relevant_collections {
         for reference in references.clone() {
             if reference.collection_id == rel_col {
-                let sh_rev_id = object_id_shared_rev_id.get(&reference.object_id).ok_or(
-                    ArunaError::InvalidRequest(format!(
-                        "Shared revision can not be found for object_id {} ",
-                        reference.object_id
-                    )),
-                )?; // Should never occur
+                let sh_rev_id = object_id_shared_rev_id
+                    .get(&reference.object_id)
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(format!(
+                            "Shared revision can not be found for object_id {} ",
+                            reference.object_id
+                        ))
+                    })?; // Should never occur
                 if let Some(sr_id) = shared_revisions_per_collection.get_mut(&rel_col) {
                     if let Some(sr_count) = sr_id.get_mut(sh_rev_id) {
                         *sr_count += 1;
@@ -3209,9 +3211,11 @@ pub fn delete_multiple_objects(
 
         for reference in references_to_delete.clone() {
             if reference.collection_id == rel_col {
-                let sh_rev_id = object_id_shared_rev_id.get(&reference.object_id).ok_or(
-                    ArunaError::InvalidRequest("Shared revision does not exist".to_string()),
-                )?; // Should never occur
+                let sh_rev_id = object_id_shared_rev_id
+                    .get(&reference.object_id)
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest("Shared revision does not exist".to_string())
+                    })?; // Should never occur
                 if let Some(sr_id) = shared_revision_per_collection_to_delete.get_mut(&rel_col) {
                     if let Some(sr_count) = sr_id.get_mut(sh_rev_id) {
                         *sr_count += 1;
@@ -3231,9 +3235,9 @@ pub fn delete_multiple_objects(
         let shared_counts_before =
             shared_revisions_per_collection
                 .get(&col_id)
-                .ok_or(ArunaError::InvalidRequest(
-                    "Shared revision does not exist".to_string(),
-                ))?;
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest("Shared revision does not exist".to_string())
+                })?;
 
         for (sh_rev_id, counts_deleted) in shared_counts_deleted {
             if let Some(counts_before) = shared_counts_before.get(&sh_rev_id) {

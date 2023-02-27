@@ -395,9 +395,11 @@ impl Database {
                         .version
                         .clone()
                         .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
-                        .ok_or(ArunaError::InvalidRequest(
-                            "Unable to create collection version".to_string(),
-                        ))?;
+                        .ok_or_else(|| {
+                            ArunaError::InvalidRequest(
+                                "Unable to create collection version".to_string(),
+                            )
+                        })?;
 
                     // Create new Uuid for collection
                     let new_coll_uuid = uuid::Uuid::new_v4();
@@ -1222,9 +1224,11 @@ fn pin_paths_to_version(
             path: path_parts.join("/").to_string(),
             shared_revision_id: *revision_id_mapping
                 .get(&old_path.shared_revision_id)
-                .ok_or(ArunaError::InvalidRequest(
-                    "Could not map old object to newly created.".to_string(),
-                ))?,
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest(
+                        "Could not map old object to newly created.".to_string(),
+                    )
+                })?,
             collection_id: pin_collection.coll.id,
             created_at: Local::now().naive_local(),
             active: true,

@@ -515,7 +515,7 @@ pub fn get_object(collection_id: String, object_id: String) -> Object {
 
 /// GetObjectById wrapper for simplified use in tests.
 #[allow(dead_code)]
-pub fn get_raw_db_object_by_id(object_id: &String) -> DbObject {
+pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
     use diesel::prelude::*;
 
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
