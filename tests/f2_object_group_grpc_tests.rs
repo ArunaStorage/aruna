@@ -1,12 +1,12 @@
 use crate::common::functions::{TCreateCollection, TCreateObject};
 use crate::common::grpc_helpers::get_token_user_id;
 
-use aruna_rust_api::api::storage::models::v1::Permission;
+use aruna_rust_api::api::storage::models::v1::{KeyValue, Permission};
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectGroupRequest, DeleteObjectGroupRequest, GetObjectGroupByIdRequest,
-    GetObjectGroupHistoryRequest, GetObjectGroupObjectsRequest, GetObjectGroupsFromObjectRequest,
-    UpdateObjectGroupRequest,
+    AddLabelsToObjectGroupRequest, CreateObjectGroupRequest, DeleteObjectGroupRequest,
+    GetObjectGroupByIdRequest, GetObjectGroupHistoryRequest, GetObjectGroupObjectsRequest,
+    GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
 };
 
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -939,6 +939,9 @@ async fn get_object_group_objects_grpc_test() {
     }
 }
 
+/// The individual steps of this test function contains:
+/// 1. Delete object group revisions individually with different permissions
+/// 2. Delete object group revisions in single request with different permissions
 #[ignore]
 #[tokio::test]
 #[serial(db)]
@@ -1197,21 +1200,169 @@ async fn delete_object_group_grpc_test() {
                     common::oidc::ADMINTOKEN,
                 );
 
-                let get_repsonse = object_group_service
-                    .get_object_group_by_id(get_object_group_request)
-                    .await;
-
-                if get_repsonse.is_ok() {
-                    println!("{:#?}", get_repsonse.unwrap());
-                    panic!()
-                }
-
-                /*
                 assert!(object_group_service
                     .get_object_group_by_id(get_object_group_request)
                     .await
                     .is_err())
-                */
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+}
+
+/// The individual steps of this test function contains:
+/// 1. Add labels to object group with different permissions
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn add_labels_to_object_group_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Init object group service
+    let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    });
+
+    // Create random data and meta object
+    let data_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+    let meta_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Create random object group without labels
+    let create_object_group_request = common::grpc_helpers::add_token(
+        tonic::Request::new(CreateObjectGroupRequest {
+            name: "Source object group".to_string(),
+            description: "Created in get_object_group_by_id_grpc_test.".to_string(),
+            collection_id: random_collection.id.to_string(),
+            object_ids: vec![data_object.id],
+            meta_object_ids: vec![meta_object.id],
+            labels: vec![],
+            hooks: vec![],
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+
+    let source_object_group = object_group_service
+        .create_object_group(create_object_group_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .object_group
+        .unwrap();
+
+    // Add label/s to object group with different permissions
+    let mut added_key_values = Vec::new();
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Add labels to object group
+        let label = KeyValue {
+            key: format!("{:#?}", permission),
+            value: "added".to_string(),
+        };
+        let add_labels_request = common::grpc_helpers::add_token(
+            tonic::Request::new(AddLabelsToObjectGroupRequest {
+                collection_id: random_collection.id.to_string(),
+                group_id: source_object_group.id.to_string(),
+                labels_to_add: vec![label.clone()],
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let add_labels_response = object_group_service
+            .add_labels_to_object_group(add_labels_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                assert!(add_labels_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                // Add created label to vector for easier validation
+                added_key_values.push(label);
+
+                // Get labels of add_labels_response
+                let returned_object_group = add_labels_response
+                    .unwrap()
+                    .into_inner()
+                    .object_group
+                    .unwrap();
+
+                assert_eq!(returned_object_group.rev_number, 0); // Object group was not updated
+                assert_eq!(&returned_object_group.labels.len(), &added_key_values.len());
+
+                for key_value in returned_object_group.labels {
+                    assert!(added_key_values.contains(&key_value))
+                }
+
+                // Fetch labels to validate
+                let get_object_group_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectGroupByIdRequest {
+                        group_id: source_object_group.id.to_string(),
+                        collection_id: random_collection.id.to_string(),
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+
+                let fetched_object_group = object_group_service
+                    .get_object_group_by_id(get_object_group_request)
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .object_group
+                    .unwrap();
+
+                assert_eq!(fetched_object_group.rev_number, 0); // Object group was not updated
+                assert_eq!(&fetched_object_group.labels.len(), &added_key_values.len());
+
+                for key_value in fetched_object_group.labels {
+                    assert!(added_key_values.contains(&key_value))
+                }
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
