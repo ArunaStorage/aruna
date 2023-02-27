@@ -4,8 +4,9 @@ use crate::common::grpc_helpers::get_token_user_id;
 use aruna_rust_api::api::storage::models::v1::Permission;
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use aruna_rust_api::api::storage::services::v1::{
-    CreateObjectGroupRequest, GetObjectGroupByIdRequest, GetObjectGroupHistoryRequest,
-    GetObjectGroupObjectsRequest, GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
+    CreateObjectGroupRequest, DeleteObjectGroupRequest, GetObjectGroupByIdRequest,
+    GetObjectGroupHistoryRequest, GetObjectGroupObjectsRequest, GetObjectGroupsFromObjectRequest,
+    UpdateObjectGroupRequest,
 };
 
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -923,12 +924,294 @@ async fn get_object_group_objects_grpc_test() {
                     if group_object.is_metadata {
                         assert!(meta_object_ids.contains(&group_object.object.unwrap().id))
                     } else {
-                        panic!("{}", format!(
+                        panic!(
+                            "{}",
+                            format!(
                             "Data object {} should not be included in get_meta_objects_response.",
                             group_object.object.unwrap().id
-                        ))
+                        )
+                        )
                     }
                 }
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+}
+
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn delete_object_group_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Init object group service
+    let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    });
+
+    // Create random data and meta object
+    let data_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+    let meta_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Delete object group revisions individually with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create object group with two revisions
+        let create_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CreateObjectGroupRequest {
+                name: "Dummy-Object-Group".to_string(),
+                description: "Revision 0 created in get_object_group_history_grpc_test."
+                    .to_string(),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![data_object.id.to_string()],
+                meta_object_ids: vec![meta_object.id.to_string()],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let rev_0_group = object_group_service
+            .create_object_group(create_object_group_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object_group
+            .unwrap();
+
+        let update_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(UpdateObjectGroupRequest {
+                group_id: rev_0_group.id.to_string(),
+                name: "Dummy-Object-Group".to_string(),
+                description: "Revision 1 created in get_object_group_history_grpc_test."
+                    .to_string(),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![data_object.id.to_string()],
+                meta_object_ids: vec![meta_object.id.to_string()],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let rev_1_group = object_group_service
+            .update_object_group(update_object_group_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object_group
+            .unwrap();
+
+        // Delete revisions with individual requests
+        let delete_rev_1_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteObjectGroupRequest {
+                group_id: rev_1_group.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                with_revisions: false,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let rev_1_deletion = object_group_service
+            .delete_object_group(delete_rev_1_request)
+            .await;
+
+        let delete_rev_0_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteObjectGroupRequest {
+                group_id: rev_0_group.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                with_revisions: false,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let rev_0_deletion = object_group_service
+            .delete_object_group(delete_rev_0_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                assert!(rev_1_deletion.is_err());
+                assert!(rev_0_deletion.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                // Validate object group deletion
+                rev_1_deletion.unwrap();
+                rev_0_deletion.unwrap();
+
+                // Try to fetch non-existing object group
+                let get_object_group_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectGroupByIdRequest {
+                        group_id: rev_0_group.id.to_string(),
+                        collection_id: random_collection.id.to_string(),
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+
+                assert!(object_group_service
+                    .get_object_group_by_id(get_object_group_request)
+                    .await
+                    .is_err())
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+
+    // Delete object group revisions in single request with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create object group with two revisions
+        let create_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CreateObjectGroupRequest {
+                name: "Dummy-Object-Group".to_string(),
+                description: "Revision 0 created in get_object_group_history_grpc_test."
+                    .to_string(),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![data_object.id.to_string()],
+                meta_object_ids: vec![meta_object.id.to_string()],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let rev_0_group = object_group_service
+            .create_object_group(create_object_group_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object_group
+            .unwrap();
+
+        let update_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(UpdateObjectGroupRequest {
+                group_id: rev_0_group.id.to_string(),
+                name: "Dummy-Object-Group".to_string(),
+                description: "Revision 1 created in get_object_group_history_grpc_test."
+                    .to_string(),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![data_object.id.to_string()],
+                meta_object_ids: vec![meta_object.id.to_string()],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+        let rev_1_group = object_group_service
+            .update_object_group(update_object_group_request)
+            .await
+            .unwrap()
+            .into_inner()
+            .object_group
+            .unwrap();
+
+        // Delete revisions with individual requests
+        let delete_revisions_request = common::grpc_helpers::add_token(
+            tonic::Request::new(DeleteObjectGroupRequest {
+                group_id: rev_1_group.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                with_revisions: true,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+        let delete_revisions_response = object_group_service
+            .delete_object_group(delete_revisions_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None | Permission::Read | Permission::Append => {
+                assert!(delete_revisions_response.is_err());
+            }
+            Permission::Modify | Permission::Admin => {
+                // Validate object group deletion
+                delete_revisions_response.unwrap();
+
+                // Try to fetch non-existing object group
+                let get_object_group_request = common::grpc_helpers::add_token(
+                    tonic::Request::new(GetObjectGroupByIdRequest {
+                        group_id: rev_0_group.id.to_string(),
+                        collection_id: random_collection.id.to_string(),
+                    }),
+                    common::oidc::ADMINTOKEN,
+                );
+
+                let get_repsonse = object_group_service
+                    .get_object_group_by_id(get_object_group_request)
+                    .await;
+
+                if get_repsonse.is_ok() {
+                    println!("{:#?}", get_repsonse.unwrap());
+                    panic!()
+                }
+
+                /*
+                assert!(object_group_service
+                    .get_object_group_by_id(get_object_group_request)
+                    .await
+                    .is_err())
+                */
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
