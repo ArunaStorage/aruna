@@ -5,7 +5,7 @@ use aruna_rust_api::api::storage::models::v1::Permission;
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupService;
 use aruna_rust_api::api::storage::services::v1::{
     CreateObjectGroupRequest, GetObjectGroupByIdRequest, GetObjectGroupObjectsRequest,
-    UpdateObjectGroupRequest,
+    GetObjectGroupsFromObjectRequest, UpdateObjectGroupRequest,
 };
 
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
@@ -51,38 +51,24 @@ async fn create_object_group_grpc_test() {
     assert_eq!(add_perm.permission, Permission::None as i32);
 
     // Fast track collection creation
-    let collection_meta = TCreateCollection {
+    let random_collection = common::functions::create_collection(TCreateCollection {
         project_id: random_project.id.to_string(),
         creator_id: Some(user_id.clone()),
         ..Default::default()
-    };
-    let random_collection = common::functions::create_collection(collection_meta.clone());
+    });
 
     // Create random data and meta objects
+    let object_meta = TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    };
     let data_object_ids = (0..5)
-        .map(|_| {
-            common::functions::create_object(
-                &(TCreateObject {
-                    creator_id: Some(user_id.to_string()),
-                    collection_id: random_collection.id.to_string(),
-                    ..Default::default()
-                }),
-            )
-            .id
-        })
+        .map(|_| common::functions::create_object(&object_meta).id)
         .collect::<Vec<_>>();
 
     let meta_object_ids = (0..5)
-        .map(|_| {
-            common::functions::create_object(
-                &(TCreateObject {
-                    creator_id: Some(user_id.to_string()),
-                    collection_id: random_collection.id.to_string(),
-                    ..Default::default()
-                }),
-            )
-            .id
-        })
+        .map(|_| common::functions::create_object(&object_meta).id)
         .collect::<Vec<_>>();
 
     // Try to create object group with data objects only with different permissions
@@ -198,6 +184,8 @@ async fn create_object_group_grpc_test() {
     }
 }
 
+/// The individual steps of this test function contains:
+/// 1. Update object group metadata/objects with different permissions
 #[ignore]
 #[tokio::test]
 #[serial(db)]
@@ -245,7 +233,7 @@ async fn update_object_group_grpc_test() {
         .map(|_| common::functions::create_object(&object_meta).id)
         .collect::<Vec<_>>();
 
-    // Try to create object group with data objects only with different permissions
+    // Try to update object group with with different permissions
     for permission in vec![
         Permission::None,
         Permission::Read,
@@ -492,6 +480,135 @@ async fn get_object_group_by_id_grpc_test() {
                 );
                 assert_eq!(fetched_object_group.labels, vec![]);
                 assert_eq!(fetched_object_group.hooks, vec![]);
+            }
+            _ => panic!("Unspecified permission is not allowed."),
+        }
+    }
+}
+
+/// The individual steps of this test function contains:
+/// 1. Get object groups from object with different permissions
+#[ignore]
+#[tokio::test]
+#[serial(db)]
+async fn get_object_groups_from_object_grpc_test() {
+    // Init database connection
+    let db = Arc::new(database::connection::Database::new(
+        "postgres://root:test123@localhost:26257/test",
+    ));
+    let authz = Arc::new(Authz::new(db.clone()).await);
+
+    // Init object group service
+    let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
+
+    // Fast track project creation
+    let random_project = common::functions::create_project(None);
+
+    // Fast track adding user to project
+    let user_id = get_token_user_id(common::oidc::REGULARTOKEN).await;
+    let add_perm = common::grpc_helpers::add_project_permission(
+        random_project.id.as_str(),
+        user_id.as_str(),
+        common::oidc::ADMINTOKEN,
+    )
+    .await;
+    assert_eq!(add_perm.permission, Permission::None as i32);
+
+    // Fast track collection creation
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        creator_id: Some(user_id.clone()),
+        ..Default::default()
+    });
+
+    // Create random data and meta objects
+    let source_object = common::functions::create_object(&TCreateObject {
+        creator_id: Some(user_id.to_string()),
+        collection_id: random_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Create random object groups which will be queried
+    let mut object_group_ids = Vec::new();
+    for i in 0..5 {
+        let create_object_group_request = common::grpc_helpers::add_token(
+            tonic::Request::new(CreateObjectGroupRequest {
+                name: format!("Dummy-Object-Group-00{i}"),
+                description: "Created in get_object_groups_from_object_grpc_test.".to_string(),
+                collection_id: random_collection.id.to_string(),
+                object_ids: vec![source_object.id.to_string()],
+                meta_object_ids: vec![],
+                labels: vec![],
+                hooks: vec![],
+            }),
+            common::oidc::ADMINTOKEN,
+        );
+
+        object_group_ids.push(
+            object_group_service
+                .create_object_group(create_object_group_request)
+                .await
+                .unwrap()
+                .into_inner()
+                .object_group
+                .unwrap()
+                .id,
+        );
+    }
+
+    // Try to update object group with with different permissions
+    for permission in vec![
+        Permission::None,
+        Permission::Read,
+        Permission::Append,
+        Permission::Modify,
+        Permission::Admin,
+    ]
+    .iter()
+    {
+        // Fast track permission edit
+        let edit_perm = common::grpc_helpers::edit_project_permission(
+            random_project.id.as_str(),
+            user_id.as_str(),
+            permission,
+            common::oidc::ADMINTOKEN,
+        )
+        .await;
+        assert_eq!(edit_perm.permission, *permission as i32);
+
+        // Create object group which will be updated
+        let get_object_groups_request = common::grpc_helpers::add_token(
+            tonic::Request::new(GetObjectGroupsFromObjectRequest {
+                object_id: source_object.id.to_string(),
+                collection_id: random_collection.id.to_string(),
+                page_request: None,
+            }),
+            common::oidc::REGULARTOKEN,
+        );
+
+        let get_object_groups_response = object_group_service
+            .get_object_groups_from_object(get_object_groups_request)
+            .await;
+
+        // Check if request succeeded for specific permission
+        match *permission {
+            Permission::None => {
+                assert!(get_object_groups_response.is_err());
+            }
+            Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
+                // Validate object group fetch
+                let fetched_object_groups = get_object_groups_response
+                    .unwrap()
+                    .into_inner()
+                    .object_groups
+                    .unwrap()
+                    .object_group_overviews;
+
+                assert_eq!(fetched_object_groups.len(), 5);
+
+                for object_group in fetched_object_groups {
+                    assert!(object_group_ids.contains(&object_group.id))
+                }
             }
             _ => panic!("Unspecified permission is not allowed."),
         }
