@@ -640,7 +640,7 @@ impl Database {
         // Deletion transaction
         self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
             // Query the relevant object groups from the database
-            let queried_groups = if true { // request.with_revisions {
+            let queried_groups = if request.with_revisions {
                 // If with_revisions == true:
                 //  - Query all revisions of provided object group and delete them descending
                 let og_shared_revision_id = object_groups
@@ -673,7 +673,7 @@ impl Database {
                             delete(object_group_key_value)
                                 .filter(
                                     crate::database::schema::object_group_key_value::object_group_id.eq(
-                                        object_group_uuid
+                                        &queried_group.id
                                     )
                                 )
                                 .execute(conn)?;
@@ -682,7 +682,7 @@ impl Database {
                             delete(collection_object_groups)
                                 .filter(
                                     crate::database::schema::collection_object_groups::object_group_id.eq(
-                                        object_group_uuid
+                                        &queried_group.id
                                     )
                                 )
                                 .execute(conn)?;
@@ -691,7 +691,7 @@ impl Database {
                             delete(object_group_objects)
                                 .filter(
                                     crate::database::schema::object_group_objects::object_group_id.eq(
-                                        object_group_uuid
+                                        &queried_group.id
                                     )
                                 )
                                 .execute(conn)?;
@@ -699,7 +699,7 @@ impl Database {
                             // Rename ObjectGroup revision name and description to "DELETED"
                             update(object_groups)
                                 .filter(
-                                    crate::database::schema::object_groups::id.eq(object_group_uuid)
+                                    crate::database::schema::object_groups::id.eq(&queried_group.id)
                                 )
                                 .set((
                                     crate::database::schema::object_groups::name.eq(
