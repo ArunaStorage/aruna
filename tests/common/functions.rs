@@ -1,8 +1,10 @@
 use aruna_rust_api::api::internal::v1::{Location, LocationType};
-use aruna_rust_api::api::storage::models::v1::{Permission, ProjectPermission};
+use aruna_rust_api::api::storage::models::v1::{
+    ObjectGroupOverview, Permission, ProjectPermission,
+};
 use aruna_rust_api::api::storage::services::v1::{
-    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetReferencesRequest,
-    ObjectReference, UpdateObjectRequest,
+    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetObjectGroupByIdRequest,
+    GetReferencesRequest, ObjectReference, UpdateObjectRequest,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -513,7 +515,7 @@ pub fn get_object(collection_id: String, object_id: String) -> Object {
 
 /// GetObjectById wrapper for simplified use in tests.
 #[allow(dead_code)]
-pub fn get_raw_db_object_by_id(object_id: &String) -> DbObject {
+pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
     use diesel::prelude::*;
 
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
@@ -692,4 +694,21 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     assert!(updated_object.auto_update);
 
     updated_object
+}
+
+// Helper function to fetch an object group directly from database
+#[allow(dead_code)]
+pub fn get_raw_db_object_group(
+    object_group_uuid: &String,
+    collection_uuid: &String,
+) -> ObjectGroupOverview {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    db.get_object_group_by_id(&GetObjectGroupByIdRequest {
+        group_id: object_group_uuid.to_string(),
+        collection_id: collection_uuid.to_string(),
+    })
+    .unwrap()
+    .object_group
+    .unwrap()
 }
