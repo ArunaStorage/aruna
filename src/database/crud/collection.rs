@@ -13,6 +13,7 @@ use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::object::{clone_object, delete_multiple_objects};
 use crate::database::models;
+use crate::database::models::auth::Project as DBProject;
 use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
     RequiredLabel,
@@ -1187,6 +1188,7 @@ fn pin_paths_to_version(
 ) -> Result<(), ArunaError> {
     use crate::database::schema::paths::dsl as paths_dsl;
     use crate::database::schema::paths::dsl::paths;
+    use crate::database::schema::projects::dsl as project_dsl;
 
     // Create new version string
     let new_version = match &pin_collection.coll_version {
@@ -1206,22 +1208,24 @@ fn pin_paths_to_version(
         )
         .load::<Path>(conn)?;
 
+    let project_name = project_dsl::projects
+        .filter(project_dsl::id.eq(pin_collection.coll.project_id))
+        .first::<DBProject>(conn)?;
+
     // Adjust paths to cloned objects
     let mut modified_paths = Vec::new();
     for old_path in old_paths {
         // Split path in mutable parts for easier modification/replacement
-        let mut path_parts = old_path.path.split('/').collect::<Vec<_>>();
-
-        // Replace collection name in case of pin with collection update
-        path_parts[2] = pin_collection.coll.name.as_str();
-
-        // Replace old version string with new version string
-        path_parts[3] = new_version.as_str();
+        let new_bucket = format!(
+            "{}.{}.{}",
+            new_version, pin_collection.coll.name, project_name.name
+        );
 
         // Created new path record and save in vector for later insertion
         modified_paths.push(Path {
             id: uuid::Uuid::new_v4(),
-            path: path_parts.join("/").to_string(),
+            bucket: new_bucket,
+            path: old_path.path,
             shared_revision_id: *revision_id_mapping
                 .get(&old_path.shared_revision_id)
                 .ok_or_else(|| {

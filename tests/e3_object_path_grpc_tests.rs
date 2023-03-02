@@ -66,7 +66,10 @@ async fn create_object_with_path_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -233,7 +236,10 @@ async fn create_additional_object_path_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -401,7 +407,10 @@ async fn create_object_path_with_reference_grpc_test() {
     let target_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path parts
-    let static_path_part = format!("/{}/{}/latest", random_project.name, target_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        target_collection.name, random_project.name
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -590,7 +599,10 @@ async fn get_object_path_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -766,7 +778,10 @@ async fn get_object_paths_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name
+    );
 
     // Vector to save all created objects/paths for easier validation
     let mut created_objects = Vec::new();
@@ -1061,7 +1076,10 @@ async fn set_object_path_visibility_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name,
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -1287,7 +1305,10 @@ async fn get_object_by_path_grpc_test() {
     let random_collection = common::functions::create_collection(collection_meta.clone());
 
     // Reusable static path part
-    let static_path_part = format!("/{}/{}/latest", random_project.name, random_collection.name);
+    let static_path_part = format!(
+        "s3://latest.{}.{}",
+        random_collection.name, random_project.name,
+    );
 
     // Create random object with default subpath
     let object_meta = TCreateObject {
@@ -1361,8 +1382,6 @@ async fn get_object_by_path_grpc_test() {
                     assert!(get_object_by_path_response.is_err());
                 }
                 Permission::Read | Permission::Append | Permission::Modify | Permission::Admin => {
-                    assert!(get_object_by_path_response.is_ok());
-
                     // Extract object from response
                     let proto_object =
                         get_object_by_path_response.unwrap().into_inner().object[0].clone();

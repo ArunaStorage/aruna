@@ -132,6 +132,7 @@ impl ToDbKeyValue for ObjectKeyValue {
 #[diesel(belongs_to(Collection))]
 pub struct Path {
     pub id: uuid::Uuid,
+    pub bucket: String,
     pub path: String,
     pub shared_revision_id: uuid::Uuid,
     pub collection_id: uuid::Uuid,

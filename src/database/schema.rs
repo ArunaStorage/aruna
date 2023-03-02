@@ -264,6 +264,7 @@ diesel::table! {
 diesel::table! {
     paths (id) {
         id -> Uuid,
+        bucket -> Text,
         path -> Text,
         shared_revision_id -> Uuid,
         collection_id -> Uuid,

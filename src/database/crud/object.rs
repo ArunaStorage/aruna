@@ -264,7 +264,7 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, Error, _>(|conn| {
-                let fq_path = construct_path_string(
+                let (s3bucket, s3path) = construct_path_string(
                     &collection_object.collection_id,
                     &object.filename,
                     &staging_object.sub_path,
@@ -275,7 +275,15 @@ impl Database {
                     id: uuid::Uuid::new_v4(),
                     object_id: object.id,
                     key: "app.aruna-storage.org/new_path".to_string(),
-                    value: fq_path,
+                    value: s3path,
+                    key_value_type: KeyValueType::LABEL,
+                });
+
+                key_value_pairs.push(ObjectKeyValue {
+                    id: uuid::Uuid::new_v4(),
+                    object_id: object.id,
+                    key: "app.aruna-storage.org/bucket".to_string(),
+                    value: s3bucket,
                     key_value_type: KeyValueType::LABEL,
                 });
 
@@ -342,15 +350,27 @@ impl Database {
                     .optional()?;
 
                 if let Some(p_lbl) = path_label {
+                    let bucket_label = object_key_value
+                        .filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
+                        .filter(
+                            database::schema::object_key_value::key
+                                .eq("app.aruna-storage.org/bucket"),
+                        )
+                        .first::<ObjectKeyValue>(conn)?;
                     create_path_db(
+                        &bucket_label.value,
                         &p_lbl.value,
                         &returned_obj.shared_revision_id,
                         &req_coll_uuid,
                         conn,
                     )?;
-                    // Delete the label afterwards
+                    // Delete the path label afterwards
                     delete(object_key_value)
                         .filter(database::schema::object_key_value::id.eq(p_lbl.id))
+                        .execute(conn)?;
+                    // Delete the bucket label afterwards
+                    delete(object_key_value)
+                        .filter(database::schema::object_key_value::id.eq(bucket_label.id))
                         .execute(conn)?;
                 };
 
@@ -779,7 +799,7 @@ impl Database {
                     };
 
                     // Get fq_path
-                    let fq_path = construct_path_string(
+                    let (s3bucket, s3path) = construct_path_string(
                         &collection_object.collection_id,
                         &new_object.filename,
                         &sobj.sub_path,
@@ -787,7 +807,7 @@ impl Database {
                     )?;
 
                     // Check if path already exists
-                    let exists = paths.filter(database::schema::paths::path.eq(&fq_path)).first::<Path>(conn).optional()?;
+                    let exists = paths.filter(database::schema::paths::path.eq(&s3path)).filter(database::schema::paths::bucket.eq(&s3bucket)).first::<Path>(conn).optional()?;
                     // If it already exists
                     if let Some(existing) = exists {
                         // Check if the existing is not associated with the current shared_revision_id -> Error
@@ -801,7 +821,15 @@ impl Database {
                             id: uuid::Uuid::new_v4(),
                             object_id: new_obj_id,
                             key: "app.aruna-storage.org/new_path".to_string(),
-                            value: fq_path,
+                            value: s3path,
+                            key_value_type: KeyValueType::LABEL,
+                        });
+
+                        key_value_pairs.push(ObjectKeyValue {
+                            id: uuid::Uuid::new_v4(),
+                            object_id: new_obj_id,
+                            key: "app.aruna-storage.org/bucket".to_string(),
+                            value: s3bucket,
                             key_value_type: KeyValueType::LABEL,
                         });
                     }
@@ -1425,7 +1453,7 @@ impl Database {
                     .get_result::<CollectionObject>(conn)?;
 
                 // Construct path string
-                let fq_path = construct_path_string(
+                let (s3bucket, s3path) = construct_path_string(
                     &target_collection_uuid,
                     &original_object.filename,
                     &request.sub_path,
@@ -1433,7 +1461,8 @@ impl Database {
                 )?;
 
                 create_path_db(
-                    &fq_path,
+                    &s3bucket,
+                    &s3path,
                     &original_object.shared_revision_id,
                     &target_collection_uuid,
                     conn,
@@ -1874,7 +1903,7 @@ impl Database {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
                             if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
+                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
                             }else{
                                 None
                             }
@@ -1913,7 +1942,7 @@ impl Database {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
                             if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: p.path.to_string(), visibility: p.active })
+                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
                             }else{
                                 None
                             }
@@ -1946,18 +1975,25 @@ impl Database {
                     .filter(database::schema::objects::id.eq(obj_id))
                     .first::<Object>(conn)?;
                 // Construct path string
-                let new_path =
+                let (s3bucket, s3path) =
                     construct_path_string(&col_id, &get_obj.filename, &request.sub_path, conn)?;
                 // Create path in database
-                create_path_db(&new_path, &get_obj.shared_revision_id, &col_id, conn)?;
+                create_path_db(
+                    &s3bucket,
+                    &s3path,
+                    &get_obj.shared_revision_id,
+                    &col_id,
+                    conn,
+                )?;
                 // Query path
                 paths
-                    .filter(database::schema::paths::path.eq(&new_path))
+                    .filter(database::schema::paths::path.eq(&s3path))
+                    .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)
                     .optional()
                     .map(|res| {
                         res.map(|elem| ProtoPath {
-                            path: elem.path.to_string(),
+                            path: format!("s3://{}{}", elem.bucket, elem.path),
                             visibility: elem.active,
                         })
                     })
@@ -1978,8 +2014,19 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
+                if !request.path.starts_with("s3://") {
+                    return Err(ArunaError::InvalidRequest(
+                        "Path does not start with s3://".to_string(),
+                    ));
+                }
+
+                let (s3bucket, s3path) = request.path[5..]
+                    .split_once("/")
+                    .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
                 let old_path = paths
-                    .filter(database::schema::paths::path.eq(&request.path))
+                    .filter(database::schema::paths::bucket.eq(s3bucket))
+                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
                     .first::<Path>(conn)?;
 
                 if old_path.collection_id != col_id {
@@ -1989,13 +2036,14 @@ impl Database {
                 }
 
                 let res = update(paths)
-                    .filter(database::schema::paths::path.eq(&request.path))
+                    .filter(database::schema::paths::bucket.eq(s3bucket))
+                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
                     .set(database::schema::paths::active.eq(request.visibility))
                     .get_result::<Path>(conn)
                     .optional()?;
 
                 Ok(res.map(|p| ProtoPath {
-                    path: p.path.to_string(),
+                    path: format!("s3://{}{}", p.bucket, p.path),
                     visibility: p.active,
                 }))
             })?;
@@ -2015,8 +2063,19 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoObject>, ArunaError, _>(|conn| {
+                if !request.path.starts_with("s3://") {
+                    return Err(ArunaError::InvalidRequest(
+                        "Path does not start with s3://".to_string(),
+                    ));
+                }
+
+                let (s3bucket, s3path) = request.path[5..]
+                    .split_once("/")
+                    .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
                 let get_path = paths
-                    .filter(database::schema::paths::path.eq(&request.path))
+                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
+                    .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)?;
 
                 if get_path.collection_id != col_id {
@@ -2249,7 +2308,7 @@ pub fn update_object_in_place(
 
     // Add internal labels to key_value_pairs
     // Get fq_path
-    let fq_path = construct_path_string(
+    let (s3bucket, s3path) = construct_path_string(
         collection_uuid,
         &stage_object.filename,
         &stage_object.sub_path,
@@ -2258,7 +2317,8 @@ pub fn update_object_in_place(
 
     // Check if path already exists
     let exists = paths
-        .filter(database::schema::paths::path.eq(&fq_path))
+        .filter(database::schema::paths::path.eq(&s3path))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
         .first::<Path>(conn)
         .optional()?;
     // If it already exists
@@ -2276,7 +2336,14 @@ pub fn update_object_in_place(
             id: uuid::Uuid::new_v4(),
             object_id: *object_uuid,
             key: "app.aruna-storage.org/new_path".to_string(),
-            value: fq_path,
+            value: s3path,
+            key_value_type: KeyValueType::LABEL,
+        });
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: *object_uuid,
+            key: "app.aruna-storage.org/bucket".to_string(),
+            value: s3bucket,
             key_value_type: KeyValueType::LABEL,
         });
     }
@@ -3590,7 +3657,7 @@ pub fn construct_path_string(
     fname: &str,
     subpath: &str,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<String, ArunaError> {
+) -> Result<(String, String), ArunaError> {
     let col = collections
         .filter(database::schema::collections::id.eq(collection_uuid))
         .first::<Collection>(conn)?;
@@ -3631,23 +3698,25 @@ pub fn construct_path_string(
             format!("/{subpath}/")
         };
 
-        format!("/{proj_name}/{col_name}/{version_name}{modified_path}{fname}")
+        format!("{modified_path}{fname}")
     } else {
-        format!("/{proj_name}/{col_name}/{version_name}/{fname}")
+        format!("/{fname}")
     };
 
-    Ok(fq_path)
+    Ok((format!("{version_name}.{col_name}.{proj_name}"), fq_path))
 }
 
 pub fn create_path_db(
-    fq_path: &str,
+    s3bucket: &str,
+    s3path: &str,
     shared_rev_id: &uuid::Uuid,
     collection_uuid: &uuid::Uuid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
     let path_obj = Path {
         id: uuid::Uuid::new_v4(),
-        path: fq_path.to_string(),
+        bucket: s3bucket.into(),
+        path: s3path.into(),
         shared_revision_id: *shared_rev_id,
         collection_id: *collection_uuid,
         created_at: Local::now().naive_local(),
@@ -3655,7 +3724,8 @@ pub fn create_path_db(
     };
 
     if (paths
-        .filter(database::schema::paths::path.eq(fq_path))
+        .filter(database::schema::paths::bucket.eq(s3bucket))
+        .filter(database::schema::paths::path.eq(s3path))
         .first::<Path>(conn)
         .optional()?)
     .is_none()
@@ -3675,7 +3745,7 @@ pub fn get_paths_proto(
         .load::<Path>(conn)?;
     Ok(p.iter()
         .map(|pth| ProtoPath {
-            path: pth.path.clone(),
+            path: format!("s3://{}{}", pth.bucket, pth.path),
             visibility: pth.active,
         })
         .collect::<Vec<_>>())

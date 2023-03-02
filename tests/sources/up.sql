@@ -283,15 +283,17 @@ CREATE TABLE notification_stream_groups (
     notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
 );
 
+-- Table with unique object paths
 CREATE TABLE paths (
     id UUID PRIMARY KEY,
-    path TEXT NOT NULL UNIQUE, -- /project-name/collection-name/user-defined-path/lorem.txt
+    bucket TEXT NOT NULL, -- version.collection-name.project-name
+    path TEXT NOT NULL, -- /user-defined-path/file-name.txt
     shared_revision_id UUID NOT NULL,
     collection_id UUID NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     active BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-    UNIQUE (path)
+    UNIQUE (bucket, path)
 );
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
