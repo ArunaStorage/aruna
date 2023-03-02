@@ -1,9 +1,10 @@
-use std::fmt::Debug;
-
+use aruna_rust_api::api::{
+    internal::v1::{Location, PartETag, Range},
+    storage::models::v1::Hash,
+};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
-
-use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
+use std::fmt::Debug;
 
 /// A generic backend API for storing and retrieving objects
 /// Represents a very simple object storage API
@@ -16,7 +17,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `recv` - The receiver from which to load the objects data chunks
     /// * `location` - The location of the object which to load
     /// * `content_len` - The size of the uploaded object
-    async fn upload_object(
+    async fn put_object(
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         location: Location,
@@ -33,14 +34,11 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `sender` - The target for the individual chunks of data
     /// * `decrypted` - Decrypt the data
     /// * `decompress` - Decompress the data
-    async fn download(
+    async fn get_object(
         &self,
         location: Location,
         range: Option<Range>,
-        encryption_key: Vec<u8>,
         sender: Sender<bytes::Bytes>,
-        decrypted: bool,
-        decompress: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     /// Initiates a multipart upload.
@@ -71,7 +69,7 @@ pub trait StorageBackend: Debug + Send + Sync {
         upload_id: String,
         content_len: i64,
         part_number: i32,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>>;
+    ) -> Result<PartETag, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     /// Finishes multipart uploads
     /// # Arguments
@@ -95,27 +93,11 @@ pub trait StorageBackend: Debug + Send + Sync {
         bucket: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 
-    /// Creates a bucket or the storage system equivalent
+    /// Delete a object from the storage system
     /// # Arguments
-    ///
-    /// * `location` - Storage location to hash
-    ///
-    /// Result will be two strings for MD5 and SHA256 hashes of the object
-    async fn hash_object(
+    /// * `location` - The location of the object
+    async fn delete_object(
         &self,
         location: Location,
-    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync + 'static>>;
-
-    async fn move_object(
-        &self,
-        from_location: Location,
-        to_location: Location,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
-
-    async fn compress_encrypt_to_new_location(
-        &self,
-        from_location: Location,
-        to_location: Location,
-        encryption_key: Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
 }

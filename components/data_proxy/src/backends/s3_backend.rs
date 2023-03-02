@@ -1,5 +1,6 @@
 use std::env;
 
+use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
@@ -9,13 +10,8 @@ use aws_sdk_s3::{
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use std::convert::TryFrom;
-
-use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
-
 use super::storage_backend::StorageBackend;
 
-const DOWNLOAD_CHUNK_SIZE: usize = 50_000_000;
 const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
 
 #[derive(Debug, Clone)]
@@ -47,7 +43,7 @@ impl StorageBackend for S3Backend {
     // Uploads a single object in chunks
     // Objects are uploaded in chunks that come from a channel to allow modification in the data middleware
     // The receiver can directly will be wrapped and will then be directly passed into the s3 client
-    async fn upload_object(
+    async fn put_object(
         &self,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         location: Location,
@@ -70,7 +66,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
         {
-            Ok(_) => {}
+            Ok(resp) => {}
             Err(err) => {
                 log::error!("{}", err);
                 return Err(Box::new(err));
@@ -83,14 +79,11 @@ impl StorageBackend for S3Backend {
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
     // The chunks are then transfered into the sender.
-    async fn download(
+    async fn get_object(
         &self,
         location: Location,
         range: Option<Range>,
-        _encryption_key: Vec<u8>,
         sender: Sender<bytes::Bytes>,
-        _decrypted: bool,
-        _decompress: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut object = self
             .s3_client
@@ -116,7 +109,7 @@ impl StorageBackend for S3Backend {
 
         let body_reader = object_request.body.into_async_read();
 
-        let mut buf_reader = BufReader::with_capacity(DOWNLOAD_CHUNK_SIZE, body_reader);
+        let mut buf_reader = BufReader::with_capacity(65_536, body_reader);
 
         loop {
             let consumed_len = {
@@ -172,7 +165,7 @@ impl StorageBackend for S3Backend {
         upload_id: String,
         content_len: i64,
         part_number: i32,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<PartETag, Box<dyn std::error::Error + Send + Sync + 'static>> {
         log::info!("Submitted content-length was: {:#?}", content_len);
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
@@ -189,7 +182,10 @@ impl StorageBackend for S3Backend {
             .send()
             .await?;
 
-        return Ok(upload.e_tag().unwrap().to_string());
+        return Ok(PartETag {
+            part_number: part_number as i64,
+            etag: upload.e_tag.ok_or(anyhow!())?,
+        });
     }
 
     async fn finish_multipart_upload(
@@ -235,73 +231,14 @@ impl StorageBackend for S3Backend {
         self.check_and_create_bucket(bucket).await
     }
 
-    async fn hash_object(
+    /// Delete a object from the storage system
+    /// # Arguments
+    /// * `location` - The location of the object
+    async fn delete_object(
         &self,
-        _location: Location,
-    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        todo!()
-    }
-
-    async fn move_object(
-        &self,
-        _from_location: Location,
-        _to_location: Location,
+        location: Location,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         todo!()
-    }
-
-    async fn compress_encrypt_to_new_location(
-        &self,
-        from_location: Location,
-        to_location: Location,
-        _encryption_key: Vec<u8>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        // Read the object
-        let object = self
-            .s3_client
-            .get_object()
-            .set_bucket(Some(from_location.bucket))
-            .set_key(Some(from_location.path))
-            .send()
-            .await?;
-
-        let body_reader = object.body.into_async_read();
-
-        let mut buf_reader = BufReader::with_capacity(DOWNLOAD_CHUNK_SIZE, body_reader);
-
-        // Initialized Multipart
-        self.init_multipart_upload(to_location).await?;
-
-        loop {
-            let consumed_len = {
-                let buffer_result = buf_reader.fill_buf().await;
-                let buf = buffer_result?;
-                let buf_len = buf.len();
-                let bytes_buf = bytes::Bytes::copy_from_slice(buf);
-                if bytes_buf.len() == DOWNLOAD_CHUNK_SIZE {
-                    // "Middle part" -> padding needed
-                } else {
-                    // Last part
-                }
-                match sender.send(bytes_buf).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        log::error!("{}", err);
-                        return Err(Box::new(err));
-                    }
-                }
-
-                buf_len
-            };
-
-            if consumed_len == 0 {
-                break;
-            }
-
-            buf_reader.consume(consumed_len);
-        }
-
-        Ok(())
     }
 }
 

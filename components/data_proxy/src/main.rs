@@ -11,6 +11,7 @@ use std::io::Write;
 mod backends;
 mod data_middleware;
 mod data_server;
+mod helpers;
 mod presign_handler;
 mod service_server;
 

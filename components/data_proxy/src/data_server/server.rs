@@ -128,14 +128,7 @@ async fn download(
     tokio::spawn(async move {
         cloned_server
             .storage_backend
-            .download(
-                location,
-                None,
-                Vec::new(),
-                payload_sender.clone(),
-                false,
-                false,
-            ) // TODO: ADD key, and options
+            .put_object(location, None, payload_sender.clone())
             .await?;
         Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
     });
