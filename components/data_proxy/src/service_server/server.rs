@@ -1,6 +1,7 @@
 //! Server for the grpc service that expose the internal API components to create signed URLs
 
-use std::{env, net::SocketAddr, sync::Arc, time::Duration};
+use anyhow::Result;
+use std::{env, net::SocketAddr, sync::Arc};
 
 use aruna_rust_api::api::internal::v1::{
     internal_proxy_service_server::{InternalProxyService, InternalProxyServiceServer},
@@ -11,7 +12,7 @@ use aruna_rust_api::api::internal::v1::{
     InitPresignedUploadResponse, Location, LocationType, MoveObjectRequest, MoveObjectResponse,
 };
 
-use crate::{backends::storage_backend::StorageBackend, presign_handler::signer::PresignHandler};
+use crate::backends::storage_backend::StorageBackend;
 use async_trait::async_trait;
 use tonic::{Code, Response, Status};
 
@@ -19,8 +20,6 @@ use tonic::{Code, Response, Status};
 #[derive(Debug, Clone)]
 pub struct InternalServerImpl {
     pub data_client: Arc<Box<dyn StorageBackend>>,
-    pub signer: Arc<PresignHandler>,
-    pub data_proxy_hostname: String,
 }
 
 /// The gRPC Server to run the internal proxy api.
@@ -28,7 +27,6 @@ pub struct InternalServerImpl {
 pub struct ProxyServer {
     pub internal_api: Arc<InternalServerImpl>,
     pub addr: SocketAddr,
-    pub data_proxy_hostname: String,
 }
 
 /// The actual implementation of the internal API
@@ -37,14 +35,10 @@ impl ProxyServer {
         internal_api: Arc<InternalServerImpl>,
         addr: SocketAddr,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(ProxyServer {
-            addr,
-            data_proxy_hostname: internal_api.data_proxy_hostname.clone(),
-            internal_api,
-        })
+        Ok(ProxyServer { addr, internal_api })
     }
 
-    pub async fn serve(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    pub async fn serve(&self) -> Result<()> {
         let internal_proxy_service =
             InternalProxyServiceServer::from_arc(self.internal_api.clone());
 
@@ -60,9 +54,8 @@ impl ProxyServer {
 impl InternalServerImpl {
     pub async fn new(
         data_client: Arc<Box<dyn StorageBackend>>,
-        presign_handler: Arc<PresignHandler>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let proxy_data_host = match env::var("PROXY_DATA_HOST") {
+        let _proxy_data_host = match env::var("PROXY_DATA_HOST") {
             Ok(value) => value,
             Err(err) => {
                 log::info!("{}", err);
@@ -71,11 +64,7 @@ impl InternalServerImpl {
             }
         };
 
-        Ok(InternalServerImpl {
-            data_client,
-            data_proxy_hostname: proxy_data_host,
-            signer: presign_handler,
-        })
+        Ok(InternalServerImpl { data_client })
     }
 }
 
@@ -106,33 +95,9 @@ impl InternalProxyService for InternalServerImpl {
 
     async fn create_presigned_upload_url(
         &self,
-        request: tonic::Request<CreatePresignedUploadUrlRequest>,
+        _request: tonic::Request<CreatePresignedUploadUrlRequest>,
     ) -> Result<tonic::Response<CreatePresignedUploadUrlResponse>, tonic::Status> {
-        let inner_request = request.into_inner();
-        let mut url = url::Url::parse(self.data_proxy_hostname.as_str()).unwrap();
-
-        let location = inner_request.location.unwrap();
-
-        let bucket = location.bucket;
-        let key = location.path;
-        let resource = if inner_request.multipart {
-            let part = inner_request.part_number;
-            format!("/objects/upload/multi/{part}/{bucket}/{key}")
-        } else {
-            format!("/objects/upload/single/{bucket}/{key}")
-        };
-        let duration = Duration::new(15 * 60, 0);
-        url.set_path(resource.as_str());
-        let signed_url = self
-            .signer
-            .sign_url(duration, Some(inner_request.upload_id), None, url)
-            .unwrap();
-
-        let response = CreatePresignedUploadUrlResponse {
-            url: signed_url.to_string(),
-        };
-
-        return Ok(Response::new(response));
+        todo!()
     }
 
     async fn finish_presigned_upload(
@@ -167,27 +132,9 @@ impl InternalProxyService for InternalServerImpl {
 
     async fn create_presigned_download(
         &self,
-        request: tonic::Request<CreatePresignedDownloadRequest>,
+        _request: tonic::Request<CreatePresignedDownloadRequest>,
     ) -> Result<tonic::Response<CreatePresignedDownloadResponse>, tonic::Status> {
-        let inner_request = request.into_inner();
-
-        let location = inner_request.location.unwrap();
-        let path = format!("/objects/download/{}/{}", location.bucket, location.path);
-        let duration = Duration::new(15 * 60, 0);
-
-        let mut url = url::Url::parse(self.data_proxy_hostname.as_str()).unwrap();
-        url.set_path(path.as_str());
-
-        let signed_url = self
-            .signer
-            .sign_url(duration, None, Some(inner_request.filename), url)
-            .unwrap();
-
-        let url = signed_url.as_str();
-
-        return Ok(Response::new(CreatePresignedDownloadResponse {
-            url: url.to_string(),
-        }));
+        todo!()
     }
 
     async fn create_bucket(

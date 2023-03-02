@@ -1,7 +1,4 @@
-use aruna_rust_api::api::{
-    internal::v1::{Location, PartETag, Range},
-    storage::models::v1::Hash,
-};
+use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use std::fmt::Debug;

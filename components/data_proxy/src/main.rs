@@ -1,23 +1,23 @@
 use std::sync::Arc;
 
-use data_server::server::DataServer;
-
 use backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures::try_join;
-use presign_handler::signer::PresignHandler;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
+
+use crate::data_server::server::S3Server;
 
 mod backends;
 mod data_middleware;
 mod data_server;
 mod helpers;
-mod presign_handler;
 mod service_server;
 
 #[tokio::main]
 async fn main() {
     dotenv::from_filename(".env").ok();
+
+    let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -43,33 +43,23 @@ async fn main() {
     };
     let s3_client_arc: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
-    let signer = match PresignHandler::new() {
-        Ok(value) => value,
-        Err(err) => {
-            log::error!("{}", err);
-            return;
-        }
-    };
-    let signer_arc = Arc::new(signer);
+    let data_socket = format!("{hostname}:8080");
+    let aruna_server = dotenv::var("BACKEND_HOST").unwrap();
 
-    let data_socket = "0.0.0.0:8080".parse().unwrap();
+    let data_server = S3Server::new(&data_socket, aruna_server).await.unwrap();
 
-    let data_server = DataServer::new(s3_client_arc.clone(), signer_arc.clone(), data_socket)
+    let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone())
         .await
         .unwrap();
-
-    let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone(), signer_arc)
-        .await
-        .unwrap();
-    let internal_proxy_socket = "0.0.0.0:8081".parse().unwrap();
+    let internal_proxy_socket = format!("{hostname}:8081").parse().unwrap();
 
     let internal_proxy_server =
         ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
             .await
             .unwrap();
 
-    log::info!("Server started!");
-    let _end = match try_join!(data_server.serve(), internal_proxy_server.serve()) {
+    log::info!("Starting proxy and dataserver");
+    let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
         Ok(value) => value,
         Err(err) => {
             log::error!("{}", err);

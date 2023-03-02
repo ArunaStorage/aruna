@@ -1,5 +1,6 @@
 use std::env;
 
+use anyhow::anyhow;
 use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -66,7 +67,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
         {
-            Ok(resp) => {}
+            Ok(_) => {}
             Err(err) => {
                 log::error!("{}", err);
                 return Err(Box::new(err));
@@ -184,7 +185,7 @@ impl StorageBackend for S3Backend {
 
         return Ok(PartETag {
             part_number: part_number as i64,
-            etag: upload.e_tag.ok_or(anyhow!())?,
+            etag: upload.e_tag.ok_or(anyhow!(""))?,
         });
     }
 
@@ -236,7 +237,7 @@ impl StorageBackend for S3Backend {
     /// * `location` - The location of the object
     async fn delete_object(
         &self,
-        location: Location,
+        _location: Location,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         todo!()
     }

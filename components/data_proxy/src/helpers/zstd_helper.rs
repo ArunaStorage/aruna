@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use byteorder::{LittleEndian, WriteBytesExt};
 
-pub fn create_skippable_frame(size: usize) -> Result<Vec<u8>> {
+pub fn _create_skippable_frame(size: usize) -> Result<Vec<u8>> {
     if size < 8 {
         return Err(anyhow!("{size} is too small, minimum is 8 bytes"));
     }

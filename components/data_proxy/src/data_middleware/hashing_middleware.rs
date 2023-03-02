@@ -9,7 +9,7 @@ pub struct HashingMiddleWare {
 }
 
 impl HashingMiddleWare {
-    pub async fn new(
+    pub async fn _new(
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
         recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
     ) -> Self {
