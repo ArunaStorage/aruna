@@ -125,6 +125,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    encryption_keys (id) {
+        id -> Uuid,
+        hash -> Text,
+        encryption_key -> Text,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::EndpointType;
 
@@ -239,6 +247,8 @@ diesel::table! {
         endpoint_id -> Uuid,
         object_id -> Uuid,
         is_primary -> Bool,
+        is_compressed -> Bool,
+        is_encrypted -> Bool,
     }
 }
 
@@ -388,6 +398,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     collection_objects,
     collection_version,
     collections,
+    encryption_keys,
     endpoints,
     external_user_ids,
     hashes,
