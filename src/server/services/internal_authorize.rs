@@ -2,7 +2,7 @@ use super::authz::Authz;
 use crate::database::connection::Database;
 use aruna_rust_api::api::internal::v1::{
     internal_authorize_service_server::InternalAuthorizeService, AuthorizeRequest,
-    AuthorizeResponse,
+    AuthorizeResponse, GetSecretRequest, GetSecretResponse,
 };
 use std::sync::Arc;
 
@@ -15,6 +15,13 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         &self,
         _request: tonic::Request<AuthorizeRequest>,
     ) -> Result<tonic::Response<AuthorizeResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn get_secret(
+        &self,
+        request: tonic::Request<GetSecretRequest>,
+    ) -> Result<tonic::Response<GetSecretResponse>, tonic::Status> {
         todo!()
     }
 }

@@ -128,7 +128,7 @@ impl UserService for UserServiceImpl {
             }
 
             // Create the API token in the database
-            let token_descr = self.database.create_api_token(
+            let (token_descr, access_key, secret_key) = self.database.create_api_token(
                 request.into_inner(),
                 user_id,
                 self.authz.get_decoding_serial().await,
@@ -147,6 +147,8 @@ impl UserService for UserServiceImpl {
             let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
+                s3_access_key: access_key,
+                s3_secret_key: secret_key,
             });
 
             log::info!("Sending CreateApiTokenResponse back to client.");
@@ -190,7 +192,7 @@ impl UserService for UserServiceImpl {
             }
 
             // Create token in database and return the description
-            let token_descr = self.database.create_api_token(
+            let (token_descr, access_key, secret_key) = self.database.create_api_token(
                 request.into_inner(),
                 user_id,
                 self.authz.get_decoding_serial().await,
@@ -208,6 +210,8 @@ impl UserService for UserServiceImpl {
             let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
+                s3_access_key: access_key,
+                s3_secret_key: secret_key,
             });
 
             log::info!("Sending CreateApiTokenResponse back to client.");

@@ -134,7 +134,7 @@ impl Database {
         request: CreateApiTokenRequest,
         user_id: uuid::Uuid,
         pubkey_id: i64,
-    ) -> Result<Token, ArunaError> {
+    ) -> Result<(Token, String, String), ArunaError> {
         // Generate a new UUID for the token
         let new_uid = uuid::Uuid::new_v4();
 
@@ -199,16 +199,20 @@ impl Database {
         };
 
         // Create the response
-        Ok(Token {
-            id: api_token.id.to_string(),
-            name: api_token.name.unwrap_or_default(),
-            token_type: token_type as i32,
-            created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
-            expires_at: expires_at_time,
-            collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
-            project_id: option_to_string(api_token.project_id).unwrap_or_default(),
-            permission: map_permissions_rev(api_token.user_right),
-        })
+        Ok((
+            Token {
+                id: api_token.id.to_string(),
+                name: api_token.name.unwrap_or_default(),
+                token_type: token_type as i32,
+                created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
+                expires_at: expires_at_time,
+                collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
+                project_id: option_to_string(api_token.project_id).unwrap_or_default(),
+                permission: map_permissions_rev(api_token.user_right),
+            },
+            "".to_string(),
+            "".to_string(),
+        ))
     }
 
     /// Gets a specific API Token by id from the user. Users can get the ID either from their signed token or
