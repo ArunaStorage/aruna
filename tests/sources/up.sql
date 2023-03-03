@@ -268,6 +268,7 @@ CREATE TABLE api_tokens (
     -- IF collection_id and project_id is NULL, the token is a global personal token of creator_user_id
     collection_id UUID,
     user_right USER_RIGHTS,
+    accesskey VARCHAR(255) NOT NULL DEFAULT '-',
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (pub_key) REFERENCES pub_keys(id),

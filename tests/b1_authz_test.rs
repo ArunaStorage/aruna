@@ -232,7 +232,7 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let initial_token = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (initial_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get the token by id
     let get_api_token_req_id = GetApiTokenRequest {
@@ -250,7 +250,7 @@ fn get_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let tok = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (tok, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     assert!(tok.name == "collection_token");
 
     // ------ FAILS ---------
@@ -306,7 +306,7 @@ fn get_api_tokens_test() {
         permission: 1,
     };
     // Create a initial token
-    let _token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (_token_a, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
@@ -317,7 +317,7 @@ fn get_api_tokens_test() {
         permission: 2,
     };
     // Create a initial token
-    let _token_b = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (_token_b, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get all tokens
     let request = GetApiTokensRequest {};
@@ -372,7 +372,7 @@ fn delete_api_token_test() {
         permission: 1,
     };
     // Create a initial token
-    let token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (token_a, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
     // Get all tokens
     let request = GetApiTokensRequest {};
@@ -736,7 +736,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 3, // "APPEND permissions" -> Should be ignored
     };
     // Create a initial token
-    let regular_personal_token = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (regular_personal_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     // Admin token
     let admin_token = uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap();
     // Personal token with perm = 3
@@ -750,7 +750,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 2, // READ permissions
     };
     // Create a initial token
-    let project_token_with_read = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (project_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let project_token_with_read = uuid::Uuid::parse_str(&project_token_with_read.id).unwrap();
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
@@ -761,7 +761,8 @@ fn get_checked_user_id_from_token_test() {
         permission: 5, // ADMIN permissions
     };
     // Create a initial token
-    let project_token_with_admin = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (project_token_with_admin, _, _) =
+        db.create_api_token(req, user_id, pubkey_result).unwrap();
     let project_token_with_admin = uuid::Uuid::parse_str(&project_token_with_admin.id).unwrap();
 
     // Create collection in proj_1 --> Admin
@@ -798,7 +799,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 2, // ADMIN permissions
     };
     // Create a initial token
-    let col_token_with_read = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (col_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let col_token_with_read = uuid::Uuid::parse_str(&col_token_with_read.id).unwrap();
     // Collection scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
@@ -809,7 +810,7 @@ fn get_checked_user_id_from_token_test() {
         permission: 5, // ADMIN permissions
     };
     // Create a initial token
-    let col_token_with_admin = db.create_api_token(req, user_id, pubkey_result).unwrap();
+    let (col_token_with_admin, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     let col_token_with_admin = uuid::Uuid::parse_str(&col_token_with_admin.id).unwrap();
 
     // TEST all tokens / cases
