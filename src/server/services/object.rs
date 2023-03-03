@@ -202,15 +202,14 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let endpoint_id = self.default_endpoint.id;
+        // TODO: CREATE url based on endpoint!
+        let _endpoint_id = self.default_endpoint.id;
         let response = Response::new(
             task::spawn_blocking(move || {
                 database_clone.create_object(
                     &inner_request,
                     &creator_id,
-                    &location,
                     upload_id,
-                    endpoint_id,
                     new_object_uuid,
                 )
             })
@@ -392,7 +391,7 @@ impl ObjectService for ObjectServiceImpl {
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        let (location, upload_id) = if inner_request.reupload {
+        let (_location, upload_id) = if inner_request.reupload {
             // Connect to default data proxy endpoint
             let mut data_proxy = self.try_connect_default_endpoint().await?;
 
@@ -418,15 +417,10 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let endpoint_id = self.default_endpoint.id;
+        // TODO: CREATE URL based on preferred endpoint
+        let _endpoint_id = self.default_endpoint.id;
         let mut response = task::spawn_blocking(move || {
-            database_clone.update_object(
-                &inner_request,
-                &location,
-                &creator_id,
-                endpoint_id,
-                new_object_uuid,
-            )
+            database_clone.update_object(&inner_request, &creator_id, new_object_uuid)
         })
         .await
         .map_err(ArunaError::from)??;

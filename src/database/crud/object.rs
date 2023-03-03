@@ -175,9 +175,7 @@ impl Database {
         &self,
         request: &InitializeNewObjectRequest,
         creator: &uuid::Uuid,
-        location: &ProtoLocation,
         upload_id: String,
-        default_endpoint: uuid::Uuid,
         object_uuid: uuid::Uuid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
@@ -191,12 +189,6 @@ impl Database {
                 source_type: SourceType::from_i32(source.source_type)?,
             }),
             _ => None,
-        };
-
-        // Check if preferred endpoint is specified
-        let endpoint_uuid = match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
-            Ok(ep_id) => ep_id,
-            Err(_) => default_endpoint,
         };
 
         // Define object in database representation
@@ -671,9 +663,7 @@ impl Database {
     pub fn update_object(
         &self,
         request: &UpdateObjectRequest,
-        location: &Option<ProtoLocation>,
         creator_uuid: &uuid::Uuid,
-        default_endpoint: uuid::Uuid,
         new_obj_id: uuid::Uuid,
     ) -> Result<UpdateObjectResponse, ArunaError> {
         if let Some(sobj) = &request.object {
