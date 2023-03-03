@@ -226,16 +226,6 @@ impl Database {
             writeable: true, //Note: Original object is initially always writeable
         };
 
-        // Define the initial object location
-        let object_location = ObjectLocation {
-            id: uuid::Uuid::new_v4(),
-            bucket: location.bucket.clone(),
-            path: location.path.clone(),
-            endpoint_id: endpoint_uuid,
-            object_id: object.id,
-            is_primary: true,
-        };
-
         // Define the hash placeholder for the object
         let empty_hash = ApiHash {
             id: uuid::Uuid::new_v4(),
@@ -291,9 +281,6 @@ impl Database {
                     diesel::insert_into(sources).values(&sour).execute(conn)?;
                 }
                 diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations)
-                    .values(&object_location)
-                    .execute(conn)?;
                 diesel::insert_into(hashes)
                     .values(&empty_hash)
                     .execute(conn)?;
@@ -855,28 +842,7 @@ impl Database {
                     }
 
                     // Insert updated object location and hash if data re-upload
-                    if request.reupload {
-                        if let Some(loc) = location {
-                            // Check if preferred endpoint is specified
-                            let endpoint_uuid =
-                                match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
-                                    Ok(ep_id) => ep_id,
-                                    Err(_) => default_endpoint,
-                                };
-                            let object_location = ObjectLocation {
-                                id: uuid::Uuid::new_v4(),
-                                bucket: loc.bucket.clone(),
-                                path: loc.path.clone(),
-                                endpoint_id: endpoint_uuid,
-                                object_id: new_obj_id,
-                                is_primary: true,
-                            };
-
-                            diesel::insert_into(object_locations)
-                                .values(&object_location)
-                                .execute(conn)?;
-                        }
-                    } else {
+                    if !request.reupload {
                         // Clone old location for new Object
                         let old_object = objects
                             .filter(database::schema::objects::id.eq(&parsed_old_id))
@@ -892,6 +858,8 @@ impl Database {
                             endpoint_id: old_location.endpoint_id,
                             object_id: new_obj_id,
                             is_primary: old_location.is_primary,
+                            is_encrypted: old_location.is_encrypted,
+                            is_compressed: old_location.is_compressed,
                         };
 
                         diesel::insert_into(object_locations)

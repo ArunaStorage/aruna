@@ -67,6 +67,8 @@ pub struct ObjectLocation {
     pub endpoint_id: uuid::Uuid,
     pub object_id: uuid::Uuid,
     pub is_primary: bool,
+    pub is_encrypted: bool,
+    pub is_compressed: bool,
 }
 
 #[derive(
