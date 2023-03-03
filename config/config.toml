@@ -7,6 +7,11 @@ endpoint_name   = 'Default Data Proxy'
 endpoint_proxy  = 'http://localhost:8081'
 endpoint_host   = 'http://localhost:8081'
 endpoint_public = true
+endpoint_pubkey = """
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=
+-----END PUBLIC KEY-----
+"""
 
 [loc_version]
 location        = 'FOO'
