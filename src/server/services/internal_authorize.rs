@@ -20,7 +20,7 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
 
     async fn get_secret(
         &self,
-        request: tonic::Request<GetSecretRequest>,
+        _request: tonic::Request<GetSecretRequest>,
     ) -> Result<tonic::Response<GetSecretResponse>, tonic::Status> {
         todo!()
     }

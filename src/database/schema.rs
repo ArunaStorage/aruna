@@ -56,6 +56,7 @@ diesel::table! {
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
         user_right -> Nullable<UserRights>,
+        accesskey -> Varchar,
     }
 }
 
