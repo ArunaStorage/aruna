@@ -75,6 +75,7 @@ pub struct ApiToken {
     pub project_id: Option<uuid::Uuid>,
     pub collection_id: Option<uuid::Uuid>,
     pub user_right: Option<UserRights>,
+    pub accesskey: String,
 }
 
 #[derive(Queryable, Identifiable, Debug)]
