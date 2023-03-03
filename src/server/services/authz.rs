@@ -1,3 +1,4 @@
+use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::models::auth::PubKey;
 use crate::database::models::enums::{Resources, UserRights};
@@ -109,10 +110,10 @@ impl Authz {
     ///
     /// * `Authz` an instance of this struct.
     ///
-    pub async fn new(db: Arc<Database>) -> Authz {
+    pub async fn new(db: Arc<Database>, config: ArunaServerConfig) -> Authz {
         dotenv().ok();
         // Get the realinfo from config, this is used to query the pubkey from oidc
-        let realminfo = env::var("OAUTH_REALMINFO").expect("OAUTH_REALMINFO must be set");
+        let realminfo = config.config.oauth_realminfo;
         // Query the required signing key environment variable
         let signing_key_result = env::var("SIGNING_KEY");
         // Check if the signing key is set, if yes continue with this key
@@ -144,8 +145,16 @@ impl Authz {
         let pub_key_string = String::from_utf8_lossy(&pubkey).to_string();
         // Query the database for this pubkey, either return the queried id or add this pubkey as new key to the database
         let serial = db
-            .get_or_add_pub_key(pub_key_string)
+            .get_or_add_pub_key(pub_key_string, None)
             .expect("Error in get or add signing key");
+
+        // Add endpoint keys
+
+        db.get_or_add_pub_key(
+            config.config.default_endpoint.endpoint_pubkey,
+            Some(config.config.default_endpoint.endpoint_serial),
+        )
+        .expect("Error in get or add signing key");
 
         // Query databse for all existing pubkeys
         let keys = db.get_pub_keys().expect("Unable to query signing pubkeys");

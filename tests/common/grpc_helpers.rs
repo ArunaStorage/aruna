@@ -54,7 +54,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     let tokname = if create_token.name.is_empty() {
@@ -106,7 +106,7 @@ pub async fn get_token_user_id(token: &str) -> String {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let user_service = UserServiceImpl::new(db, authz).await;
 
     // Fetch user information associated with token
@@ -137,7 +137,7 @@ pub async fn add_project_permission(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Validate format of provided ids
@@ -193,7 +193,7 @@ pub async fn edit_project_permission(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Validate format of provided ids
@@ -250,7 +250,7 @@ pub async fn try_get_collection(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init collection service
     let collection_service = CollectionServiceImpl::new(db, authz).await;
@@ -287,7 +287,7 @@ pub async fn try_get_object(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();

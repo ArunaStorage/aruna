@@ -169,6 +169,8 @@ CREATE TABLE object_locations (
     -- Referencing the internal ID NOT the object_id 
     object_id UUID NOT NULL,
     is_primary BOOL NOT NULL DEFAULT TRUE,
+    is_compressed BOOL NOT NULL DEFAULT TRUE,
+    is_encrypted BOOL NOT NULL DEFAULT TRUE,
     -- TRUE if TRUE otherwise NULL
     UNIQUE (object_id, is_primary),
     FOREIGN KEY (object_id) REFERENCES objects(id)

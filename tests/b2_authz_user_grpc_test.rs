@@ -5,6 +5,7 @@ use aruna_rust_api::api::storage::services::v1::{
     GetApiTokenRequest, GetUserRequest, RegisterUserRequest,
 };
 use aruna_server::{
+    config::ArunaServerConfig,
     database::{self},
     server::services::authz::Authz,
     server::services::user::UserServiceImpl,
@@ -21,7 +22,7 @@ async fn register_user_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     // Test
@@ -90,7 +91,7 @@ async fn activate_user_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     // FAILED Test
@@ -157,7 +158,7 @@ async fn create_api_token_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     // Working test
@@ -288,7 +289,7 @@ async fn get_api_token_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     // Get User
@@ -341,7 +342,7 @@ async fn get_api_tokens_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz).await;
 
     // First Create a token

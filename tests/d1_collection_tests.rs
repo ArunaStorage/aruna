@@ -1,8 +1,7 @@
 mod common;
-use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    collection_overview, DataClass, EndpointType, Hashalgorithm, KeyValue, LabelFilter,
-    LabelOntology, LabelOrIdQuery, PageRequest, Version,
+    collection_overview, DataClass, Hashalgorithm, KeyValue, LabelFilter, LabelOntology,
+    LabelOrIdQuery, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
@@ -448,18 +447,7 @@ fn update_collection_test() {
     let obj_1_id = uuid::Uuid::new_v4();
 
     let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
+        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
@@ -497,18 +485,7 @@ fn update_collection_test() {
     let obj_2_id = uuid::Uuid::new_v4();
 
     let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
+        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
@@ -664,18 +641,7 @@ fn pin_collection_test() {
     let obj_1_id = uuid::Uuid::new_v4();
 
     let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
+        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
@@ -713,18 +679,7 @@ fn pin_collection_test() {
     let obj_2_id = uuid::Uuid::new_v4();
 
     let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
+        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
@@ -837,18 +792,7 @@ fn delete_collection_test() {
     let obj_1_id = uuid::Uuid::new_v4();
 
     let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
+        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
@@ -895,18 +839,7 @@ fn delete_collection_test() {
     let obj_2_id = uuid::Uuid::new_v4();
 
     let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
+        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
@@ -1003,12 +936,6 @@ pub fn test_collection_materialized_views_stats() {
     let new_object_id = uuid::Uuid::new_v4();
     let upload_id = uuid::Uuid::new_v4().to_string();
 
-    let location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: new_object_id.to_string(),
-    };
-
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
@@ -1036,9 +963,7 @@ pub fn test_collection_materialized_views_stats() {
         .create_object(
             &init_object_request,
             &creator,
-            &location,
             upload_id.clone(),
-            endpoint_id,
             new_object_id,
         )
         .unwrap();

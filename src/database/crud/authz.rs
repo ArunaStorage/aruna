@@ -29,12 +29,17 @@ impl Database {
     /// ## Arguments
     ///
     /// - pubkey String
+    /// - serial: Option<i64> // Filter for this exact serial
     ///
     /// ## Result
     ///
     /// * `Result<i64, ArunaError>` -> Returns the queried or inserted serial number
     ///
-    pub fn get_or_add_pub_key(&self, pub_key: String) -> Result<i64, ArunaError> {
+    pub fn get_or_add_pub_key(
+        &self,
+        pub_key: String,
+        serial: Option<i64>,
+    ) -> Result<i64, ArunaError> {
         use crate::database::schema::pub_keys::dsl::*;
         use diesel::result::Error as dError;
         let result = self
@@ -50,7 +55,7 @@ impl Database {
                 } else {
                     let new_pkey = PubKeyInsert {
                         pubkey: pub_key,
-                        id: None,
+                        id: serial,
                     };
 
                     Ok(insert_into(pub_keys)

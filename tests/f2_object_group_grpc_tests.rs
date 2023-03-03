@@ -9,6 +9,7 @@ use aruna_rust_api::api::storage::services::v1::{
     GetObjectGroupsFromObjectRequest, GetObjectGroupsRequest, UpdateObjectGroupRequest,
 };
 
+use aruna_server::config::ArunaServerConfig;
 use aruna_server::server::services::objectgroup::ObjectGroupServiceImpl;
 use aruna_server::{
     database::{self},
@@ -33,7 +34,7 @@ async fn create_object_group_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -194,7 +195,7 @@ async fn update_object_group_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -367,7 +368,7 @@ async fn get_object_group_by_id_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -496,7 +497,7 @@ async fn get_object_groups_from_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -625,7 +626,7 @@ async fn get_object_groups_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -836,7 +837,7 @@ async fn get_object_group_history_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -997,7 +998,7 @@ async fn get_object_group_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -1161,7 +1162,7 @@ async fn delete_object_group_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;
@@ -1431,7 +1432,7 @@ async fn add_labels_to_object_group_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init object group service
     let object_group_service = ObjectGroupServiceImpl::new(db.clone(), authz).await;

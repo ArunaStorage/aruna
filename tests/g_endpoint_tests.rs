@@ -20,6 +20,8 @@ fn init_default_endpoint_test() {
         endpoint_name: "Default_Endpoint".to_string(),
         endpoint_host: "internal_server_name".to_string(),
         endpoint_proxy: "data_proxy.example.com".to_string(),
+        endpoint_serial: 10,
+        endpoint_pubkey: "".to_string(),
         endpoint_public: true,
         endpoint_docu: None,
     };

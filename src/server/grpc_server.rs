@@ -36,12 +36,12 @@ impl ServiceServer {
         let config = ArunaServerConfig::new();
 
         // Connects to database
-        let db = Database::new(&config.config.database_url);
+        let db = Database::new(&config.clone().config.database_url);
         let db_ref = Arc::new(db);
 
         // Initialize instance default data proxy endpoint
         let default_endpoint = db_ref
-            .init_default_endpoint(config.config.default_endpoint)
+            .init_default_endpoint(config.clone().config.default_endpoint)
             .unwrap();
 
         let mut cron_scheduler = Scheduler::new();
@@ -80,7 +80,7 @@ impl ServiceServer {
 
         // Upstart server
         let addr = "0.0.0.0:50051".parse().unwrap();
-        let authz = Arc::new(Authz::new(db_ref.clone()).await);
+        let authz = Arc::new(Authz::new(db_ref.clone(), config.clone()).await);
 
         let endpoint_service =
             EndpointServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;

@@ -6,6 +6,7 @@ use crate::error::{ArunaError, TypeConversionError};
 use serde::Deserialize;
 
 /// This struct contains all parsed configuration parameters of the ArunaServer
+#[derive(Clone, Debug, Deserialize)]
 pub struct ArunaServerConfig {
     pub config: Config,
     pub env_config: EnvConfig,
@@ -31,6 +32,8 @@ pub struct DefaultEndpoint {
     pub endpoint_proxy: String,
     pub endpoint_public: bool,
     pub endpoint_docu: Option<String>,
+    pub endpoint_serial: i64,
+    pub endpoint_pubkey: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

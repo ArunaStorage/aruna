@@ -1,9 +1,8 @@
 mod common;
 
 use crate::common::functions::{get_object, get_object_status_raw, TCreateCollection};
-use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, EndpointType, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
+    DataClass, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
@@ -83,12 +82,6 @@ fn create_object_test() {
     let new_object_id = uuid::Uuid::new_v4();
     let upload_id = uuid::Uuid::new_v4().to_string();
 
-    let location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: new_object_id.to_string(),
-    };
-
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
@@ -116,9 +109,7 @@ fn create_object_test() {
         .create_object(
             &init_object_request,
             &creator,
-            &location,
             upload_id.clone(),
-            endpoint_id,
             new_object_id,
         )
         .unwrap();
@@ -640,9 +631,7 @@ fn delete_object_test() {
     };
 
     let new_id = uuid::Uuid::new_v4();
-    let update_response = db
-        .update_object(&updatereq, &None, &creator, uuid::Uuid::default(), new_id)
-        .unwrap();
+    let update_response = db.update_object(&updatereq, &creator, new_id).unwrap();
 
     let staging_finished = db
         .finish_object_staging(

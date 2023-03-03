@@ -1,4 +1,3 @@
-use aruna_rust_api::api::internal::v1::{Location, LocationType};
 use aruna_rust_api::api::storage::models::v1::{
     ObjectGroupOverview, Permission, ProjectPermission,
 };
@@ -19,7 +18,7 @@ use aruna_rust_api::api::storage::{
 
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
-use aruna_server::database::models::enums::{EndpointType, ObjectStatus, ReferenceStatus};
+use aruna_server::database::models::enums::{ObjectStatus, ReferenceStatus};
 use aruna_server::database::models::object::Object as DbObject;
 use aruna_server::database::schema::objects::dsl::objects;
 
@@ -350,20 +349,8 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         hash: object_info.init_hash.clone(),
     };
 
-    let dummy_location = Location {
-        r#type: LocationType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: object_id.to_string(),
-    };
     let _init_response = db
-        .create_object(
-            &init_request,
-            &creator_id,
-            &dummy_location,
-            upload_id.to_string(),
-            endpoint_id,
-            object_id,
-        )
+        .create_object(&init_request, &creator_id, upload_id.to_string(), object_id)
         .unwrap();
 
     //Note: Skipping the data upload part.
@@ -460,20 +447,8 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
         hash: object_info.init_hash.clone(),
     };
 
-    let dummy_location = Location {
-        r#type: LocationType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: object_id.to_string(),
-    };
     let init_response = db
-        .create_object(
-            &init_request,
-            &creator_id,
-            &dummy_location,
-            upload_id.to_string(),
-            endpoint_id,
-            object_id,
-        )
+        .create_object(&init_request, &creator_id, upload_id.to_string(), object_id)
         .unwrap();
 
     let staging_object = get_object(collection_id.to_string(), init_response.object_id);
@@ -585,7 +560,6 @@ pub struct TCreateUpdate {
 pub fn update_object(update: &TCreateUpdate) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
 
     // ParseTCreateUpdate
     let dummy_labels = (0..update.num_labels)
@@ -621,11 +595,6 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     // Update Object
     let updated_object_id_001 = uuid::Uuid::new_v4();
     let updated_upload_id = uuid::Uuid::new_v4();
-    let updated_location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: update.collection_id.to_string(),
-        path: updated_object_id_001.to_string(),
-    };
     let update_request = UpdateObjectRequest {
         object_id: update.original_object.id.to_string(),
         collection_id: update.collection_id.to_string(),
@@ -647,13 +616,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     };
 
     let update_response = db
-        .update_object(
-            &update_request,
-            &Some(updated_location),
-            &creator,
-            endpoint_id,
-            updated_object_id_001,
-        )
+        .update_object(&update_request, &creator, updated_object_id_001)
         .unwrap();
 
     // Finish updated Object

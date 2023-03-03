@@ -42,7 +42,7 @@ async fn create_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();
@@ -276,7 +276,7 @@ async fn get_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     let collection_service = CollectionServiceImpl::new(db.clone(), authz.clone()).await;
 
@@ -425,7 +425,7 @@ async fn update_staging_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -868,7 +868,7 @@ async fn update_outdated_revision_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1067,7 +1067,7 @@ async fn concurrent_update_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1271,7 +1271,7 @@ async fn object_references_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1708,7 +1708,7 @@ async fn add_labels_to_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2026,7 +2026,7 @@ async fn clone_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2320,7 +2320,7 @@ async fn delete_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2653,7 +2653,7 @@ async fn delete_object_revisions_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2840,7 +2840,7 @@ async fn delete_multiple_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();

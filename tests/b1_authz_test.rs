@@ -25,19 +25,19 @@ fn get_or_add_pubkey_test() {
     // Insert new element -> Create new serial number
     let result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
     // Insert a second "pubkey"
     let _result_2 = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
     // Try to insert the first serial again -> should be the same as result
     let result_3 = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
     assert_eq!(result, result_3);
@@ -151,7 +151,7 @@ fn create_api_token_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGBO4KKuag6RMkOG0b1Hlt9oH/R0leUioCSS7Hm61GR8=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
@@ -219,7 +219,7 @@ fn get_api_token_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
@@ -293,7 +293,7 @@ fn get_api_tokens_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
@@ -359,7 +359,7 @@ fn delete_api_token_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
@@ -418,7 +418,7 @@ fn delete_api_tokens_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
@@ -723,7 +723,7 @@ fn get_checked_user_id_from_token_test() {
     // Add fresh pubkey
     let pubkey_result = db
         .get_or_add_pub_key(
-            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(),
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnl3AKP1/g4qfy4UZH+MRxJC/C/mAuVVxwN+2zU99g54=\n-----END PUBLIC KEY-----\n".to_string(), None
         )
         .unwrap();
 
