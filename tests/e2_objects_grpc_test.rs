@@ -9,8 +9,8 @@ use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectSer
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
     CreateNewCollectionRequest, CreateObjectReferenceRequest, DeleteObjectRequest,
-    DeleteObjectsRequest, GetDownloadUrlRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetReferencesRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
+    DeleteObjectsRequest, GetLatestObjectRevisionRequest,
+    GetObjectByIdRequest, GetReferencesRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
