@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "aruna_server"
-version = "1.0.0-rc.5"
+version = "1.1.0-rc.1"
 dependencies = [
  "aruna-rust-api",
  "bigdecimal",

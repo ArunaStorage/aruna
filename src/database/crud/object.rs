@@ -832,30 +832,30 @@ impl Database {
                     }
 
                     // Insert updated object location and hash if data re-upload
-                    if !request.reupload {
-                        // Clone old location for new Object
-                        let old_object = objects
-                            .filter(database::schema::objects::id.eq(&parsed_old_id))
-                            .first::<Object>(conn)?;
-                        let old_location: ObjectLocation =
-                            ObjectLocation::belonging_to(&old_object)
-                                .first::<ObjectLocation>(conn)?;
+                    // if !request.reupload {
+                    //     // Clone old location for new Object
+                    //     let old_object = objects
+                    //         .filter(database::schema::objects::id.eq(&parsed_old_id))
+                    //         .first::<Object>(conn)?;
+                    //     let old_location: ObjectLocation =
+                    //         ObjectLocation::belonging_to(&old_object)
+                    //             .first::<ObjectLocation>(conn)?;
 
-                        let new_location = ObjectLocation {
-                            id: uuid::Uuid::new_v4(),
-                            bucket: old_location.bucket,
-                            path: old_location.path,
-                            endpoint_id: old_location.endpoint_id,
-                            object_id: new_obj_id,
-                            is_primary: old_location.is_primary,
-                            is_encrypted: old_location.is_encrypted,
-                            is_compressed: old_location.is_compressed,
-                        };
+                    //     let new_location = ObjectLocation {
+                    //         id: uuid::Uuid::new_v4(),
+                    //         bucket: old_location.bucket,
+                    //         path: old_location.path,
+                    //         endpoint_id: old_location.endpoint_id,
+                    //         object_id: new_obj_id,
+                    //         is_primary: old_location.is_primary,
+                    //         is_encrypted: old_location.is_encrypted,
+                    //         is_compressed: old_location.is_compressed,
+                    //     };
 
-                        diesel::insert_into(object_locations)
-                            .values(&new_location)
-                            .execute(conn)?;
-                    }
+                    //     diesel::insert_into(object_locations)
+                    //         .values(&new_location)
+                    //         .execute(conn)?;
+                    // }
 
                     Ok(new_object)
                 })?;
