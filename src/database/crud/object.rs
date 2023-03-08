@@ -2535,7 +2535,12 @@ pub fn get_latest_obj(
         .first::<uuid::Uuid>(conn)?;
 
     let latest_object = objects
-        .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .filter(
+            database::schema::objects::shared_revision_id
+                .eq(&shared_id)
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::DELETED))
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::TRASH)),
+        )
         .order_by(database::schema::objects::revision_number.desc())
         .first::<Object>(conn)?;
 
