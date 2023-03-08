@@ -298,6 +298,17 @@ CREATE TABLE paths (
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
     UNIQUE (bucket, path)
 );
+
+CREATE TABLE encryption_keys (
+    id UUID PRIMARY KEY,
+    hash TEXT,
+    object_id UUID NOT NULL,
+    endpoint_id UUID NOT NULL,
+    is_temporary BOOL NOT NULL DEFAULT FALSE,
+    encryption_key TEXT NOT NULL,
+    FOREIGN KEY (object_id) REFERENCES objects(id),
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id)
+);
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
 CREATE MATERIALIZED VIEW collection_stats AS
