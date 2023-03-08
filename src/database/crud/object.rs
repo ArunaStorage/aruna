@@ -2021,7 +2021,7 @@ impl Database {
                 }
 
                 let (s3bucket, s3path) = request.path[5..]
-                    .split_once("/")
+                    .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
                 let old_path = paths
@@ -2070,7 +2070,7 @@ impl Database {
                 }
 
                 let (s3bucket, s3path) = request.path[5..]
-                    .split_once("/")
+                    .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
                 let get_path = paths
