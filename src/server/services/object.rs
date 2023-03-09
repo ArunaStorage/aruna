@@ -927,6 +927,9 @@ impl ObjectService for ObjectServiceImpl {
 
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let object_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -935,21 +938,65 @@ impl ObjectService for ObjectServiceImpl {
             )
             .await?;
 
-        // Create Object in database
+        // Consume tonic gRPC request
+        let inner_request = request.into_inner();
+
+        // Fetch latest Object revision from database
         let database_clone = self.database.clone();
-        let db_resp = task::spawn_blocking(move || {
-            database_clone.get_latest_object_revision(request.into_inner())
+        let inner_request_clone = inner_request.clone();
+        let mut object_add_url = task::spawn_blocking(move || {
+            database_clone.get_latest_object_revision(inner_request_clone)
         })
         .await
         .map_err(ArunaError::from)??;
 
-        let response = Response::new(GetLatestObjectRevisionResponse {
-            object: Some(db_resp),
-        });
+        // Extract object meta info
+        let object_info = if let Some(info) = object_add_url.object.clone() {
+            info
+        } else {
+            Object::default()
+        };
+
+        // Only request url from data proxy if:
+        //  - object_info.status == ObjectStatus::AVAILABLE
+        //  - request.with_url   == true
+        let response =
+            match inner_request.with_url && object_info.status == ProtoStatus::Available as i32 {
+                true => {
+                    // Establish connection to data proxy endpoint
+                    let (mut data_proxy, location) =
+                        self.try_connect_object_endpoint(&object_uuid).await?;
+
+                    let data_proxy_request = CreatePresignedDownloadRequest {
+                        location: Some(location),
+                        is_public: false,
+                        filename: object_info.filename.clone(),
+                        range: Some(Range {
+                            start: 0,
+                            end: object_info.content_len,
+                        }),
+                    };
+
+                    object_add_url.url = data_proxy
+                        .create_presigned_download(data_proxy_request)
+                        .await?
+                        .into_inner()
+                        .url;
+
+                    GetLatestObjectRevisionResponse {
+                        object: Some(object_add_url),
+                    }
+                }
+                false => GetLatestObjectRevisionResponse {
+                    object: Some(object_add_url),
+                },
+            };
+
         // Return gRPC response after everything succeeded
+        let grpc_response = Response::new(response);
         log::info!("Sending GetLatestObjectRevisionResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        return Ok(response);
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     async fn get_object_endpoints(
