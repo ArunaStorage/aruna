@@ -2009,7 +2009,7 @@ impl Database {
                 }
 
                 let (s3bucket, s3path) = request.path[5..]
-                    .split_once("/")
+                    .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
                 let old_path = paths
@@ -2058,7 +2058,7 @@ impl Database {
                 }
 
                 let (s3bucket, s3path) = request.path[5..]
-                    .split_once("/")
+                    .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
                 let get_path = paths
@@ -2523,7 +2523,12 @@ pub fn get_latest_obj(
         .first::<uuid::Uuid>(conn)?;
 
     let latest_object = objects
-        .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .filter(
+            database::schema::objects::shared_revision_id
+                .eq(&shared_id)
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::DELETED))
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::TRASH)),
+        )
         .order_by(database::schema::objects::revision_number.desc())
         .first::<Object>(conn)?;
 
