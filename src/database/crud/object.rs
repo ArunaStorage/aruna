@@ -711,7 +711,7 @@ impl Database {
                         }
                     }
 
-                    if object_references.len() < 1 {
+                    if object_references.is_empty() {
                         return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} does not have a writeable reference in collection {parsed_col_id}")));
                     }
 
