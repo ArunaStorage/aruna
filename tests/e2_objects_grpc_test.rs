@@ -1005,58 +1005,22 @@ async fn update_outdated_revision_grpc_test() {
 
     assert!(update_object_response.is_err()); // Fails because it is not the latest revision
 
-    // Use the same request with force
+    // Use the same request with force --> Error
     inner_update_request.force = true;
 
     let update_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(inner_update_request.clone()),
         common::oidc::ADMINTOKEN,
     );
-    let update_object_response = object_service
-        .update_object(update_object_request)
-        .await
-        .unwrap()
-        .into_inner();
+    let update_object_response = object_service.update_object(update_object_request).await;
 
-    let finish_object_request = common::grpc_helpers::add_token(
-        tonic::Request::new(FinishObjectStagingRequest {
-            object_id: update_object_response.object_id.to_string(),
-            upload_id: update_object_response.staging_id.to_string(),
-            collection_id: update_object_response.collection_id.to_string(),
-            hash: Some(Hash {
-                alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
-            }),
-            no_upload: true,
-            completed_parts: vec![],
-            auto_update: true,
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-    let finish_object_response = object_service
-        .finish_object_staging(finish_object_request)
-        .await
-        .unwrap()
-        .into_inner();
-
-    let rev_2_object = finish_object_response.object.unwrap();
-
-    assert_ne!(rev_1_object.id, rev_2_object.id);
-    assert_ne!(rev_1_object.hooks, rev_2_object.hooks);
-    assert_eq!(
-        rev_2_object.hooks,
-        vec![KeyValue {
-            key: "my_hook".to_string(),
-            value: "service-url".to_string(),
-        }]
-    );
-    assert_eq!(rev_2_object.rev_number, 2);
+    assert!(update_object_response.is_err()); // Fails because it is still not the latest revision
 }
 
 /// The individual steps of this test function contains:
 /// 1. Creating an object
 /// 2. Start first update process on revision 0 object
-/// 3. Force second update on revision 0 object
+/// 3. Try to start second update on revision 0 object
 /// 4. Finish first update on revision 0 object
 /// 5. Validate consistent object state
 #[ignore]
@@ -1139,6 +1103,41 @@ async fn concurrent_update_grpc_test() {
         .unwrap()
         .into_inner();
 
+    // Concurrent update on revision 0 object
+    let concurrent_update_object_request = common::grpc_helpers::add_token(
+        tonic::Request::new(UpdateObjectRequest {
+            object_id: rev_0_object.id.to_string(),
+            collection_id: random_collection.id.to_string(),
+            object: Some(StageObject {
+                filename: "force.update".to_string(),
+                sub_path: "".to_string(),
+                content_len: 654321,
+                source: None,
+                dataclass: DataClass::Private as i32,
+                labels: vec![KeyValue {
+                    key: "description".to_string(),
+                    value: "Forced update in concurrent_update_grpc_test()".to_string(),
+                }],
+                hooks: vec![KeyValue {
+                    key: "validation-hook".to_string(),
+                    value: "service-url".to_string(),
+                }],
+            }),
+            reupload: false,
+            preferred_endpoint_id: "".to_string(),
+            multi_part: false,
+            is_specification: false,
+            force: false,
+            hash: None,
+        }),
+        common::oidc::ADMINTOKEN,
+    );
+    let concurrent_update_object_response = object_service
+        .update_object(concurrent_update_object_request)
+        .await;
+
+    assert!(concurrent_update_object_response.is_err()); // No concurrent updates anymore
+
     // Force update on revision 0 object
     let force_update_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateObjectRequest {
@@ -1170,34 +1169,9 @@ async fn concurrent_update_grpc_test() {
     );
     let force_update_object_response = object_service
         .update_object(force_update_object_request)
-        .await
-        .unwrap()
-        .into_inner();
+        .await;
 
-    let finish_object_request = common::grpc_helpers::add_token(
-        tonic::Request::new(FinishObjectStagingRequest {
-            object_id: force_update_object_response.object_id.to_string(),
-            upload_id: force_update_object_response.staging_id.to_string(),
-            collection_id: force_update_object_response.collection_id.to_string(),
-            hash: Some(Hash {
-                alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
-            }),
-            no_upload: true,
-            completed_parts: vec![],
-            auto_update: true,
-        }),
-        common::oidc::ADMINTOKEN,
-    );
-    let finish_object_response = object_service
-        .finish_object_staging(finish_object_request)
-        .await
-        .unwrap()
-        .into_inner();
-
-    let rev_2_object = finish_object_response.object.unwrap();
-
-    assert_eq!(rev_2_object.rev_number, 2); // Should be revision 2 as the started update already blocks revision 1
+    assert!(force_update_object_response.is_err()); // No concurrent updates anymore
 
     // Try to finish update on revision 1 object with auto_update == true
     let finish_object_request = common::grpc_helpers::add_token(
@@ -1221,7 +1195,7 @@ async fn concurrent_update_grpc_test() {
         .unwrap()
         .into_inner();
 
-    let rev_1_object = finish_object_response.object.unwrap(); // Still revision 1 but revision 2 already exists.
+    let rev_1_object = finish_object_response.object.unwrap(); // Revision 1 is available now.
 
     assert_eq!(rev_1_object.rev_number, 1);
 
@@ -1244,12 +1218,12 @@ async fn concurrent_update_grpc_test() {
     let latest_object = get_latest_revision_response.object.unwrap().object.unwrap();
 
     // Validate that latest object revision is forced concurrent update
-    assert_eq!(latest_object.id, rev_2_object.id);
-    assert_eq!(latest_object.filename, rev_2_object.filename);
-    assert_eq!(latest_object.content_len, rev_2_object.content_len);
-    assert_eq!(latest_object.labels, rev_2_object.labels);
-    assert_eq!(latest_object.hooks, rev_2_object.hooks);
-    assert_eq!(latest_object.rev_number, rev_2_object.rev_number);
+    assert_eq!(latest_object.id, rev_1_object.id);
+    assert_eq!(latest_object.filename, rev_1_object.filename);
+    assert_eq!(latest_object.content_len, rev_1_object.content_len);
+    assert_eq!(latest_object.labels, rev_1_object.labels);
+    assert_eq!(latest_object.hooks, rev_1_object.hooks);
+    assert_eq!(latest_object.rev_number, rev_1_object.rev_number);
 }
 
 /// The individual steps of this test function contains:
