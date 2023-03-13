@@ -1,7 +1,7 @@
-use std::env;
-
 use anyhow::anyhow;
-use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
+use anyhow::Result;
+use aruna_file::helpers::footer_parser::Range;
+use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
@@ -9,6 +9,7 @@ use aws_sdk_s3::{
     types::ByteStream,
     Client, Region,
 };
+use std::env;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::storage_backend::StorageBackend;
@@ -46,10 +47,10 @@ impl StorageBackend for S3Backend {
     // The receiver can directly will be wrapped and will then be directly passed into the s3 client
     async fn put_object(
         &self,
-        recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         location: Location,
         content_len: i64,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<()> {
         log::info!("Submitted content-length was: {:#?}", content_len);
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
@@ -70,7 +71,7 @@ impl StorageBackend for S3Backend {
             Ok(_) => {}
             Err(err) => {
                 log::error!("{}", err);
-                return Err(Box::new(err));
+                return Err(err.into());
             }
         }
 
@@ -85,7 +86,7 @@ impl StorageBackend for S3Backend {
         location: Location,
         range: Option<Range>,
         sender: Sender<bytes::Bytes>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<()> {
         let mut object = self
             .s3_client
             .get_object()
@@ -94,7 +95,7 @@ impl StorageBackend for S3Backend {
 
         match range {
             Some(value) => {
-                let range_string = format!("Range: bytes={}-{}", value.start, value.end);
+                let range_string = format!("Range: bytes={}-{}", value.from, value.to);
                 object = object.set_range(Some(range_string));
             }
             None => {}
@@ -104,7 +105,7 @@ impl StorageBackend for S3Backend {
             Ok(value) => value,
             Err(err) => {
                 log::error!("{}", err);
-                return Err(Box::new(err));
+                return Err(err.into());
             }
         };
 
@@ -123,7 +124,7 @@ impl StorageBackend for S3Backend {
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("{}", err);
-                        return Err(Box::new(err));
+                        return Err(err.into());
                     }
                 }
 
@@ -141,10 +142,7 @@ impl StorageBackend for S3Backend {
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
-    async fn init_multipart_upload(
-        &self,
-        location: Location,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    async fn init_multipart_upload(&self, location: Location) -> Result<String> {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
@@ -161,12 +159,12 @@ impl StorageBackend for S3Backend {
 
     async fn upload_multi_object(
         &self,
-        recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         location: Location,
         upload_id: String,
         content_len: i64,
         part_number: i32,
-    ) -> Result<PartETag, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<PartETag> {
         log::info!("Submitted content-length was: {:#?}", content_len);
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
@@ -194,7 +192,7 @@ impl StorageBackend for S3Backend {
         location: Location,
         parts: Vec<PartETag>,
         upload_id: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> Result<()> {
         let mut completed_parts = Vec::new();
         for etag in parts {
             let part_number = i32::try_from(etag.part_number)?;
@@ -225,29 +223,20 @@ impl StorageBackend for S3Backend {
         return Ok(());
     }
 
-    async fn create_bucket(
-        &self,
-        bucket: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    async fn create_bucket(&self, bucket: String) -> Result<()> {
         self.check_and_create_bucket(bucket).await
     }
 
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
-    async fn delete_object(
-        &self,
-        _location: Location,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    async fn delete_object(&self, _location: Location) -> Result<()> {
         todo!()
     }
 }
 
 impl S3Backend {
-    pub async fn check_and_create_bucket(
-        &self,
-        bucket: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    pub async fn check_and_create_bucket(&self, bucket: String) -> Result<()> {
         match self
             .s3_client
             .get_bucket_location()
@@ -260,7 +249,7 @@ impl S3Backend {
                 Ok(_) => Ok(()),
                 Err(err) => {
                     log::error!("{}", err);
-                    Err(Box::new(err))
+                    Err(err.into())
                 }
             },
         }

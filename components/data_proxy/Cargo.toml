@@ -7,7 +7,8 @@ version = "1.0.0-rc.5"
 
 [dependencies]
 anyhow = "1.0.69"
-aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api", branch = "main" }
+aruna-rust-api = "1.0.0-rc.6"
+aruna-file = "0.1.0"
 async-channel = "1.8.0"
 async-stream = "0.3.4"
 async-trait = "0.1.64"

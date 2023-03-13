@@ -8,7 +8,6 @@ use std::io::Write;
 use crate::data_server::server::S3Server;
 
 mod backends;
-mod data_middleware;
 mod data_server;
 mod helpers;
 mod service_server;
@@ -41,14 +40,16 @@ async fn main() {
             return;
         }
     };
-    let s3_client_arc: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
+    let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
     let data_socket = format!("{hostname}:8080");
     let aruna_server = dotenv::var("BACKEND_HOST").unwrap();
 
-    let data_server = S3Server::new(&data_socket, aruna_server).await.unwrap();
+    let data_server = S3Server::new(&data_socket, aruna_server, storage_backend.clone())
+        .await
+        .unwrap();
 
-    let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone())
+    let internal_proxy_server = InternalServerImpl::new(storage_backend.clone())
         .await
         .unwrap();
     let internal_proxy_socket = format!("{hostname}:8081").parse().unwrap();

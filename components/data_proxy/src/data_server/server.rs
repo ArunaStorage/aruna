@@ -1,9 +1,11 @@
 use anyhow::Result;
 use hyper::Server;
 use s3s::service::S3Service;
-use std::net::TcpListener;
+use std::{net::TcpListener, sync::Arc};
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::info;
+
+use crate::backends::storage_backend::StorageBackend;
 
 use super::{auth::AuthProvider, s3service::S3ServiceServer};
 
@@ -16,11 +18,16 @@ impl S3Server {
     pub async fn new(
         address: impl Into<String> + Copy,
         aruna_server: impl Into<String>,
+        backend: Arc<Box<dyn StorageBackend>>,
     ) -> Result<Self> {
-        let mut service = S3Service::new(Box::new(S3ServiceServer::new().await));
+        let server_url = aruna_server.into();
+
+        let mut service = S3Service::new(Box::new(
+            S3ServiceServer::new(backend, server_url.clone()).await?,
+        ));
 
         service.set_base_domain(address);
-        service.set_auth(Box::new(AuthProvider::new(aruna_server).await));
+        service.set_auth(Box::new(AuthProvider::new(server_url).await));
 
         Ok(S3Server {
             s3service: service,
@@ -35,13 +42,12 @@ impl S3Server {
             Server::from_tcp(listener)?.serve(self.s3service.into_shared().into_make_service());
 
         info!("server is running at http(s)://{}/", self.address);
-        let task = tokio::spawn(server);
+        tokio::spawn(server);
 
         let mut stream = signal(SignalKind::terminate())?;
 
         loop {
             stream.recv().await;
-            task.abort();
             break;
         }
 

@@ -1,4 +1,6 @@
-use aruna_rust_api::api::internal::v1::{Location, PartETag, Range};
+use anyhow::Result;
+use aruna_file::helpers::footer_parser::Range;
+use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use std::fmt::Debug;
@@ -16,10 +18,10 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `content_len` - The size of the uploaded object
     async fn put_object(
         &self,
-        recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         location: Location,
         content_len: i64,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+    ) -> Result<()>;
 
     /// Downloads the given object from storage and put it into the sender
     /// # Arguments
@@ -36,7 +38,7 @@ pub trait StorageBackend: Debug + Send + Sync {
         location: Location,
         range: Option<Range>,
         sender: Sender<bytes::Bytes>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+    ) -> Result<()>;
 
     /// Initiates a multipart upload.
     /// Returns the UploadID of the multipart upload
@@ -45,10 +47,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     ///
     /// * `location` - The location of the object which to load
-    async fn init_multipart_upload(
-        &self,
-        location: Location,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>>;
+    async fn init_multipart_upload(&self, location: Location) -> Result<String>;
 
     /// Uploads one part of an object in a multipart uploads
     /// Returns the ETag of the uploaded object
@@ -61,12 +60,12 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `part_number` - The number of the uploaded part in the final sequence
     async fn upload_multi_object(
         &self,
-        recv: Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         location: Location,
         upload_id: String,
         content_len: i64,
         part_number: i32,
-    ) -> Result<PartETag, Box<dyn std::error::Error + Send + Sync + 'static>>;
+    ) -> Result<PartETag>;
 
     /// Finishes multipart uploads
     /// # Arguments
@@ -79,22 +78,16 @@ pub trait StorageBackend: Debug + Send + Sync {
         location: Location,
         parts: Vec<PartETag>,
         upload_id: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+    ) -> Result<()>;
 
     /// Creates a bucket or the storage system equivalent
     /// # Arguments
     ///
     /// * `bucket` - Name of the bucket to create
-    async fn create_bucket(
-        &self,
-        bucket: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+    async fn create_bucket(&self, bucket: String) -> Result<()>;
 
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
-    async fn delete_object(
-        &self,
-        location: Location,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>;
+    async fn delete_object(&self, location: Location) -> Result<()>;
 }

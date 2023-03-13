@@ -5,11 +5,9 @@ use std::{env, net::SocketAddr, sync::Arc};
 
 use aruna_rust_api::api::internal::v1::{
     internal_proxy_service_server::{InternalProxyService, InternalProxyServiceServer},
-    CreateBucketRequest, CreateBucketResponse, CreatePresignedDownloadRequest,
-    CreatePresignedDownloadResponse, CreatePresignedUploadUrlRequest,
-    CreatePresignedUploadUrlResponse, DeleteObjectRequest, DeleteObjectResponse,
-    FinishPresignedUploadRequest, FinishPresignedUploadResponse, InitPresignedUploadRequest,
-    InitPresignedUploadResponse, Location, LocationType, MoveObjectRequest, MoveObjectResponse,
+    DeleteObjectRequest, DeleteObjectResponse, FinishMultipartUploadRequest,
+    FinishMultipartUploadResponse, InitMultipartUploadRequest, InitMultipartUploadResponse,
+    Location, LocationType,
 };
 
 use crate::backends::storage_backend::StorageBackend;
@@ -70,51 +68,34 @@ impl InternalServerImpl {
 
 #[async_trait]
 impl InternalProxyService for InternalServerImpl {
-    async fn init_presigned_upload(
+    async fn init_multipart_upload(
         &self,
-        request: tonic::Request<InitPresignedUploadRequest>,
-    ) -> Result<tonic::Response<InitPresignedUploadResponse>, tonic::Status> {
+        request: tonic::Request<InitMultipartUploadRequest>,
+    ) -> Result<tonic::Response<InitMultipartUploadResponse>, tonic::Status> {
         let inner_request = request.into_inner();
-
-        let upload_id = uuid::Uuid::new_v4();
-
-        if !inner_request.multipart {
-            return Ok(tonic::Response::new(InitPresignedUploadResponse {
-                upload_id: upload_id.to_string(),
-            }));
-        }
 
         let upload_id = self
             .data_client
-            .init_multipart_upload(inner_request.location.unwrap())
+            .init_multipart_upload(location_from_path(inner_request.path)?)
             .await
             .unwrap();
 
-        return Ok(Response::new(InitPresignedUploadResponse { upload_id }));
+        return Ok(Response::new(InitMultipartUploadResponse { upload_id }));
     }
 
-    async fn create_presigned_upload_url(
+    async fn finish_multipart_upload(
         &self,
-        _request: tonic::Request<CreatePresignedUploadUrlRequest>,
-    ) -> Result<tonic::Response<CreatePresignedUploadUrlResponse>, tonic::Status> {
-        todo!()
-    }
-
-    async fn finish_presigned_upload(
-        &self,
-        request: tonic::Request<FinishPresignedUploadRequest>,
-    ) -> Result<tonic::Response<FinishPresignedUploadResponse>, tonic::Status> {
+        request: tonic::Request<FinishMultipartUploadRequest>,
+    ) -> Result<tonic::Response<FinishMultipartUploadResponse>, tonic::Status> {
         let inner_request = request.into_inner();
-
-        let location = Location {
-            bucket: inner_request.bucket,
-            path: inner_request.key,
-            r#type: LocationType::Unspecified as i32,
-        };
 
         match self
             .data_client
-            .finish_multipart_upload(location, inner_request.part_etags, inner_request.upload_id)
+            .finish_multipart_upload(
+                location_from_path(inner_request.path)?,
+                inner_request.part_etags,
+                inner_request.upload_id,
+            )
             .await
         {
             Ok(_) => {}
@@ -126,34 +107,8 @@ impl InternalProxyService for InternalServerImpl {
             }
         }
 
-        let response = FinishPresignedUploadResponse { ok: true };
+        let response = FinishMultipartUploadResponse {};
         return Ok(Response::new(response));
-    }
-
-    async fn create_presigned_download(
-        &self,
-        _request: tonic::Request<CreatePresignedDownloadRequest>,
-    ) -> Result<tonic::Response<CreatePresignedDownloadResponse>, tonic::Status> {
-        todo!()
-    }
-
-    async fn create_bucket(
-        &self,
-        request: tonic::Request<CreateBucketRequest>,
-    ) -> Result<tonic::Response<CreateBucketResponse>, tonic::Status> {
-        let inner_request = request.into_inner();
-        match self
-            .data_client
-            .create_bucket(inner_request.bucket_name)
-            .await
-        {
-            Ok(_) => {}
-            Err(_) => {
-                return Err(Status::new(Code::Internal, "could not create bucket"));
-            }
-        }
-
-        return Ok(Response::new(CreateBucketResponse {}));
     }
 
     async fn delete_object(
@@ -162,10 +117,32 @@ impl InternalProxyService for InternalServerImpl {
     ) -> Result<tonic::Response<DeleteObjectResponse>, tonic::Status> {
         todo!()
     }
-    async fn move_object(
-        &self,
-        _request: tonic::Request<MoveObjectRequest>,
-    ) -> Result<tonic::Response<MoveObjectResponse>, tonic::Status> {
-        todo!()
+}
+
+fn location_from_path(path: String) -> Result<Location, tonic::Status> {
+    let splits = path.split('.').collect::<Vec<&str>>();
+
+    if splits.len() == 3 {
+        Ok(Location {
+            r#type: LocationType::Unspecified as i32,
+            bucket: format!("{}.{}", splits[0], splits[1]),
+            path: format!("{}", splits[2]),
+            endpoint_id: "".to_string(),
+            is_compressed: false,
+            is_encrypted: false,
+            encryption_key: "".to_string(),
+        })
+    } else if splits.len() == 5 {
+        Ok(Location {
+            r#type: LocationType::Unspecified as i32,
+            bucket: format!("{}.{}.{}.{}", splits[0], splits[1], splits[2], splits[3]),
+            path: format!("{}", splits[4]),
+            endpoint_id: "".to_string(),
+            is_compressed: false,
+            is_encrypted: false,
+            encryption_key: "".to_string(),
+        })
+    } else {
+        Err(tonic::Status::invalid_argument("Unable to parse location"))
     }
 }
