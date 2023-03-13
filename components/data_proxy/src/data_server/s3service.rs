@@ -12,22 +12,46 @@ use tonic::transport::Channel;
 use crate::backends::storage_backend::StorageBackend;
 
 #[derive(Debug)]
+pub struct ServiceSettings {
+    pub endpoint_id: uuid::Uuid,
+    pub encrypting: bool,
+    pub compressing: bool,
+}
+
+impl Default for ServiceSettings {
+    fn default() -> Self {
+        Self {
+            endpoint_id: Default::default(),
+            encrypting: true,
+            compressing: true,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct S3ServiceServer {
     backend: Arc<Box<dyn StorageBackend>>,
     internal_notifier_service: InternalProxyNotifierServiceClient<Channel>,
+    settings: ServiceSettings,
 }
 
 impl S3ServiceServer {
     pub async fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         url: impl Into<String>,
+        settings: ServiceSettings,
     ) -> Result<Self> {
         Ok(S3ServiceServer {
             backend,
             internal_notifier_service: InternalProxyNotifierServiceClient::connect(url.into())
                 .await
                 .map_err(|_| anyhow!("Unable to connect to internal notifiers"))?,
+            settings,
         })
+    }
+
+    async fn move_encode(from: Location, to: Location) -> Result<()> {
+        Ok(())
     }
 }
 
