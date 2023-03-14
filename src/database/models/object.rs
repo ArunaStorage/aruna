@@ -71,6 +71,18 @@ pub struct ObjectLocation {
     pub is_compressed: bool,
 }
 
+#[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
+#[diesel(belongs_to(Endpoint))]
+#[diesel(belongs_to(Object))]
+pub struct EncryptionKey {
+    pub id: uuid::Uuid,
+    pub hash: String,
+    pub object_id: uuid::Uuid,
+    pub endpoint_id: uuid::Uuid,
+    pub is_temporary: bool,
+    pub encryption_key: String,
+}
+
 #[derive(
     Associations, Queryable, Insertable, Identifiable, Debug, Clone, PartialEq, Eq, PartialOrd, Ord,
 )]

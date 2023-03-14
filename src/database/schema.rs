@@ -127,7 +127,10 @@ diesel::table! {
 diesel::table! {
     encryption_keys (id) {
         id -> Uuid,
-        hash -> Text,
+        hash -> Nullable<Text>,
+        object_id -> Uuid,
+        endpoint_id -> Uuid,
+        is_temporary -> Bool,
         encryption_key -> Text,
     }
 }
@@ -373,6 +376,8 @@ diesel::joinable!(collection_objects -> objects (object_id));
 diesel::joinable!(collections -> collection_version (version_id));
 diesel::joinable!(collections -> projects (project_id));
 diesel::joinable!(collections -> users (created_by));
+diesel::joinable!(encryption_keys -> endpoints (endpoint_id));
+diesel::joinable!(encryption_keys -> objects (object_id));
 diesel::joinable!(external_user_ids -> identity_providers (idp_id));
 diesel::joinable!(external_user_ids -> users (user_id));
 diesel::joinable!(hashes -> objects (object_id));
