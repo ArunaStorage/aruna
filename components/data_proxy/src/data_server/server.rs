@@ -31,7 +31,7 @@ impl S3Server {
         ));
 
         service.set_base_domain(address);
-        service.set_auth(Box::new(AuthProvider::new(server_url).await));
+        service.set_auth(Box::new(AuthProvider::new(server_url).await?));
 
         Ok(S3Server {
             s3service: service,

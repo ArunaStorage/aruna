@@ -1,3 +1,4 @@
+use anyhow::Result;
 use aruna_rust_api::api::internal::v1::{
     internal_authorize_service_client::InternalAuthorizeServiceClient, GetSecretRequest,
 };
@@ -15,12 +16,10 @@ pub struct AuthProvider {
 }
 
 impl AuthProvider {
-    pub async fn new(aruna_url: impl Into<String>) -> Self {
-        let client = InternalAuthorizeServiceClient::connect(aruna_url.into())
-            .await
-            .unwrap();
+    pub async fn new(aruna_url: impl Into<String>) -> Result<Self> {
+        let client = InternalAuthorizeServiceClient::connect(aruna_url.into()).await?;
 
-        Self { client }
+        Ok(Self { client })
     }
 }
 
