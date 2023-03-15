@@ -1528,20 +1528,41 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received GetObjectsByPathRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        self.authz
-            .collection_authorize(
-                request.metadata(),
-                target_collection_uuid, // This is the collection uuid context for the object
-                UserRights::READ,       // User needs at least read permission to get a path
-            )
-            .await?;
+        // Save gRPC request metadata for later
+        let metadata = request.metadata().clone();
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
+        let (_, coll_id) = task::spawn_blocking(move || {
+            database_clone.get_project_collection_ids_by_path(&inner_request_clone.path)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        match coll_id {
+            None => {
+                return Err(Status::from(ArunaError::InvalidRequest(
+                    "Collection from path does not exist".to_string(),
+                )));
+            }
+            Some(target_collection_uuid) => {
+                self.authz
+                    .collection_authorize(
+                        &metadata,
+                        target_collection_uuid, // This is the collection uuid context for the object
+                        UserRights::READ,       // User needs at least read permission to get a path
+                    )
+                    .await?;
+            }
+        }
 
         // Create Objectpaths in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.get_objects_by_path(request.into_inner()))
+            task::spawn_blocking(move || database_clone.get_objects_by_path(inner_request))
                 .await
                 .map_err(ArunaError::from)??,
         );

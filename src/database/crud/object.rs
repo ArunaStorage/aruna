@@ -2216,9 +2216,6 @@ impl Database {
         &self,
         request: GetObjectsByPathRequest,
     ) -> Result<GetObjectsByPathResponse, ArunaError> {
-        // Parse collection and object id
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let db_objects = self
             .pg_connection
             .get()?
@@ -2233,10 +2230,19 @@ impl Database {
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let get_path = paths
+                let get_path: Path = paths
                     .filter(database::schema::paths::path.eq(format!("/{s3path}")))
                     .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)?;
+
+                let (_, maybe_collection) =
+                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+                // Only proceed if collection exists
+                let col_id = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
+                    "Collection in path {} does not exist.",
+                    request.path
+                )))?;
 
                 if get_path.collection_id != col_id {
                     return Err(ArunaError::InvalidRequest(format!(
