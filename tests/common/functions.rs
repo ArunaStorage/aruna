@@ -384,7 +384,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, object_filename);
     assert_eq!(finished_object.content_len, object_length);
-    assert_eq!(finished_object.hash.clone().unwrap(), dummy_hash);
+    assert!(finished_object.hashes.contains(&dummy_hash));
     assert!(finished_object.auto_update);
 
     finished_object
@@ -651,9 +651,9 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     );
     assert_eq!(updated_object.filename, update_name);
     assert_eq!(updated_object.content_len, update_len);
-    assert_eq!(updated_object.hash.as_ref().unwrap().clone(), updated_hash);
     assert_eq!(updated_object.hooks, dummy_hooks);
     assert_eq!(updated_object.labels, dummy_labels);
+    assert!(updated_object.hashes.contains(&updated_hash));
     assert!(updated_object.auto_update);
 
     updated_object

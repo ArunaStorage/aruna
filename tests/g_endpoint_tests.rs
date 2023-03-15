@@ -80,21 +80,26 @@ fn add_endpoint_test() {
         internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
         documentation_path: "/somewhere/else/docu.pdf".to_string(),
         is_public: true,
+        pubkey: "MCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=".to_string(),
     };
 
     // Validate endpoint creation
-    let Endpoint {
-        id,
-        endpoint_type,
-        name,
-        proxy_hostname,
-        internal_hostname,
-        documentation_path,
-        is_public,
-    } = db.add_endpoint(&add_request).unwrap();
+    let (
+        Endpoint {
+            id,
+            endpoint_type,
+            name,
+            proxy_hostname,
+            internal_hostname,
+            documentation_path,
+            is_public,
+        },
+        pubkey_serial,
+    ) = db.add_endpoint(&add_request).unwrap();
 
     let _endpoint_uuid = uuid::Uuid::parse_str(id.to_string().as_str());
 
+    assert!(pubkey_serial > 0);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, add_request.name);
     assert_eq!(proxy_hostname, add_request.proxy_hostname);

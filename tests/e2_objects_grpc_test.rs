@@ -9,8 +9,8 @@ use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectSer
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
     CreateNewCollectionRequest, CreateObjectReferenceRequest, DeleteObjectRequest,
-    DeleteObjectsRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetReferencesRequest, InitializeNewObjectResponse,
+    DeleteObjectsRequest, GetLatestObjectRevisionRequest, GetObjectByIdRequest,
+    GetReferencesRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
@@ -619,11 +619,13 @@ async fn update_staging_object_grpc_test() {
     assert_eq!(rev_0_staging_object.rev_number, 0);
 
     // Hash should be the same as it can only be updated at finish
-    assert_eq!(rev_0_staging_object.hash, rev_0_staging_object_updated.hash);
+    assert_eq!(
+        rev_0_staging_object.hashes,
+        rev_0_staging_object_updated.hashes
+    );
 
     // Labels/Hooks should be the same as they were not updated
     // except internal ...
-
     'outer: for old_label in rev_0_staging_object.labels {
         for new_label in rev_0_staging_object_updated.labels.clone() {
             if old_label == new_label
@@ -2142,7 +2144,7 @@ async fn clone_object_grpc_test() {
                 assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, proto_object.filename);
                 assert_eq!(rev_0_object.content_len, proto_object.content_len);
-                assert_eq!(rev_0_object.hash, proto_object.hash);
+                assert_eq!(rev_0_object.hashes, proto_object.hashes);
                 assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
                 assert_eq!(proto_object.rev_number, 0);
@@ -2172,7 +2174,7 @@ async fn clone_object_grpc_test() {
                 assert_eq!(rev_0_object.id, cloned_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, cloned_object.filename);
                 assert_eq!(rev_0_object.content_len, cloned_object.content_len);
-                assert_eq!(rev_0_object.hash, cloned_object.hash);
+                assert_eq!(rev_0_object.hashes, cloned_object.hashes);
                 assert_eq!(rev_0_object.origin, cloned_object.origin); // Both originate from the same object
 
                 assert_eq!(cloned_object.rev_number, 0);
@@ -2208,7 +2210,7 @@ async fn clone_object_grpc_test() {
     assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
     assert_eq!(rev_0_object.filename, proto_object.filename);
     assert_eq!(rev_0_object.content_len, proto_object.content_len);
-    assert_eq!(rev_0_object.hash, proto_object.hash);
+    assert_eq!(rev_0_object.hashes, proto_object.hashes);
     assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
     assert_eq!(proto_object.rev_number, 0);
@@ -2257,7 +2259,7 @@ async fn clone_object_grpc_test() {
     );
     assert_eq!(rev_1_object.filename, clone_rev_0_object.filename);
     assert_eq!(rev_1_object.content_len, clone_rev_0_object.content_len);
-    assert_eq!(rev_1_object.hash, clone_rev_0_object.hash);
+    assert_eq!(rev_1_object.hashes, clone_rev_0_object.hashes);
 
     assert_eq!(clone_rev_0_object.filename, "updated.object".to_string());
     assert_eq!(clone_rev_0_object.content_len, 1234);

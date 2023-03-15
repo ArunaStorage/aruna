@@ -147,7 +147,7 @@ fn create_object_test() {
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, "File.file".to_string());
     assert_eq!(finished_object.content_len, 1234);
-    assert_eq!(finished_object.hash.unwrap(), finish_hash);
+    assert!(finished_object.hashes.contains(&finish_hash));
     assert!(finished_object.auto_update);
 }
 

@@ -245,8 +245,6 @@ async fn create_additional_object_path_grpc_test() {
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
@@ -1367,7 +1365,6 @@ async fn get_object_by_path_grpc_test() {
         {
             let get_object_by_path_request = common::grpc_helpers::add_token(
                 tonic::Request::new(GetObjectsByPathRequest {
-                    collection_id: random_collection.id.to_string(),
                     path: object_path.to_string(),
                     with_revisions: false, // Also only one revision exists.
                 }),
@@ -1431,7 +1428,6 @@ async fn get_object_by_path_grpc_test() {
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
-                collection_id: random_collection.id.to_string(),
                 path: object_path.to_string(),
                 with_revisions: false,
             }),
@@ -1460,7 +1456,6 @@ async fn get_object_by_path_grpc_test() {
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
-                collection_id: random_collection.id.to_string(),
                 path: object_path.to_string(),
                 with_revisions: true,
             }),
