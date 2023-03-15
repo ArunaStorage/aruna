@@ -44,7 +44,7 @@ impl EndpointService for EndpointServiceImpl {
         self.authz.admin_authorize(request.metadata()).await?;
 
         let inner_request = request.into_inner();
-        let endpoint = self.database.add_endpoint(&inner_request)?;
+        let (endpoint, pubkey_serial) = self.database.add_endpoint(&inner_request)?;
 
         // Transform database Endpoint to proto Endpoint
         let mut proto_endpoint = ProtoEndpoint::try_from(endpoint)
@@ -54,6 +54,7 @@ impl EndpointService for EndpointServiceImpl {
         // Return gRPC response after everything succeeded
         let response = Response::new(AddEndpointResponse {
             endpoint: Some(proto_endpoint),
+            pubkey_serial,
         });
 
         log::info!("Sending AddEndpointResponse back to client.");

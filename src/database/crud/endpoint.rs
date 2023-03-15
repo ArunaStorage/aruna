@@ -5,10 +5,12 @@ use diesel::result::Error;
 use crate::config::DefaultEndpoint;
 use crate::database;
 use crate::database::connection::Database;
+use crate::database::models::auth::{PubKey, PubKeyInsert};
 use crate::database::models::enums::EndpointType;
 use crate::database::models::object::{Endpoint, ObjectLocation};
 use crate::database::schema::endpoints::dsl::*;
 use crate::database::schema::object_locations::dsl::*;
+use crate::database::schema::pub_keys::dsl::pub_keys;
 use crate::error::ArunaError;
 use aruna_rust_api::api::storage::models::v1::Endpoint as ProtoEndpoint;
 use aruna_rust_api::api::storage::services::v1::{
@@ -103,7 +105,10 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
-    pub fn add_endpoint(&self, request: &AddEndpointRequest) -> Result<Endpoint, ArunaError> {
+    pub fn add_endpoint(
+        &self,
+        request: &AddEndpointRequest,
+    ) -> Result<(Endpoint, i64), ArunaError> {
         let db_endpoint = Endpoint {
             id: uuid::Uuid::new_v4(),
             endpoint_type: EndpointType::from_i32(request.ep_type)?,
@@ -117,15 +122,28 @@ impl Database {
             is_public: request.is_public,
         };
 
-        self.pg_connection
+        let db_pubkey = PubKeyInsert {
+            id: None,
+            pubkey: request.pubkey.to_string(),
+        };
+
+        let pubkey_serial = self
+            .pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<i64, Error, _>(|conn| {
+                use crate::database::schema::pub_keys::dsl as pub_keys_dsl;
+
+                // Insert endpoint into db
                 insert_into(endpoints).values(&db_endpoint).execute(conn)?;
 
-                Ok(())
+                // Insert public key of endpoint into database
+                Ok(insert_into(pub_keys)
+                    .values(&db_pubkey)
+                    .returning(pub_keys_dsl::id)
+                    .get_result::<i64>(conn)?)
             })?;
 
-        Ok(db_endpoint)
+        Ok((db_endpoint, pubkey_serial))
     }
 
     /// Get a data proxy endpoint from the database specified by its id.
