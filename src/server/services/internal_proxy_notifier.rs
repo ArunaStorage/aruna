@@ -60,12 +60,45 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         return Ok(response);
     }
 
+    /// Get the encryption key associated with the object
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<GetEncryptionKeyRequest>` -
+    ///   A gRPC request which contains the information needed to query a specific encryption key.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<GetEncryptionKeyResponse>, Status>` - Contains the object data encryption/decryption key.
     async fn get_encryption_key(
         &self,
-        _request: Request<GetEncryptionKeyRequest>,
+        request: Request<GetEncryptionKeyRequest>,
     ) -> Result<Response<GetEncryptionKeyResponse>, Status> {
-        Err(Status::unimplemented(
-            "This service call is not yet implemented.",
-        ))
+        log::info!("Received GetEncryptionKeyRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Finalize Object in database
+        let database_clone = self.database.clone();
+        let maybe_key =
+            task::spawn_blocking(move || database_clone.get_encryption_key(&inner_request))
+                .await
+                .map_err(ArunaError::from)??;
+
+        let response = match maybe_key {
+            None => tonic::Response::new(GetEncryptionKeyResponse {
+                encryption_key: "".to_string(),
+            }),
+            Some(enc_key) => tonic::Response::new(GetEncryptionKeyResponse {
+                encryption_key: enc_key.encryption_key,
+            }),
+        };
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetEncryptionKeyResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 }

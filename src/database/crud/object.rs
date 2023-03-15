@@ -1198,6 +1198,69 @@ impl Database {
         Ok(locations)
     }
 
+    /// Get the encryption key associated with the object, its hash and the specific endpoint.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<GetEncryptionKeyRequest>` -
+    ///   A gRPC request which contains the information needed to query a specific encryption key.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Option<EncryptionKey>, ArunaError>` - Contains the object data encryption/decryption key if found; None else.
+    ///
+    /// ## Behaviour:
+    ///
+    /// The encryption key is only fetched for objects with the data class 'Public' or 'Private'. An error is thrown for
+    /// objects with the data class 'Confidential' or 'Protected' as they have to provide their encryption/decryption
+    /// keys within the request header.
+    pub fn get_encryption_key(
+        &self,
+        request: &GetEncryptionKeyRequest,
+    ) -> Result<Option<EncryptionKey>, ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+
+        // Parse endpoint id from request
+        let endpoint_uuid = uuid::Uuid::parse_str(&request.endpoint_id)?;
+
+        let encryption_key = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<EncryptionKey>, Error, _>(|conn| {
+                // Path -> Fetch Object
+                //      Object != PUBLIC | PRIVATE --> return None
+                //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
+                let object = self
+                    .get_objects_by_path(GetObjectsByPathRequest {
+                        path: request.path.to_string(),
+                        with_revisions: false,
+                    })?
+                    .object
+                    .first()
+                    .ok_or(ArunaError::InvalidRequest(
+                        "Crypto keys have to be provided in the request header for protected or confidential objects."
+                            .to_string(),
+                    ))?
+                    .clone();
+
+                let encryption_key = if vec![DataClass::Public as i32, DataClass::Private as i32]
+                    .contains(&object.status)
+                {
+                    encryption_keys
+                        .filter(keys_dsl::hash.eq(&request.hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .first::<EncryptionKey>(conn)
+                        .optional()?
+                } else {
+                    None
+                };
+
+                Ok(encryption_key)
+            })?;
+
+        Ok(encryption_key)
+    }
+
     ///ToDo: Rust Doc
     pub fn get_latest_object_revision(
         &self,
