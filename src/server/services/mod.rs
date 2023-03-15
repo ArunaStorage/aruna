@@ -12,4 +12,5 @@ pub mod utils;
 
 pub mod internal_authorize;
 pub mod internal_notifications;
+pub mod internal_proxy;
 pub mod internal_proxy_notifier;
