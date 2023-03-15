@@ -4,13 +4,13 @@ use chrono::{Datelike, Timelike};
 use uuid::Uuid;
 
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, Status,
+    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, Status, Version,
 };
 
 use crate::database::models::enums::{Dataclass, HashType, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
-use crate::error::ArunaError;
 use crate::error::TypeConversionError::PROTOCONVERSION;
+use crate::error::{ArunaError, TypeConversionError};
 
 use regex::Regex;
 lazy_static! {
@@ -428,6 +428,66 @@ where
     }
 }
 
+/// Split the bucket part of an object path into its components.
+///
+/// ## Arguments
+///
+/// * `bucket_path`: `String` - Bucket part of an object path
+///
+/// ## Returns
+///
+/// * `Result<(String, String, Option<Version>)`: Tuple with project name, collection name and version if present; None if latest.
+///
+pub fn parse_bucket_path(
+    bucket_path: String,
+) -> Result<(String, String, Option<Version>), ArunaError> {
+    // Split path in parts. Should be consistent as only [a-z0-9\-] are allowed.
+    let mut bucket_parts: Vec<String> = bucket_path
+        .split(".")
+        .map(|part| part.to_string())
+        .collect();
+
+    // Extract project name from bucket path parts
+    let project_name = bucket_parts
+        .pop()
+        .ok_or(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )))?;
+
+    // Extract collection name from bucket path parts
+    let collection_name = bucket_parts
+        .pop()
+        .ok_or(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )))?;
+
+    // Extract version from bucket path parts
+    let mut collection_version = if bucket_parts.len() == 1 {
+        // Only (hopefully) "latest" left in parts
+        None
+    } else if bucket_parts.len() == 3 {
+        // major.minor.patch left in parts
+        Some(Version {
+            major: bucket_parts[0]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+            minor: bucket_parts[1]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+            patch: bucket_parts[2]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+        })
+    } else {
+        // If something else is left throw error 
+        return Err(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )));
+    };
+
+    Ok((project_name, collection_name, collection_version))
+}
+
 pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
     match grpcdclass {
         0 => Dataclass::PRIVATE, // Unspecified
@@ -501,6 +561,39 @@ mod tests {
     use aruna_rust_api::api::storage::models::v1::Permission;
     use aruna_rust_api::api::storage::models::v1::{DataClass, KeyValue};
     use std::any::type_name;
+
+    #[test]
+    fn test_parse_bucket_path() {
+        let valid_path = "latest.collection-name.project-name".to_string();
+        assert_eq!(
+            parse_bucket_path(valid_path).unwrap(),
+            (
+                "project-name".to_string(),
+                "collection-name".to_string(),
+                None
+            )
+        );
+
+        let valid_path = "1.0.0.collection-name.project-name".to_string();
+        assert_eq!(
+            parse_bucket_path(valid_path).unwrap(),
+            (
+                "project-name".to_string(),
+                "collection-name".to_string(),
+                Some(Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                })
+            )
+        );
+
+        let invalid_path = "1.2.3.collection-name".to_string();
+        assert!(parse_bucket_path(invalid_path).is_err());
+        
+        let invalid_path = "1.2.3.4.coll-name.proj-name".to_string();
+        assert!(parse_bucket_path(invalid_path).is_err());
+    }
 
     #[test]
     fn test_option_to_string() {

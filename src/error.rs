@@ -211,6 +211,7 @@ pub enum TypeConversionError {
     STRTOENDPOINTTYPE,
     PARSECONFIG,
     PROTOCONVERSION,
+    STRINGTOINT,
 }
 
 impl Display for TypeConversionError {
@@ -233,6 +234,9 @@ impl Display for TypeConversionError {
             TypeConversionError::PARSECONFIG => write!(f, "Typeconversion for config failed"),
             TypeConversionError::PROTOCONVERSION => {
                 write!(f, "Typeconversion from db model to proto model failed")
+            }
+            TypeConversionError::STRINGTOINT => {
+                write!(f, "Typeconversion from String to Int failed")
             }
         }
     }
