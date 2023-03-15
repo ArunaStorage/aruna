@@ -13,10 +13,15 @@ use r2d2::PooledConnection;
 use crate::database::models::auth::Project;
 use crate::database::models::collection::Collection;
 use crate::database::models::collection::CollectionVersion;
-use crate::database::models::object::Path;
+use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
-use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
+use aruna_rust_api::api::internal::v1::{
+    FinalizeObjectRequest, FinalizeObjectResponse, GetEncryptionKeyRequest,
+    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
+    LocationType,
+};
+use aruna_rust_api::api::storage::models::v1::DataClass;
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
     CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
@@ -55,11 +60,12 @@ use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 
+use crate::database::schema::encryption_keys::dsl::encryption_keys;
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
-    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
-    projects::dsl::*, sources::dsl::*,
+    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*,
+    object_group_objects::dsl::*, object_key_value::dsl::*, object_locations::dsl::*,
+    objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*,
 };
 
 use super::objectgroups::bump_revisisions;
@@ -648,6 +654,151 @@ impl Database {
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
         Ok(FinishObjectStagingResponse { object: mapped })
+    }
+
+    /// Finalizes the object by updating the location, validating the hashes and setting the object
+    ///status to `Available`.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<FinalizeObjectRequest>` -
+    ///   A gRPC request which contains the final object location and the calculated hashes of the objects data.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<FinalizeObjectResponse>, Status>` - An empty FinalizeObjectResponse signals success.
+    ///
+    /// ## Behaviour:
+    ///
+    /// Updates the sole existing object location with the provided data of the final location the
+    /// object has been moved to. Also validates/creates the provided hashes depending if the individual hash
+    /// already exists in the database. Finally the objects status is set to `Available`.
+    pub fn finalize_object(
+        &self,
+        request: &FinalizeObjectRequest,
+    ) -> Result<FinalizeObjectResponse, ArunaError> {
+        // Check format of provided ids
+        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+
+        // Extract SHA256 hash from provided hashes for easier usage
+        let mut sha256_hash = "".to_string();
+        for proto_hash in &request.hashes {
+            if proto_hash.alg == Hashalgorithm::Sha256 as i32 {
+                sha256_hash = proto_hash.hash.clone();
+                break;
+            }
+        }
+
+        // Validate SHA256 hash is provided with the request
+        if sha256_hash.is_empty() {
+            return Err(ArunaError::InvalidRequest(format!(
+                "No SHA256 hash provided to finalize object {object_uuid}"
+            )));
+        }
+
+        // Start transaction to update object assets
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                use crate::database::schema::encryption_keys::dsl as keys_dsl;
+                use crate::database::schema::object_locations::dsl as locations_dsl;
+                use crate::database::schema::objects::dsl as objects_dsl;
+
+                // Get current temp location of object data (only one location should exist at this point)
+                let mut current_location = object_locations
+                    .filter(locations_dsl::object_id.eq(&object_uuid))
+                    .first::<ObjectLocation>(conn)?;
+
+                if let Some(proto_location) = &request.location {
+                    let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
+
+                    // Adjust existing location to final location provided by data proxy
+                    current_location.bucket = proto_location.bucket.to_string();
+                    current_location.path = proto_location.path.to_string();
+                    current_location.endpoint_id = endpoint_uuid.clone();
+                    current_location.is_encrypted = proto_location.is_encrypted;
+                    current_location.is_compressed = proto_location.is_compressed;
+
+                    // If encryption key exists, ok; create else.
+                    if (objects.filter(objects_dsl::id.eq(&object_uuid)).first::<Object>(conn).optional()?).is_none() {
+                        println!("No object found")
+                    } else {
+                        println!("Object found")
+                    }
+
+                    if encryption_keys
+                        .filter(keys_dsl::hash.eq(&sha256_hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .select(keys_dsl::id)
+                        .first::<uuid::Uuid>(conn)
+                        .optional()?
+                        .is_none()
+                    {
+                        let encryption_key_insert = EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: Some(sha256_hash),
+                            object_id: object_uuid.clone(),
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: proto_location.encryption_key.to_string(),
+                        };
+
+                        diesel::insert_into(encryption_keys)
+                            .values(&encryption_key_insert)
+                            .execute(conn)?;
+                    }
+
+                    update(object_locations)
+                        .filter(locations_dsl::id.eq(&current_location.id))
+                        .set(&current_location)
+                        .execute(conn)?;
+                } else {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Request contains no valid location to finalize object {object_uuid}"
+                    )));
+                }
+
+                let db_hashes = hashes
+                    .filter(database::schema::hashes::object_id.eq(&object_uuid))
+                    .load::<ApiHash>(conn)?;
+
+                // Validate all data proxy calculated hashes against existing
+                let mut hashes_insert = Vec::new();
+                'outer: for proto_hash in &request.hashes {
+                    for db_hash in &db_hashes {
+                        if grpc_to_db_hash_type(&proto_hash.alg)? == db_hash.hash_type {
+                            if proto_hash.hash == db_hash.hash {
+                                continue 'outer
+                            } else {
+                                return Err(ArunaError::InvalidRequest(format!("User provided hash {:#?} differs from data proxy calculated hash {:#?}.", db_hash, proto_hash)));
+                            }
+                        }
+                    }
+
+                    // Store hash for database insert after loop
+                    hashes_insert.push(Db_Hash {
+                        id: uuid::Uuid::new_v4(),
+                        hash: proto_hash.hash.to_string(),
+                        object_id: object_uuid.clone(),
+                        hash_type: grpc_to_db_hash_type(&proto_hash.alg)?,
+                    });
+                }
+
+                // Insert all object hashes which do not already exist
+                insert_into(hashes)
+                    .values(hashes_insert)
+                    .execute(conn)?;
+
+                // Update object status to AVAILABLE
+                update(objects)
+                    .filter(database::schema::objects::id.eq(&object_uuid))
+                    .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    .execute(conn)?;
+
+                Ok(())
+            })?;
+
+        Ok(FinalizeObjectResponse {})
     }
 
     ///ToDo: Rust Doc
