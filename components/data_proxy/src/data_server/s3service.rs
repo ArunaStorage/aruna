@@ -5,9 +5,12 @@ use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient;
+use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetEncryptionKeyRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateObjectByPathRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
+use aruna_rust_api::api::storage::models::v1::Hash;
+use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use rand::distributions::Alphanumeric;
@@ -68,7 +71,7 @@ impl S3ServiceServer {
         })
     }
 
-    async fn _move_encode(&self, from: ArunaLocation, _to: ArunaLocation) -> Result<()> {
+    async fn move_encode(&self, from: ArunaLocation, _to: ArunaLocation) -> Result<()> {
         if from.is_compressed {
             if from.is_encrypted {}
         }
@@ -146,19 +149,23 @@ impl S3 for S3ServiceServer {
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
+        let (location, is_temp) = create_location_from_hash(
+            &valid_sha256,
+            &response.object_id,
+            &response.collection_id,
+            self.settings.encrypting,
+            self.settings.compressing,
+            String::from_utf8_lossy(&enc_key).into(),
+        );
+
         match req.input.body {
             Some(data) => {
-                let (location, is_temp) = create_location_from_hash(
-                    &valid_sha256,
-                    &response.object_id,
-                    &response.collection_id,
-                );
-
                 let (sender, recv) = async_channel::bounded(10);
                 let backend_handle = self.backend.clone();
-                tokio::spawn(async move {
+                let cloned_loc = location.clone();
+                let handle = tokio::spawn(async move {
                     backend_handle
-                        .put_object(recv, location, req.input.content_length)
+                        .put_object(recv, cloned_loc, req.input.content_length)
                         .await
                 });
 
@@ -188,6 +195,23 @@ impl S3 for S3ServiceServer {
                     log::error!("{}", e);
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
+
+                handle
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(
+                            InternalError,
+                            "Internal data transformer processing error (TokioJoinHandle)"
+                        )
+                    })?
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(
+                            InternalError,
+                            "Internal data transformer processing error (Backend)"
+                        )
+                    })?;
             }
             None => {
                 return Err(s3_error!(
@@ -215,6 +239,60 @@ impl S3 for S3ServiceServer {
         }
 
         // TODO: MOVER !
+
+        if is_temp {
+            self.move_encode(
+                location.clone(),
+                create_location_from_hash(
+                    &final_sha256,
+                    &response.object_id,
+                    &response.collection_id,
+                    self.settings.encrypting,
+                    self.settings.compressing,
+                    if location.encryption_key.is_empty() {
+                        location.encryption_key.clone()
+                    } else {
+                        String::from_utf8_lossy(
+                            thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(32)
+                                .collect::<Vec<u8>>()
+                                .as_ref(),
+                        )
+                        .into()
+                    },
+                )
+                .0,
+            )
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal data mover error")
+            })?
+        } else {
+            self.internal_notifier_service
+                .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+                .finalize_object(FinalizeObjectRequest {
+                    object_id: response.object_id.clone(),
+                    collection_id: response.collection_id.clone(),
+                    location: Some(location),
+                    hashes: vec![
+                        Hash {
+                            alg: Hashalgorithm::Md5 as i32,
+                            hash: final_md5,
+                        },
+                        Hash {
+                            alg: Hashalgorithm::Sha256 as i32,
+                            hash: final_sha256,
+                        },
+                    ],
+                })
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal aruna error")
+                })?;
+        }
 
         let output = PutObjectOutput {
             e_tag: Some(response.object_id),

@@ -37,11 +37,17 @@ pub fn create_location_from_hash(
     sha256_hash: &str,
     object_id: &str,
     collection_id: &str,
+    encrypting: bool,
+    compressing: bool,
+    encryption_key: String,
 ) -> (Location, bool) {
     if sha256_hash.is_empty() {
         (
             Location {
                 bucket: "temp".to_string(),
+                is_compressed: compressing,
+                is_encrypted: encrypting,
+                encryption_key,
                 path: format!("{}/{}", collection_id, object_id),
                 ..Default::default()
             },
@@ -52,6 +58,9 @@ pub fn create_location_from_hash(
             Location {
                 bucket: sha256_hash[0..2].to_string(),
                 path: sha256_hash[2..].to_string(),
+                is_compressed: compressing,
+                is_encrypted: encrypting,
+                encryption_key,
                 ..Default::default()
             },
             false,
