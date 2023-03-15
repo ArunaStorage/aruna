@@ -295,7 +295,7 @@ impl Database {
             token: Some(Token {
                 id: api_token.id.to_string(),
                 name: api_token.name.unwrap_or_default(),
-                token_type: token_type as i32,
+                token_type,
                 created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
                 expires_at: expires_at_time,
                 collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
@@ -364,7 +364,7 @@ impl Database {
                         .as_ref()
                         .unwrap_or(&"".to_string())
                         .to_string(),
-                    token_type: token_type as i32,
+                    token_type,
                     created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
                     expires_at: expires_at_time,
                     collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),

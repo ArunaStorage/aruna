@@ -311,6 +311,12 @@ impl Database {
                 let latest = get_latest_obj(conn, req_object_uuid)?;
                 let is_still_latest = latest.id == req_object_uuid;
 
+                if !is_still_latest {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Object {req_object_uuid} is not latest revision. "
+                    )));
+                }
+
                 // Update the object itself to be available
                 let returned_obj = diesel::update(
                     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
@@ -519,7 +525,7 @@ impl Database {
                     // Update inside collection of update object
                     match auto_update_collection_reference {
                         None => {
-                            // Update latest reference
+                            // Update latest staging object reference
                             update(collection_objects)
                                 .filter(
                                     database::schema::collection_objects::object_id
@@ -564,7 +570,7 @@ impl Database {
                                     )
                                     .execute(conn)?;
 
-                                // Update latest reference
+                                // Update latest staging object reference
                                 update(collection_objects)
                                     .filter(
                                         database::schema::collection_objects::id.eq(&reference.id),
@@ -584,26 +590,10 @@ impl Database {
                                             .eq(request.auto_update && is_still_latest),
                                     ))
                                     .execute(conn)?;
-                            } else if !is_still_latest && request.auto_update {
-                                // Delete staging reference
-                                delete(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id
-                                            .eq(&req_object_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status
-                                            .eq(&ReferenceStatus::STAGING),
-                                    )
-                                    .execute(conn)?;
-
-                                return Ok(get_object_ignore_coll(&req_object_uuid, conn)?);
-                            // Only case the object does not have a reference anymore
                             } else {
+                                //Note: This case should not exist anymore without concurrent object updates.
+                                //      The staging object should always be latest with a STAGING reference!
+                                /*
                                 // Update staging reference of outdated object with is_latest == false and auto_update == false
                                 update(collection_objects)
                                     .filter(
@@ -629,6 +619,7 @@ impl Database {
                                             .eq(request.auto_update),
                                     ))
                                     .execute(conn)?;
+                                */
                             }
                         }
                     }
@@ -673,17 +664,43 @@ impl Database {
             let updated_object = self.pg_connection
                 .get()?
                 .transaction::<Object, ArunaError, _>(|conn| {
+                    // Get all references of all revisions of the object
+                    let all_revision_references = get_all_references(conn, &parsed_old_id, &true)?;
+
+                    // Filter references for staging objects and collection specific, writeable references
+                    let mut staging_references = Vec::new();
+                    let mut object_references = Vec::new();
+                    for object_reference in all_revision_references {
+                        if object_reference.reference_status == ReferenceStatus::STAGING {
+                            staging_references.push(object_reference);
+                        } else if object_reference.writeable && object_reference.collection_id == parsed_col_id {
+                            object_references.push(object_reference);
+                        }
+                    }
+
+                    if staging_references.len() > 1 {
+                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} has more than one staging object. This has to be resolved manually.")))
+                    } else if let Some(staging_reference) = staging_references.first() {
+                        return if staging_reference.object_id == parsed_old_id {
+                            update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj)
+                        } else {
+                            Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} already has a staging object. Concurrent updates are prohibited.")))
+                        }
+                    }
+
+                    if object_references.is_empty() {
+                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} does not have a writeable reference in collection {parsed_col_id}")));
+                    }
+
                     // Get latest revision of the Object to be updated
                     let latest = get_latest_obj(conn, parsed_old_id)?;
 
-                    if latest.id != parsed_old_id && !request.force {
-                        return Err(ArunaError::InvalidRequest(
-                            "Concurrency error: Updates without force are only allowed for the latest object"
-                                .to_string(),
-                        ));
+                    // Check if update is performed on latest object revision
+                    if latest.id != parsed_old_id {
+                        return Err(ArunaError::InvalidRequest(format!("Updates only allowed on the latest revision: {}", latest.id), ));
                     }
 
-                    //Define source object from updated request; None if empty
+                    // Define source object from updated request; None if empty
                     let source: Option<Source> = match &sobj.source {
                         Some(source) => Some(Source {
                             id: uuid::Uuid::new_v4(),
@@ -692,23 +709,6 @@ impl Database {
                         }),
                         _ => None,
                     };
-
-                    // Check if object is already staging
-                    let reference_opt: Option<CollectionObject> = collection_objects
-                        .filter(database::schema::collection_objects::object_id.eq(parsed_old_id))
-                        .filter(database::schema::collection_objects::collection_id.eq(parsed_col_id))
-                        .first::<CollectionObject>(conn)
-                        .optional()?;
-
-                    if let Some(reference) = reference_opt {
-                        if reference.reference_status == ReferenceStatus::STAGING {
-                            return update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj);
-                        }
-
-                        if !reference.writeable {
-                            return Err(ArunaError::InvalidRequest("Object is read-only reference.".to_string()));
-                        }
-                    } // only instance where no reference is available should be outdated revisions in source collection --> always writeable
 
                     // Define new Object with updated values
                     let new_object = Object {
@@ -766,8 +766,6 @@ impl Database {
                         new_obj_id,
                     );
 
-                    // Validate labels and hooks and add path label handling
-
                     // Validate key_values
                     if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
                         return Err(ArunaError::InvalidRequest(
@@ -775,7 +773,7 @@ impl Database {
                         ));
                     };
 
-                    // Get fq_path
+                    // Get full qualified path
                     let (s3bucket, s3path) = construct_path_string(
                         &collection_object.collection_id,
                         &new_object.filename,
@@ -784,7 +782,12 @@ impl Database {
                     )?;
 
                     // Check if path already exists
-                    let exists = paths.filter(database::schema::paths::path.eq(&s3path)).filter(database::schema::paths::bucket.eq(&s3bucket)).first::<Path>(conn).optional()?;
+                    let exists = paths
+                        .filter(database::schema::paths::path.eq(&s3path))
+                        .filter(database::schema::paths::bucket.eq(&s3bucket))
+                        .first::<Path>(conn)
+                        .optional()?;
+
                     // If it already exists
                     if let Some(existing) = exists {
                         // Check if the existing is not associated with the current shared_revision_id -> Error
@@ -793,7 +796,7 @@ impl Database {
                             return Err(ArunaError::InvalidRequest("Invalid path, already exists for different object hierarchy".to_string()))
                         }
                     // If path not exists -> Add label
-                    }else{
+                    } else {
                         key_value_pairs.push(ObjectKeyValue {
                             id: uuid::Uuid::new_v4(),
                             object_id: new_obj_id,
@@ -810,7 +813,6 @@ impl Database {
                             key_value_type: KeyValueType::LABEL,
                         });
                     }
-
 
                     // Insert entities which are always created on update
                     diesel::insert_into(objects)
@@ -870,20 +872,6 @@ impl Database {
                 "Staging object must be provided".to_string(),
             ))
         }
-
-        /*ToDo:
-         *  - Check permissions if update on collection is ok
-         *  - Create staging object and update differing metadata
-         *      - Set object status UNAVAILABLE
-         *      - Set revision e.g. None
-         *  - Copy key-value pairs and sync them with the provided (Add, Update, Delete)
-         *  - Create collection_objects reference with status STAGING
-         *  - If reupload == true
-         *      - Set object status INITIALIZING
-         *      - Create new location
-         *      - Create new empty hash
-         *      - Generate upload id with data proxy request
-         */
     }
 
     /// Returns the object from the database in its gRPC format.
@@ -2493,7 +2481,12 @@ pub fn get_latest_obj(
         .first::<uuid::Uuid>(conn)?;
 
     let latest_object = objects
-        .filter(database::schema::objects::shared_revision_id.eq(shared_id))
+        .filter(
+            database::schema::objects::shared_revision_id
+                .eq(&shared_id)
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::DELETED))
+                .and(database::schema::objects::object_status.ne(&ObjectStatus::TRASH)),
+        )
         .order_by(database::schema::objects::revision_number.desc())
         .first::<Object>(conn)?;
 
