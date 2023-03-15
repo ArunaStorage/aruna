@@ -1,4 +1,12 @@
-use aruna_rust_api::api::storage::{models::v1::DataClass, services::v1::StageObject};
+use anyhow::Result;
+use aruna_rust_api::api::storage::models::v1::Hash;
+use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
+use aruna_rust_api::api::{
+    internal::v1::Location,
+    storage::{models::v1::DataClass, services::v1::StageObject},
+};
+use s3s::s3_error;
+use s3s::S3Error;
 
 pub fn construct_path(bucket: &str, key: &str) -> String {
     format!("s3://{bucket}/{key}")
@@ -23,6 +31,95 @@ pub fn extract_filename_path(path: &str) -> (String, String) {
         String::from(splits.pop().unwrap_or_else(|| "")),
         splits.join("/"),
     )
+}
+
+pub fn create_location_from_hash(
+    sha256_hash: &str,
+    object_id: &str,
+    collection_id: &str,
+) -> (Location, bool) {
+    if sha256_hash.is_empty() {
+        (
+            Location {
+                bucket: "temp".to_string(),
+                path: format!("{}/{}", collection_id, object_id),
+                ..Default::default()
+            },
+            true,
+        )
+    } else {
+        (
+            Location {
+                bucket: sha256_hash[0..2].to_string(),
+                path: sha256_hash[2..].to_string(),
+                ..Default::default()
+            },
+            false,
+        )
+    }
+}
+
+pub fn validate_and_check_hashes(
+    s3_md5_hash: Option<String>,
+    s3_sha256_hash: Option<String>,
+    backend_hashes: Vec<Hash>,
+) -> Result<(String, String), S3Error> {
+    let mut hash_md5 = match s3_md5_hash {
+        Some(h) => h,
+        None => String::new(),
+    };
+    let mut hash_sha256 = match s3_sha256_hash {
+        Some(h) => h,
+        None => String::new(),
+    };
+
+    for hash in backend_hashes {
+        match Hashalgorithm::from_i32(hash.alg) {
+            Some(Hashalgorithm::Md5) => {
+                if !hash_md5.is_empty() {
+                    if hash.hash != hash_md5 {
+                        return Err(s3_error!(
+                            InvalidDigest,
+                            "Invalid or inconsistent MD5 digest"
+                        ));
+                    }
+                }
+                hash_md5 = hash.hash;
+            }
+            Some(Hashalgorithm::Sha256) => {
+                if !hash_sha256.is_empty() {
+                    if hash.hash != hash_sha256 {
+                        return Err(s3_error!(
+                            InvalidDigest,
+                            "Invalid or inconsistent SHA256 digest"
+                        ));
+                    }
+                }
+                hash_sha256 = hash.hash;
+            }
+            _ => {}
+        }
+    }
+
+    if !hash_md5.is_empty() {
+        if hash_md5.len() != 32 {
+            return Err(s3_error!(
+                InvalidDigest,
+                "Invalid or inconsistent MD5 digest"
+            ));
+        }
+    }
+
+    if !hash_sha256.is_empty() {
+        if hash_sha256.len() != 64 {
+            return Err(s3_error!(
+                InvalidDigest,
+                "Invalid or inconsistent SHA256 digest"
+            ));
+        }
+    }
+
+    Ok((hash_md5, hash_sha256))
 }
 
 #[cfg(test)]
