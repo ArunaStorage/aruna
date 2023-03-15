@@ -30,7 +30,7 @@ fn get_collection_by_id_test() {
     let created_project = common::functions::create_project(None);
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection".to_owned(),
+        name: "new-collection".to_owned(),
         description: "this_is_a_demo_collection".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -69,7 +69,7 @@ fn get_collection_by_id_test() {
     // Collection should have the following name
     assert_eq!(
         q_col.collection.clone().unwrap().name,
-        "new_collection".to_string()
+        "new-collection".to_string()
     );
     // Collection should not have a version
     assert!(
@@ -115,7 +115,7 @@ fn get_collections_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_1".to_owned(),
+        name: "new-collection-1".to_owned(),
         description: "this_is_a_demo_collection_1".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -140,7 +140,7 @@ fn get_collections_test() {
     let result_1 = db.create_new_collection(request, creator).unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_2".to_owned(),
+        name: "new-collection-2".to_owned(),
         description: "this_is_a_demo_collection_2".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -166,7 +166,7 @@ fn get_collections_test() {
     let res_2_id = result_2.collection_id;
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_3".to_owned(),
+        name: "new-collection-3".to_owned(),
         description: "this_is_a_demo_collection_3".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -516,7 +516,7 @@ fn update_collection_test() {
 
     let normal_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "update_collection_test_collection_001".to_string(),
+        name: "update-collection-test-collection-001".to_string(),
         description: "First collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
@@ -537,7 +537,7 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "update_collection_test_collection_fail".to_string(),
+        name: "update-collection-test-collection-fail".to_string(),
         description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
@@ -564,7 +564,7 @@ fn update_collection_test() {
 
     let pin_update = UpdateCollectionRequest {
         collection_id: col_id.to_string(),
-        name: "update_collection_test_collection_versioned".to_string(),
+        name: "update-collection-test-collection-versioned".to_string(),
         description: "Second collection update in update_collection_test()".to_string(),
         labels: vec![KeyValue {
             key: "test_key_2".to_owned(),
@@ -597,7 +597,7 @@ fn pin_collection_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "pin_collection_test_collection_001".to_owned(),
+        name: "pin-collection-test-collection-001".to_owned(),
         description: "Collection created in update_collection_test()".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -730,7 +730,7 @@ fn delete_collection_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_update_delete".to_owned(),
+        name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -748,7 +748,7 @@ fn delete_collection_test() {
     let result = db.create_new_collection(request, creator).unwrap();
 
     let ref_col_request = CreateNewCollectionRequest {
-        name: "new_collection_update_delete".to_owned(),
+        name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
         project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
         label_ontology: None,
@@ -907,7 +907,7 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create fresh Project
     let create_project_request = CreateProjectRequest {
-        name: "test_collection_materialized_views_stats_project".to_string(),
+        name: "test-collection-materialized-views-stats-project".to_string(),
         description: "Collection created for test_collection_materialized_views_stats()"
             .to_string(),
     };
@@ -919,7 +919,7 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "test_collection_materialized_views_stats_collection".to_string(),
+        name: "test-collection-materialized-views-stats-collection".to_string(),
         description: "Test collection used in materialized view stats test.".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),

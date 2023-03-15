@@ -619,7 +619,7 @@ fn get_user_projects_test() {
 
     // Create project as admin
     let crt_proj_req = CreateProjectRequest {
-        name: "get_user_projects_test_project_001".to_string(),
+        name: "get-user-projects-test-project-001".to_string(),
         description: "First project created in get_user_projects_test()".to_string(),
     };
     let proj_1 = db
@@ -642,7 +642,7 @@ fn get_user_projects_test() {
 
     // Create project as user
     let crt_proj_req_2 = CreateProjectRequest {
-        name: "get_user_projects_test_project_002".to_string(),
+        name: "get-user-projects-test-project-002".to_string(),
         description: "Second project created in get_user_projects_test()".to_string(),
     };
     // This should add the user automatically
@@ -689,7 +689,7 @@ fn get_checked_user_id_from_token_test() {
 
     // Create project as admin
     let crt_proj_req = CreateProjectRequest {
-        name: "testproj_1".to_string(),
+        name: "testproj-1".to_string(),
         description: "".to_string(),
     };
     let proj_1 = db
@@ -712,7 +712,7 @@ fn get_checked_user_id_from_token_test() {
 
     // Create project as user -> Should be "admin"
     let crt_proj_req_2 = CreateProjectRequest {
-        name: "testproj_2".to_string(),
+        name: "testproj-2".to_string(),
         description: "".to_string(),
     };
     // This should add the user automatically
@@ -767,7 +767,7 @@ fn get_checked_user_id_from_token_test() {
 
     // Create collection in proj_1 --> Admin
     let ccoll_1_req = CreateNewCollectionRequest {
-        name: "test_col_1".to_string(),
+        name: "test-col-1".to_string(),
         description: "".to_string(),
         label_ontology: None,
         project_id: proj_1.project_id.clone(),
@@ -779,7 +779,7 @@ fn get_checked_user_id_from_token_test() {
     let col_1 = db.create_new_collection(ccoll_1_req, user_id).unwrap();
     // Create collection in proj_1 --> Admin
     let ccoll_2_req = CreateNewCollectionRequest {
-        name: "test_col_2".to_string(),
+        name: "test-col-2".to_string(),
         description: "".to_string(),
         label_ontology: None,
         project_id: _proj_2.clone().project_id,

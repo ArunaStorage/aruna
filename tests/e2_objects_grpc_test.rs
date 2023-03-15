@@ -295,7 +295,7 @@ async fn get_objects_grpc_test() {
 
     let create_req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateNewCollectionRequest {
-            name: "TestCollection".to_string(),
+            name: "test-collection".to_string(),
             description: "Test collection".to_string(),
             project_id: "12345678-1111-1111-1111-111111111111".to_string(),
             labels: vec![],

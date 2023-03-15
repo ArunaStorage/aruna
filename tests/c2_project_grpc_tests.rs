@@ -36,7 +36,7 @@ async fn create_project_grpc_test() {
     // Create gPC Request for project creation
     let create_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateProjectRequest {
-            name: "Test-Project".to_string(),
+            name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -55,7 +55,7 @@ async fn create_project_grpc_test() {
     // Create gPC Request for failing project creation
     let create_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateProjectRequest {
-            name: "Test Project".to_string(),
+            name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
         }),
         common::oidc::REGULARTOKEN,
@@ -176,7 +176,7 @@ async fn update_project_grpc_test() {
     let update_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateProjectRequest {
             project_id: orig_project.id.to_string(),
-            name: "Updated-Project".to_string(),
+            name: "updated-project".to_string(),
             description: "This project was updated in update_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -191,7 +191,7 @@ async fn update_project_grpc_test() {
     let updated_project = update_project_response.project.unwrap();
 
     assert_eq!(orig_project.id, updated_project.id);
-    assert_eq!(updated_project.name, "Updated-Project".to_string());
+    assert_eq!(updated_project.name, "updated-project".to_string());
     assert_eq!(
         updated_project.description,
         "This project was updated in update_project_grpc_test().".to_string()
@@ -201,7 +201,7 @@ async fn update_project_grpc_test() {
     let update_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateProjectRequest {
             project_id: orig_project.id.to_string(),
-            name: "Updated Project".to_string(),
+            name: "updated-project".to_string(),
             description: "This update should have been failed...".to_string(),
         }),
         common::oidc::REGULARTOKEN,

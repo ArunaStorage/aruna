@@ -78,7 +78,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
         uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
     };
 
-    let project_name = rand_string(30);
+    let project_name = rand_string(30).to_lowercase();
     let project_description = rand_string(30); //Note: Should also be tested with special characters
     let create_request = CreateProjectRequest {
         name: project_name.clone(),
@@ -196,7 +196,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             request: col_req,
         }
     } else {
-        let col_name = rand_string(30);
+        let col_name = rand_string(30).to_lowercase();
         let col_description = rand_string(30);
         let labels = (0..tccol.num_labels)
             .map(|num| KeyValue {

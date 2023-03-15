@@ -54,7 +54,7 @@ fn create_object_test() {
 
     // Create Project
     let create_project_request = CreateProjectRequest {
-        name: "create_object_test_project_001".to_string(),
+        name: "create-object-test-project-001".to_string(),
         description: "Project created in create_object_test()".to_string(),
     };
 
@@ -65,7 +65,7 @@ fn create_object_test() {
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "create_object_test_collection".to_string(),
+        name: "create-object-test-collection".to_string(),
         description: "Test collection used in create_object_test().".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),

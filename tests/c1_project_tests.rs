@@ -28,7 +28,7 @@ fn create_project_test() {
     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
 
     let request = CreateProjectRequest {
-        name: "create_project_test_project".to_string(),
+        name: "create-project-test-project".to_string(),
         description: "Project created in create_project_test()".to_string(),
     };
 
@@ -59,7 +59,7 @@ fn update_project_test() {
     assert!(!project_id.is_nil());
 
     // Update empty project metadata
-    let updated_name = "Updated-Project-Name".to_string();
+    let updated_name = "updated-project-name".to_string();
     let updated_description = "Updated project description".to_string();
     let update_request = UpdateProjectRequest {
         project_id: project_id.to_string(),
@@ -163,7 +163,7 @@ fn add_remove_project_user_test() {
 
     // Create project
     let create_request = CreateProjectRequest {
-        name: "add_remove_project_user_test_project".to_string(),
+        name: "add-remove-project-user-test-project".to_string(),
         description: "Project created for add_remove_project_user_test()".to_string(),
     };
     let create_response = db.create_project(create_request, creator).unwrap();
@@ -245,7 +245,7 @@ fn edit_project_user_permissions_test() {
 
     // Create project
     let create_request = CreateProjectRequest {
-        name: "edit_project_user_permissions_test_project".to_string(),
+        name: "edit-project-user-permissions-test-project".to_string(),
         description: "Project created in edit_project_user_permissions_test()".to_string(),
     };
     let create_response = db.create_project(create_request, creator).unwrap();
