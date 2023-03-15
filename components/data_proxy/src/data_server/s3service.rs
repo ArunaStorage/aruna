@@ -71,7 +71,14 @@ impl S3ServiceServer {
         })
     }
 
-    async fn move_encode(&self, from: ArunaLocation, _to: ArunaLocation) -> Result<()> {
+    async fn move_encode(
+        &self,
+        from: ArunaLocation,
+        to: ArunaLocation,
+        object_id: String,
+        collection_id: String,
+        hashes: Option<Vec<Hash>>,
+    ) -> Result<()> {
         if from.is_compressed {
             if from.is_encrypted {}
         }
@@ -238,8 +245,6 @@ impl S3 for S3ServiceServer {
             ));
         }
 
-        // TODO: MOVER !
-
         if is_temp {
             self.move_encode(
                 location.clone(),
@@ -263,6 +268,18 @@ impl S3 for S3ServiceServer {
                     },
                 )
                 .0,
+                response.object_id.clone(),
+                response.collection_id.clone(),
+                Some(vec![
+                    Hash {
+                        alg: Hashalgorithm::Md5 as i32,
+                        hash: final_md5,
+                    },
+                    Hash {
+                        alg: Hashalgorithm::Sha256 as i32,
+                        hash: final_sha256,
+                    },
+                ]),
             )
             .await
             .map_err(|e| {
