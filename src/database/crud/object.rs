@@ -2493,6 +2493,71 @@ pub fn get_latest_obj(
     Ok(latest_object)
 }
 
+/// This is a helper method that queries the project id and collection id based
+/// on the names and version in the provided bucket part of an object path.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `bucket_path`: `String` - Bucket part of an S3 object path, e.g. `latest.project-name.collection-name`
+///
+/// ## Returns:
+///
+/// `Result<(uuid::Uuid, Option<uuid::Uuid>), ArunaError>` -
+/// The Ok Result contains the project id and the collection id if the collection exists in the project.
+/// If no project exists with the provided name an Error will be returned.
+///
+pub fn get_project_collection_ids_of_bucket_path(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    bucket_path: String,
+) -> Result<(uuid::Uuid, Option<uuid::Uuid>), ArunaError> {
+    use crate::database::schema::collection_version::dsl as version_dsl;
+    use crate::database::schema::collections::dsl as collection_dsl;
+    use crate::database::schema::projects::dsl as project_dsl;
+
+    // Parse bucket string
+    let (project_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
+
+    // Fetch project by its unique name
+    let project_uuid = projects
+        .filter(project_dsl::name.eq(&project_name))
+        .select(project_dsl::id)
+        .first::<uuid::Uuid>(conn)?;
+
+    // Fetch version id if version is not None
+    let version_uuid_option: Option<uuid::Uuid> = if let Some(coll_version) = path_version {
+        collection_version
+            .filter(version_dsl::major.eq(coll_version.major as i64))
+            .filter(version_dsl::minor.eq(coll_version.minor as i64))
+            .filter(version_dsl::patch.eq(coll_version.patch as i64))
+            .select(version_dsl::id)
+            .first::<uuid::Uuid>(conn)
+            .optional()?
+    } else {
+        None
+    };
+
+    // Fetch collection by its unique combination of project_id, name and version
+    let mut base_request = collections
+        .filter(collection_dsl::project_id.eq(&project_uuid))
+        .filter(collection_dsl::name.eq(&collection_name))
+        .into_boxed();
+
+    // Cannot directly filter for nullable value with Option
+    if let Some(version_uuid) = version_uuid_option {
+        base_request = base_request.filter(collection_dsl::version_id.eq(version_uuid));
+    } else {
+        base_request = base_request.filter(collection_dsl::version_id.is_null());
+    }
+
+    let collection_uuid_option: Option<uuid::Uuid> = base_request
+        .select(collection_dsl::id)
+        .first::<uuid::Uuid>(conn)
+        .optional()?;
+
+    Ok((project_uuid, collection_uuid_option))
+}
+
 ///
 ///
 pub fn delete_staging_object(

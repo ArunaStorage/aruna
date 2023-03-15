@@ -1550,6 +1550,74 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
+    /// Fetches the project and collection ids associated with the provided path.
+    ///
+    /// Status: BETA
+    ///
+    /// ## Arguments
+    ///
+    /// `request` - A gRPC request containing the fully-qualified object path.
+    ///
+    /// ## Results
+    ///
+    /// `GetProjectCollectionIDsByPathResponse` - A gRPC response containing at least the project id
+    /// and the collection id if the collection exists. Returns an error if the project does not exist as well.
+    ///
+    async fn get_project_collection_i_ds_by_path(
+        &self,
+        request: Request<GetProjectCollectionIDsByPathRequest>,
+    ) -> Result<Response<GetProjectCollectionIDsByPathResponse>, Status> {
+        log::info!("Received GetProjectCollectionIDsByPathRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Save gRPC request metadata for later usage
+        let grpc_metadata = request.metadata().clone();
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Create Objectpaths in database
+        let database_clone = self.database.clone();
+        let (project_uuid, collection_uuid_option) = task::spawn_blocking(move || {
+            database_clone.get_project_collection_ids_by_path(&inner_request.path)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Validate permissions with fetched ids
+        if let Some(collection_uuid) = collection_uuid_option {
+            self.authz
+                .collection_authorize(
+                    &grpc_metadata,
+                    collection_uuid.clone(), // This is the collection uuid context for the object
+                    UserRights::READ,        // User needs at least read permission to get ids
+                )
+                .await?;
+        } else {
+            self.authz
+                .project_authorize(
+                    &grpc_metadata,
+                    project_uuid.clone(), // This is the project uuid context for the object
+                    UserRights::READ,     // User needs at least read permission to get ids
+                )
+                .await?;
+        }
+
+        // Create gRPC response
+        let response = tonic::Response::new(GetProjectCollectionIDsByPathResponse {
+            project_id: project_uuid.to_string(),
+            collection_id: match collection_uuid_option {
+                None => "".to_string(),
+                Some(collection_uuid) => collection_uuid.to_string(),
+            },
+        });
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetProjectCollectionIDsByPathResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
+    }
 }
 
 // This is a moveable version of the connect_object_endpoint
