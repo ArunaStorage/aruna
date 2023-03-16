@@ -556,4 +556,59 @@ impl S3 for S3ServiceServer {
         };
         Ok(output)
     }
+
+    #[tracing::instrument]
+    async fn create_multipart_upload(
+        &self,
+        req: S3Request<CreateMultipartUploadInput>,
+    ) -> S3Result<CreateMultipartUploadOutput> {
+        // Get the credentials
+        let creds = match req.credentials {
+            Some(cred) => cred,
+            None => {
+                log::error!("{}", "Not identified PutObjectRequest");
+                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+            }
+        };
+
+        // Get the object from backend
+        let get_obj_req = GetOrCreateObjectByPathRequest {
+            path: construct_path(&req.input.bucket, &req.input.key),
+            access_key: creds.access_key,
+            object: Some(create_stage_object(&req.input.key, 0)),
+        };
+
+        // Get or create object by path
+        let response = self
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_object_by_path(get_obj_req)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner();
+
+        let init_response = self
+            .backend
+            .clone()
+            .init_multipart_upload(ArunaLocation {
+                bucket: "temp".to_string(),
+                path: format!("{}/{}", response.collection_id, response.object_id),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InvalidArgument, "Unable to initialize multi-part")
+            })?;
+
+        Ok(CreateMultipartUploadOutput {
+            key: Some(req.input.key),
+            bucket: Some(req.input.bucket),
+            upload_id: Some(init_response),
+            ..Default::default()
+        })
+    }
 }
