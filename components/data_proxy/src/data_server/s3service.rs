@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
@@ -6,16 +7,15 @@ use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
-use aruna_rust_api::api::internal::v1::GetEncryptionKeyRequest;
+use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateObjectByPathRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
+use futures::future;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
-use rand::distributions::Alphanumeric;
-use rand::thread_rng;
-use rand::Rng;
 use s3s::dto::*;
 use s3s::s3_error;
 use s3s::S3Request;
@@ -29,6 +29,7 @@ use crate::backends::storage_backend::StorageBackend;
 
 use super::utils::construct_path;
 use super::utils::create_location_from_hash;
+use super::utils::create_ranges;
 use super::utils::create_stage_object;
 use super::utils::validate_and_check_hashes;
 
@@ -79,18 +80,42 @@ impl S3ServiceServer {
         collection_id: String,
         hashes: Option<Vec<Hash>>,
     ) -> Result<()> {
+        let expected_size = self.backend.clone().head_object(from.clone()).await?;
+
         if from.is_compressed {
-            if from.is_encrypted {}
+            bail!("Unimplemented move operation (compressed input)")
         }
 
-        if self.settings.compressing {
-            if self.settings.encrypting {
-            } else {
-            }
-        } else {
-        }
+        let ranges = create_ranges(expected_size, from.clone());
+
+        for range in ranges {}
 
         Ok(())
+    }
+
+    async fn get_hashes(&self, location: ArunaLocation) -> Result<Vec<Hash>> {
+        let (tx_send, tx_receive) = async_channel::unbounded();
+
+        let backend_clone = self.backend.clone();
+        tokio::spawn(async move { backend_clone.get_object(location, None, tx_send).await });
+        let mut md5_hash = Md5::new();
+        let mut sha256_hash = Sha256::new();
+
+        let md5_str = tx_receive.inspect(|bytes| md5_hash.update(bytes.as_ref()));
+        let sha_str = md5_str.inspect(|bytes| sha256_hash.update(bytes.as_ref()));
+        // iterate the whole stream and do nothing
+        sha_str.for_each(|_| future::ready(())).await;
+
+        Ok(vec![
+            Hash {
+                alg: Hashalgorithm::Md5 as i32,
+                hash: format!("{:x}", md5_hash.finalize()),
+            },
+            Hash {
+                alg: Hashalgorithm::Sha256 as i32,
+                hash: format!("{:x}", sha256_hash.finalize()),
+            },
+        ])
     }
 }
 
@@ -98,6 +123,7 @@ impl S3ServiceServer {
 impl S3 for S3ServiceServer {
     #[tracing::instrument]
     async fn put_object(&self, req: S3Request<PutObjectInput>) -> S3Result<PutObjectOutput> {
+        // Get the credentials
         let creds = match req.credentials {
             Some(cred) => cred,
             None => {
@@ -106,6 +132,7 @@ impl S3 for S3ServiceServer {
             }
         };
 
+        // Get the object from backend
         let get_obj_req = GetOrCreateObjectByPathRequest {
             path: construct_path(&req.input.bucket, &req.input.key),
             access_key: creds.access_key,
@@ -115,6 +142,7 @@ impl S3 for S3ServiceServer {
             )),
         };
 
+        // Get or create object by path
         let response = self
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
@@ -126,16 +154,18 @@ impl S3 for S3ServiceServer {
             })?
             .into_inner();
 
+        // Check / get hashes
         let (valid_md5, valid_sha256) = validate_and_check_hashes(
             req.input.content_md5,
             req.input.checksum_sha256,
             response.hashes,
         )?;
 
-        let get_key_resp = self
+        // Get the encryption key from backend
+        let enc_key = self
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_encryption_key(GetEncryptionKeyRequest {
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
                 path: "".to_string(),
                 endpoint_id: self.settings.endpoint_id.to_string(),
                 hash: valid_sha256.clone(),
@@ -145,17 +175,15 @@ impl S3 for S3ServiceServer {
                 log::error!("{}", e);
                 s3_error!(InternalError, "Internal notifier error")
             })?
-            .into_inner();
-
-        let enc_key = if get_key_resp.encryption_key.is_empty() {
-            thread_rng().sample_iter(&Alphanumeric).take(32).collect()
-        } else {
-            get_key_resp.encryption_key.as_bytes().to_vec()
-        };
+            .into_inner()
+            .encryption_key
+            .as_bytes()
+            .to_vec();
 
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
+        // Create a target location (may be a temp location)
         let (location, is_temp) = create_location_from_hash(
             &valid_sha256,
             &response.object_id,
@@ -165,128 +193,150 @@ impl S3 for S3ServiceServer {
             String::from_utf8_lossy(&enc_key).into(),
         );
 
-        match req.input.body {
-            Some(data) => {
-                let (sender, recv) = async_channel::bounded(10);
-                let backend_handle = self.backend.clone();
-                let cloned_loc = location.clone();
-                let handle = tokio::spawn(async move {
-                    backend_handle
-                        .put_object(recv, cloned_loc, req.input.content_length)
-                        .await
-                });
-
-                // MD5 Stream
-                let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-                // Sha256 stream
-                let shaed_stream =
-                    md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
-
-                let mut awr = ArunaStreamReadWriter::new_with_sink(
-                    shaed_stream,
-                    AsyncSenderSink::new(sender),
-                );
-
-                if self.settings.encrypting {
-                    awr = awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Internal data transformer encryption error")
-                    })?);
+        // Check if this object already exists
+        let resp = match self.backend.head_object(location.clone()).await {
+            Ok(size) => {
+                if size == req.input.content_length {
+                    Some(size)
+                } else {
+                    return Err(s3_error!(
+                        InvalidArgument,
+                        "Illegal content-length for hash"
+                    ));
                 }
+            }
+            Err(_) => None,
+        };
+        let mut final_md5 = String::new();
+        let mut final_sha256 = String::new();
 
-                if self.settings.compressing && !is_temp {
-                    awr = awr.add_transformer(ZstdEnc::new(0, true));
-                }
+        // If the object exists and the signatures match -> Skip the download
+        if resp.is_some() {
+            if !valid_md5.is_empty() && !valid_sha256.is_empty() {
+                final_md5 = valid_md5.clone();
+                final_sha256 = valid_sha256.clone();
+            } else {
+                return Err(s3_error!(SignatureDoesNotMatch, "Invalid hash"));
+            }
+        }
+        if resp.is_none() {
+            match req.input.body {
+                Some(data) => {
+                    let (sender, recv) = async_channel::bounded(10);
+                    let backend_handle = self.backend.clone();
+                    let cloned_loc = location.clone();
+                    let handle = tokio::spawn(async move {
+                        backend_handle
+                            .put_object(recv, cloned_loc, req.input.content_length)
+                            .await
+                    });
 
-                awr.process().await.map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal data transformer processing error")
-                })?;
+                    // MD5 Stream
+                    let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
+                    // Sha256 stream
+                    let shaed_stream =
+                        md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
 
-                handle
-                    .await
-                    .map_err(|e| {
+                    let mut awr = ArunaStreamReadWriter::new_with_sink(
+                        shaed_stream,
+                        AsyncSenderSink::new(sender),
+                    );
+
+                    if self.settings.encrypting {
+                        awr =
+                            awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
+                                log::error!("{}", e);
+                                s3_error!(
+                                    InternalError,
+                                    "Internal data transformer encryption error"
+                                )
+                            })?);
+                    }
+
+                    if self.settings.compressing && !is_temp {
+                        awr = awr.add_transformer(ZstdEnc::new(0, true));
+                    }
+
+                    awr.process().await.map_err(|e| {
                         log::error!("{}", e);
-                        s3_error!(
-                            InternalError,
-                            "Internal data transformer processing error (TokioJoinHandle)"
-                        )
-                    })?
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(
-                            InternalError,
-                            "Internal data transformer processing error (Backend)"
-                        )
+                        s3_error!(InternalError, "Internal data transformer processing error")
                     })?;
+
+                    handle
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(
+                                InternalError,
+                                "Internal data transformer processing error (TokioJoinHandle)"
+                            )
+                        })?
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(
+                                InternalError,
+                                "Internal data transformer processing error (Backend)"
+                            )
+                        })?;
+                }
+                None => {
+                    return Err(s3_error!(
+                        InvalidObjectState,
+                        "Request body / data is required, use ArunaAPI for empty objects"
+                    ))
+                }
             }
-            None => {
+
+            final_md5 = format!("{:x}", md5_hash.finalize());
+            final_sha256 = format!("{:x}", sha256_hash.finalize());
+
+            if !valid_md5.is_empty() && final_md5 != valid_md5 {
                 return Err(s3_error!(
-                    InvalidObjectState,
-                    "Request body / data is required, use ArunaAPI for empty objects"
-                ))
+                    InvalidDigest,
+                    "Invalid or inconsistent MD5 digest"
+                ));
+            }
+
+            if !final_sha256.is_empty() && final_sha256 != valid_sha256 {
+                return Err(s3_error!(
+                    InvalidDigest,
+                    "Invalid or inconsistent SHA256 digest"
+                ));
+            }
+            if is_temp {
+                self.move_encode(
+                    location.clone(),
+                    create_location_from_hash(
+                        &final_sha256,
+                        &response.object_id,
+                        &response.collection_id,
+                        self.settings.encrypting,
+                        self.settings.compressing,
+                        location.encryption_key.clone(),
+                    )
+                    .0,
+                    response.object_id.clone(),
+                    response.collection_id.clone(),
+                    Some(vec![
+                        Hash {
+                            alg: Hashalgorithm::Md5 as i32,
+                            hash: final_md5.clone(),
+                        },
+                        Hash {
+                            alg: Hashalgorithm::Sha256 as i32,
+                            hash: final_sha256.clone(),
+                        },
+                    ]),
+                )
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal data mover error")
+                })?
             }
         }
 
-        let final_md5 = format!("{:x}", md5_hash.finalize());
-        let final_sha256 = format!("{:x}", sha256_hash.finalize());
-
-        if !valid_md5.is_empty() && final_md5 != valid_md5 {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent MD5 digest"
-            ));
-        }
-
-        if !final_sha256.is_empty() && final_sha256 != valid_sha256 {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent SHA256 digest"
-            ));
-        }
-
-        if is_temp {
-            self.move_encode(
-                location.clone(),
-                create_location_from_hash(
-                    &final_sha256,
-                    &response.object_id,
-                    &response.collection_id,
-                    self.settings.encrypting,
-                    self.settings.compressing,
-                    if location.encryption_key.is_empty() {
-                        location.encryption_key.clone()
-                    } else {
-                        String::from_utf8_lossy(
-                            thread_rng()
-                                .sample_iter(&Alphanumeric)
-                                .take(32)
-                                .collect::<Vec<u8>>()
-                                .as_ref(),
-                        )
-                        .into()
-                    },
-                )
-                .0,
-                response.object_id.clone(),
-                response.collection_id.clone(),
-                Some(vec![
-                    Hash {
-                        alg: Hashalgorithm::Md5 as i32,
-                        hash: final_md5,
-                    },
-                    Hash {
-                        alg: Hashalgorithm::Sha256 as i32,
-                        hash: final_sha256,
-                    },
-                ]),
-            )
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal data mover error")
-            })?
-        } else {
+        if !is_temp {
             self.internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
                 .finalize_object(FinalizeObjectRequest {
