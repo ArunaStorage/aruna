@@ -108,7 +108,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         return Ok(response);
     }
 
-    /// Get the encryption key associated with the object
+    /// Get the encryption key associated with the object or create a new one if it does not exist.
     ///
     /// ## Arguments:
     ///
@@ -118,6 +118,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
     /// ## Returns:
     ///
     /// * `Result<Response<GetEncryptionKeyResponse>, Status>` - Contains the object data encryption/decryption key.
+    ///
     async fn get_encryption_key(
         &self,
         request: Request<GetEncryptionKeyRequest>,
@@ -130,19 +131,23 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
 
         // Finalize Object in database
         let database_clone = self.database.clone();
-        let maybe_key =
-            task::spawn_blocking(move || database_clone.get_encryption_key(&inner_request))
-                .await
-                .map_err(ArunaError::from)??;
+        let maybe_key = task::spawn_blocking(move || {
+            database_clone.get_or_create_encryption_key(&inner_request)
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
-        let response = match maybe_key {
-            None => tonic::Response::new(GetEncryptionKeyResponse {
-                encryption_key: "".to_string(),
-            }),
-            Some(enc_key) => tonic::Response::new(GetEncryptionKeyResponse {
-                encryption_key: enc_key.encryption_key,
-            }),
-        };
+        let response = tonic::Response::new(GetEncryptionKeyResponse {
+            encryption_key: match maybe_key {
+                None => {
+                    return Err(tonic::Status::internal(format!(
+                        "No encryption key found or created for hash {}",
+                        inner_request.hash
+                    )))
+                }
+                Some(encryption_key) => encryption_key.encryption_key,
+            },
+        });
 
         // Return gRPC response after everything succeeded
         log::info!("Sending GetEncryptionKeyResponse back to client.");

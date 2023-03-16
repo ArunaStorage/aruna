@@ -44,6 +44,8 @@ use aruna_rust_api::api::storage::{
     },
 };
 
+use rand::distributions::{Alphanumeric, DistString};
+
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::collection::is_collection_versioned;
@@ -1057,6 +1059,7 @@ impl Database {
     }
 
     /// Get the encryption key associated with the object, its hash and the specific endpoint.
+    /// If the key does not exist a new one will be created.
     ///
     /// ## Arguments:
     ///
@@ -1072,7 +1075,7 @@ impl Database {
     /// The encryption key is only fetched for objects with the data class 'Public' or 'Private'. An error is thrown for
     /// objects with the data class 'Confidential' or 'Protected' as they have to provide their encryption/decryption
     /// keys within the request header.
-    pub fn get_encryption_key(
+    pub fn get_or_create_encryption_key(
         &self,
         request: &GetEncryptionKeyRequest,
     ) -> Result<Option<EncryptionKey>, ArunaError> {
@@ -1088,30 +1091,35 @@ impl Database {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
-                let object = self
-                    .get_objects_by_path(GetObjectsByPathRequest {
-                        path: request.path.to_string(),
-                        with_revisions: false,
-                    })?
-                    .object
-                    .first()
-                    .ok_or(ArunaError::InvalidRequest(
-                        "Crypto keys have to be provided in the request header for protected or confidential objects."
-                            .to_string(),
-                    ))?
-                    .clone();
+                let object = get_latest_object_by_path(conn, &request.path, None)?;
 
-                let encryption_key = if vec![DataClass::Public as i32, DataClass::Private as i32]
-                    .contains(&object.status)
-                {
-                    encryption_keys
-                        .filter(keys_dsl::hash.eq(&request.hash))
-                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                        .first::<EncryptionKey>(conn)
-                        .optional()?
-                } else {
-                    None
-                };
+                let encryption_key =
+                    if vec![Dataclass::PUBLIC, Dataclass::PRIVATE].contains(&object.dataclass) {
+                        encryption_keys
+                            .filter(keys_dsl::hash.eq(&request.hash))
+                            .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                            .first::<EncryptionKey>(conn)
+                            .optional()?
+                    } else {
+                        let encryption_key_insert = EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: if request.hash.is_empty() {
+                                None
+                            } else {
+                                Some(request.clone().hash)
+                            },
+                            object_id: Default::default(),
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                        };
+
+                        insert_into(encryption_keys)
+                            .values(&encryption_key_insert)
+                            .execute(conn)?;
+
+                        Some(encryption_key_insert)
+                    };
 
                 Ok(encryption_key)
             })?;
