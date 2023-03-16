@@ -291,6 +291,7 @@ impl DataHandler {
                 collection_id: collection_id,
                 location: Some(to),
                 hashes: hashes,
+                content_length: expected_size,
             })
             .await?;
 
@@ -344,6 +345,7 @@ impl S3 for S3ServiceServer {
                 &req.input.key,
                 req.input.content_length,
             )),
+            get_only: false,
         };
 
         // Get or create object by path
@@ -554,6 +556,7 @@ impl S3 for S3ServiceServer {
                     object_id: response.object_id.clone(),
                     collection_id: response.collection_id.clone(),
                     location: Some(location),
+                    content_length: req.input.content_length,
                     hashes: vec![
                         Hash {
                             alg: Hashalgorithm::Md5 as i32,
@@ -599,9 +602,11 @@ impl S3 for S3ServiceServer {
             path: construct_path(&req.input.bucket, &req.input.key),
             access_key: creds.access_key,
             object: Some(create_stage_object(&req.input.key, 0)),
+            get_only: false,
         };
 
         // Get or create object by path
+        // Check if exists
         let response = self
             .data_handler
             .internal_notifier_service
@@ -652,11 +657,11 @@ impl S3 for S3ServiceServer {
             path: construct_path(&req.input.bucket, &req.input.key),
             access_key: creds.access_key,
             object: Some(create_stage_object(&req.input.key, 0)),
+            get_only: true,
         };
 
         // Get or create object by path
-        let response = self
-            .data_handler
+        self.data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -664,8 +669,7 @@ impl S3 for S3ServiceServer {
             .map_err(|e| {
                 log::error!("{}", e);
                 s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner();
+            })?;
 
         // Get the encryption key from backend
         let enc_key = self
@@ -765,6 +769,7 @@ impl S3 for S3ServiceServer {
             path: construct_path(&req.input.bucket, &req.input.key),
             access_key: creds.access_key,
             object: Some(create_stage_object(&req.input.key, 0)),
+            get_only: true,
         };
 
         // Get or create object by path
