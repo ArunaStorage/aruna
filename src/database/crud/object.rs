@@ -2036,6 +2036,189 @@ impl Database {
 
         Ok(GetObjectsByPathResponse { object: db_objects })
     }
+
+    /// Fetch the latest revision of an object via its unique path or create a staging object if
+    /// the object already exists.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `GetOrCreateObjectByPathRequest` -
+    ///   The request contains the information needed to fetch or create/update an object.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<GetOrCreateObjectByPathResponse, Status>` -
+    /// The response contains the id of the fetched/created object, the collection id, the objects data class and
+    /// if already available the objects hash(es).
+    ///
+    /// ## Behaviour:
+    ///
+    /// - If the object exists and no staging object is provided, the found object id will be returned.
+    /// - If the object exists and a staging object is provided, an object update will be initiated and the staging object id returned.
+    /// - If no object exists and a staging object is provided, an object creation will be initiated and the staging object id returned.
+    /// - If no object exists and no staging object is provided, an error will be returned for an invalid request.
+    ///
+    pub fn get_or_create_object_by_path(
+        &self,
+        request: GetOrCreateObjectByPathRequest,
+    ) -> Result<GetOrCreateObjectByPathResponse, ArunaError> {
+        // Parse request and path
+        if !request.path.starts_with("s3://") {
+            return Err(ArunaError::InvalidRequest(
+                "Path does not start with s3://".to_string(),
+            ));
+        }
+
+        let (s3bucket, _) = request.path[5..]
+            .split_once('/')
+            .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+        let access_key =
+            uuid::Uuid::parse_str(request.access_key.as_str()).map_err(ArunaError::from)?;
+
+        let response = self
+            .pg_connection
+            .get()?
+            .transaction::<GetOrCreateObjectByPathResponse, ArunaError, _>(|conn| {
+                // Fetch collection id to check permissions of request
+                let (_, maybe_collection) =
+                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+                // Only proceed if collection exists
+                let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(
+                    format!("Collection in path {} does not exist.", request.path),
+                ))?;
+
+                // Fetch object to check if it exists
+                let get_object =
+                    get_latest_object_by_path(conn, &request.path, Some(collection_uuid));
+
+                // Check permissions
+                let creator_uuid = self.get_checked_user_id_from_token(
+                    &access_key,
+                    &Context {
+                        user_right: if get_object.is_ok() && request.object.is_none() {
+                            UserRights::READ
+                        } else {
+                            UserRights::APPEND
+                        },
+                        resource_type: Resources::COLLECTION,
+                        resource_id: collection_uuid.clone(),
+                        admin: false,
+                        personal: false,
+                        oidc_context: false,
+                    },
+                )?;
+
+                // - If object already exists and no staging object provided -> return
+                // - If object already exists and staging object provided    -> update
+                // - If object does not exist and staging object provided    -> init
+                // - Else error.
+                match get_object {
+                    Ok(fetched_object) => {
+                        if let Some(staging_object) = request.object {
+                            let created_object = update_object_init(
+                                conn,
+                                staging_object,
+                                fetched_object.id,
+                                uuid::Uuid::new_v4(),
+                                collection_uuid,
+                                &creator_uuid,
+                                true,
+                                false,
+                            )?;
+
+                            Ok(GetOrCreateObjectByPathResponse {
+                                object_id: created_object.id.to_string(),
+                                collection_id: collection_uuid.to_string(),
+                                dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
+                                hash: None,
+                            })
+                        } else {
+                            Ok(GetOrCreateObjectByPathResponse {
+                                object_id: fetched_object.id.to_string(),
+                                collection_id: collection_uuid.to_string(),
+                                dataclass: db_to_grpc_dataclass(&fetched_object.dataclass) as i32,
+                                hash: None, //ToDo: Fetch object hash(es?)
+                            })
+                        }
+                    }
+                    Err(_) => {
+                        if let Some(staging_object) = request.object {
+                            let staging_object_id = uuid::Uuid::new_v4();
+                            let created_object = create_staging_object(
+                                conn,
+                                staging_object,
+                                &staging_object_id,
+                                &collection_uuid,
+                                &creator_uuid,
+                                false,
+                            )?;
+
+                            Ok(GetOrCreateObjectByPathResponse {
+                                object_id: staging_object_id.to_string(),
+                                collection_id: collection_uuid.to_string(),
+                                dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
+                                hash: None,
+                            })
+                        } else {
+                            return Err(ArunaError::InvalidRequest(
+                                "No staging object provided in request for creation.".to_string(),
+                            ));
+                        }
+                    }
+                }
+            })?;
+
+        Ok(response)
+    }
+
+    /// Parses the object path and fetches the project and collection id from the database.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request_path: &String` - The S3 object path
+    /// * `bucket_only: bool` - Marker if the provided path is only the bucket part
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<(uuid::Uuid, Option<uuid::Uuid>), ArunaError>` -
+    /// The response contains the at least the project id and if present also the collection id.
+    /// If the project does not exist an error is returned.
+    ///
+    pub fn get_project_collection_ids_by_path(
+        &self,
+        request_path: &String,
+        bucket_only: bool,
+    ) -> Result<(uuid::Uuid, Option<uuid::Uuid>), ArunaError> {
+        let s3bucket = if bucket_only {
+            request_path.as_str()
+        } else {
+            if !request_path.starts_with("s3://") {
+                return Err(ArunaError::InvalidRequest(
+                    "Path does not start with s3://".to_string(),
+                ));
+            }
+
+            let (s3bucket, _) = request_path[5..]
+                .split_once('/')
+                .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+            s3bucket
+        };
+
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<(uuid::Uuid, Option<uuid::Uuid>), ArunaError, _>(|conn| {
+                Ok(get_project_collection_ids_of_bucket_path(
+                    conn,
+                    s3bucket.to_string(),
+                )?)
+            })?;
+
+        Ok(result)
+    }
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
