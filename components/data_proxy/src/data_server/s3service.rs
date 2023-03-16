@@ -60,12 +60,12 @@ impl Default for ServiceSettings {
 #[derive(Debug)]
 pub struct S3ServiceServer {
     backend: Arc<Box<dyn StorageBackend>>,
-    mover: Arc<Mover>,
+    data_handler: Arc<DataHandler>,
     settings: ServiceSettings,
 }
 
 #[derive(Debug)]
-pub struct Mover {
+pub struct DataHandler {
     backend: Arc<Box<dyn StorageBackend>>,
     internal_notifier_service: InternalProxyNotifierServiceClient<Channel>,
 }
@@ -78,17 +78,17 @@ impl S3ServiceServer {
     ) -> Result<Self> {
         Ok(S3ServiceServer {
             backend: backend.clone(),
-            mover: Arc::new(Mover::new(backend, url).await?),
+            data_handler: Arc::new(DataHandler::new(backend, url).await?),
             settings,
         })
     }
 }
-impl Mover {
+impl DataHandler {
     pub async fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         url: impl Into<String>,
     ) -> Result<Self> {
-        Ok(Mover {
+        Ok(DataHandler {
             backend,
             internal_notifier_service: InternalProxyNotifierServiceClient::connect(url.into())
                 .await
@@ -348,7 +348,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -368,7 +368,7 @@ impl S3 for S3ServiceServer {
 
         // Get the encryption key from backend
         let enc_key = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
@@ -513,7 +513,7 @@ impl S3 for S3ServiceServer {
                 ));
             }
             if is_temp {
-                self.mover
+                self.data_handler
                     .move_encode(
                         location.clone(),
                         create_location_from_hash(
@@ -547,7 +547,7 @@ impl S3 for S3ServiceServer {
         }
 
         if !is_temp {
-            self.mover
+            self.data_handler
                 .internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
                 .finalize_object(FinalizeObjectRequest {
@@ -603,7 +603,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -656,7 +656,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -669,7 +669,7 @@ impl S3 for S3ServiceServer {
 
         // Get the encryption key from backend
         let enc_key = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
@@ -769,7 +769,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -784,7 +784,7 @@ impl S3 for S3ServiceServer {
 
         // Get the encryption key from backend
         let enc_key = self
-            .mover
+            .data_handler
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
@@ -798,9 +798,7 @@ impl S3 for S3ServiceServer {
                 s3_error!(InternalError, "Internal notifier error")
             })?
             .into_inner()
-            .encryption_key
-            .as_bytes()
-            .to_vec();
+            .encryption_key;
 
         let parts = match req.input.multipart_upload {
             Some(parts) => parts
@@ -838,7 +836,10 @@ impl S3 for S3ServiceServer {
                 s3_error!(InvalidArgument, "Unable to finish multipart")
             })?;
 
-        let mover_clone = self.mover.clone();
+        let mover_clone = self.data_handler.clone();
+
+        let encrypting = self.settings.encrypting;
+        let compressing = self.settings.compressing;
 
         tokio::spawn(async move {
             mover_clone
@@ -846,11 +847,16 @@ impl S3 for S3ServiceServer {
                     ArunaLocation {
                         bucket: "temp".to_string(),
                         path: format!("{}/{}", response.collection_id, response.object_id),
+                        is_encrypted: encrypting,
+                        encryption_key: enc_key.clone(),
                         ..Default::default()
                     },
                     ArunaLocation {
                         bucket: "temp".to_string(),
                         path: format!("{}/{}", response.collection_id, response.object_id),
+                        is_encrypted: encrypting,
+                        is_compressed: compressing,
+                        encryption_key: enc_key,
                         ..Default::default()
                     },
                     response.object_id,
