@@ -149,4 +149,69 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
+    /// Get an object with its location for a specific endpoint. The data specific
+    /// encryption/decryption key will be returned also if available.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<GetObjectLocationRequest>` -
+    ///   A gRPC request which contains the information needed to query a specific object location.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<GetObjectLocationResponse>, Status>` - Contains the object and the associated location info if present.
+    async fn get_object_location(
+        &self,
+        request: Request<GetObjectLocationRequest>,
+    ) -> Result<Response<GetObjectLocationResponse>, Status> {
+        log::info!("Received GetObjectLocationRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Extract object, endpoint and token id from request
+        let object_uuid =
+            uuid::Uuid::parse_str(&inner_request.revision_id).map_err(ArunaError::from)?;
+
+        let endpoint_uuid =
+            uuid::Uuid::parse_str(&inner_request.endpoint_id).map_err(ArunaError::from)?;
+
+        let access_key =
+            uuid::Uuid::parse_str(&inner_request.access_key).map_err(ArunaError::from)?;
+
+        // Finalize Object in database
+        let database_clone = self.database.clone();
+        let (proto_object, db_location, db_endpoint, encryption_key_option) =
+            task::spawn_blocking(move || {
+                database_clone.get_object_with_location_info(&inner_request.path, &object_uuid, &endpoint_uuid, access_key)
+            })
+            .await
+            .map_err(ArunaError::from)??;
+
+        let proto_location = Location {
+            r#type: db_endpoint.endpoint_type as i32,
+            bucket: db_location.bucket,
+            path: db_location.path,
+            endpoint_id: db_location.endpoint_id.to_string(),
+            is_compressed: db_location.is_compressed,
+            is_encrypted: db_location.is_encrypted,
+            encryption_key: if let Some(enc_key) = encryption_key_option {
+                enc_key.encryption_key
+            } else {
+                "".to_string()
+            },
+        };
+
+        let response = tonic::Response::new(GetObjectLocationResponse {
+            object: Some(proto_object),
+            location: Some(proto_location),
+        });
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetObjectLocationResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
+    }
 }

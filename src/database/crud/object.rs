@@ -865,19 +865,42 @@ impl Database {
         &self,
         object_uuid: &uuid::Uuid,
     ) -> Result<ProtoLocation, ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::object_locations::dsl as locations_dsl;
+
         let location = self
             .pg_connection
             .get()?
             .transaction::<ProtoLocation, Error, _>(|conn| {
                 let location: ObjectLocation = object_locations
-                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
-                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .filter(locations_dsl::object_id.eq(&object_uuid))
+                    .filter(locations_dsl::is_primary.eq(true))
                     .first::<ObjectLocation>(conn)?;
 
+                // Only query encryption key if object location is encrypted
+                let encryption_key: Option<String> = if location.is_encrypted {
+                    encryption_keys
+                        .filter(keys_dsl::object_id.eq(&object_uuid))
+                        .filter(keys_dsl::endpoint_id.eq(&location.endpoint_id))
+                        .select(keys_dsl::encryption_key)
+                        .first::<String>(conn)
+                        .optional()?
+                } else {
+                    None
+                };
+
                 Ok(ProtoLocation {
-                    r#type: LocationType::S3 as i32, //ToDo: How to get LocationType?
+                    r#type: LocationType::S3 as i32, //ToDo: How to get LocationType? Query Endpoint...
                     bucket: location.bucket,
                     path: location.path,
+                    endpoint_id: location.endpoint_id.to_string(),
+                    is_compressed: location.is_compressed,
+                    is_encrypted: location.is_encrypted,
+                    encryption_key: if let Some(enc_key) = encryption_key {
+                        enc_key
+                    } else {
+                        "".to_string()
+                    },
                 })
             })?;
 
@@ -888,24 +911,129 @@ impl Database {
     pub fn get_primary_object_location_with_endpoint(
         &self,
         object_uuid: &uuid::Uuid,
-    ) -> Result<(ObjectLocation, Endpoint), ArunaError> {
-        let location = self
-            .pg_connection
-            .get()?
-            .transaction::<(ObjectLocation, Endpoint), Error, _>(|conn| {
-                let location: ObjectLocation = object_locations
-                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
-                    .filter(database::schema::object_locations::is_primary.eq(true))
-                    .first::<ObjectLocation>(conn)?;
+    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
 
-                let endpoint: Endpoint = endpoints
-                    .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
-                    .first::<Endpoint>(conn)?;
+        let location_info =
+            self.pg_connection
+                .get()?
+                .transaction::<(ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError, _>(
+                    |conn| {
+                        let location: ObjectLocation = object_locations
+                            .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                            .filter(database::schema::object_locations::is_primary.eq(true))
+                            .first::<ObjectLocation>(conn)?;
 
-                Ok((location, endpoint))
-            })?;
+                        let endpoint: Endpoint = endpoints
+                            .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                            .first::<Endpoint>(conn)?;
 
-        Ok(location)
+                        // Only query encryption key if object location is encrypted
+                        let encryption_key = if location.is_encrypted {
+                            encryption_keys
+                                .filter(keys_dsl::object_id.eq(&object_uuid))
+                                .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                                .first::<EncryptionKey>(conn)
+                                .optional()?
+                        } else {
+                            None
+                        };
+
+                        if location.is_encrypted && encryption_key.is_none() {
+                            return Err(ArunaError::InvalidRequest("".to_string()));
+                        }
+
+                        Ok((location, endpoint, encryption_key))
+                    },
+                )?;
+
+        Ok(location_info)
+    }
+
+    /// Get an object with its location for a specific endpoint. The data specific
+    /// encryption/decryption key will be returned also if available.
+    ///
+    /// ##
+    pub fn get_object_with_location_info(
+        &self,
+        object_path: &String,
+        object_uuid: &uuid::Uuid,
+        endpoint_uuid: &uuid::Uuid,
+        token_uuid: uuid::Uuid,
+    ) -> Result<(ProtoObject, ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::endpoints::dsl as endpoints_dsl;
+        use crate::database::schema::object_locations::dsl as locations_dsl;
+
+        let location_info = self.pg_connection.get()?.transaction::<(
+            ProtoObject,
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+        ), ArunaError, _>(|conn| {
+
+            let (s3bucket, _) = object_path[5..]
+                .split_once('/')
+                .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+            let (_, collection_uuid_option) = get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+            let collection_uuid = collection_uuid_option.ok_or(ArunaError::InvalidRequest(format!(
+                "Collection in path {} does not exist.",
+                object_path
+            )))?;
+
+            // Check permissions
+            self.get_checked_user_id_from_token(
+                &token_uuid,
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid.clone(),
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
+            )?;
+
+            let proto_object: ProtoObject =
+                if let Some(object_dto) = get_object_ignore_coll(&object_uuid, conn)? {
+                    object_dto.try_into()?
+                } else {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Could not find object {object_uuid}"
+                    )));
+                };
+
+            let location: ObjectLocation = object_locations
+                .filter(locations_dsl::object_id.eq(&object_uuid))
+                .filter(locations_dsl::endpoint_id.eq(&endpoint_uuid))
+                .first::<ObjectLocation>(conn)?;
+
+            let endpoint: Endpoint = endpoints
+                .filter(endpoints_dsl::id.eq(&location.endpoint_id))
+                .first::<Endpoint>(conn)?;
+
+            // Only query encryption key if object location is encrypted
+            let encryption_key = if location.is_encrypted {
+                encryption_keys
+                    .filter(keys_dsl::object_id.eq(&object_uuid))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+            } else {
+                None
+            };
+
+            if location.is_encrypted && encryption_key.is_none() {
+                return Err(ArunaError::InvalidRequest(
+                    "No encryption key found for encrypted location.".to_string(),
+                ));
+            }
+
+            Ok((proto_object, location, endpoint, encryption_key))
+        })?;
+
+        Ok(location_info)
     }
 
     /// ToDo: Rust Doc
