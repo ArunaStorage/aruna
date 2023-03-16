@@ -13,6 +13,7 @@ use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateObjectByPathRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
+use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
 use futures::future;
@@ -21,6 +22,7 @@ use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
+use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Result;
 use s3s::S3;
@@ -58,8 +60,14 @@ impl Default for ServiceSettings {
 #[derive(Debug)]
 pub struct S3ServiceServer {
     backend: Arc<Box<dyn StorageBackend>>,
-    internal_notifier_service: InternalProxyNotifierServiceClient<Channel>,
+    mover: Arc<Mover>,
     settings: ServiceSettings,
+}
+
+#[derive(Debug)]
+pub struct Mover {
+    backend: Arc<Box<dyn StorageBackend>>,
+    internal_notifier_service: InternalProxyNotifierServiceClient<Channel>,
 }
 
 impl S3ServiceServer {
@@ -69,11 +77,22 @@ impl S3ServiceServer {
         settings: ServiceSettings,
     ) -> Result<Self> {
         Ok(S3ServiceServer {
+            backend: backend.clone(),
+            mover: Arc::new(Mover::new(backend, url).await?),
+            settings,
+        })
+    }
+}
+impl Mover {
+    pub async fn new(
+        backend: Arc<Box<dyn StorageBackend>>,
+        url: impl Into<String>,
+    ) -> Result<Self> {
+        Ok(Mover {
             backend,
             internal_notifier_service: InternalProxyNotifierServiceClient::connect(url.into())
                 .await
                 .map_err(|_| anyhow!("Unable to connect to internal notifiers"))?,
-            settings,
         })
     }
 
@@ -329,6 +348,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
+            .mover
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -348,6 +368,7 @@ impl S3 for S3ServiceServer {
 
         // Get the encryption key from backend
         let enc_key = self
+            .mover
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
@@ -492,40 +513,42 @@ impl S3 for S3ServiceServer {
                 ));
             }
             if is_temp {
-                self.move_encode(
-                    location.clone(),
-                    create_location_from_hash(
-                        &final_sha256,
-                        &response.object_id,
-                        &response.collection_id,
-                        self.settings.encrypting,
-                        self.settings.compressing,
-                        location.encryption_key.clone(),
+                self.mover
+                    .move_encode(
+                        location.clone(),
+                        create_location_from_hash(
+                            &final_sha256,
+                            &response.object_id,
+                            &response.collection_id,
+                            self.settings.encrypting,
+                            self.settings.compressing,
+                            location.encryption_key.clone(),
+                        )
+                        .0,
+                        response.object_id.clone(),
+                        response.collection_id.clone(),
+                        Some(vec![
+                            Hash {
+                                alg: Hashalgorithm::Md5 as i32,
+                                hash: final_md5.clone(),
+                            },
+                            Hash {
+                                alg: Hashalgorithm::Sha256 as i32,
+                                hash: final_sha256.clone(),
+                            },
+                        ]),
                     )
-                    .0,
-                    response.object_id.clone(),
-                    response.collection_id.clone(),
-                    Some(vec![
-                        Hash {
-                            alg: Hashalgorithm::Md5 as i32,
-                            hash: final_md5.clone(),
-                        },
-                        Hash {
-                            alg: Hashalgorithm::Sha256 as i32,
-                            hash: final_sha256.clone(),
-                        },
-                    ]),
-                )
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal data mover error")
-                })?
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Internal data mover error")
+                    })?
             }
         }
 
         if !is_temp {
-            self.internal_notifier_service
+            self.mover
+                .internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
                 .finalize_object(FinalizeObjectRequest {
                     object_id: response.object_id.clone(),
@@ -580,6 +603,7 @@ impl S3 for S3ServiceServer {
 
         // Get or create object by path
         let response = self
+            .mover
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_object_by_path(get_obj_req)
@@ -608,6 +632,235 @@ impl S3 for S3ServiceServer {
             key: Some(req.input.key),
             bucket: Some(req.input.bucket),
             upload_id: Some(init_response),
+            ..Default::default()
+        })
+    }
+
+    #[tracing::instrument]
+    async fn upload_part(&self, req: S3Request<UploadPartInput>) -> S3Result<UploadPartOutput> {
+        // Get the credentials
+        let creds = match req.credentials {
+            Some(cred) => cred,
+            None => {
+                log::error!("{}", "Not identified PutObjectRequest");
+                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+            }
+        };
+
+        // Get the object from backend
+        let get_obj_req = GetOrCreateObjectByPathRequest {
+            path: construct_path(&req.input.bucket, &req.input.key),
+            access_key: creds.access_key,
+            object: Some(create_stage_object(&req.input.key, 0)),
+        };
+
+        // Get or create object by path
+        let response = self
+            .mover
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_object_by_path(get_obj_req)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner();
+
+        // Get the encryption key from backend
+        let enc_key = self
+            .mover
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                path: "".to_string(),
+                endpoint_id: self.settings.endpoint_id.to_string(),
+                hash: "".to_string(),
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner()
+            .encryption_key
+            .as_bytes()
+            .to_vec();
+
+        let (sender, recv) = async_channel::bounded(10);
+        let backend_handle = self.backend.clone();
+        let cloned_loc = ArunaLocation {
+            ..Default::default()
+        };
+        let handle = tokio::spawn(async move {
+            backend_handle
+                .upload_multi_object(
+                    recv,
+                    cloned_loc,
+                    req.input.upload_id,
+                    req.input.content_length,
+                    req.input.part_number,
+                )
+                .await
+        });
+
+        let etag = match req.input.body {
+            Some(data) => {
+                let mut awr =
+                    ArunaStreamReadWriter::new_with_sink(data, AsyncSenderSink::new(sender));
+
+                if self.settings.encrypting {
+                    awr = awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Internal data transformer encryption error")
+                    })?);
+                }
+
+                awr.process().await.map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal data transformer processing error")
+                })?;
+
+                handle
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(
+                            InternalError,
+                            "Internal data transformer processing error (TokioJoinHandle)"
+                        )
+                    })?
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(
+                            InternalError,
+                            "Internal data transformer processing error (Backend)"
+                        )
+                    })?
+            }
+            _ => return Err(s3_error!(InvalidPart, "MultiPart cannot be empty")),
+        };
+        Ok(UploadPartOutput {
+            e_tag: Some(etag.etag),
+            ..Default::default()
+        })
+    }
+
+    #[tracing::instrument]
+    async fn complete_multipart_upload(
+        &self,
+        req: S3Request<CompleteMultipartUploadInput>,
+    ) -> S3Result<CompleteMultipartUploadOutput> {
+        // Get the credentials
+        let creds = match req.credentials {
+            Some(cred) => cred,
+            None => {
+                log::error!("{}", "Not identified PutObjectRequest");
+                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+            }
+        };
+
+        // Get the object from backend
+        let get_obj_req = GetOrCreateObjectByPathRequest {
+            path: construct_path(&req.input.bucket, &req.input.key),
+            access_key: creds.access_key,
+            object: Some(create_stage_object(&req.input.key, 0)),
+        };
+
+        // Get or create object by path
+        let response = self
+            .mover
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_object_by_path(get_obj_req)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner();
+
+        // Does this object exists (including object id etc)
+
+        // Get the encryption key from backend
+        let enc_key = self
+            .mover
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                path: "".to_string(),
+                endpoint_id: self.settings.endpoint_id.to_string(),
+                hash: "".to_string(),
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner()
+            .encryption_key
+            .as_bytes()
+            .to_vec();
+
+        let parts = match req.input.multipart_upload {
+            Some(parts) => parts
+                .parts
+                .ok_or(s3_error!(InvalidPart, "Parts must be specified")),
+            None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
+        }?;
+
+        let etag_parts = parts
+            .into_iter()
+            .map(|a| {
+                Ok(PartETag {
+                    part_number: a.part_number as i64,
+                    etag: a
+                        .e_tag
+                        .ok_or(s3_error!(InvalidPart, "etag must be specified"))?,
+                })
+            })
+            .collect::<Result<Vec<PartETag>, S3Error>>()?;
+
+        self.backend
+            .clone()
+            .finish_multipart_upload(
+                ArunaLocation {
+                    bucket: "temp".to_string(),
+                    path: format!("{}/{}", response.collection_id, response.object_id),
+                    ..Default::default()
+                },
+                etag_parts,
+                req.input.upload_id,
+            )
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InvalidArgument, "Unable to finish multipart")
+            })?;
+
+        let mover_clone = self.mover.clone();
+
+        tokio::spawn(async move {
+            mover_clone
+                .move_encode(
+                    ArunaLocation {
+                        bucket: "temp".to_string(),
+                        path: format!("{}/{}", response.collection_id, response.object_id),
+                        ..Default::default()
+                    },
+                    ArunaLocation {
+                        bucket: "temp".to_string(),
+                        path: format!("{}/{}", response.collection_id, response.object_id),
+                        ..Default::default()
+                    },
+                    response.object_id,
+                    response.collection_id,
+                    None,
+                )
+                .await
+        });
+
+        Ok(CompleteMultipartUploadOutput {
             ..Default::default()
         })
     }
