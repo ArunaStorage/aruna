@@ -318,7 +318,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let object_id = uuid::Uuid::new_v4();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_length = thread_rng().gen_range(1..1073741824);
-    let upload_id = uuid::Uuid::new_v4();
+    let upload_id = "".to_string();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -350,7 +350,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     };
 
     let _init_response = db
-        .create_object(&init_request, &creator_id, upload_id.to_string(), object_id)
+        .create_object(&init_request, &creator_id, object_id)
         .unwrap();
 
     //Note: Skipping the data upload part.
@@ -448,7 +448,7 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     };
 
     let init_response = db
-        .create_object(&init_request, &creator_id, upload_id.to_string(), object_id)
+        .create_object(&init_request, &creator_id, object_id)
         .unwrap();
 
     let staging_object = get_object(collection_id.to_string(), init_response.object_id);

@@ -80,7 +80,7 @@ fn create_object_test() {
 
     // Create Object
     let new_object_id = uuid::Uuid::new_v4();
-    let upload_id = uuid::Uuid::new_v4().to_string();
+    let upload_id = "".to_string();
 
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
@@ -106,12 +106,7 @@ fn create_object_test() {
     };
 
     let init_object_response = db
-        .create_object(
-            &init_object_request,
-            &creator,
-            upload_id.clone(),
-            new_object_id,
-        )
+        .create_object(&init_object_request, &creator, new_object_id)
         .unwrap();
 
     assert_eq!(&init_object_response.object_id, &new_object_id.to_string());

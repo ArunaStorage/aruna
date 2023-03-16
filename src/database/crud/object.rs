@@ -181,121 +181,33 @@ impl Database {
         &self,
         request: &InitializeNewObjectRequest,
         creator: &uuid::Uuid,
-        upload_id: String,
         object_uuid: uuid::Uuid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
-        //Define source object from updated request; None if empty
-        let source: Option<Source> = match &staging_object.source {
-            Some(source) => Some(Source {
-                id: uuid::Uuid::new_v4(),
-                link: source.identifier.clone(),
-                source_type: SourceType::from_i32(source.source_type)?,
-            }),
-            _ => None,
-        };
+        let collection_uuid =
+            uuid::Uuid::parse_str(&request.collection_id).map_err(ArunaError::from)?;
 
-        // Define object in database representation
-        let object = Object {
-            id: object_uuid,
-            shared_revision_id: uuid::Uuid::new_v4(),
-            revision_number: 0,
-            filename: staging_object.filename.clone(),
-            created_at: Local::now().naive_local(),
-            created_by: *creator,
-            content_len: staging_object.content_len,
-            object_status: ObjectStatus::INITIALIZING,
-            dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
-            source_id: source.as_ref().map(|src| src.id),
-            origin_id: object_uuid,
-        };
-
-        // Define the join table entry collection <--> object
-        let collection_object = CollectionObject {
-            id: uuid::Uuid::new_v4(),
-            collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
-            is_latest: false, // Will be checked on finish
-            reference_status: ReferenceStatus::STAGING,
-            object_id: object.id,
-            auto_update: false, //Note: Finally set with FinishObjectStagingRequest
-            is_specification: request.is_specification,
-            writeable: true, //Note: Original object is initially always writeable
-        };
-
-        // Define the hash placeholder for the object
-        let empty_hash = ApiHash {
-            id: uuid::Uuid::new_v4(),
-            hash: "".to_string(), //Note: Empty hash will be updated later
-            object_id: object.id,
-            hash_type: HashType::SHA256, //Note: Default. Will be updated later
-        };
-
-        // Convert the object's labels and hooks to their database representation
-        let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
-            staging_object.labels,
-            staging_object.hooks,
-            object_uuid,
-        );
-
-        // Validate key_values
-        if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
-            return Err(ArunaError::InvalidRequest(
-                "labels or hooks are invalid".to_string(),
-            ));
-        };
-
-        // Create and validate path
-
-        // Insert all defined objects into the database
-        self.pg_connection
+        // Insert staging object with all its needed assets into database
+        let created_object = self
+            .pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
-                let (s3bucket, s3path) = construct_path_string(
-                    &collection_object.collection_id,
-                    &object.filename,
-                    &staging_object.sub_path,
+            .transaction::<Object, Error, _>(|conn| {
+                Ok(create_staging_object(
                     conn,
-                )?;
-
-                key_value_pairs.push(ObjectKeyValue {
-                    id: uuid::Uuid::new_v4(),
-                    object_id: object.id,
-                    key: "app.aruna-storage.org/new_path".to_string(),
-                    value: s3path,
-                    key_value_type: KeyValueType::LABEL,
-                });
-
-                key_value_pairs.push(ObjectKeyValue {
-                    id: uuid::Uuid::new_v4(),
-                    object_id: object.id,
-                    key: "app.aruna-storage.org/bucket".to_string(),
-                    value: s3bucket,
-                    key_value_type: KeyValueType::LABEL,
-                });
-
-                if let Some(sour) = source {
-                    diesel::insert_into(sources).values(&sour).execute(conn)?;
-                }
-                diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(hashes)
-                    .values(&empty_hash)
-                    .execute(conn)?;
-                diesel::insert_into(object_key_value)
-                    .values(&key_value_pairs)
-                    .execute(conn)?;
-                diesel::insert_into(collection_objects)
-                    .values(&collection_object)
-                    .execute(conn)?;
-
-                Ok(())
+                    staging_object,
+                    &object_uuid,
+                    &collection_uuid,
+                    creator,
+                    request.is_specification
+                )?)
             })?;
 
-        // Return already complete gRPC response
+        // Return response which is missing the upload id which will be created by upload init
         Ok(InitializeNewObjectResponse {
-            object_id: object.id.to_string(),
-            upload_id,
+            object_id: created_object.id.to_string(),
+            upload_id: "".to_string(), //Note: Filled later
             collection_id: request.collection_id.clone(),
         })
     }
@@ -2309,6 +2221,130 @@ impl Database {
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
+/// Creates a staging object with the provided meta information.
+///
+/// Warning: This function does not check permissions.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Open database connection
+/// * `staging_object: StageObject` - Staging object meta information
+/// * `object_uuid: &uuid::Uuid` - Unique object identifier for staging object
+/// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
+/// * `creator_uuid: &uuid::Uuid` - Unique user identifier
+///
+/// ## Returns:
+///
+/// * `Result<Object, ArunaError>` - The created staging object
+///
+pub fn create_staging_object(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    staging_object: StageObject,
+    object_uuid: &uuid::Uuid,
+    collection_uuid: &uuid::Uuid,
+    creator_uuid: &uuid::Uuid,
+    is_collection_specification: bool,
+) -> Result<Object, ArunaError> {
+    //Define source object from updated request; None if empty
+    let source: Option<Source> = match &staging_object.source {
+        Some(source) => Some(Source {
+            id: uuid::Uuid::new_v4(),
+            link: source.identifier.clone(),
+            source_type: SourceType::from_i32(source.source_type)?,
+        }),
+        _ => None,
+    };
+
+    // Define object in database representation
+    let object = Object {
+        id: object_uuid.clone(),
+        shared_revision_id: uuid::Uuid::new_v4(),
+        revision_number: 0,
+        filename: staging_object.filename.clone(),
+        created_at: Local::now().naive_local(),
+        created_by: *creator_uuid,
+        content_len: staging_object.content_len,
+        object_status: ObjectStatus::INITIALIZING,
+        dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
+        source_id: source.as_ref().map(|src| src.id),
+        origin_id: object_uuid.clone(),
+    };
+
+    // Define the join table entry collection <--> object
+    let collection_object = CollectionObject {
+        id: uuid::Uuid::new_v4(),
+        collection_id: collection_uuid.clone(),
+        is_latest: false, // Will be checked on finish
+        reference_status: ReferenceStatus::STAGING,
+        object_id: object.id,
+        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+        is_specification: is_collection_specification,
+        writeable: true, //Note: Original object is initially always writeable
+    };
+
+    // Define the hash placeholder for the object
+    let empty_hash = ApiHash {
+        id: uuid::Uuid::new_v4(),
+        hash: "".to_string(), //Note: Empty hash will be updated later
+        object_id: object.id,
+        hash_type: HashType::SHA256, //Note: Default. Will be updated later
+    };
+
+    // Convert the object's labels and hooks to their database representation
+    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
+        staging_object.labels,
+        staging_object.hooks,
+        object_uuid.clone(),
+    );
+
+    // Validate key_values
+    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
+        return Err(ArunaError::InvalidRequest(
+            "labels or hooks are invalid".to_string(),
+        ));
+    };
+
+    // Create and validate path
+    let (s3bucket, s3path) = construct_path_string(
+        &collection_object.collection_id,
+        &object.filename,
+        &staging_object.sub_path,
+        conn,
+    )?;
+
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: object.id,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: object.id,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    if let Some(sour) = source {
+        diesel::insert_into(sources).values(&sour).execute(conn)?;
+    }
+    diesel::insert_into(objects).values(&object).execute(conn)?;
+    diesel::insert_into(hashes)
+        .values(&empty_hash)
+        .execute(conn)?;
+    diesel::insert_into(object_key_value)
+        .values(&key_value_pairs)
+        .execute(conn)?;
+    diesel::insert_into(collection_objects)
+        .values(&collection_object)
+        .execute(conn)?;
+
+    Ok(object)
+}
+
 /// This functions checks if the specific object has any reference in the provided collection.
 ///
 /// ## Arguments:

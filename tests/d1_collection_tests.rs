@@ -446,9 +446,7 @@ fn update_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db
-        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
-        .unwrap();
+    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
@@ -484,9 +482,7 @@ fn update_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db
-        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
-        .unwrap();
+    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
@@ -640,9 +636,7 @@ fn pin_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db
-        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
-        .unwrap();
+    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
@@ -678,9 +672,7 @@ fn pin_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db
-        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
-        .unwrap();
+    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
@@ -791,9 +783,7 @@ fn delete_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db
-        .create_object(&new_obj_1, &creator, "uid".to_string(), obj_1_id)
-        .unwrap();
+    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
@@ -838,9 +828,7 @@ fn delete_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db
-        .create_object(&new_obj_2, &creator, "uid_2".to_string(), obj_2_id)
-        .unwrap();
+    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
@@ -934,7 +922,7 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create Object
     let new_object_id = uuid::Uuid::new_v4();
-    let upload_id = uuid::Uuid::new_v4().to_string();
+    let upload_id = "".to_string();
 
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
@@ -960,12 +948,7 @@ pub fn test_collection_materialized_views_stats() {
     };
 
     let init_object_response = db
-        .create_object(
-            &init_object_request,
-            &creator,
-            upload_id.clone(),
-            new_object_id,
-        )
+        .create_object(&init_object_request, &creator, new_object_id)
         .unwrap();
 
     assert_eq!(&init_object_response.object_id, &new_object_id.to_string());
