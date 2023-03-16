@@ -21,7 +21,6 @@ use aruna_rust_api::api::internal::v1::{
     GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
     LocationType,
 };
-use aruna_rust_api::api::storage::models::v1::DataClass;
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
     CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
@@ -54,7 +53,8 @@ use crate::database::crud::utils::{
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
-    HashType, KeyValueType, ObjectStatus, ReferenceStatus, SourceType,
+    Dataclass, HashType, KeyValueType, ObjectStatus, ReferenceStatus, Resources, SourceType,
+    UserRights,
 };
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
@@ -63,10 +63,11 @@ use crate::database::models::object::{
 use crate::database::schema::encryption_keys::dsl::encryption_keys;
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
-    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*,
-    object_group_objects::dsl::*, object_key_value::dsl::*, object_locations::dsl::*,
-    objects::dsl::*, paths::dsl::*, projects::dsl::*, sources::dsl::*,
+    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
+    projects::dsl::*, sources::dsl::*,
 };
+use crate::server::services::authz::Context;
 
 use super::objectgroups::bump_revisisions;
 use super::utils::*;
@@ -716,218 +717,35 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn update_object(
         &self,
-        request: &UpdateObjectRequest,
+        request: UpdateObjectRequest,
         creator_uuid: &uuid::Uuid,
         new_obj_id: uuid::Uuid,
     ) -> Result<UpdateObjectResponse, ArunaError> {
-        if let Some(sobj) = &request.object {
+        if let Some(sobj) = request.object {
             let parsed_old_id = uuid::Uuid::parse_str(&request.object_id)?;
             let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
 
-            let updated_object = self.pg_connection
+            let staging_object = self
+                .pg_connection
                 .get()?
                 .transaction::<Object, ArunaError, _>(|conn| {
-                    // Get all references of all revisions of the object
-                    let all_revision_references = get_all_references(conn, &parsed_old_id, &true)?;
-
-                    // Filter references for staging objects and collection specific, writeable references
-                    let mut staging_references = Vec::new();
-                    let mut object_references = Vec::new();
-                    for object_reference in all_revision_references {
-                        if object_reference.reference_status == ReferenceStatus::STAGING {
-                            staging_references.push(object_reference);
-                        } else if object_reference.writeable && object_reference.collection_id == parsed_col_id {
-                            object_references.push(object_reference);
-                        }
-                    }
-
-                    if staging_references.len() > 1 {
-                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} has more than one staging object. This has to be resolved manually.")))
-                    } else if let Some(staging_reference) = staging_references.first() {
-                        return if staging_reference.object_id == parsed_old_id {
-                            update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj)
-                        } else {
-                            Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} already has a staging object. Concurrent updates are prohibited.")))
-                        }
-                    }
-
-                    if object_references.is_empty() {
-                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} does not have a writeable reference in collection {parsed_col_id}")));
-                    }
-
-                    // Get latest revision of the Object to be updated
-                    let latest = get_latest_obj(conn, parsed_old_id)?;
-
-                    // Check if update is performed on latest object revision
-                    if latest.id != parsed_old_id {
-                        return Err(ArunaError::InvalidRequest(format!("Updates only allowed on the latest revision: {}", latest.id), ));
-                    }
-
-                    // Define source object from updated request; None if empty
-                    let source: Option<Source> = match &sobj.source {
-                        Some(source) => Some(Source {
-                            id: uuid::Uuid::new_v4(),
-                            link: source.identifier.clone(),
-                            source_type: SourceType::from_i32(source.source_type)?,
-                        }),
-                        _ => None,
-                    };
-
-                    // Define new Object with updated values
-                    let new_object = Object {
-                        id: new_obj_id,
-                        shared_revision_id: latest.shared_revision_id,
-                        revision_number: latest.revision_number + 1,
-                        filename: sobj.filename.to_string(),
-                        created_at: chrono::Utc::now().naive_utc(),
-                        created_by: *creator_uuid,
-                        content_len: sobj.content_len,
-                        object_status: ObjectStatus::INITIALIZING, // Is a staging object
-                        dataclass: grpc_to_db_dataclass(&sobj.dataclass),
-                        source_id: source.as_ref().map(|source| source.id),
-                        origin_id: parsed_old_id,
-                    };
-
-                    // Define new object hash depending if update contains data re-upload
-                    let new_hash = if request.reupload {
-                        // Create new empty hash record which will be updated on object finish
-                        ApiHash {
-                            id: uuid::Uuid::new_v4(),
-                            hash: "".to_string(),
-                            object_id: new_object.id,
-                            hash_type: HashType::MD5, // Default hash type
-                        }
-                    } else {
-                        // Without re-upload just clone hash of object to be updated
-                        let mut old_hash: ApiHash = hashes
-                            .filter(database::schema::hashes::object_id.eq(parsed_old_id))
-                            .first::<ApiHash>(conn)?;
-
-                        old_hash.id = uuid::Uuid::new_v4();
-                        old_hash.object_id = new_obj_id;
-                        old_hash
-                    };
-
-
-                    // Define temporary STAGING join table entry collection <-->  staging object
-                    let collection_object = CollectionObject {
-                        id: uuid::Uuid::new_v4(),
-                        collection_id: parsed_col_id,
-                        is_latest: false, // Will be checked on finish
-                        reference_status: ReferenceStatus::STAGING,
-                        object_id: new_obj_id,
-                        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
-                        is_specification: request.is_specification,
-                        writeable: true,
-                    };
-
-                    // Convert the object's labels and hooks to their database representation
-                    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
-                    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
-                        sobj.labels.clone(),
-                        sobj.hooks.clone(),
-                        new_obj_id,
-                    );
-
-                    // Validate key_values
-                    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
-                        return Err(ArunaError::InvalidRequest(
-                            "labels or hooks are invalid".to_string(),
-                        ));
-                    };
-
-                    // Get full qualified path
-                    let (s3bucket, s3path) = construct_path_string(
-                        &collection_object.collection_id,
-                        &new_object.filename,
-                        &sobj.sub_path,
+                    let staging_object = update_object_init(
                         conn,
+                        sobj,
+                        parsed_old_id,
+                        new_obj_id,
+                        parsed_col_id,
+                        creator_uuid,
+                        request.reupload,
+                        request.is_specification,
                     )?;
 
-                    // Check if path already exists
-                    let exists = paths
-                        .filter(database::schema::paths::path.eq(&s3path))
-                        .filter(database::schema::paths::bucket.eq(&s3bucket))
-                        .first::<Path>(conn)
-                        .optional()?;
-
-                    // If it already exists
-                    if let Some(existing) = exists {
-                        // Check if the existing is not associated with the current shared_revision_id -> Error
-                        // else -> do nothing
-                        if existing.shared_revision_id != new_object.shared_revision_id {
-                            return Err(ArunaError::InvalidRequest("Invalid path, already exists for different object hierarchy".to_string()))
-                        }
-                    // If path not exists -> Add label
-                    } else {
-                        key_value_pairs.push(ObjectKeyValue {
-                            id: uuid::Uuid::new_v4(),
-                            object_id: new_obj_id,
-                            key: "app.aruna-storage.org/new_path".to_string(),
-                            value: s3path,
-                            key_value_type: KeyValueType::LABEL,
-                        });
-
-                        key_value_pairs.push(ObjectKeyValue {
-                            id: uuid::Uuid::new_v4(),
-                            object_id: new_obj_id,
-                            key: "app.aruna-storage.org/bucket".to_string(),
-                            value: s3bucket,
-                            key_value_type: KeyValueType::LABEL,
-                        });
-                    }
-
-                    // Insert entities which are always created on update
-                    diesel::insert_into(objects)
-                        .values(&new_object)
-                        .execute(conn)?;
-                    diesel::insert_into(hashes)
-                        .values(&new_hash)
-                        .execute(conn)?;
-                    diesel::insert_into(object_key_value)
-                        .values(&key_value_pairs)
-                        .execute(conn)?;
-                    diesel::insert_into(collection_objects)
-                        .values(&collection_object)
-                        .execute(conn)?;
-
-                    // Insert Source only if it exists in request
-                    if source.is_some() {
-                        diesel::insert_into(sources).values(&source).execute(conn)?;
-                    }
-
-                    // Insert updated object location and hash if data re-upload
-                    // if !request.reupload {
-                    //     // Clone old location for new Object
-                    //     let old_object = objects
-                    //         .filter(database::schema::objects::id.eq(&parsed_old_id))
-                    //         .first::<Object>(conn)?;
-                    //     let old_location: ObjectLocation =
-                    //         ObjectLocation::belonging_to(&old_object)
-                    //             .first::<ObjectLocation>(conn)?;
-
-                    //     let new_location = ObjectLocation {
-                    //         id: uuid::Uuid::new_v4(),
-                    //         bucket: old_location.bucket,
-                    //         path: old_location.path,
-                    //         endpoint_id: old_location.endpoint_id,
-                    //         object_id: new_obj_id,
-                    //         is_primary: old_location.is_primary,
-                    //         is_encrypted: old_location.is_encrypted,
-                    //         is_compressed: old_location.is_compressed,
-                    //     };
-
-                    //     diesel::insert_into(object_locations)
-                    //         .values(&new_location)
-                    //         .execute(conn)?;
-                    // }
-
-                    Ok(new_object)
+                    Ok(staging_object)
                 })?;
 
             Ok(UpdateObjectResponse {
-                object_id: updated_object.id.to_string(),
-                staging_id: updated_object.id.to_string(),
+                object_id: staging_object.id.to_string(),
+                staging_id: staging_object.id.to_string(),
                 collection_id: parsed_col_id.to_string(),
             })
         } else {
@@ -2343,6 +2161,214 @@ pub fn create_staging_object(
         .execute(conn)?;
 
     Ok(object)
+}
+
+/// Creates a staging object with the provided meta information.
+///
+/// Warning: This function does not check permissions.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Open database connection
+/// * `staging_object: StageObject` - Staging object meta information
+/// * `object_uuid: &uuid::Uuid` - Unique object identifier for staging object
+/// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
+/// * `creator_uuid: &uuid::Uuid` - Unique user identifier
+///
+/// ## Returns:
+///
+/// * `Result<Object, ArunaError>` - The created staging object
+///
+pub fn update_object_init(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    staging_object: StageObject,
+    current_object_uuid: uuid::Uuid,
+    staging_object_uuid: uuid::Uuid,
+    collection_uuid: uuid::Uuid,
+    creator_uuid: &uuid::Uuid,
+    reupload: bool,
+    is_collection_specification: bool,
+) -> Result<Object, ArunaError> {
+    // Get all references of all revisions of the object
+    let all_revision_references = get_all_references(conn, &collection_uuid, &true)?;
+
+    // Filter references for staging objects and collection specific, writeable references
+    let mut staging_references = Vec::new();
+    let mut object_references = Vec::new();
+    for object_reference in all_revision_references {
+        if object_reference.reference_status == ReferenceStatus::STAGING {
+            staging_references.push(object_reference);
+        } else if object_reference.writeable && object_reference.collection_id == collection_uuid {
+            object_references.push(object_reference);
+        }
+    }
+
+    if staging_references.len() > 1 {
+        return Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} has more than one staging object. This has to be resolved manually.")));
+    } else if let Some(staging_reference) = staging_references.first() {
+        return if staging_reference.object_id == current_object_uuid {
+            update_object_in_place(
+                conn,
+                &current_object_uuid,
+                creator_uuid,
+                &collection_uuid,
+                &staging_object,
+            )
+        } else {
+            Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} already has a staging object. Concurrent updates are prohibited.")))
+        };
+    }
+
+    if object_references.is_empty() {
+        return Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} does not have a writeable reference in collection {collection_uuid}")));
+    }
+
+    // Get latest revision of the Object to be updated
+    let latest = get_latest_obj(conn, current_object_uuid)?;
+
+    // Check if update is performed on latest object revision
+    if latest.id != current_object_uuid {
+        return Err(ArunaError::InvalidRequest(format!(
+            "Updates only allowed on the latest revision: {}",
+            latest.id
+        )));
+    }
+
+    // Define source object from updated request; None if empty
+    let source: Option<Source> = match &staging_object.source {
+        Some(source) => Some(Source {
+            id: uuid::Uuid::new_v4(),
+            link: source.identifier.to_string(),
+            source_type: SourceType::from_i32(source.source_type)?,
+        }),
+        _ => None,
+    };
+
+    // Define new Object with updated values
+    let new_object = Object {
+        id: staging_object_uuid,
+        shared_revision_id: latest.shared_revision_id,
+        revision_number: latest.revision_number + 1,
+        filename: staging_object.filename.to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        created_by: *creator_uuid,
+        content_len: staging_object.content_len,
+        object_status: ObjectStatus::INITIALIZING, // Is a staging object
+        dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
+        source_id: source.as_ref().map(|source| source.id),
+        origin_id: current_object_uuid,
+    };
+
+    // Define new object hash depending if update contains data re-upload
+    let new_hash = if reupload {
+        // Create new empty hash record which will be updated on object finish
+        ApiHash {
+            id: uuid::Uuid::new_v4(),
+            hash: "".to_string(),
+            object_id: new_object.id,
+            hash_type: HashType::MD5, // Default hash type
+        }
+    } else {
+        // Without re-upload just clone hash of object to be updated
+        let mut old_hash: ApiHash = hashes
+            .filter(database::schema::hashes::object_id.eq(current_object_uuid))
+            .first::<ApiHash>(conn)?;
+
+        old_hash.id = uuid::Uuid::new_v4();
+        old_hash.object_id = staging_object_uuid;
+        old_hash
+    };
+
+    // Define temporary STAGING join table entry collection <-->  staging object
+    let collection_object = CollectionObject {
+        id: uuid::Uuid::new_v4(),
+        collection_id: collection_uuid,
+        is_latest: false, // Will be checked on finish
+        reference_status: ReferenceStatus::STAGING,
+        object_id: staging_object_uuid,
+        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+        is_specification: is_collection_specification,
+        writeable: true,
+    };
+
+    // Convert the object's labels and hooks to their database representation
+    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
+    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
+        staging_object.labels.clone(),
+        staging_object.hooks.clone(),
+        staging_object_uuid,
+    );
+
+    // Validate key_values
+    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
+        return Err(ArunaError::InvalidRequest(
+            "labels or hooks are invalid".to_string(),
+        ));
+    };
+
+    // Get full qualified path
+    let (s3bucket, s3path) = construct_path_string(
+        &collection_object.collection_id,
+        &new_object.filename,
+        &staging_object.sub_path,
+        conn,
+    )?;
+
+    // Check if path already exists
+    let exists = paths
+        .filter(database::schema::paths::path.eq(&s3path))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)
+        .optional()?;
+
+    // If it already exists
+    if let Some(existing) = exists {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        if existing.shared_revision_id != new_object.shared_revision_id {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path, already exists for different object hierarchy".to_string(),
+            ));
+        }
+        // If path not exists -> Add label
+    } else {
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: staging_object_uuid,
+            key: "app.aruna-storage.org/new_path".to_string(),
+            value: s3path,
+            key_value_type: KeyValueType::LABEL,
+        });
+
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: staging_object_uuid,
+            key: "app.aruna-storage.org/bucket".to_string(),
+            value: s3bucket,
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
+
+    // Insert entities which are always created on update
+    diesel::insert_into(objects)
+        .values(&new_object)
+        .execute(conn)?;
+    diesel::insert_into(hashes)
+        .values(&new_hash)
+        .execute(conn)?;
+    diesel::insert_into(object_key_value)
+        .values(&key_value_pairs)
+        .execute(conn)?;
+    diesel::insert_into(collection_objects)
+        .values(&collection_object)
+        .execute(conn)?;
+
+    // Insert Source only if it exists in request
+    if source.is_some() {
+        diesel::insert_into(sources).values(&source).execute(conn)?;
+    }
+
+    Ok(new_object)
 }
 
 /// This functions checks if the specific object has any reference in the provided collection.
