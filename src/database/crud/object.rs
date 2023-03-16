@@ -3094,6 +3094,61 @@ pub fn get_latest_obj(
     Ok(latest_object)
 }
 
+/// This is a helper method that queries the "latest" object revision based on the path of the object.
+/// If returned object.id == ref_object_id -> the current object is "latest"
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_path`: `&String` - The fully-qualified S3 object path
+/// * `check_collection: Option<uuid::Uuid>` - Validates the collection id if provided
+///
+/// ## Returns:
+///
+/// `Result<Object, ArunaError>` - The latest database object revision or error if the request failed.
+pub fn get_latest_object_by_path(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_path: &String,
+    check_collection: Option<uuid::Uuid>,
+) -> Result<Object, ArunaError> {
+    if !object_path.starts_with("s3://") {
+        return Err(ArunaError::InvalidRequest(
+            "Path does not start with s3://".to_string(),
+        ));
+    }
+
+    let (s3bucket, s3path) = object_path[5..]
+        .split_once('/')
+        .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+    let get_path: Path = paths
+        .filter(database::schema::paths::path.eq(format!("/{s3path}")))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)?;
+
+    // Validate that provided collection id and path collection id matches
+    if let Some(collection_validation) = check_collection {
+        let (_, maybe_collection) =
+            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+        // Only proceed if collection exists
+        let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
+            "Collection in path {object_path} does not exist."
+        )))?;
+
+        if collection_validation != collection_uuid {
+            return Err(ArunaError::InvalidRequest(format!(
+                "Path is not part of collection: {collection_validation}"
+            )));
+        }
+    }
+
+    Ok(objects
+        .filter(database::schema::objects::shared_revision_id.eq(get_path.shared_revision_id))
+        .order_by(database::schema::objects::revision_number.desc())
+        .first::<Object>(conn)?)
+}
+
 /// This is a helper method that queries the project id and collection id based
 /// on the names and version in the provided bucket part of an object path.
 ///
