@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::Range;
 use aruna_rust_api::api::storage::models::v1::Hash;
@@ -139,34 +140,53 @@ pub fn validate_and_check_hashes(
     Ok((hash_md5, hash_sha256))
 }
 
+pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Result<()> {
+    match expected {
+        Some(hashes) => {
+            if got.iter().all(|got_hash| {
+                hashes
+                    .iter()
+                    .find(|exp_hash| exp_hash.clone().hash == got_hash.clone().hash)
+                    .is_some()
+            }) {
+                Ok(())
+            } else {
+                Err(anyhow!("a"))
+            }
+        }
+        None => Ok(()),
+    }
+}
+
+// For now we will make 10*5Mib blocks
 pub fn create_ranges(expected_size: i64, from: Location) -> Vec<Range> {
     if from.is_encrypted {
-        (0..expected_size % ENCRYPTED_FRAMES as i64)
+        (0..expected_size % (ENCRYPTED_FRAMES * 10) as i64)
             .map(|e| {
-                if (e + 1) * ENCRYPTED_BLOCKS < expected_size {
+                if (e + 1) * ENCRYPTED_BLOCKS * 10 < expected_size {
                     Range {
-                        from: (e * ENCRYPTED_BLOCKS) as u64,
-                        to: ((e + 1) * ENCRYPTED_BLOCKS) as u64,
+                        from: (e * ENCRYPTED_BLOCKS * 10) as u64,
+                        to: ((e + 1) * ENCRYPTED_BLOCKS * 10) as u64,
                     }
                 } else {
                     Range {
-                        from: (e * ENCRYPTED_BLOCKS) as u64,
+                        from: (e * ENCRYPTED_BLOCKS * 10) as u64,
                         to: expected_size as u64,
                     }
                 }
             })
             .collect::<Vec<Range>>()
     } else {
-        (0..expected_size % FRAMESIZE as i64)
+        (0..expected_size % FRAMESIZE * 10 as i64)
             .map(|e| {
-                if (e + 1) * ENCRYPTION_BLOCKS < expected_size {
+                if (e + 1) * ENCRYPTION_BLOCKS * 10 < expected_size {
                     Range {
-                        from: (e * ENCRYPTION_BLOCKS) as u64,
-                        to: ((e + 1) * ENCRYPTION_BLOCKS) as u64,
+                        from: (e * ENCRYPTION_BLOCKS * 10) as u64,
+                        to: ((e + 1) * ENCRYPTION_BLOCKS * 10) as u64,
                     }
                 } else {
                     Range {
-                        from: (e * ENCRYPTION_BLOCKS) as u64,
+                        from: (e * ENCRYPTION_BLOCKS * 10) as u64,
                         to: expected_size as u64,
                     }
                 }
