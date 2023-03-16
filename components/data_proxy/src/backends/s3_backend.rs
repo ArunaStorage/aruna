@@ -141,6 +141,18 @@ impl StorageBackend for S3Backend {
         return Ok(());
     }
 
+    async fn head_object(&self, location: Location) -> Result<i64> {
+        let object = self
+            .s3_client
+            .head_object()
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.path))
+            .send()
+            .await;
+
+        Ok(object?.content_length())
+    }
+
     // Initiates a multipart upload in s3 and returns the associated upload id.
     async fn init_multipart_upload(&self, location: Location) -> Result<String> {
         self.check_and_create_bucket(location.bucket.clone())

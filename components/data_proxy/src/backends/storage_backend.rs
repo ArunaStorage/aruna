@@ -40,6 +40,9 @@ pub trait StorageBackend: Debug + Send + Sync {
         sender: Sender<bytes::Bytes>,
     ) -> Result<()>;
 
+    /// Gets meta information about a specific object
+    async fn head_object(&self, location: Location) -> Result<i64>;
+
     /// Initiates a multipart upload.
     /// Returns the UploadID of the multipart upload
     /// This is modelled after other multipart upload mechanisms like from S3
