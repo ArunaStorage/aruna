@@ -5,7 +5,7 @@ use diesel::result::Error;
 use crate::config::DefaultEndpoint;
 use crate::database;
 use crate::database::connection::Database;
-use crate::database::models::auth::{PubKey, PubKeyInsert};
+use crate::database::models::auth::PubKeyInsert;
 use crate::database::models::enums::EndpointType;
 use crate::database::models::object::{Endpoint, ObjectLocation};
 use crate::database::schema::endpoints::dsl::*;

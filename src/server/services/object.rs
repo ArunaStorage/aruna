@@ -122,7 +122,7 @@ impl ObjectServiceImpl {
         object_uuid: &uuid::Uuid,
     ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
         // Get primary location with its endpoint from database
-        let (location, endpoint) = self
+        let (location, endpoint, encryption_key) = self
             .database
             .get_primary_object_location_with_endpoint(object_uuid)?;
 
@@ -143,6 +143,14 @@ impl ObjectServiceImpl {
                     r#type: endpoint.endpoint_type as i32,
                     bucket: location.bucket,
                     path: location.path,
+                    endpoint_id: self.default_endpoint.id.to_string(),
+                    is_compressed: location.is_compressed,
+                    is_encrypted: location.is_encrypted,
+                    encryption_key: if let Some(key) = encryption_key {
+                        key.encryption_key
+                    } else {
+                        "".to_string()
+                    }, // ...
                 };
                 Ok((dp, proto_location))
             }
