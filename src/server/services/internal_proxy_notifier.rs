@@ -4,6 +4,8 @@ use crate::database::connection::Database;
 use crate::error::ArunaError;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 
+use crate::database::models::enums::{Resources, UserRights};
+use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierService;
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetCollectionByBucketRequest,
@@ -166,6 +168,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
     /// ## Returns:
     ///
     /// * `Result<Response<GetObjectLocationResponse>, Status>` - Contains the object and the associated location info if present.
+    ///
     async fn get_object_location(
         &self,
         request: Request<GetObjectLocationRequest>,
@@ -190,7 +193,12 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         let database_clone = self.database.clone();
         let (proto_object, db_location, db_endpoint, encryption_key_option) =
             task::spawn_blocking(move || {
-                database_clone.get_object_with_location_info(&inner_request.path, &object_uuid, &endpoint_uuid, access_key)
+                database_clone.get_object_with_location_info(
+                    &inner_request.path,
+                    &object_uuid,
+                    &endpoint_uuid,
+                    access_key,
+                )
             })
             .await
             .map_err(ArunaError::from)??;
@@ -218,5 +226,72 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         log::info!("Sending GetObjectLocationResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
+    }
+
+    /// Get an object with its location for a specific endpoint. The data specific
+    /// encryption/decryption key will be returned also if available.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<GetCollectionByBucketRequest>` -
+    ///   A gRPC request which contains the information needed to query a collection by its path.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Response<GetCollectionByBucketResponse>, Status>` - Contains the project id and collection id.
+    ///
+    async fn get_collection_by_bucket(
+        &self,
+        request: Request<GetCollectionByBucketRequest>,
+    ) -> Result<Response<GetCollectionByBucketResponse>, Status> {
+        log::info!("Received GetCollectionByBucketRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Extract token id disguised as access_key
+        let access_key =
+            uuid::Uuid::parse_str(&inner_request.access_key).map_err(ArunaError::from)?;
+
+        // Finalize Object in database
+        let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
+        let (project_uuid, collection_uuid_option) = task::spawn_blocking(move || {
+            database_clone.get_project_collection_ids_by_path(&inner_request_clone.bucket, true)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        match collection_uuid_option {
+            None => Err(tonic::Status::not_found(format!(
+                "No collection found for path {}",
+                inner_request.bucket
+            ))),
+            Some(collection_uuid) => {
+                // Validate permission with queried collection id
+                let creator_uuid = self.database.get_checked_user_id_from_token(
+                    &access_key,
+                    &Context {
+                        user_right: UserRights::READ,
+                        resource_type: Resources::COLLECTION,
+                        resource_id: collection_uuid.clone(),
+                        admin: false,
+                        personal: false,
+                        oidc_context: false,
+                    },
+                )?;
+
+                let response = tonic::Response::new(GetCollectionByBucketResponse {
+                    project_id: project_uuid.to_string(),
+                    collection_id: collection_uuid.to_string(),
+                });
+
+                // Return gRPC response after everything succeeded
+                log::info!("Sending GetObjectLocationResponse back to client.");
+                log::debug!("{}", format_grpc_response(&response));
+                Ok(response)
+            }
+        }
     }
 }
