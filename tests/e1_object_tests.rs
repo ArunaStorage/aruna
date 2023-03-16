@@ -626,7 +626,7 @@ fn delete_object_test() {
     };
 
     let new_id = uuid::Uuid::new_v4();
-    let update_response = db.update_object(&updatereq, &creator, new_id).unwrap();
+    let update_response = db.update_object(updatereq, &creator, new_id).unwrap();
 
     let staging_finished = db
         .finish_object_staging(
@@ -992,6 +992,9 @@ fn clone_object_test() {
             ..Default::default()
         }),
     );
+
+    //println!("{:#?}", new_obj);
+    println!("{:#?}", common::functions::get_object_references(random_collection.id.to_string(), new_obj.id.to_string(), false));
 
     // Update Object again
     let update_2 = common::functions::update_object(&TCreateUpdate {

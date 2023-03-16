@@ -30,6 +30,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use diesel::result::Error;
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
+use aruna_server::database::crud::object::get_all_references;
 
 pub fn rand_string(len: usize) -> String {
     thread_rng()
@@ -615,8 +616,10 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         hash: update.init_hash.clone(),
     };
 
+    println!("{:#?}", get_object_references(update.collection_id.to_string(), update.original_object.id.to_string(), false));
+
     let update_response = db
-        .update_object(&update_request, &creator, updated_object_id_001)
+        .update_object(update_request, &creator, updated_object_id_001)
         .unwrap();
 
     // Finish updated Object
