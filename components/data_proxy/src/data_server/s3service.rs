@@ -5,12 +5,14 @@ use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::footer::FooterGenerator;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
+use aruna_rust_api::api::internal::v1::GetObjectLocationRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateObjectByPathRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use s3s::dto::*;
@@ -565,11 +567,100 @@ impl S3 for S3ServiceServer {
         })
     }
 
-    async fn get_object(&self, _req: S3Request<GetObjectInput>) -> S3Result<GetObjectOutput> {
-        Err(s3_error!(
-            NotImplemented,
-            "GetObject is not implemented yet"
-        ))
+    async fn get_object(&self, req: S3Request<GetObjectInput>) -> S3Result<GetObjectOutput> {
+        // Get the credentials
+        let creds = match req.credentials {
+            Some(cred) => cred,
+            None => {
+                log::error!("{}", "Not identified PutObjectRequest");
+                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+            }
+        };
+
+        let rev_id = match req.input.version_id {
+            Some(a) => a,
+            None => String::new(),
+        };
+
+        let get_location_response = self
+            .data_handler
+            .internal_notifier_service
+            .clone()
+            .get_object_location(GetObjectLocationRequest {
+                path: format!("s3://{}/{}", req.input.bucket, req.input.key),
+                revision_id: rev_id,
+                access_key: creds.access_key,
+                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
+            })
+            .await
+            .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
+            .into_inner();
+
+        let _location = get_location_response
+            .location
+            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+
+        let object = get_location_response
+            .object
+            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+
+        let sha256_hash = object
+            .hashes
+            .iter()
+            .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
+            .map(|e| e.clone())
+            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+
+        let (internal_sender, internal_receiver) = async_channel::bounded(10);
+
+        let processor_clone = self.backend.clone();
+
+        tokio::spawn(async move {
+            processor_clone
+                .get_object(
+                    ArunaLocation {
+                        bucket: sha256_hash.hash[0..2].to_string(),
+                        path: sha256_hash.hash[2..].to_string(),
+                        ..Default::default()
+                    },
+                    None,
+                    internal_sender,
+                )
+                .await
+        });
+
+        let (final_sender, final_receiver) = async_channel::bounded(10);
+
+        tokio::spawn(async move {
+            ArunaStreamReadWriter::new_with_sink(
+                internal_receiver.map(|e| Ok(e)),
+                AsyncSenderSink::new(final_sender),
+            )
+            .process()
+            .await
+        });
+
+        let timestamp = object
+            .created
+            .map(|e| {
+                Ok::<s3s::dto::Timestamp, ParseTimestampError>(Timestamp::parse(
+                    TimestampFormat::EpochSeconds,
+                    format!("{}", e.seconds).as_str(),
+                )?)
+            })
+            .ok_or(s3_error!(InternalError, "intenal processing error"))?
+            .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
+
+        Ok(GetObjectOutput {
+            body: Some(StreamingBlob::wrap(
+                final_receiver.map_err(|_| s3_error!(InternalError, "intenal processing error")),
+            )),
+            content_length: object.content_len,
+            last_modified: Some(timestamp),
+            e_tag: Some(object.id),
+            version_id: Some(format!("{}", object.rev_number)),
+            ..Default::default()
+        })
     }
 
     async fn head_object(&self, _req: S3Request<HeadObjectInput>) -> S3Result<HeadObjectOutput> {
