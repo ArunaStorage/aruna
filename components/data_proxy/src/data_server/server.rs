@@ -2,7 +2,6 @@ use anyhow::Result;
 use hyper::Server;
 use s3s::service::S3Service;
 use std::{net::TcpListener, sync::Arc};
-use tokio::signal::unix::{signal, SignalKind};
 use tracing::info;
 
 use crate::backends::storage_backend::StorageBackend;
@@ -43,12 +42,6 @@ impl S3Server {
 
         info!("server is running at http(s)://{}/", self.address);
         tokio::spawn(server);
-
-        let mut stream = signal(SignalKind::terminate())?;
-
-        loop {
-            stream.recv().await;
-        }
 
         Ok(())
     }
