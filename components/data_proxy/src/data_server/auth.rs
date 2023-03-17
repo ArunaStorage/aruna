@@ -36,7 +36,7 @@ impl S3Auth for AuthProvider {
             .map_err(|_| s3_error!(NotSignedUp, "Unable to authenticate user"))?
             .into_inner()
             .authorization
-            .ok_or(s3_error!(NotSignedUp, "Unable to authenticate user"))?
+            .ok_or_else(|| s3_error!(NotSignedUp, "Unable to authenticate user"))?
             .accesskey;
         Ok(secret.into())
     }

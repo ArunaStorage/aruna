@@ -532,7 +532,7 @@ impl S3 for S3ServiceServer {
         let parts = match req.input.multipart_upload {
             Some(parts) => parts
                 .parts
-                .ok_or(s3_error!(InvalidPart, "Parts must be specified")),
+                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
             None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
         }?;
 
@@ -543,7 +543,7 @@ impl S3 for S3ServiceServer {
                     part_number: a.part_number as i64,
                     etag: a
                         .e_tag
-                        .ok_or(s3_error!(InvalidPart, "etag must be specified"))?,
+                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
                 })
             })
             .collect::<Result<Vec<PartETag>, S3Error>>()?;
@@ -598,18 +598,18 @@ impl S3 for S3ServiceServer {
 
         let _location = get_location_response
             .location
-            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
 
         let object = get_location_response
             .object
-            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
 
         let sha256_hash = object
             .hashes
             .iter()
             .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
-            .map(|e| e.clone())
-            .ok_or(s3_error!(NoSuchKey, "Key not found"))?;
+            .cloned()
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
 
         let (internal_sender, internal_receiver) = async_channel::bounded(10);
 
@@ -633,7 +633,7 @@ impl S3 for S3ServiceServer {
 
         tokio::spawn(async move {
             ArunaStreamReadWriter::new_with_sink(
-                internal_receiver.map(|e| Ok(e)),
+                internal_receiver.map(Ok),
                 AsyncSenderSink::new(final_sender),
             )
             .process()
@@ -643,12 +643,12 @@ impl S3 for S3ServiceServer {
         let timestamp = object
             .created
             .map(|e| {
-                Ok::<s3s::dto::Timestamp, ParseTimestampError>(Timestamp::parse(
+                Timestamp::parse(
                     TimestampFormat::EpochSeconds,
                     format!("{}", e.seconds).as_str(),
-                )?)
+                )
             })
-            .ok_or(s3_error!(InternalError, "intenal processing error"))?
+            .ok_or_else(|| s3_error!(InternalError, "intenal processing error"))?
             .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
 
         Ok(GetObjectOutput {

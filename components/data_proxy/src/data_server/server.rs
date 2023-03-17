@@ -48,7 +48,6 @@ impl S3Server {
 
         loop {
             stream.recv().await;
-            break;
         }
 
         Ok(())

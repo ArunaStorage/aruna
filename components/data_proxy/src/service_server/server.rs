@@ -134,6 +134,6 @@ fn location_from_path(path: String) -> Result<(String, String)> {
     if splits.len() != 2 {
         bail!("Invalid path parts (expected collection/object_id)")
     } else {
-        return Ok((splits[0].to_string(), splits[1].to_string()));
+        Ok((splits[0].to_string(), splits[1].to_string()))
     }
 }

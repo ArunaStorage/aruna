@@ -24,21 +24,18 @@ pub fn create_stage_object(key: &str, content_len: i64) -> StageObject {
     let (fname, sub_path) = extract_filename_path(key);
     StageObject {
         filename: fname,
-        content_len: content_len,
+        content_len,
         source: None,
         dataclass: DataClass::Private as i32,
         labels: Vec::new(),
         hooks: Vec::new(),
-        sub_path: sub_path,
+        sub_path,
     }
 }
 
 pub fn extract_filename_path(path: &str) -> (String, String) {
     let mut splits: Vec<&str> = path.split('/').collect();
-    (
-        String::from(splits.pop().unwrap_or_else(|| "")),
-        splits.join("/"),
-    )
+    (String::from(splits.pop().unwrap_or("")), splits.join("/"))
 }
 
 pub fn create_location_from_hash(
@@ -94,24 +91,20 @@ pub fn validate_and_check_hashes(
     for hash in backend_hashes {
         match Hashalgorithm::from_i32(hash.alg) {
             Some(Hashalgorithm::Md5) => {
-                if !hash_md5.is_empty() {
-                    if hash.hash != hash_md5 {
-                        return Err(s3_error!(
-                            InvalidDigest,
-                            "Invalid or inconsistent MD5 digest"
-                        ));
-                    }
+                if !hash_md5.is_empty() && hash.hash != hash_md5 {
+                    return Err(s3_error!(
+                        InvalidDigest,
+                        "Invalid or inconsistent MD5 digest"
+                    ));
                 }
                 hash_md5 = hash.hash;
             }
             Some(Hashalgorithm::Sha256) => {
-                if !hash_sha256.is_empty() {
-                    if hash.hash != hash_sha256 {
-                        return Err(s3_error!(
-                            InvalidDigest,
-                            "Invalid or inconsistent SHA256 digest"
-                        ));
-                    }
+                if !hash_sha256.is_empty() && hash.hash != hash_sha256 {
+                    return Err(s3_error!(
+                        InvalidDigest,
+                        "Invalid or inconsistent SHA256 digest"
+                    ));
                 }
                 hash_sha256 = hash.hash;
             }
@@ -119,22 +112,18 @@ pub fn validate_and_check_hashes(
         }
     }
 
-    if !hash_md5.is_empty() {
-        if hash_md5.len() != 32 {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent MD5 digest"
-            ));
-        }
+    if !hash_md5.is_empty() && hash_md5.len() != 32 {
+        return Err(s3_error!(
+            InvalidDigest,
+            "Invalid or inconsistent MD5 digest"
+        ));
     }
 
-    if !hash_sha256.is_empty() {
-        if hash_sha256.len() != 64 {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent SHA256 digest"
-            ));
-        }
+    if !hash_sha256.is_empty() && hash_sha256.len() != 64 {
+        return Err(s3_error!(
+            InvalidDigest,
+            "Invalid or inconsistent SHA256 digest"
+        ));
     }
 
     Ok((hash_md5, hash_sha256))
@@ -146,8 +135,7 @@ pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Re
             if got.iter().all(|got_hash| {
                 hashes
                     .iter()
-                    .find(|exp_hash| exp_hash.clone().hash == got_hash.clone().hash)
-                    .is_some()
+                    .any(|exp_hash| exp_hash.clone().hash == got_hash.clone().hash)
             }) {
                 Ok(())
             } else {
@@ -161,7 +149,7 @@ pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Re
 // For now we will make 10*5Mib blocks
 pub fn create_ranges(expected_size: i64, from: Location) -> Vec<Range> {
     if from.is_encrypted {
-        (0..expected_size % (ENCRYPTED_FRAMES * 10) as i64)
+        (0..expected_size % (ENCRYPTED_FRAMES * 10))
             .map(|e| {
                 if (e + 1) * ENCRYPTED_BLOCKS * 10 < expected_size {
                     Range {
@@ -177,7 +165,7 @@ pub fn create_ranges(expected_size: i64, from: Location) -> Vec<Range> {
             })
             .collect::<Vec<Range>>()
     } else {
-        (0..expected_size % FRAMESIZE * 10 as i64)
+        (0..expected_size % FRAMESIZE * 10_i64)
             .map(|e| {
                 if (e + 1) * ENCRYPTION_BLOCKS * 10 < expected_size {
                     Range {

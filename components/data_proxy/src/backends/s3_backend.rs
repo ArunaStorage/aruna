@@ -93,12 +93,9 @@ impl StorageBackend for S3Backend {
             .set_bucket(Some(location.bucket))
             .set_key(Some(location.path));
 
-        match range {
-            Some(value) => {
-                let range_string = format!("Range: bytes={}-{}", value.from, value.to);
-                object = object.set_range(Some(range_string));
-            }
-            None => {}
+        if let Some(value) = range {
+            let range_string = format!("Range: bytes={}-{}", value.from, value.to);
+            object = object.set_range(Some(range_string));
         }
 
         let object_request = match object.send().await {
@@ -195,7 +192,7 @@ impl StorageBackend for S3Backend {
 
         return Ok(PartETag {
             part_number: part_number as i64,
-            etag: upload.e_tag.ok_or(anyhow!(""))?,
+            etag: upload.e_tag.ok_or_else(|| anyhow!("Missing etag"))?,
         });
     }
 
