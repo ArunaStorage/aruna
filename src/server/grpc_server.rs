@@ -8,12 +8,14 @@ use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
 use crate::server::services::internal_authorize::InternalAuthorizeServiceImpl;
 use crate::server::services::internal_notifications::InternalEventServiceImpl;
+use crate::server::services::internal_proxy_notifier::InternalProxyNotifierServiceImpl;
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
 use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::service_account::ServiceAccountServiceImpl;
 use crate::server::services::user::UserServiceImpl;
 use aruna_rust_api::api::internal::v1::internal_authorize_service_server::InternalAuthorizeServiceServer;
 use aruna_rust_api::api::internal::v1::internal_event_service_server::InternalEventServiceServer;
+use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierServiceServer;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
 use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointServiceServer;
 use aruna_rust_api::api::storage::services::v1::object_group_service_server::ObjectGroupServiceServer;
@@ -107,6 +109,9 @@ impl ServiceServer {
         let internal_authorize_service =
             InternalAuthorizeServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
+        let internal_proxy_notifier_service =
+            InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone()).await;
+
         log::info!("ArunaServer listening on {}", addr);
 
         Server::builder()
@@ -124,6 +129,15 @@ impl ServiceServer {
                 internal_authorize_service,
             ))
             .serve(addr)
+            .await
+            .unwrap();
+
+        let other_addr = "0.0.0.0:50052".parse().unwrap();
+        Server::builder()
+            .add_service(InternalProxyNotifierServiceServer::new(
+                internal_proxy_notifier_service,
+            ))
+            .serve(other_addr)
             .await
             .unwrap();
     }

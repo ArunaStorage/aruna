@@ -9,7 +9,7 @@ use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierService;
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetCollectionByBucketRequest,
-    GetCollectionByBucketResponse, GetEncryptionKeyRequest, GetEncryptionKeyResponse,
+    GetCollectionByBucketResponse, GetOrCreateEncryptionKeyRequest, GetOrCreateEncryptionKeyResponse,
     GetObjectLocationRequest, GetObjectLocationResponse, GetOrCreateObjectByPathRequest,
     GetOrCreateObjectByPathResponse, Location,
 };
@@ -121,10 +121,10 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
     ///
     /// * `Result<Response<GetEncryptionKeyResponse>, Status>` - Contains the object data encryption/decryption key.
     ///
-    async fn get_encryption_key(
+    async fn get_or_create_encryption_key(
         &self,
-        request: Request<GetEncryptionKeyRequest>,
-    ) -> Result<Response<GetEncryptionKeyResponse>, Status> {
+        request: Request<GetOrCreateEncryptionKeyRequest>,
+    ) -> Result<Response<GetOrCreateEncryptionKeyResponse>, Status> {
         log::info!("Received GetEncryptionKeyRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -134,13 +134,13 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         // Finalize Object in database
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
-        let maybe_key = task::spawn_blocking(move || {
+        let (maybe_key, created) = task::spawn_blocking(move || {
             database_clone.get_or_create_encryption_key(&inner_request_clone)
         })
         .await
         .map_err(ArunaError::from)??;
 
-        let response = tonic::Response::new(GetEncryptionKeyResponse {
+        let response = tonic::Response::new(GetOrCreateEncryptionKeyResponse {
             encryption_key: match maybe_key {
                 None => {
                     return Err(tonic::Status::internal(format!(
@@ -150,6 +150,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                 }
                 Some(encryption_key) => encryption_key.encryption_key,
             },
+            created,
         });
 
         // Return gRPC response after everything succeeded

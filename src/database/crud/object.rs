@@ -18,7 +18,7 @@ use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
 use aruna_rust_api::api::internal::v1::{
-    FinalizeObjectRequest, FinalizeObjectResponse, GetEncryptionKeyRequest,
+    FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
     GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
     LocationType,
 };
@@ -1001,7 +1001,8 @@ impl Database {
                 },
             )?;
 
-            let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?;
+            let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?
+                .ok_or_else(|| ArunaError::InvalidRequest(format!("Could not find object for path {object_path}")))?;
             let proto_object: ProtoObject =
                 if let Some(object_dto) = get_object_ignore_coll(&db_object.id, conn)? {
                     object_dto.try_into()?
@@ -1082,29 +1083,30 @@ impl Database {
     /// keys within the request header.
     pub fn get_or_create_encryption_key(
         &self,
-        request: &GetEncryptionKeyRequest,
-    ) -> Result<Option<EncryptionKey>, ArunaError> {
+        request: &GetOrCreateEncryptionKeyRequest,
+    ) -> Result<(Option<EncryptionKey>, bool), ArunaError> {
         use crate::database::schema::encryption_keys::dsl as keys_dsl;
 
         // Parse endpoint id from request
         let endpoint_uuid = uuid::Uuid::parse_str(&request.endpoint_id)?;
 
-        let encryption_key = self
+        let key_info = self
             .pg_connection
             .get()?
-            .transaction::<Option<EncryptionKey>, Error, _>(|conn| {
+            .transaction::<(Option<EncryptionKey>, bool), Error, _>(|conn| {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
-                let object = get_object_revision_by_path(conn, &request.path, -1, None)?;
+                let object = get_object_revision_by_path(conn, &request.path, -1, None)?
+                    .ok_or_else(|| ArunaError::InvalidRequest(format!("Could not find object for path {}", request.path)))?;
 
-                let encryption_key =
+                let (encryption_key, created) =
                     if vec![Dataclass::PUBLIC, Dataclass::PRIVATE].contains(&object.dataclass) {
-                        encryption_keys
+                        (encryption_keys
                             .filter(keys_dsl::hash.eq(&request.hash))
                             .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
                             .first::<EncryptionKey>(conn)
-                            .optional()?
+                            .optional()?, false)
                     } else {
                         let encryption_key_insert = EncryptionKey {
                             id: uuid::Uuid::new_v4(),
@@ -1123,13 +1125,13 @@ impl Database {
                             .values(&encryption_key_insert)
                             .execute(conn)?;
 
-                        Some(encryption_key_insert)
+                        (Some(encryption_key_insert), true)
                     };
 
-                Ok(encryption_key)
+                Ok((encryption_key, created))
             })?;
 
-        Ok(encryption_key)
+        Ok(key_info)
     }
 
     ///ToDo: Rust Doc
@@ -2232,13 +2234,13 @@ impl Database {
 
                 // Fetch object to check if it exists
                 let get_object =
-                    get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid));
+                    get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid))?;
 
                 // Check permissions
                 let creator_uuid = self.get_checked_user_id_from_token(
                     &access_key,
                     &Context {
-                        user_right: if get_object.is_ok() && request.object.is_none() {
+                        user_right: if get_object.is_some() && request.object.is_none() {
                             UserRights::READ
                         } else {
                             UserRights::APPEND
@@ -2256,36 +2258,53 @@ impl Database {
                 // - If object does not exist and staging object provided    -> init
                 // - Else error.
                 match get_object {
-                    Ok(fetched_object) => {
+                    Some(fetched_object) => {
                         if let Some(staging_object) = request.object {
-                            let staging_object_uuid = uuid::Uuid::new_v4();
-                            let created_object = update_object_init(
-                                conn,
-                                staging_object,
-                                fetched_object.id,
-                                staging_object_uuid,
-                                collection_uuid,
-                                &creator_uuid,
-                                true,
-                                false,
-                            )?;
+                            if fetched_object.object_status == ObjectStatus::INITIALIZING {
+                                Ok(GetOrCreateObjectByPathResponse {
+                                    object_id: fetched_object.id.to_string(),
+                                    collection_id: collection_uuid.to_string(),
+                                    dataclass: db_to_grpc_dataclass(&fetched_object.dataclass) as i32,
+                                    hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                    revision_number: fetched_object.revision_number,
+                                    created: false,
+                                })
+                            } else if fetched_object.object_status != ObjectStatus::AVAILABLE {
+                                Err(ArunaError::InvalidRequest(format!("Cannot update object with status {:?}", fetched_object.object_status)))
+                            } else {
+                                let staging_object_uuid = uuid::Uuid::new_v4();
+                                let created_object = update_object_init(
+                                    conn,
+                                    staging_object,
+                                    fetched_object.id,
+                                    staging_object_uuid,
+                                    collection_uuid,
+                                    &creator_uuid,
+                                    true,
+                                    false,
+                                )?;
 
-                            Ok(GetOrCreateObjectByPathResponse {
-                                object_id: created_object.id.to_string(),
-                                collection_id: collection_uuid.to_string(),
-                                dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
-                                hash: None,
-                            })
+                                Ok(GetOrCreateObjectByPathResponse {
+                                    object_id: created_object.id.to_string(),
+                                    collection_id: collection_uuid.to_string(),
+                                    dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
+                                    hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                    revision_number: created_object.revision_number,
+                                    created: false,
+                                })
+                            }
                         } else {
                             Ok(GetOrCreateObjectByPathResponse {
                                 object_id: fetched_object.id.to_string(),
                                 collection_id: collection_uuid.to_string(),
                                 dataclass: db_to_grpc_dataclass(&fetched_object.dataclass) as i32,
-                                hash: None, //ToDo: Fetch object hash(es?)
+                                hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                revision_number: fetched_object.revision_number,
+                                created: false,
                             })
                         }
                     }
-                    Err(_) => {
+                    None => {
                         if let Some(staging_object) = request.object {
                             let staging_object_id = uuid::Uuid::new_v4();
                             let created_object = create_staging_object(
@@ -2302,7 +2321,9 @@ impl Database {
                                 object_id: created_object.id.to_string(),
                                 collection_id: collection_uuid.to_string(),
                                 dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
-                                hash: None,
+                                hashes: get_object_hashes(conn, &created_object.id)?,
+                                revision_number: 0,
+                                created: false,
                             })
                         } else {
                             Err(ArunaError::InvalidRequest(
@@ -3123,7 +3144,7 @@ pub fn get_object_revision_by_path(
     object_path: &String,
     object_revision: i64,
     check_collection: Option<uuid::Uuid>,
-) -> Result<Object, ArunaError> {
+) -> Result<Option<Object>, ArunaError> {
     if !object_path.starts_with("s3://") {
         return Err(ArunaError::InvalidRequest(
             "Path does not start with s3://".to_string(),
@@ -3156,7 +3177,7 @@ pub fn get_object_revision_by_path(
         }
     }
 
-    let mut base_request = objects
+    let base_request = objects
         .filter(database::schema::objects::shared_revision_id.eq(get_path.shared_revision_id))
         .into_boxed();
 
@@ -3168,7 +3189,8 @@ pub fn get_object_revision_by_path(
 
     Ok(base_request
         .order_by(database::schema::objects::revision_number.desc())
-        .first::<Object>(conn)?)
+        .first::<Object>(conn)
+        .optional()?)
 }
 
 /// This is a helper method that queries the project id and collection id based
@@ -4441,6 +4463,21 @@ pub fn get_paths_proto(
         .map(|pth| ProtoPath {
             path: format!("s3://{}{}", pth.bucket, pth.path),
             visibility: pth.active,
+        })
+        .collect::<Vec<_>>())
+}
+
+pub fn get_object_hashes(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_uuid: &uuid::Uuid,
+) -> Result<Vec<ProtoHash>, ArunaError> {
+    Ok(hashes
+        .filter(database::schema::hashes::object_id.eq(&object_uuid))
+        .load::<Db_Hash>(conn)?
+        .into_iter()
+        .map(|e| ProtoHash {
+            alg: db_to_grpc_hash_type(&e.hash_type),
+            hash: e.hash.to_string(),
         })
         .collect::<Vec<_>>())
 }

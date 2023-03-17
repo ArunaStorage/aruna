@@ -1468,10 +1468,10 @@ impl ObjectService for ObjectServiceImpl {
     /// `GetProjectCollectionIDsByPathResponse` - A gRPC response containing at least the project id
     /// and the collection id if the collection exists. Returns an error if the project does not exist as well.
     ///
-    async fn get_project_collection_i_ds_by_path(
+    async fn get_project_collection_ids_by_path(
         &self,
-        request: Request<GetProjectCollectionIDsByPathRequest>,
-    ) -> Result<Response<GetProjectCollectionIDsByPathResponse>, Status> {
+        request: Request<GetProjectCollectionIdsByPathRequest>,
+    ) -> Result<Response<GetProjectCollectionIdsByPathResponse>, Status> {
         log::info!("Received GetProjectCollectionIDsByPathRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -1509,7 +1509,7 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         // Create gRPC response
-        let response = tonic::Response::new(GetProjectCollectionIDsByPathResponse {
+        let response = tonic::Response::new(GetProjectCollectionIdsByPathResponse {
             project_id: project_uuid.to_string(),
             collection_id: match collection_uuid_option {
                 None => "".to_string(),
