@@ -13,8 +13,7 @@ use crate::server::services::authz::{Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
 use aruna_rust_api::api::internal::v1::{
-    CreatePresignedDownloadRequest, CreatePresignedUploadUrlRequest, FinishPresignedUploadRequest,
-    InitPresignedUploadRequest, Location, PartETag, Range,
+    FinishMultipartUploadRequest, InitMultipartUploadRequest, Location, PartETag,
 };
 use aruna_rust_api::api::storage::models::v1::{Object, Status as ProtoStatus};
 use aruna_rust_api::api::storage::{
@@ -173,62 +172,57 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
+        let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
-        let new_object_uuid = uuid::Uuid::new_v4();
-        // Connect to default data proxy endpoint
-        let mut data_proxy = self.try_connect_default_endpoint().await?;
-
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        // Generate upload_id for object through (currently only default) storage endpoint
-        let location = Location {
-            r#type: self.default_endpoint.endpoint_type as i32,
-            bucket: collection_id.to_string(),
-            path: new_object_uuid.to_string(),
-        };
-
-        let upload_id = data_proxy
-            .init_presigned_upload(InitPresignedUploadRequest {
-                location: Some(location.clone()),
-                multipart: inner_request.multipart,
-            })
-            .await?
-            .into_inner()
-            .upload_id;
+        // Generate uuid for staging object
+        let new_object_uuid = uuid::Uuid::new_v4();
 
         // Create Object in database
         let database_clone = self.database.clone();
-        // TODO: CREATE url based on endpoint!
-        let _endpoint_id = self.default_endpoint.id;
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.create_object(
-                    &inner_request,
-                    &creator_id,
-                    upload_id,
-                    new_object_uuid,
-                )
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let inner_request_clone = inner_request.clone();
+        let mut response = task::spawn_blocking(move || {
+            database_clone.create_object(&inner_request_clone, &creator_id, new_object_uuid)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Fill upload id of response
+        response.upload_id = if inner_request.multipart {
+            // Connect to default data proxy endpoint
+            let mut data_proxy = self.try_connect_default_endpoint().await?;
+
+            // Init multipart upload
+            let response = data_proxy
+                .init_multipart_upload(InitMultipartUploadRequest {
+                    path: format!("{collection_uuid}/{new_object_uuid}"),
+                })
+                .await?
+                .into_inner();
+
+            response.upload_id
+        } else {
+            new_object_uuid.to_string()
+        };
+
+        let grpc_response = tonic::Response::new(response);
 
         // Return gRPC response after everything succeeded
         log::info!("Sending InitializeNewObjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        return Ok(response);
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
     async fn get_upload_url(
@@ -239,16 +233,16 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to upload object data in this collection
-        let object_id =
+        let object_uuid =
             uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
-        let collection_id =
+        let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let _creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
@@ -259,7 +253,7 @@ impl ObjectService for ObjectServiceImpl {
         // Check object status == INITIALIZING before data proxy requests
         let database_clone = self.database.clone();
         let proto_object_url = task::spawn_blocking(move || {
-            database_clone.get_object_by_id(&object_id, &collection_id)
+            database_clone.get_object_by_id(&object_uuid, &collection_uuid)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -267,13 +261,10 @@ impl ObjectService for ObjectServiceImpl {
         if let Some(object_info) = proto_object_url.object {
             if object_info.status != ProtoStatus::Initializing as i32 {
                 return Err(tonic::Status::invalid_argument(format!(
-                    "object {object_id} is not in staging phase."
+                    "object {object_uuid} is not in staging phase."
                 )));
             }
         }
-
-        // Try to connect to one of the objects data proxy endpoints (currently only primary location endpoint)
-        let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_id).await?;
 
         let part_number: i64 = if inner_request.multipart && inner_request.part_number < 1 {
             return Err(tonic::Status::invalid_argument(
@@ -285,20 +276,11 @@ impl ObjectService for ObjectServiceImpl {
             inner_request.part_number as i64
         };
 
-        // Get upload url through data proxy
-        let upload_url = data_proxy
-            .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
-                multipart: inner_request.multipart,
-                part_number,
-                location: Some(location),
-                upload_id: inner_request.upload_id, //Note: Can be moved, only used here
-            })
-            .await?
-            .into_inner()
-            .url;
-
+        //ToDo: Self sign upload url (and init upload if necessary?)
         let response = Response::new(GetUploadUrlResponse {
-            url: Some(Url { url: upload_url }),
+            url: Some(Url {
+                url: "".to_string(),
+            }),
         });
 
         log::info!("Sending GetUploadUrlResponse back to client.");
@@ -313,8 +295,11 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received FinishObjectStagingRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        let object_uuid = uuid::Uuid::parse_str(&request.get_ref().object_id)
+            .map_err(|_| Status::invalid_argument("Unable to parse object id"))?;
+
         // Parse the provided collection id (string) to UUID
-        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+        let collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
             .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
         // Authorize the request
@@ -322,17 +307,44 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Fetch staging object to get temp path from init
+        let staging_object = self
+            .database
+            .get_object_by_id(&object_uuid, &collection_uuid)?
+            .object
+            .ok_or(ArunaError::InvalidRequest(format!(
+                "Could not find object {object_uuid} in collection {collection_uuid}"
+            )))?;
+
+        let mut upload_path = "".to_string();
+        for label in staging_object.labels {
+            println!("{:#?}", label);
+            if label.key == "app.aruna-storage.org/new_path".to_string() {
+                println!("Found path key with value: {}", label.value);
+                upload_path = label.value;
+                break;
+            }
+        }
+        println!("{upload_path}");
+        if upload_path.is_empty() {
+            return Err(tonic::Status::internal(
+                "No temp upload path for object available. This is bad.",
+            ));
+        }
+
         // Only finish the upload if no_upload == false
         // This will otherwise skip the data proxy finish routine
-        if !request.get_ref().no_upload {
+        if !inner_request.no_upload {
             // Create the finished parts vec from request
-            let finished_parts = request
-                .get_ref()
+            let finished_parts = inner_request
                 .completed_parts
                 .iter()
                 .map(|part| PartETag {
@@ -343,19 +355,16 @@ impl ObjectService for ObjectServiceImpl {
 
             // If finished parts is not empty --> multipart upload
             if !finished_parts.is_empty() {
-                // Create multipart upload finish request for data proxy
-                let finished_presigned = FinishPresignedUploadRequest {
-                    upload_id: request.get_ref().upload_id.to_string(),
-                    bucket: collection_id.to_string(),
-                    key: request.get_ref().object_id.to_string(),
+                let finish_multipart_request = FinishMultipartUploadRequest {
+                    upload_id: inner_request.upload_id.to_string(),
+                    path: upload_path,
                     part_etags: finished_parts,
-                    multipart: true, //multipart: *is_empty,
                 };
 
                 // Get the data_proxy
                 let (mut data_proxy, _location) = self
                     .try_connect_object_endpoint(
-                        &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
+                        &uuid::Uuid::parse_str(&inner_request.object_id).map_err(|_| {
                             Status::invalid_argument("Unable to parse object_id to uuid")
                         })?,
                     )
@@ -363,21 +372,23 @@ impl ObjectService for ObjectServiceImpl {
 
                 // Execute the proxy request and get the result
                 let proxy_result = data_proxy
-                    .finish_presigned_upload(finished_presigned)
-                    .await?
-                    .into_inner();
+                    .finish_multipart_upload(finish_multipart_request)
+                    .await;
 
                 // Only proceed when proxy did not fail
-                if !proxy_result.ok {
-                    return Err(Status::aborted("Proxy failed to finish object"));
+                if !proxy_result.is_ok() {
+                    return Err(Status::aborted(
+                        "Proxy failed to finish object multipart upload.",
+                    ));
                 }
             }
         }
 
         let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
         let response = Response::new(
             task::spawn_blocking(move || {
-                database_clone.finish_object_staging(&request.into_inner(), &creator_id)
+                database_clone.finish_object_staging(&inner_request_clone, &creator_id)
             })
             .await
             .map_err(ArunaError::from)??,
@@ -396,14 +407,14 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
+        let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::WRITE, // User needs at least append permission to create an object
             )
             .await?;
@@ -413,36 +424,35 @@ impl ObjectService for ObjectServiceImpl {
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        let (_location, upload_id) = if inner_request.reupload {
-            // Connect to default data proxy endpoint
-            let mut data_proxy = self.try_connect_default_endpoint().await?;
+        let upload_id = if inner_request.reupload {
 
-            // Generate upload_id for object through (currently only default) storage endpoint
-            let location = Location {
-                r#type: self.default_endpoint.endpoint_type as i32,
-                bucket: collection_id.to_string(),
-                path: new_object_uuid.to_string(),
-            };
+            if inner_request.multi_part {
+                // Connect to default data proxy endpoint
+                let mut data_proxy = self.try_connect_default_endpoint().await?;
 
-            let upload_id = data_proxy
-                .init_presigned_upload(InitPresignedUploadRequest {
-                    location: Some(location.clone()),
-                    multipart: inner_request.multi_part,
-                })
-                .await?
-                .into_inner()
-                .upload_id;
-            (Some(location), Some(upload_id))
+                // Init multipart upload
+                let response = data_proxy
+                    .init_multipart_upload(InitMultipartUploadRequest {
+                        path: format!("{collection_uuid}/{new_object_uuid}"),
+                    })
+                    .await?
+                    .into_inner();
+
+                Some(response.upload_id)
+            } else {
+                Some(new_object_uuid.to_string())
+            }
         } else {
-            (None, None)
+            None
         };
+
+        // TODO: Create url based on preferred endpoint. Why here?
+        let _endpoint_id = self.default_endpoint.id;
 
         // Create Object in database
         let database_clone = self.database.clone();
-        // TODO: CREATE URL based on preferred endpoint
-        let _endpoint_id = self.default_endpoint.id;
         let mut response = task::spawn_blocking(move || {
-            database_clone.update_object(&inner_request, &creator_id, new_object_uuid)
+            database_clone.update_object(inner_request, &creator_id, new_object_uuid)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -721,9 +731,6 @@ impl ObjectService for ObjectServiceImpl {
             )
             .await?;
 
-        // Consume request and extract inner body
-        let inner_request = request.into_inner(); // Consumes the gRPC request
-
         // Get object and its location
         let database_clone = self.database.clone();
         let mut proto_object_url = task::spawn_blocking(move || {
@@ -739,40 +746,17 @@ impl ObjectService for ObjectServiceImpl {
             }
         };
 
-        // Only request url from data proxy if:
+        // Only create download url if:
         //  - object_data.status == ObjectStatus::AVAILABLE
         //  - request.with_url   == true
-        let response =
-            match inner_request.with_url && object_data.status == ProtoStatus::Available as i32 {
-                true => {
-                    // Establish connection to data proxy endpoint
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&object_uuid).await?;
 
-                    let data_proxy_request = CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_data.filename.clone(),
-                        range: Some(Range {
-                            start: 0,
-                            end: object_data.content_len,
-                        }),
-                    };
+        //ToDo: Create url based on available object endpoint here in ArunaServer
+        //ToDo: Currently no download urls
+        proto_object_url.url = "".to_string();
 
-                    proto_object_url.url = data_proxy
-                        .create_presigned_download(data_proxy_request)
-                        .await?
-                        .into_inner()
-                        .url;
-
-                    GetObjectByIdResponse {
-                        object: Some(proto_object_url),
-                    }
-                }
-                false => GetObjectByIdResponse {
-                    object: Some(proto_object_url),
-                },
-            };
+        let response = GetObjectByIdResponse {
+            object: Some(proto_object_url),
+        };
 
         let grpc_response = Response::new(response);
         log::info!("Sending GetObjectByIdResponse back to client.");
@@ -814,29 +798,13 @@ impl ObjectService for ObjectServiceImpl {
                     Object::default()
                 };
 
-                if request.get_ref().with_url && object_info.status == ProtoStatus::Available as i32
-                {
-                    // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self
-                        .try_connect_object_endpoint(
-                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
-                        )
-                        .await?;
-                    // Get download url from data proxy endpoint
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(CreatePresignedDownloadRequest {
-                            location: Some(location),
-                            is_public: false,
-                            filename: object_info.filename.clone(),
-                            range: Some(Range {
-                                start: 0,
-                                end: object_info.content_len,
-                            }),
-                        })
-                        .await?
-                        .into_inner()
-                        .url;
-                };
+                // Only create download url if:
+                //  - object_data.status == ObjectStatus::AVAILABLE
+                //  - request.with_url   == true
+
+                //ToDo: Create url based on available object endpoint here in ArunaServer
+                //ToDo: Currently no download urls
+                object_add_url.url = "".to_string();
             }
             object_with_urls
         } else {
@@ -885,29 +853,13 @@ impl ObjectService for ObjectServiceImpl {
                     Object::default()
                 };
 
-                if request.get_ref().with_url && object_info.status == ProtoStatus::Available as i32
-                {
-                    // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self
-                        .try_connect_object_endpoint(
-                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
-                        )
-                        .await?;
-                    // Get download url from data proxy endpoint
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(CreatePresignedDownloadRequest {
-                            location: Some(location),
-                            is_public: false,
-                            filename: object_info.filename.clone(),
-                            range: Some(Range {
-                                start: 0,
-                                end: object_info.content_len,
-                            }),
-                        })
-                        .await?
-                        .into_inner()
-                        .url;
-                };
+                // Only create download url if:
+                //  - object_data.status == ObjectStatus::AVAILABLE
+                //  - request.with_url   == true
+
+                //ToDo: Create url based on available object endpoint here in ArunaServer
+                //ToDo: Currently no download urls
+                object_add_url.url = "".to_string();
             }
             response
         };
@@ -965,25 +917,13 @@ impl ObjectService for ObjectServiceImpl {
         let response =
             match inner_request.with_url && object_info.status == ProtoStatus::Available as i32 {
                 true => {
-                    // Establish connection to data proxy endpoint
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&object_uuid).await?;
+                    // Only create download url if:
+                    //  - object_data.status == ObjectStatus::AVAILABLE
+                    //  - request.with_url   == true
 
-                    let data_proxy_request = CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_info.filename.clone(),
-                        range: Some(Range {
-                            start: 0,
-                            end: object_info.content_len,
-                        }),
-                    };
-
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(data_proxy_request)
-                        .await?
-                        .into_inner()
-                        .url;
+                    //ToDo: Create url based on available object endpoint here in ArunaServer
+                    //ToDo: Currently no download urls
+                    object_add_url.url = "".to_string();
 
                     GetLatestObjectRevisionResponse {
                         object: Some(object_add_url),
@@ -1144,32 +1084,13 @@ impl ObjectService for ObjectServiceImpl {
             }
         };
 
-        // Check object status == AVAILABLE before data proxy requests
-        if object_data.status != ProtoStatus::Available as i32 {
-            return Err(tonic::Status::unavailable(format!(
-                "object {object_uuid} is currently not available."
-            )));
-        }
+        // Only create download url if:
+        //  - object_data.status == ObjectStatus::AVAILABLE
 
-        // Connect to one of the objects data proxy endpoints
-        let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_uuid).await?;
+        //ToDo: Create url based on available object endpoint here in ArunaServer
+        //ToDo: Currently no download urls
+        let download_url = "".to_string();
 
-        // Get download url from data proxy endpoint
-        let download_url = data_proxy
-            .create_presigned_download(CreatePresignedDownloadRequest {
-                location: Some(location),
-                is_public: false,
-                filename: object_data.filename,
-                range: Some(Range {
-                    start: 0,
-                    end: object_data.content_len,
-                }),
-            })
-            .await?
-            .into_inner()
-            .url;
-
-        // Return gRPC response after everything succeeded
         let response = Response::new(GetDownloadUrlResponse {
             url: Some(Url { url: download_url }),
         });
@@ -1218,8 +1139,6 @@ impl ObjectService for ObjectServiceImpl {
         let mut urls: Vec<String> = Vec::new();
 
         for object_uuid in mapped_uuids {
-            let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_uuid).await?;
-
             let object_data = match self
                 .database
                 .get_object_by_id(&object_uuid, &collection_uuid)?
@@ -1231,29 +1150,13 @@ impl ObjectService for ObjectServiceImpl {
                 }
             };
 
-            // Check object status == AVAILABLE before data proxy requests
-            if object_data.status != ProtoStatus::Available as i32 {
-                return Err(tonic::Status::unavailable(format!(
-                    "object {object_uuid} is currently not available."
-                )));
-            }
+            // Only create download url if:
+            //  - object_data.status == ObjectStatus::AVAILABLE
 
-            // Get download url from data proxy endpoint
-            urls.push(
-                data_proxy
-                    .create_presigned_download(CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_data.filename,
-                        range: Some(Range {
-                            start: 0,
-                            end: object_data.content_len,
-                        }),
-                    })
-                    .await?
-                    .into_inner()
-                    .url,
-            );
+            //ToDo: Create url based on available object endpoint here in ArunaServer
+            //ToDo: Currently no download urls
+            let download_url = "".to_string();
+            urls.push(download_url)
         }
 
         let mapped_urls = urls
@@ -1312,58 +1215,30 @@ impl ObjectService for ObjectServiceImpl {
 
         tokio::spawn(async move {
             for object_uuid in mapped_uuids {
-                let try_connect =
-                    try_connect_object_endpoint_moveable(db_clone.clone(), &object_uuid).await;
-
-                if let Ok((mut data_proxy, location)) = try_connect {
-                    match db_clone.get_object_by_id(&object_uuid, &collection_uuid) {
-                        Ok(object_with_url) => {
-                            if let Some(object_data) = object_with_url.object {
-                                // Check object status == AVAILABLE before data proxy requests
-                                if object_data.status != ProtoStatus::Available as i32 {
-                                    tx.send(Err(tonic::Status::unavailable(format!(
-                                        "object {object_uuid} is currently not available."
-                                    ))))
-                                    .await
-                                    .unwrap();
-                                }
-
-                                tx.send(Ok(CreateDownloadLinksStreamResponse {
-                                    url: Some(Url {
-                                        url: data_proxy
-                                            .create_presigned_download(
-                                                CreatePresignedDownloadRequest {
-                                                    location: Some(location),
-                                                    is_public: false,
-                                                    filename: object_data.filename,
-                                                    range: Some(Range {
-                                                        start: 0,
-                                                        end: object_data.content_len,
-                                                    }),
-                                                },
-                                            )
-                                            .await
-                                            .unwrap()
-                                            .into_inner()
-                                            .url,
-                                    }),
-                                }))
-                                .await
-                                .unwrap();
-                            } else {
-                                tx.send(Err(Status::invalid_argument(
-                                    ArunaError::DieselError(diesel::result::Error::NotFound)
-                                        .to_string(),
-                                )))
+                match db_clone.get_object_by_id(&object_uuid, &collection_uuid) {
+                    Ok(object_with_url) => {
+                        if let Some(object_data) = object_with_url.object {
+                            // Check object status == AVAILABLE before data proxy requests
+                            if object_data.status != ProtoStatus::Available as i32 {
+                                tx.send(Err(tonic::Status::unavailable(format!(
+                                    "object {object_uuid} is currently not available."
+                                ))))
                                 .await
                                 .unwrap();
                             }
+                        } else {
+                            tx.send(Err(Status::invalid_argument(
+                                ArunaError::DieselError(diesel::result::Error::NotFound)
+                                    .to_string(),
+                            )))
+                            .await
+                            .unwrap();
                         }
-                        Err(e) => {
-                            tx.send(Err(Status::invalid_argument(e.to_string())))
-                                .await
-                                .unwrap();
-                        }
+                    }
+                    Err(e) => {
+                        tx.send(Err(Status::invalid_argument(e.to_string())))
+                            .await
+                            .unwrap();
                     }
                 }
             }
@@ -1464,6 +1339,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1545,7 +1421,7 @@ impl ObjectService for ObjectServiceImpl {
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
         let (_, coll_id) = task::spawn_blocking(move || {
-            database_clone.get_project_collection_ids_by_path(&inner_request_clone.path)
+            database_clone.get_project_collection_ids_by_path(&inner_request_clone.path, false)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -1609,7 +1485,7 @@ impl ObjectService for ObjectServiceImpl {
         // Create Objectpaths in database
         let database_clone = self.database.clone();
         let (project_uuid, collection_uuid_option) = task::spawn_blocking(move || {
-            database_clone.get_project_collection_ids_by_path(&inner_request.path)
+            database_clone.get_project_collection_ids_by_path(&inner_request.path, false)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -1656,7 +1532,8 @@ pub async fn try_connect_object_endpoint_moveable(
     object_uuid: &uuid::Uuid,
 ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
     // Get primary location with its endpoint from database
-    let (location, endpoint) = database.get_primary_object_location_with_endpoint(object_uuid)?;
+    let (location, endpoint, encryption_key) =
+        database.get_primary_object_location_with_endpoint(object_uuid)?;
 
     // Evaluate endpoint url
     let endpoint_url = match &endpoint.is_public {
@@ -1673,6 +1550,14 @@ pub async fn try_connect_object_endpoint_moveable(
                 r#type: endpoint.endpoint_type as i32,
                 bucket: location.bucket,
                 path: location.path,
+                endpoint_id: location.endpoint_id.to_string(),
+                is_compressed: location.is_compressed,
+                is_encrypted: location.is_encrypted,
+                encryption_key: if let Some(key) = encryption_key {
+                    key.encryption_key
+                } else {
+                    "".to_string()
+                }, // ...
             };
             Ok((dp, proto_location))
         }
