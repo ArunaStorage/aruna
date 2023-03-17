@@ -5,7 +5,7 @@ use futures::try_join;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
 
-use crate::data_server::{s3service::ServiceSettings, server::S3Server};
+use crate::data_server::{data_handler::DataHandler, s3service::ServiceSettings, server::S3Server};
 
 mod backends;
 mod data_server;
@@ -46,14 +46,24 @@ async fn main() {
     let data_socket = format!("{hostname}:8080");
     let aruna_server = dotenv::var("BACKEND_HOST").unwrap();
 
+    let data_handler = Arc::new(
+        DataHandler::new(
+            storage_backend.clone(),
+            aruna_server.to_string(),
+            ServiceSettings {
+                endpoint_id: uuid::Uuid::parse_str(&endpoint_id).unwrap(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap(),
+    );
+
     let data_server = S3Server::new(
         &data_socket,
         aruna_server,
         storage_backend.clone(),
-        ServiceSettings {
-            endpoint_id: uuid::Uuid::parse_str(&endpoint_id).unwrap(),
-            ..Default::default()
-        },
+        data_handler,
     )
     .await
     .unwrap();

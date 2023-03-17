@@ -51,19 +51,16 @@ impl Default for ServiceSettings {
 pub struct S3ServiceServer {
     backend: Arc<Box<dyn StorageBackend>>,
     data_handler: Arc<DataHandler>,
-    settings: ServiceSettings,
 }
 
 impl S3ServiceServer {
     pub async fn new(
         backend: Arc<Box<dyn StorageBackend>>,
-        url: impl Into<String>,
-        settings: ServiceSettings,
+        data_handler: Arc<DataHandler>,
     ) -> Result<Self> {
         Ok(S3ServiceServer {
             backend: backend.clone(),
-            data_handler: Arc::new(DataHandler::new(backend, url).await?),
-            settings,
+            data_handler,
         })
     }
 }
@@ -119,7 +116,7 @@ impl S3 for S3ServiceServer {
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
                 path: "".to_string(),
-                endpoint_id: self.settings.endpoint_id.to_string(),
+                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
                 hash: valid_sha256.clone(),
             })
             .await
@@ -140,8 +137,8 @@ impl S3 for S3ServiceServer {
             &valid_sha256,
             &response.object_id,
             &response.collection_id,
-            self.settings.encrypting,
-            self.settings.compressing,
+            self.data_handler.settings.encrypting,
+            self.data_handler.settings.compressing,
             String::from_utf8_lossy(&enc_key).into(),
         );
 
@@ -194,7 +191,7 @@ impl S3 for S3ServiceServer {
                         AsyncSenderSink::new(sender),
                     );
 
-                    if self.settings.encrypting {
+                    if self.data_handler.settings.encrypting {
                         awr =
                             awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
                                 log::error!("{}", e);
@@ -205,7 +202,7 @@ impl S3 for S3ServiceServer {
                             })?);
                     }
 
-                    if self.settings.compressing && !is_temp {
+                    if self.data_handler.settings.compressing && !is_temp {
                         if req.input.content_length > 5242880 + 80 * 28 {
                             awr = awr.add_transformer(FooterGenerator::new(None, true))
                         }
@@ -260,14 +257,15 @@ impl S3 for S3ServiceServer {
             }
             if is_temp {
                 self.data_handler
+                    .clone()
                     .move_encode(
                         location.clone(),
                         create_location_from_hash(
                             &final_sha256,
                             &response.object_id,
                             &response.collection_id,
-                            self.settings.encrypting,
-                            self.settings.compressing,
+                            self.data_handler.settings.encrypting,
+                            self.data_handler.settings.compressing,
                             location.encryption_key.clone(),
                         )
                         .0,
@@ -422,7 +420,7 @@ impl S3 for S3ServiceServer {
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
                 path: "".to_string(),
-                endpoint_id: self.settings.endpoint_id.to_string(),
+                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
                 hash: "".to_string(),
             })
             .await
@@ -457,7 +455,7 @@ impl S3 for S3ServiceServer {
                 let mut awr =
                     ArunaStreamReadWriter::new_with_sink(data, AsyncSenderSink::new(sender));
 
-                if self.settings.encrypting {
+                if self.data_handler.settings.encrypting {
                     awr = awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
                         log::error!("{}", e);
                         s3_error!(InternalError, "Internal data transformer encryption error")
@@ -529,26 +527,6 @@ impl S3 for S3ServiceServer {
             })?
             .into_inner();
 
-        // Does this object exists (including object id etc)
-
-        // Get the encryption key from backend
-        let enc_key = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: "".to_string(),
-                endpoint_id: self.settings.endpoint_id.to_string(),
-                hash: "".to_string(),
-            })
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner()
-            .encryption_key;
-
         let parts = match req.input.multipart_upload {
             Some(parts) => parts
                 .parts
@@ -568,53 +546,17 @@ impl S3 for S3ServiceServer {
             })
             .collect::<Result<Vec<PartETag>, S3Error>>()?;
 
-        self.backend
+        // Does this object exists (including object id etc)
+        //req.input.multipart_upload.unwrap().
+        self.data_handler
             .clone()
-            .finish_multipart_upload(
-                ArunaLocation {
-                    bucket: "temp".to_string(),
-                    path: format!("{}/{}", response.collection_id, response.object_id),
-                    ..Default::default()
-                },
+            .finish_multipart(
                 etag_parts,
+                response.object_id.to_string(),
+                response.collection_id,
                 req.input.upload_id,
             )
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InvalidArgument, "Unable to finish multipart")
-            })?;
-
-        let mover_clone = self.data_handler.clone();
-
-        let encrypting = self.settings.encrypting;
-        let compressing = self.settings.compressing;
-        let cloned_resp = response.clone();
-
-        tokio::spawn(async move {
-            mover_clone
-                .move_encode(
-                    ArunaLocation {
-                        bucket: "temp".to_string(),
-                        path: format!("{}/{}", cloned_resp.collection_id, cloned_resp.object_id),
-                        is_encrypted: encrypting,
-                        encryption_key: enc_key.clone(),
-                        ..Default::default()
-                    },
-                    ArunaLocation {
-                        bucket: "temp".to_string(),
-                        path: format!("{}/{}", cloned_resp.collection_id, cloned_resp.object_id),
-                        is_encrypted: encrypting,
-                        is_compressed: compressing,
-                        encryption_key: enc_key,
-                        ..Default::default()
-                    },
-                    cloned_resp.object_id,
-                    cloned_resp.collection_id,
-                    None,
-                )
-                .await
-        });
+            .await?;
 
         Ok(CompleteMultipartUploadOutput {
             e_tag: Some(response.object_id),

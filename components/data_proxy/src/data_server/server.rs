@@ -7,10 +7,7 @@ use tracing::info;
 
 use crate::backends::storage_backend::StorageBackend;
 
-use super::{
-    auth::AuthProvider,
-    s3service::{S3ServiceServer, ServiceSettings},
-};
+use super::{auth::AuthProvider, data_handler::DataHandler, s3service::S3ServiceServer};
 
 pub struct S3Server {
     s3service: S3Service,
@@ -22,13 +19,12 @@ impl S3Server {
         address: impl Into<String> + Copy,
         aruna_server: impl Into<String>,
         backend: Arc<Box<dyn StorageBackend>>,
-        settings: ServiceSettings,
+        data_handler: Arc<DataHandler>,
     ) -> Result<Self> {
         let server_url = aruna_server.into();
 
-        let mut service = S3Service::new(Box::new(
-            S3ServiceServer::new(backend, server_url.clone(), settings).await?,
-        ));
+        let mut service =
+            S3Service::new(Box::new(S3ServiceServer::new(backend, data_handler).await?));
 
         service.set_base_domain(address);
         service.set_auth(Box::new(AuthProvider::new(server_url).await?));

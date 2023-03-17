@@ -10,12 +10,16 @@ use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::footer::FooterGenerator;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
+use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
+use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
 use futures::future;
 use futures::StreamExt;
 use md5::{Digest, Md5};
+use s3s::s3_error;
+use s3s::S3Error;
 use sha2::Sha256;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -23,6 +27,7 @@ use tonic::transport::Channel;
 
 use crate::backends::storage_backend::StorageBackend;
 
+use super::s3service::ServiceSettings;
 use super::utils::create_ranges;
 use super::utils::validate_expected_hashes;
 
@@ -30,23 +35,26 @@ use super::utils::validate_expected_hashes;
 pub struct DataHandler {
     pub backend: Arc<Box<dyn StorageBackend>>,
     pub internal_notifier_service: InternalProxyNotifierServiceClient<Channel>,
+    pub settings: ServiceSettings,
 }
 
 impl DataHandler {
     pub async fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         url: impl Into<String>,
+        settings: ServiceSettings,
     ) -> Result<Self> {
         Ok(DataHandler {
             backend,
             internal_notifier_service: InternalProxyNotifierServiceClient::connect(url.into())
                 .await
                 .map_err(|_| anyhow!("Unable to connect to internal notifiers"))?,
+            settings,
         })
     }
 
     pub async fn move_encode(
-        &self,
+        self: Arc<Self>,
         from: ArunaLocation,
         mut to: ArunaLocation,
         object_id: String,
@@ -270,5 +278,79 @@ impl DataHandler {
                 hash: format!("{:x}", sha256_hash.finalize()),
             },
         ])
+    }
+
+    pub async fn finish_multipart(
+        self: Arc<Self>,
+        etag_parts: Vec<PartETag>,
+        object_id: String,
+        collection_id: String,
+        upload_id: String,
+    ) -> Result<(), S3Error> {
+        // Get the encryption key from backend
+        let enc_key = self
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                path: "".to_string(),
+                endpoint_id: self.settings.endpoint_id.to_string(),
+                hash: "".to_string(),
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner()
+            .encryption_key;
+
+        self.backend
+            .clone()
+            .finish_multipart_upload(
+                ArunaLocation {
+                    bucket: "temp".to_string(),
+                    path: format!("{}/{}", collection_id, object_id),
+                    ..Default::default()
+                },
+                etag_parts,
+                upload_id,
+            )
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InvalidArgument, "Unable to finish multipart")
+            })?;
+
+        let mover_clone = self.clone();
+
+        let encrypting = self.settings.encrypting;
+        let compressing = self.settings.compressing;
+
+        tokio::spawn(async move {
+            mover_clone
+                .move_encode(
+                    ArunaLocation {
+                        bucket: "temp".to_string(),
+                        path: format!("{}/{}", collection_id, object_id),
+                        is_encrypted: encrypting,
+                        encryption_key: enc_key.clone(),
+                        ..Default::default()
+                    },
+                    ArunaLocation {
+                        bucket: "temp".to_string(),
+                        path: format!("{}/{}", collection_id, object_id),
+                        is_encrypted: encrypting,
+                        is_compressed: compressing,
+                        encryption_key: enc_key,
+                        ..Default::default()
+                    },
+                    object_id,
+                    collection_id,
+                    None,
+                )
+                .await
+        });
+
+        Ok(())
     }
 }
