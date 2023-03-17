@@ -443,7 +443,7 @@ pub fn parse_bucket_path(
 ) -> Result<(String, String, Option<Version>), ArunaError> {
     // Split path in parts. Should be consistent as only [a-z0-9\-] are allowed.
     let mut bucket_parts: Vec<String> = bucket_path
-        .split(".")
+        .split('.')
         .map(|part| part.to_string())
         .collect();
 
@@ -462,7 +462,7 @@ pub fn parse_bucket_path(
         )))?;
 
     // Extract version from bucket path parts
-    let mut collection_version = if bucket_parts.len() == 1 {
+    let collection_version = if bucket_parts.len() == 1 {
         // Only (hopefully) "latest" left in parts
         None
     } else if bucket_parts.len() == 3 {

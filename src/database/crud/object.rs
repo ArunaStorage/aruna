@@ -627,8 +627,8 @@ impl Database {
                         id: uuid::Uuid::new_v4(),
                         bucket: proto_location.bucket.clone(),
                         path: proto_location.path.clone(),
-                        endpoint_id: endpoint_uuid.clone(),
-                        object_id: object_uuid.clone(),
+                        endpoint_id: endpoint_uuid,
+                        object_id: object_uuid,
                         is_primary: true, // First location of object, so primary.
                         is_encrypted: proto_location.is_encrypted,
                         is_compressed: proto_location.is_compressed,
@@ -652,7 +652,7 @@ impl Database {
                         let encryption_key_insert = EncryptionKey {
                             id: uuid::Uuid::new_v4(),
                             hash: Some(sha256_hash),
-                            object_id: object_uuid.clone(),
+                            object_id: object_uuid,
                             endpoint_id: endpoint_uuid,
                             is_temporary: false,
                             encryption_key: proto_location.encryption_key.to_string(),
@@ -693,7 +693,7 @@ impl Database {
                     hashes_insert.push(Db_Hash {
                         id: uuid::Uuid::new_v4(),
                         hash: proto_hash.hash.to_string(),
-                        object_id: object_uuid.clone(),
+                        object_id: object_uuid,
                         hash_type: grpc_to_db_hash_type(&proto_hash.alg)?,
                     });
                 }
@@ -988,7 +988,7 @@ impl Database {
                 &Context {
                     user_right: UserRights::READ,
                     resource_type: Resources::COLLECTION,
-                    resource_id: collection_uuid.clone(),
+                    resource_id: collection_uuid,
                     admin: false,
                     personal: false,
                     oidc_context: false,
@@ -996,7 +996,7 @@ impl Database {
             )?;
 
             let proto_object: ProtoObject =
-                if let Some(object_dto) = get_object_ignore_coll(&object_uuid, conn)? {
+                if let Some(object_dto) = get_object_ignore_coll(object_uuid, conn)? {
                     object_dto.try_into()?
                 } else {
                     return Err(ArunaError::InvalidRequest(format!(
@@ -2237,7 +2237,7 @@ impl Database {
                             UserRights::APPEND
                         },
                         resource_type: Resources::COLLECTION,
-                        resource_id: collection_uuid.clone(),
+                        resource_id: collection_uuid,
                         admin: false,
                         personal: false,
                         oidc_context: false,
@@ -2298,9 +2298,9 @@ impl Database {
                                 hash: None,
                             })
                         } else {
-                            return Err(ArunaError::InvalidRequest(
+                            Err(ArunaError::InvalidRequest(
                                 "No staging object provided in request for creation.".to_string(),
-                            ));
+                            ))
                         }
                     }
                 }
@@ -2324,11 +2324,11 @@ impl Database {
     ///
     pub fn get_project_collection_ids_by_path(
         &self,
-        request_path: &String,
+        request_path: &str,
         bucket_only: bool,
     ) -> Result<(uuid::Uuid, Option<uuid::Uuid>), ArunaError> {
         let s3bucket = if bucket_only {
-            request_path.as_str()
+            request_path
         } else {
             if !request_path.starts_with("s3://") {
                 return Err(ArunaError::InvalidRequest(
@@ -2347,10 +2347,7 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<(uuid::Uuid, Option<uuid::Uuid>), ArunaError, _>(|conn| {
-                Ok(get_project_collection_ids_of_bucket_path(
-                    conn,
-                    s3bucket.to_string(),
-                )?)
+                get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())
             })?;
 
         Ok(result)
@@ -2397,7 +2394,7 @@ pub fn create_staging_object(
 
     // Define object in database representation
     let object = Object {
-        id: object_uuid.clone(),
+        id: *object_uuid,
         shared_revision_id: uuid::Uuid::new_v4(),
         revision_number: 0,
         filename: staging_object.filename.clone(),
@@ -2407,13 +2404,13 @@ pub fn create_staging_object(
         object_status: ObjectStatus::INITIALIZING,
         dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
         source_id: source.as_ref().map(|src| src.id),
-        origin_id: object_uuid.clone(),
+        origin_id: *object_uuid,
     };
 
     // Define the join table entry collection <--> object
     let collection_object = CollectionObject {
         id: uuid::Uuid::new_v4(),
-        collection_id: collection_uuid.clone(),
+        collection_id: *collection_uuid,
         is_latest: false, // Will be checked on finish
         reference_status: ReferenceStatus::STAGING,
         object_id: object.id,
@@ -2440,11 +2437,8 @@ pub fn create_staging_object(
     };
 
     // Convert the object's labels and hooks to their database representation
-    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
-        staging_object.labels,
-        staging_object.hooks,
-        object_uuid.clone(),
-    );
+    let mut key_value_pairs =
+        to_key_values::<ObjectKeyValue>(staging_object.labels, staging_object.hooks, *object_uuid);
 
     // Validate key_values
     if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
@@ -2465,7 +2459,7 @@ pub fn create_staging_object(
         id: uuid::Uuid::new_v4(),
         object_id: object.id,
         key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path.clone(),
+        value: s3path,
         key_value_type: KeyValueType::LABEL,
     });
 

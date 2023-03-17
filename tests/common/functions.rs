@@ -27,7 +27,6 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
-use aruna_server::database::crud::object::get_all_references;
 use diesel::result::Error;
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
@@ -363,7 +362,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     };
     let finish_request = FinishObjectStagingRequest {
         object_id: object_id.to_string(),
-        upload_id: upload_id.to_string(),
+        upload_id,
         collection_id: collection_id.to_string(),
         hash: Some(dummy_hash.clone()),
         no_upload: false,
@@ -417,7 +416,7 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     let object_id = uuid::Uuid::new_v4();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_length = thread_rng().gen_range(1..1073741824);
-    let upload_id = uuid::Uuid::new_v4();
+    let _upload_id = uuid::Uuid::new_v4();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),

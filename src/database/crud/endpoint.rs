@@ -137,10 +137,10 @@ impl Database {
                 insert_into(endpoints).values(&db_endpoint).execute(conn)?;
 
                 // Insert public key of endpoint into database
-                Ok(insert_into(pub_keys)
+                insert_into(pub_keys)
                     .values(&db_pubkey)
                     .returning(pub_keys_dsl::id)
-                    .get_result::<i64>(conn)?)
+                    .get_result::<i64>(conn)
             })?;
 
         Ok((db_endpoint, pubkey_serial))

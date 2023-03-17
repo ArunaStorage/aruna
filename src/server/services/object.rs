@@ -266,7 +266,7 @@ impl ObjectService for ObjectServiceImpl {
             }
         }
 
-        let part_number: i64 = if inner_request.multipart && inner_request.part_number < 1 {
+        let _part_number: i64 = if inner_request.multipart && inner_request.part_number < 1 {
             return Err(tonic::Status::invalid_argument(
                 "Invalid part number, must be greater or equal 1",
             ));
@@ -327,7 +327,7 @@ impl ObjectService for ObjectServiceImpl {
         let mut upload_path = "".to_string();
         for label in staging_object.labels {
             println!("{:#?}", label);
-            if label.key == "app.aruna-storage.org/new_path".to_string() {
+            if label.key == *"app.aruna-storage.org/new_path" {
                 println!("Found path key with value: {}", label.value);
                 upload_path = label.value;
                 break;
@@ -376,7 +376,7 @@ impl ObjectService for ObjectServiceImpl {
                     .await;
 
                 // Only proceed when proxy did not fail
-                if !proxy_result.is_ok() {
+                if proxy_result.is_err() {
                     return Err(Status::aborted(
                         "Proxy failed to finish object multipart upload.",
                     ));
@@ -425,7 +425,6 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         let upload_id = if inner_request.reupload {
-
             if inner_request.multi_part {
                 // Connect to default data proxy endpoint
                 let mut data_proxy = self.try_connect_default_endpoint().await?;
@@ -739,7 +738,7 @@ impl ObjectService for ObjectServiceImpl {
         .await
         .map_err(ArunaError::from)??;
 
-        let object_data = match proto_object_url.object.clone() {
+        let _object_data = match proto_object_url.object.clone() {
             Some(p) => p,
             None => {
                 return Err(tonic::Status::invalid_argument("object not found"));
@@ -792,7 +791,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let result = if let Some(object_with_urls) = response {
             for mut object_add_url in object_with_urls.clone() {
-                let object_info = if let Some(info) = object_add_url.object {
+                let _object_info = if let Some(info) = object_add_url.object {
                     info
                 } else {
                     Object::default()
@@ -847,7 +846,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let result = {
             for mut object_add_url in response.clone() {
-                let object_info = if let Some(info) = object_add_url.object {
+                let _object_info = if let Some(info) = object_add_url.object {
                     info
                 } else {
                     Object::default()
@@ -881,7 +880,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let target_collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        let object_uuid =
+        let _object_uuid =
             uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
         self.authz
@@ -1077,7 +1076,7 @@ impl ObjectService for ObjectServiceImpl {
         .await
         .map_err(ArunaError::from)??;
 
-        let object_data = match proto_object_url.object.clone() {
+        let _object_data = match proto_object_url.object {
             Some(p) => p,
             None => {
                 return Err(Status::invalid_argument("object not found"));
@@ -1139,7 +1138,7 @@ impl ObjectService for ObjectServiceImpl {
         let mut urls: Vec<String> = Vec::new();
 
         for object_uuid in mapped_uuids {
-            let object_data = match self
+            let _object_data = match self
                 .database
                 .get_object_by_id(&object_uuid, &collection_uuid)?
                 .object
@@ -1495,16 +1494,16 @@ impl ObjectService for ObjectServiceImpl {
             self.authz
                 .collection_authorize(
                     &grpc_metadata,
-                    collection_uuid.clone(), // This is the collection uuid context for the object
-                    UserRights::READ,        // User needs at least read permission to get ids
+                    collection_uuid, // This is the collection uuid context for the object
+                    UserRights::READ, // User needs at least read permission to get ids
                 )
                 .await?;
         } else {
             self.authz
                 .project_authorize(
                     &grpc_metadata,
-                    project_uuid.clone(), // This is the project uuid context for the object
-                    UserRights::READ,     // User needs at least read permission to get ids
+                    project_uuid,     // This is the project uuid context for the object
+                    UserRights::READ, // User needs at least read permission to get ids
                 )
                 .await?;
         }
