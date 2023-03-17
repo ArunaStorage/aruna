@@ -954,11 +954,17 @@ impl Database {
     /// Get an object with its location for a specific endpoint. The data specific
     /// encryption/decryption key will be returned also if available.
     ///
-    /// ##
+    /// ## Arguments:
+    ///
+    ///
+    ///
+    /// ## Returns:
+    ///
+    ///
     pub fn get_object_with_location_info(
         &self,
         object_path: &String,
-        object_uuid: &uuid::Uuid,
+        object_revision: i64,
         endpoint_uuid: &uuid::Uuid,
         token_uuid: uuid::Uuid,
     ) -> Result<(ProtoObject, ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
@@ -995,17 +1001,18 @@ impl Database {
                 },
             )?;
 
+            let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?;
             let proto_object: ProtoObject =
-                if let Some(object_dto) = get_object_ignore_coll(object_uuid, conn)? {
+                if let Some(object_dto) = get_object_ignore_coll(&db_object.id, conn)? {
                     object_dto.try_into()?
                 } else {
                     return Err(ArunaError::InvalidRequest(format!(
-                        "Could not find object {object_uuid}"
+                        "Could not find object {}",
+                        db_object.id.to_string()
                     )));
                 };
-
             let location: ObjectLocation = object_locations
-                .filter(locations_dsl::object_id.eq(&object_uuid))
+                .filter(locations_dsl::object_id.eq(&db_object.id))
                 .filter(locations_dsl::endpoint_id.eq(&endpoint_uuid))
                 .first::<ObjectLocation>(conn)?;
 
@@ -1016,7 +1023,7 @@ impl Database {
             // Only query encryption key if object location is encrypted
             let encryption_key = if location.is_encrypted {
                 encryption_keys
-                    .filter(keys_dsl::object_id.eq(&object_uuid))
+                    .filter(keys_dsl::object_id.eq(&db_object.id))
                     .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
                     .first::<EncryptionKey>(conn)
                     .optional()?
@@ -1089,7 +1096,7 @@ impl Database {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
-                let object = get_latest_object_by_path(conn, &request.path, None)?;
+                let object = get_object_revision_by_path(conn, &request.path, -1, None)?;
 
                 let encryption_key =
                     if vec![Dataclass::PUBLIC, Dataclass::PRIVATE].contains(&object.dataclass) {
@@ -2225,7 +2232,7 @@ impl Database {
 
                 // Fetch object to check if it exists
                 let get_object =
-                    get_latest_object_by_path(conn, &request.path, Some(collection_uuid));
+                    get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid));
 
                 // Check permissions
                 let creator_uuid = self.get_checked_user_id_from_token(
@@ -3111,9 +3118,10 @@ pub fn get_latest_obj(
 /// ## Returns:
 ///
 /// `Result<Object, ArunaError>` - The latest database object revision or error if the request failed.
-pub fn get_latest_object_by_path(
+pub fn get_object_revision_by_path(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     object_path: &String,
+    object_revision: i64,
     check_collection: Option<uuid::Uuid>,
 ) -> Result<Object, ArunaError> {
     if !object_path.starts_with("s3://") {
@@ -3148,8 +3156,17 @@ pub fn get_latest_object_by_path(
         }
     }
 
-    Ok(objects
+    let mut base_request = objects
         .filter(database::schema::objects::shared_revision_id.eq(get_path.shared_revision_id))
+        .into_boxed();
+
+    let base_request = if object_revision < 0 {
+        base_request // Get the latest revision
+    } else {
+        base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
+    };
+
+    Ok(base_request
         .order_by(database::schema::objects::revision_number.desc())
         .first::<Object>(conn)?)
 }

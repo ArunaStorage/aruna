@@ -1,7 +1,7 @@
 use super::authz::Authz;
 use crate::database::connection::Database;
 
-use crate::error::ArunaError;
+use crate::error::{ArunaError, TypeConversionError};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 
 use crate::database::models::enums::{Resources, UserRights};
@@ -180,9 +180,15 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         // Consume gRPC request
         let inner_request = request.into_inner();
 
-        // Extract object, endpoint and token id from request
-        let object_uuid =
-            uuid::Uuid::parse_str(&inner_request.revision_id).map_err(ArunaError::from)?;
+        // Extract object revision number, endpoint id, token id from request
+        let object_revision = if inner_request.revision_id.is_empty() {
+            -1
+        } else {
+            inner_request
+                .revision_id
+                .parse::<i64>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?
+        };
 
         let endpoint_uuid =
             uuid::Uuid::parse_str(&inner_request.endpoint_id).map_err(ArunaError::from)?;
@@ -196,7 +202,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
             task::spawn_blocking(move || {
                 database_clone.get_object_with_location_info(
                     &inner_request.path,
-                    &object_uuid,
+                    object_revision,
                     &endpoint_uuid,
                     access_key,
                 )
@@ -247,6 +253,10 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
     ) -> Result<Response<GetCollectionByBucketResponse>, Status> {
         log::info!("Received GetCollectionByBucketRequest.");
         log::debug!("{}", format_grpc_request(&request));
+
+        //ToDo: Permissions for requests from external? Options:
+        //  1.) Rate Limit in Kubernetes for specific API endpoint.
+        //  2.) Get ids and check permissions with them.
 
         // Consume gRPC request
         let inner_request = request.into_inner();
