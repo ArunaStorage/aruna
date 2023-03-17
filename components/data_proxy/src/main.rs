@@ -63,7 +63,7 @@ async fn main() {
         &data_socket,
         aruna_server,
         storage_backend.clone(),
-        data_handler,
+        data_handler.clone(),
     )
     .await
     .unwrap();
@@ -73,10 +73,13 @@ async fn main() {
         .unwrap();
     let internal_proxy_socket = format!("{hostname}:8081").parse().unwrap();
 
-    let internal_proxy_server =
-        ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
-            .await
-            .unwrap();
+    let internal_proxy_server = ProxyServer::new(
+        Arc::new(internal_proxy_server),
+        data_handler,
+        internal_proxy_socket,
+    )
+    .await
+    .unwrap();
 
     log::info!("Starting proxy and dataserver");
     let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {

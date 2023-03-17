@@ -10,7 +10,7 @@ use aruna_rust_api::api::internal::v1::{
     Location, LocationType,
 };
 
-use crate::backends::storage_backend::StorageBackend;
+use crate::{backends::storage_backend::StorageBackend, data_server::data_handler::DataHandler};
 use async_trait::async_trait;
 use tonic::{Code, Response, Status};
 
@@ -24,6 +24,7 @@ pub struct InternalServerImpl {
 #[derive(Debug, Clone)]
 pub struct ProxyServer {
     pub internal_api: Arc<InternalServerImpl>,
+    pub data_handler: Arc<DataHandler>,
     pub addr: SocketAddr,
 }
 
@@ -31,9 +32,14 @@ pub struct ProxyServer {
 impl ProxyServer {
     pub async fn new(
         internal_api: Arc<InternalServerImpl>,
+        data_handler: Arc<DataHandler>,
         addr: SocketAddr,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(ProxyServer { addr, internal_api })
+        Ok(ProxyServer {
+            addr,
+            data_handler,
+            internal_api,
+        })
     }
 
     pub async fn serve(&self) -> Result<()> {
