@@ -993,9 +993,6 @@ fn clone_object_test() {
         }),
     );
 
-    //println!("{:#?}", new_obj);
-    println!("{:#?}", common::functions::get_object_references(random_collection.id.to_string(), new_obj.id.to_string(), false));
-
     // Update Object again
     let update_2 = common::functions::update_object(&TCreateUpdate {
         original_object: new_obj.clone(),

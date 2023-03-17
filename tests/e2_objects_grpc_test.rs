@@ -847,7 +847,11 @@ async fn update_staging_object_grpc_test() {
     );
     assert_eq!(rev_2_staging_object.rev_number, 2);
     assert_eq!(
-        rev_2_staging_object_updated.labels,
+        rev_2_staging_object_updated
+            .labels
+            .into_iter()
+            .filter(|label| !label.key.starts_with("app.aruna-storage.org"))
+            .collect::<Vec<_>>(),
         vec![KeyValue {
             key: "description".to_string(),
             value: "My object description".to_string(),

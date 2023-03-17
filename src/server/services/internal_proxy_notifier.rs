@@ -133,8 +133,9 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
 
         // Finalize Object in database
         let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
         let maybe_key = task::spawn_blocking(move || {
-            database_clone.get_or_create_encryption_key(&inner_request)
+            database_clone.get_or_create_encryption_key(&inner_request_clone)
         })
         .await
         .map_err(ArunaError::from)??;

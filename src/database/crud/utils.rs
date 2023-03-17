@@ -479,7 +479,7 @@ pub fn parse_bucket_path(
                 .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
         })
     } else {
-        // If something else is left throw error 
+        // If something else is left throw error
         return Err(ArunaError::InvalidRequest(format!(
             "Format of path {bucket_path} is not valid."
         )));
@@ -590,7 +590,7 @@ mod tests {
 
         let invalid_path = "1.2.3.collection-name".to_string();
         assert!(parse_bucket_path(invalid_path).is_err());
-        
+
         let invalid_path = "1.2.3.4.coll-name.proj-name".to_string();
         assert!(parse_bucket_path(invalid_path).is_err());
     }

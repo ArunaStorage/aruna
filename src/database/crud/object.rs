@@ -16,6 +16,7 @@ use crate::database::models::collection::CollectionVersion;
 use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
+
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetEncryptionKeyRequest,
     GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
@@ -25,8 +26,8 @@ use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
     CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
     GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesRequest,
-    GetReferencesResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
-    SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
+    GetReferencesResponse, InitializeNewObjectResponse, ObjectReference, ObjectWithUrl,
+    Path as ProtoPath, SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -39,8 +40,8 @@ use aruna_rust_api::api::storage::{
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
         GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
         GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
-        InitializeNewObjectResponse, SetObjectPathVisibilityRequest,
-        SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
+        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
     },
 };
 
@@ -149,11 +150,11 @@ impl TryFrom<ObjectDto> for ProtoObject {
                 id: object_dto.object.origin_id.to_string(),
             }),
             data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
-            hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,
             source: proto_source,
             latest: object_dto.latest,
             auto_update: object_dto.update,
+            hashes: vec![proto_hash],
         })
     }
 }
@@ -183,7 +184,7 @@ impl Database {
     pub fn create_object(
         &self,
         request: &InitializeNewObjectRequest,
-        creator: &uuid::Uuid,
+        creator_uuid: &uuid::Uuid,
         object_uuid: uuid::Uuid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
@@ -201,9 +202,10 @@ impl Database {
                     conn,
                     staging_object,
                     &object_uuid,
+                    request.hash.clone(),
                     &collection_uuid,
-                    creator,
-                    request.is_specification
+                    creator_uuid,
+                    request.is_specification,
                 )?)
             })?;
 
@@ -581,7 +583,7 @@ impl Database {
     ///
     /// ## Returns:
     ///
-    /// * `Result<Response<FinalizeObjectResponse>, Status>` - An empty FinalizeObjectResponse signals success.
+    /// * `Result<FinalizeObjectResponse, ArunaError>` - An empty FinalizeObjectResponse signals success.
     ///
     /// ## Behaviour:
     ///
@@ -616,23 +618,21 @@ impl Database {
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
                 use crate::database::schema::encryption_keys::dsl as keys_dsl;
-                use crate::database::schema::object_locations::dsl as locations_dsl;
                 use crate::database::schema::objects::dsl as objects_dsl;
-
-                // Get current temp location of object data (only one location should exist at this point)
-                let mut current_location = object_locations
-                    .filter(locations_dsl::object_id.eq(&object_uuid))
-                    .first::<ObjectLocation>(conn)?;
 
                 if let Some(proto_location) = &request.location {
                     let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
 
-                    // Adjust existing location to final location provided by data proxy
-                    current_location.bucket = proto_location.bucket.to_string();
-                    current_location.path = proto_location.path.to_string();
-                    current_location.endpoint_id = endpoint_uuid.clone();
-                    current_location.is_encrypted = proto_location.is_encrypted;
-                    current_location.is_compressed = proto_location.is_compressed;
+                    let final_location = ObjectLocation {
+                        id: uuid::Uuid::new_v4(),
+                        bucket: proto_location.bucket.clone(),
+                        path: proto_location.path.clone(),
+                        endpoint_id: endpoint_uuid.clone(),
+                        object_id: object_uuid.clone(),
+                        is_primary: true, // First location of object, so primary.
+                        is_encrypted: proto_location.is_encrypted,
+                        is_compressed: proto_location.is_compressed,
+                    };
 
                     // If encryption key exists, ok; create else.
                     if (objects.filter(objects_dsl::id.eq(&object_uuid)).first::<Object>(conn).optional()?).is_none() {
@@ -663,9 +663,8 @@ impl Database {
                             .execute(conn)?;
                     }
 
-                    update(object_locations)
-                        .filter(locations_dsl::id.eq(&current_location.id))
-                        .set(&current_location)
+                    insert_into(object_locations)
+                        .values(&final_location)
                         .execute(conn)?;
                 } else {
                     return Err(ArunaError::InvalidRequest(format!(
@@ -973,16 +972,15 @@ impl Database {
             Endpoint,
             Option<EncryptionKey>,
         ), ArunaError, _>(|conn| {
-
             let (s3bucket, _) = object_path[5..]
                 .split_once('/')
                 .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-            let (_, collection_uuid_option) = get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
-            let collection_uuid = collection_uuid_option.ok_or(ArunaError::InvalidRequest(format!(
-                "Collection in path {} does not exist.",
-                object_path
-            )))?;
+            let (_, collection_uuid_option) =
+                get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+            let collection_uuid = collection_uuid_option.ok_or(ArunaError::InvalidRequest(
+                format!("Collection in path {} does not exist.", object_path),
+            ))?;
 
             // Check permissions
             self.get_checked_user_id_from_token(
@@ -1995,7 +1993,7 @@ impl Database {
         let db_path = self
             .pg_connection
             .get()?
-            .transaction::<Option<ProtoPath>, Error, _>(|conn| {
+            .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
                 // Get the object to aquire shared revision
                 let get_obj = objects
                     .filter(database::schema::objects::id.eq(obj_id))
@@ -2012,7 +2010,7 @@ impl Database {
                     conn,
                 )?;
                 // Query path
-                paths
+                Ok(paths
                     .filter(database::schema::paths::path.eq(&s3path))
                     .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)
@@ -2022,7 +2020,7 @@ impl Database {
                             path: format!("s3://{}{}", elem.bucket, elem.path),
                             visibility: elem.active,
                         })
-                    })
+                    })?)
             })?;
 
         Ok(CreateObjectPathResponse { path: db_path })
@@ -2253,11 +2251,12 @@ impl Database {
                 match get_object {
                     Ok(fetched_object) => {
                         if let Some(staging_object) = request.object {
+                            let staging_object_uuid = uuid::Uuid::new_v4();
                             let created_object = update_object_init(
                                 conn,
                                 staging_object,
                                 fetched_object.id,
-                                uuid::Uuid::new_v4(),
+                                staging_object_uuid,
                                 collection_uuid,
                                 &creator_uuid,
                                 true,
@@ -2286,13 +2285,14 @@ impl Database {
                                 conn,
                                 staging_object,
                                 &staging_object_id,
+                                None,
                                 &collection_uuid,
                                 &creator_uuid,
                                 false,
                             )?;
 
                             Ok(GetOrCreateObjectByPathResponse {
-                                object_id: staging_object_id.to_string(),
+                                object_id: created_object.id.to_string(),
                                 collection_id: collection_uuid.to_string(),
                                 dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
                                 hash: None,
@@ -2367,8 +2367,10 @@ impl Database {
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Open database connection
 /// * `staging_object: StageObject` - Staging object meta information
 /// * `object_uuid: &uuid::Uuid` - Unique object identifier for staging object
+/// * `object_hash: Option<ProtoHash>` - Optional initial object hash
 /// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
 /// * `creator_uuid: &uuid::Uuid` - Unique user identifier
+/// * `is_collection_specification: bool` - Mark object as collection specification
 ///
 /// ## Returns:
 ///
@@ -2378,6 +2380,7 @@ pub fn create_staging_object(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     staging_object: StageObject,
     object_uuid: &uuid::Uuid,
+    object_hash: Option<ProtoHash>,
     collection_uuid: &uuid::Uuid,
     creator_uuid: &uuid::Uuid,
     is_collection_specification: bool,
@@ -2420,11 +2423,20 @@ pub fn create_staging_object(
     };
 
     // Define the hash placeholder for the object
-    let empty_hash = ApiHash {
-        id: uuid::Uuid::new_v4(),
-        hash: "".to_string(), //Note: Empty hash will be updated later
-        object_id: object.id,
-        hash_type: HashType::SHA256, //Note: Default. Will be updated later
+    let db_hash = if let Some(proto_hash) = object_hash {
+        ApiHash {
+            id: uuid::Uuid::new_v4(),
+            hash: proto_hash.hash,
+            object_id: object.id,
+            hash_type: grpc_to_db_hash_type(&proto_hash.alg)?,
+        }
+    } else {
+        ApiHash {
+            id: uuid::Uuid::new_v4(),
+            hash: "".to_string(), //Note: Empty hash will be updated later
+            object_id: object.id,
+            hash_type: HashType::SHA256, //Note: Default. Will be updated later
+        }
     };
 
     // Convert the object's labels and hooks to their database representation
@@ -2453,7 +2465,7 @@ pub fn create_staging_object(
         id: uuid::Uuid::new_v4(),
         object_id: object.id,
         key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
+        value: s3path.clone(),
         key_value_type: KeyValueType::LABEL,
     });
 
@@ -2469,9 +2481,7 @@ pub fn create_staging_object(
         diesel::insert_into(sources).values(&sour).execute(conn)?;
     }
     diesel::insert_into(objects).values(&object).execute(conn)?;
-    diesel::insert_into(hashes)
-        .values(&empty_hash)
-        .execute(conn)?;
+    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
     diesel::insert_into(object_key_value)
         .values(&key_value_pairs)
         .execute(conn)?;
@@ -2509,7 +2519,7 @@ pub fn update_object_init(
     is_collection_specification: bool,
 ) -> Result<Object, ArunaError> {
     // Get all references of all revisions of the object
-    let all_revision_references = get_all_references(conn, &collection_uuid, &true)?;
+    let all_revision_references = get_all_references(conn, &current_object_uuid, &true)?;
 
     // Filter references for staging objects and collection specific, writeable references
     let mut staging_references = Vec::new();
@@ -2650,23 +2660,24 @@ pub fn update_object_init(
             ));
         }
         // If path not exists -> Add label
-    } else {
-        key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
-            object_id: staging_object_uuid,
-            key: "app.aruna-storage.org/new_path".to_string(),
-            value: s3path,
-            key_value_type: KeyValueType::LABEL,
-        });
-
-        key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
-            object_id: staging_object_uuid,
-            key: "app.aruna-storage.org/bucket".to_string(),
-            value: s3bucket,
-            key_value_type: KeyValueType::LABEL,
-        });
     }
+
+    // Always add internal path labels
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: staging_object_uuid,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: staging_object_uuid,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
 
     // Insert entities which are always created on update
     diesel::insert_into(objects)
@@ -2877,23 +2888,23 @@ pub fn update_object_in_place(
                 "Invalid path, already exists for different object hierarchy".to_string(),
             ));
         }
-    // If path not exists -> Add label
-    } else {
-        key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
-            object_id: *object_uuid,
-            key: "app.aruna-storage.org/new_path".to_string(),
-            value: s3path,
-            key_value_type: KeyValueType::LABEL,
-        });
-        key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
-            object_id: *object_uuid,
-            key: "app.aruna-storage.org/bucket".to_string(),
-            value: s3bucket,
-            key_value_type: KeyValueType::LABEL,
-        });
     }
+
+    // Always add internal labels back to provided staging object labels
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: *object_uuid,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+    key_value_pairs.push(ObjectKeyValue {
+        id: uuid::Uuid::new_v4(),
+        object_id: *object_uuid,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
 
     delete(object_key_value)
         .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
@@ -3046,14 +3057,14 @@ pub fn clone_object(
                 id: db_object.origin_id.to_string(),
             }),
             data_class: db_object.dataclass as i32,
-            hash: Some(ProtoHash {
-                alg: db_to_grpc_hash_type(&db_hash.hash_type),
-                hash: db_hash.hash,
-            }),
             rev_number: db_object.revision_number,
             source: proto_source,
             latest: db_collection_object.is_latest,
             auto_update: db_collection_object.auto_update,
+            hashes: vec![ProtoHash {
+                alg: db_to_grpc_hash_type(&db_hash.hash_type),
+                hash: db_hash.hash,
+            }],
         },
         db_object.shared_revision_id,
     ))
