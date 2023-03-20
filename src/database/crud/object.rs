@@ -1101,7 +1101,7 @@ impl Database {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
-                let object = get_object_revision_by_path(conn, &request.path, -1, None)?
+                let req_object = get_object_revision_by_path(conn, &request.path, -1, None)?
                     .ok_or_else(|| {
                         ArunaError::InvalidRequest(format!(
                             "Could not find object for path {}",
@@ -1109,36 +1109,56 @@ impl Database {
                         ))
                     })?;
 
-                let (encryption_key, created) =
-                    if vec![Dataclass::PUBLIC, Dataclass::PRIVATE].contains(&object.dataclass) {
-                        (
-                            encryption_keys
-                                .filter(keys_dsl::hash.eq(&request.hash))
-                                .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                                .first::<EncryptionKey>(conn)
-                                .optional()?,
-                            false,
-                        )
-                    } else {
-                        let encryption_key_insert = EncryptionKey {
-                            id: uuid::Uuid::new_v4(),
-                            hash: if request.hash.is_empty() {
-                                None
-                            } else {
-                                Some(request.clone().hash)
-                            },
-                            object_id: Default::default(),
-                            endpoint_id: endpoint_uuid,
-                            is_temporary: false,
-                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
-                        };
+                let (encryption_key, created) = if let Some(is_key) = encryption_keys
+                    .filter(keys_dsl::hash.eq(&request.hash))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+                {
+                    match req_object.dataclass {
+                        Dataclass::PUBLIC | Dataclass::PRIVATE => (Some(is_key), false),
+                        _ => {
+                            let encryption_key_insert = EncryptionKey {
+                                id: uuid::Uuid::new_v4(),
+                                hash: if request.hash.is_empty() {
+                                    None
+                                } else {
+                                    Some(request.clone().hash)
+                                },
+                                object_id: req_object.id,
+                                endpoint_id: endpoint_uuid,
+                                is_temporary: false,
+                                encryption_key: Alphanumeric
+                                    .sample_string(&mut rand::thread_rng(), 32),
+                            };
 
-                        insert_into(encryption_keys)
-                            .values(&encryption_key_insert)
-                            .execute(conn)?;
+                            insert_into(encryption_keys)
+                                .values(&encryption_key_insert)
+                                .execute(conn)?;
 
-                        (Some(encryption_key_insert), true)
+                            (Some(encryption_key_insert), true)
+                        }
+                    }
+                } else {
+                    let encryption_key_insert = EncryptionKey {
+                        id: uuid::Uuid::new_v4(),
+                        hash: if request.hash.is_empty() {
+                            None
+                        } else {
+                            Some(request.clone().hash)
+                        },
+                        object_id: req_object.id,
+                        endpoint_id: endpoint_uuid,
+                        is_temporary: false,
+                        encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
                     };
+
+                    insert_into(encryption_keys)
+                        .values(&encryption_key_insert)
+                        .execute(conn)?;
+
+                    (Some(encryption_key_insert), true)
+                };
 
                 Ok((encryption_key, created))
             })?;
@@ -3218,7 +3238,7 @@ pub fn get_object_revision_by_path(
 
             // Get fq_path from label
             let path_label = object_key_value
-                .filter(database::schema::object_key_value::value.eq(s3path))
+                .filter(database::schema::object_key_value::value.eq(format!("/{s3path}")))
                 .filter(
                     database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"),
                 )
