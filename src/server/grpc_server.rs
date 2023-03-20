@@ -112,27 +112,30 @@ impl ServiceServer {
         let internal_proxy_notifier_service =
             InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
-        log::info!("ArunaServer listening on {}", addr);
+        log::info!("ArunaServer (external) listening on {}", addr);
 
-        Server::builder()
-            .add_service(EndpointServiceServer::new(endpoint_service))
-            .add_service(UserServiceServer::new(user_service))
-            .add_service(ProjectServiceServer::new(project_service))
-            .add_service(CollectionServiceServer::new(collection_service))
-            .add_service(ObjectServiceServer::new(object_service))
-            .add_service(ObjectGroupServiceServer::new(object_group_service))
-            .add_service(ResourceInfoServiceServer::new(resource_info_service))
-            .add_service(StorageInfoServiceServer::new(storage_info_service))
-            .add_service(ServiceAccountServiceServer::new(service_account_service))
-            .add_service(InternalEventServiceServer::new(internal_event_service))
-            .add_service(InternalAuthorizeServiceServer::new(
-                internal_authorize_service,
-            ))
-            .serve(addr)
-            .await
-            .unwrap();
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(EndpointServiceServer::new(endpoint_service))
+                .add_service(UserServiceServer::new(user_service))
+                .add_service(ProjectServiceServer::new(project_service))
+                .add_service(CollectionServiceServer::new(collection_service))
+                .add_service(ObjectServiceServer::new(object_service))
+                .add_service(ObjectGroupServiceServer::new(object_group_service))
+                .add_service(ResourceInfoServiceServer::new(resource_info_service))
+                .add_service(StorageInfoServiceServer::new(storage_info_service))
+                .add_service(ServiceAccountServiceServer::new(service_account_service))
+                .add_service(InternalEventServiceServer::new(internal_event_service))
+                .add_service(InternalAuthorizeServiceServer::new(
+                    internal_authorize_service,
+                ))
+                .serve(addr)
+                .await
+                .unwrap();
+        });
 
         let other_addr = "0.0.0.0:50052".parse().unwrap();
+        log::info!("ArunaServer (internal) listening on {}", other_addr);
         Server::builder()
             .add_service(InternalProxyNotifierServiceServer::new(
                 internal_proxy_notifier_service,
