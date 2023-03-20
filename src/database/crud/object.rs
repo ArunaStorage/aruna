@@ -3178,11 +3178,6 @@ pub fn get_object_revision_by_path(
         .first::<Path>(conn)
         .optional()?;
 
-    let get_path = match get_path {
-        Some(p) => p,
-        None => return Ok(None),
-    };
-
     // Validate that provided collection id and path collection id matches
     if let Some(collection_validation) = check_collection {
         let (_, maybe_collection) =
@@ -3200,20 +3195,59 @@ pub fn get_object_revision_by_path(
         }
     }
 
-    let base_request = objects
-        .filter(database::schema::objects::shared_revision_id.eq(get_path.shared_revision_id))
-        .into_boxed();
+    match get_path {
+        Some(p) => {
+            // Query the existing path
+            let base_request = objects
+                .filter(database::schema::objects::shared_revision_id.eq(p.shared_revision_id))
+                .into_boxed();
 
-    let base_request = if object_revision < 0 {
-        base_request // Get the latest revision
-    } else {
-        base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
-    };
+            let base_request = if object_revision < 0 {
+                base_request // Get the latest revision
+            } else {
+                base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
+            };
 
-    Ok(base_request
-        .order_by(database::schema::objects::revision_number.desc())
-        .first::<Object>(conn)
-        .optional()?)
+            Ok(base_request
+                .order_by(database::schema::objects::revision_number.desc())
+                .first::<Object>(conn)
+                .optional()?)
+        }
+        None => {
+            // Try to query the temp path from labels
+
+            // Get fq_path from label
+            let path_label = object_key_value
+                .filter(database::schema::object_key_value::value.eq(s3path))
+                .filter(
+                    database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"),
+                )
+                .first::<ObjectKeyValue>(conn)
+                .optional()?;
+
+            let mut target_object_id: Option<uuid::Uuid> = None;
+
+            if let Some(p_lbl) = path_label {
+                target_object_id = object_key_value
+                    .filter(database::schema::object_key_value::object_id.eq(&p_lbl.object_id))
+                    .filter(
+                        database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"),
+                    )
+                    .filter(database::schema::object_key_value::value.eq(s3bucket))
+                    .first::<ObjectKeyValue>(conn)
+                    .optional()?
+                    .map(|e| e.object_id);
+            }
+
+            match target_object_id {
+                Some(ob_id) => Ok(objects
+                    .filter(database::schema::objects::id.eq(ob_id))
+                    .first::<Object>(conn)
+                    .optional()?),
+                None => Ok(None),
+            }
+        }
+    }
 }
 
 /// This is a helper method that queries the project id and collection id based
