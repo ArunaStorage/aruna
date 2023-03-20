@@ -1002,7 +1002,11 @@ impl Database {
             )?;
 
             let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?
-                .ok_or_else(|| ArunaError::InvalidRequest(format!("Could not find object for path {object_path}")))?;
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest(format!(
+                        "Could not find object for path {object_path}"
+                    ))
+                })?;
             let proto_object: ProtoObject =
                 if let Some(object_dto) = get_object_ignore_coll(&db_object.id, conn)? {
                     object_dto.try_into()?
@@ -1098,15 +1102,23 @@ impl Database {
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
                 let object = get_object_revision_by_path(conn, &request.path, -1, None)?
-                    .ok_or_else(|| ArunaError::InvalidRequest(format!("Could not find object for path {}", request.path)))?;
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(format!(
+                            "Could not find object for path {}",
+                            request.path
+                        ))
+                    })?;
 
                 let (encryption_key, created) =
                     if vec![Dataclass::PUBLIC, Dataclass::PRIVATE].contains(&object.dataclass) {
-                        (encryption_keys
-                            .filter(keys_dsl::hash.eq(&request.hash))
-                            .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                            .first::<EncryptionKey>(conn)
-                            .optional()?, false)
+                        (
+                            encryption_keys
+                                .filter(keys_dsl::hash.eq(&request.hash))
+                                .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                                .first::<EncryptionKey>(conn)
+                                .optional()?,
+                            false,
+                        )
                     } else {
                         let encryption_key_insert = EncryptionKey {
                             id: uuid::Uuid::new_v4(),
@@ -2264,13 +2276,17 @@ impl Database {
                                 Ok(GetOrCreateObjectByPathResponse {
                                     object_id: fetched_object.id.to_string(),
                                     collection_id: collection_uuid.to_string(),
-                                    dataclass: db_to_grpc_dataclass(&fetched_object.dataclass) as i32,
+                                    dataclass: db_to_grpc_dataclass(&fetched_object.dataclass)
+                                        as i32,
                                     hashes: get_object_hashes(conn, &fetched_object.id)?,
                                     revision_number: fetched_object.revision_number,
                                     created: false,
                                 })
                             } else if fetched_object.object_status != ObjectStatus::AVAILABLE {
-                                Err(ArunaError::InvalidRequest(format!("Cannot update object with status {:?}", fetched_object.object_status)))
+                                Err(ArunaError::InvalidRequest(format!(
+                                    "Cannot update object with status {:?}",
+                                    fetched_object.object_status
+                                )))
                             } else {
                                 let staging_object_uuid = uuid::Uuid::new_v4();
                                 let created_object = update_object_init(
@@ -2287,7 +2303,8 @@ impl Database {
                                 Ok(GetOrCreateObjectByPathResponse {
                                     object_id: created_object.id.to_string(),
                                     collection_id: collection_uuid.to_string(),
-                                    dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
+                                    dataclass: db_to_grpc_dataclass(&created_object.dataclass)
+                                        as i32,
                                     hashes: get_object_hashes(conn, &fetched_object.id)?,
                                     revision_number: created_object.revision_number,
                                     created: false,
@@ -3155,10 +3172,16 @@ pub fn get_object_revision_by_path(
         .split_once('/')
         .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-    let get_path: Path = paths
+    let get_path: Option<Path> = paths
         .filter(database::schema::paths::path.eq(format!("/{s3path}")))
         .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)?;
+        .first::<Path>(conn)
+        .optional()?;
+
+    let get_path = match get_path {
+        Some(p) => p,
+        None => return Ok(None),
+    };
 
     // Validate that provided collection id and path collection id matches
     if let Some(collection_validation) = check_collection {
