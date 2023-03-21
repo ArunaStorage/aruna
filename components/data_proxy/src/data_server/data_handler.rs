@@ -107,7 +107,7 @@ impl DataHandler {
 
             let last_range = ranges
                 .pop()
-                .ok_or_else(|| anyhow!("At least one range must be specified"))?;
+                .ok_or(anyhow!("At least one range must be specified"))?;
 
             for (part, range) in ranges.iter().enumerate() {
                 let backend_clone = self.backend.clone();

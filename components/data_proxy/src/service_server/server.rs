@@ -41,8 +41,6 @@ impl ProxyServer {
         let internal_proxy_service =
             InternalProxyServiceServer::from_arc(self.internal_api.clone());
 
-        //::from_arc(self.internal_api.clone());
-
         tonic::transport::Server::builder()
             .add_service(internal_proxy_service)
             .serve(self.addr)

@@ -100,9 +100,19 @@ impl S3 for S3ServiceServer {
             .await
             .map_err(|e| {
                 log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
+                if e.message() == "Record not found" {
+                    s3_error!(NoSuchBucket, "Bucket not found")
+                } else {
+                    s3_error!(InternalError, "Internal notifier error")
+                }
             })?
             .into_inner();
+
+        dbg!(
+            req.input.content_md5.clone(),
+            req.input.checksum_sha256.clone(),
+            response.hashes.clone()
+        );
 
         // Check / get hashes
         let (valid_md5, valid_sha256) = validate_and_check_hashes(
@@ -117,7 +127,7 @@ impl S3 for S3ServiceServer {
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: "".to_string(),
+                path: format!("s3://{}/{}", &req.input.bucket, &req.input.key),
                 endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
                 hash: valid_sha256.clone(),
             })
@@ -144,29 +154,36 @@ impl S3 for S3ServiceServer {
             String::from_utf8_lossy(&enc_key).into(),
         );
 
-        // Check if this object already exists
-        let resp = match self.backend.head_object(location.clone()).await {
-            Ok(size) => {
-                if size == req.input.content_length {
-                    Some(size)
-                } else {
-                    return Err(s3_error!(
-                        InvalidArgument,
-                        "Illegal content-length for hash"
-                    ));
+        let resp = if !is_temp {
+            // Check if this object already exists
+            match self.backend.head_object(location.clone()).await {
+                Ok(size) => {
+                    if size == req.input.content_length {
+                        Some(size)
+                    } else {
+                        return Err(s3_error!(
+                            InvalidArgument,
+                            "Illegal content-length for hash"
+                        ));
+                    }
                 }
+                Err(_) => None,
             }
-            Err(_) => None,
+        } else {
+            None
         };
+
         let mut final_md5 = String::new();
         let mut final_sha256 = String::new();
 
         // If the object exists and the signatures match -> Skip the download
+
         if resp.is_some() {
             if !valid_md5.is_empty() && !valid_sha256.is_empty() {
                 final_md5 = valid_md5.clone();
                 final_sha256 = valid_sha256.clone();
             } else {
+                println!("war hier !");
                 return Err(s3_error!(SignatureDoesNotMatch, "Invalid hash"));
             }
         }
@@ -176,9 +193,14 @@ impl S3 for S3ServiceServer {
                     let (sender, recv) = async_channel::bounded(10);
                     let backend_handle = self.backend.clone();
                     let cloned_loc = location.clone();
+
+                    let calculated_length = ((req.input.content_length / 65536) * (65536 + 28))
+                        + (req.input.content_length % 65536)
+                        + 28;
+
                     let handle = tokio::spawn(async move {
                         backend_handle
-                            .put_object(recv, cloned_loc, req.input.content_length)
+                            .put_object(recv, cloned_loc, calculated_length)
                             .await
                     });
 

@@ -51,7 +51,6 @@ impl StorageBackend for S3Backend {
         location: Location,
         content_len: i64,
     ) -> Result<()> {
-        log::info!("Submitted content-length was: {:#?}", content_len);
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 

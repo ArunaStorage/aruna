@@ -91,7 +91,7 @@ pub fn validate_and_check_hashes(
     for hash in backend_hashes {
         match Hashalgorithm::from_i32(hash.alg) {
             Some(Hashalgorithm::Md5) => {
-                if !hash_md5.is_empty() && hash.hash != hash_md5 {
+                if !hash_md5.is_empty() && !hash.hash.is_empty() && hash.hash != hash_md5 {
                     return Err(s3_error!(
                         InvalidDigest,
                         "Invalid or inconsistent MD5 digest"
@@ -100,7 +100,7 @@ pub fn validate_and_check_hashes(
                 hash_md5 = hash.hash;
             }
             Some(Hashalgorithm::Sha256) => {
-                if !hash_sha256.is_empty() && hash.hash != hash_sha256 {
+                if !hash_sha256.is_empty() && !hash.hash.is_empty() && hash.hash != hash_sha256 {
                     return Err(s3_error!(
                         InvalidDigest,
                         "Invalid or inconsistent SHA256 digest"

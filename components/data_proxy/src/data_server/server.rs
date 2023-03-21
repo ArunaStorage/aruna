@@ -41,8 +41,6 @@ impl S3Server {
             Server::from_tcp(listener)?.serve(self.s3service.into_shared().into_make_service());
 
         info!("server is running at http(s)://{}/", self.address);
-        tokio::spawn(server);
-
-        Ok(())
+        Ok(tokio::spawn(server).await??)
     }
 }
