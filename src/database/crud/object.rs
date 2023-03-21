@@ -1109,12 +1109,19 @@ impl Database {
                         ))
                     })?;
 
-                let (encryption_key, created) = if let Some(is_key) = encryption_keys
-                    .filter(keys_dsl::hash.eq(&request.hash))
+                let (encryption_key, created) = if let Some(is_key) = match encryption_keys
+                    .filter(keys_dsl::object_id.eq(&req_object.id))
                     .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
                     .first::<EncryptionKey>(conn)
                     .optional()?
                 {
+                    Some(k) => Some(k),
+                    None => encryption_keys
+                        .filter(keys_dsl::hash.eq(&request.hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .first::<EncryptionKey>(conn)
+                        .optional()?,
+                } {
                     match req_object.dataclass {
                         Dataclass::PUBLIC | Dataclass::PRIVATE => (Some(is_key), false),
                         _ => {

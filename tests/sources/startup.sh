@@ -13,7 +13,7 @@ then
 fi
 
 # Start minio server
-$Runtime run -d -p 9000:9000 -p 9001:9001 --net=$Network --name minio\
+$Runtime run -d -p 9000:9000 -p 9001:9001 --net=$Network --name minio -e MINIO_DOMAIN=localhost:9000\
   quay.io/minio/minio server /data --console-address ":9001"
 
 # Start the DataProxy
