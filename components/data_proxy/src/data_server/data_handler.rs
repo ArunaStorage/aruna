@@ -102,7 +102,11 @@ impl DataHandler {
                 >,
             > = Vec::new();
 
-            let upload_id = self.backend.init_multipart_upload(to.clone()).await?;
+            let upload_id = self
+                .backend
+                .init_multipart_upload(to.clone())
+                .await
+                .unwrap();
             let range_len = ranges.len();
 
             let last_range = ranges
@@ -253,14 +257,39 @@ impl DataHandler {
         let (tx_send, tx_receive) = async_channel::unbounded();
 
         let backend_clone = self.backend.clone();
-        tokio::spawn(async move { backend_clone.get_object(location, None, tx_send).await });
+        let clone_key = location.encryption_key.as_bytes().to_vec();
+        let get_handle =
+            tokio::spawn(async move { backend_clone.get_object(location, None, tx_send).await });
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
-        let md5_str = tx_receive.inspect(|bytes| md5_hash.update(bytes.as_ref()));
-        let sha_str = md5_str.inspect(|bytes| sha256_hash.update(bytes.as_ref()));
+        let (transform_send, transform_receive) = async_channel::unbounded();
+
+        let process_handle: JoinHandle<Result<(), _>> = tokio::spawn(async move {
+            ArunaStreamReadWriter::new_with_sink(
+                tx_receive.map(|e| Ok(e)),
+                AsyncSenderSink::new(transform_send),
+            )
+            .add_transformer(ChaCha20Dec::new(clone_key)?)
+            .process()
+            .await
+        });
+
+        let md5_str = transform_receive.inspect(|res_bytes| {
+            if let Ok(bytes) = res_bytes {
+                md5_hash.update(bytes)
+            }
+        });
+        let sha_str = md5_str.inspect(|res_bytes| {
+            if let Ok(bytes) = res_bytes {
+                sha256_hash.update(bytes)
+            }
+        });
         // iterate the whole stream and do nothing
         sha_str.for_each(|_| future::ready(())).await;
+
+        get_handle.await??;
+        process_handle.await??;
 
         Ok(vec![
             Hash {

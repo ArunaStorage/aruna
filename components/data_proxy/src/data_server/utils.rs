@@ -139,7 +139,7 @@ pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Re
             }) {
                 Ok(())
             } else {
-                Err(anyhow!("a"))
+                Err(anyhow!("Got hash {:?}, expected: {:?}", hashes, got))
             }
         }
         None => Ok(()),

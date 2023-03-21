@@ -25,6 +25,7 @@ use sha2::Sha256;
 use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
+use crate::data_server::buffered_s3_sink::BufferedS3Sink;
 
 use super::data_handler::DataHandler;
 use super::utils::construct_path;
@@ -108,12 +109,6 @@ impl S3 for S3ServiceServer {
             })?
             .into_inner();
 
-        dbg!(
-            req.input.content_md5.clone(),
-            req.input.checksum_sha256.clone(),
-            response.hashes.clone()
-        );
-
         // Check / get hashes
         let (valid_md5, valid_sha256) = validate_and_check_hashes(
             req.input.content_md5,
@@ -190,20 +185,6 @@ impl S3 for S3ServiceServer {
         if resp.is_none() {
             match req.input.body {
                 Some(data) => {
-                    let (sender, recv) = async_channel::bounded(10);
-                    let backend_handle = self.backend.clone();
-                    let cloned_loc = location.clone();
-
-                    let calculated_length = ((req.input.content_length / 65536) * (65536 + 28))
-                        + (req.input.content_length % 65536)
-                        + 28;
-
-                    let handle = tokio::spawn(async move {
-                        backend_handle
-                            .put_object(recv, cloned_loc, calculated_length)
-                            .await
-                    });
-
                     // MD5 Stream
                     let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
                     // Sha256 stream
@@ -212,7 +193,13 @@ impl S3 for S3ServiceServer {
 
                     let mut awr = ArunaStreamReadWriter::new_with_sink(
                         shaed_stream,
-                        AsyncSenderSink::new(sender),
+                        BufferedS3Sink::new(
+                            self.backend.clone(),
+                            location.clone(),
+                            None,
+                            None,
+                            None,
+                        ),
                     );
 
                     if self.data_handler.settings.encrypting {
@@ -237,23 +224,6 @@ impl S3 for S3ServiceServer {
                         log::error!("{}", e);
                         s3_error!(InternalError, "Internal data transformer processing error")
                     })?;
-
-                    handle
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(
-                                InternalError,
-                                "Internal data transformer processing error (TokioJoinHandle)"
-                            )
-                        })?
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(
-                                InternalError,
-                                "Internal data transformer processing error (Backend)"
-                            )
-                        })?;
                 }
                 None => {
                     return Err(s3_error!(
@@ -266,14 +236,15 @@ impl S3 for S3ServiceServer {
             final_md5 = format!("{:x}", md5_hash.finalize());
             final_sha256 = format!("{:x}", sha256_hash.finalize());
 
-            if !valid_md5.is_empty() && final_md5 != valid_md5 {
+            if !valid_md5.is_empty() && !valid_md5.is_empty() && final_md5 != valid_md5 {
                 return Err(s3_error!(
                     InvalidDigest,
                     "Invalid or inconsistent MD5 digest"
                 ));
             }
 
-            if !final_sha256.is_empty() && final_sha256 != valid_sha256 {
+            if !final_sha256.is_empty() && !valid_sha256.is_empty() && final_sha256 != valid_sha256
+            {
                 return Err(s3_error!(
                     InvalidDigest,
                     "Invalid or inconsistent SHA256 digest"
@@ -308,7 +279,7 @@ impl S3 for S3ServiceServer {
                     )
                     .await
                     .map_err(|e| {
-                        log::error!("{}", e);
+                        log::error!("InternalError: {}", e);
                         s3_error!(InternalError, "Internal data mover error")
                     })?
             }
