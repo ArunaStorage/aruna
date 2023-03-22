@@ -238,8 +238,14 @@ impl StorageBackend for S3Backend {
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
-    async fn delete_object(&self, _location: Location) -> Result<()> {
-        todo!()
+    async fn delete_object(&self, location: Location) -> Result<()> {
+        self.s3_client
+            .delete_object()
+            .bucket(location.bucket)
+            .key(location.path)
+            .send()
+            .await?;
+        Ok(())
     }
 }
 

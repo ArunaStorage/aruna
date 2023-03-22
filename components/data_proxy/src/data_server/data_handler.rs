@@ -78,6 +78,23 @@ impl DataHandler {
         to.bucket = format!("b{}", sha_hash.hash[0..2].to_string());
         to.path = sha_hash.hash[2..].to_string();
 
+        // Get the correct encryption key based on the actual hash of the object
+        to.encryption_key = self
+            .internal_notifier_service
+            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                path: format!("s3://{}/{}", &to.bucket, &to.path),
+                endpoint_id: self.settings.endpoint_id.to_string(),
+                hash: sha_hash.hash.clone(),
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner()
+            .encryption_key;
+
         // Check if this object already exists
         let current_size = match self.backend.head_object(to.clone()).await {
             Ok(size) => size,
@@ -87,9 +104,10 @@ impl DataHandler {
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
         let backend_clone = self.backend.clone();
+        let from_clone = from.clone();
 
         let get_handle =
-            tokio::spawn(async move { backend_clone.get_object(from, None, tx_send).await });
+            tokio::spawn(async move { backend_clone.get_object(from_clone, None, tx_send).await });
 
         let mut awr = ArunaStreamReadWriter::new_with_sink(
             tx_receive.map(Ok),
@@ -131,6 +149,8 @@ impl DataHandler {
                 content_length: expected_size,
             })
             .await?;
+
+        self.backend.delete_object(from).await?;
 
         Ok(())
     }

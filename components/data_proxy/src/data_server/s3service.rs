@@ -301,7 +301,7 @@ impl S3 for S3ServiceServer {
                         },
                         Hash {
                             alg: Hashalgorithm::Sha256 as i32,
-                            hash: final_sha256,
+                            hash: final_sha256.to_string(),
                         },
                     ],
                 })
@@ -314,7 +314,7 @@ impl S3 for S3ServiceServer {
 
         let output = PutObjectOutput {
             e_tag: Some(response.object_id),
-            checksum_sha256: Some("".to_string()),
+            checksum_sha256: Some(final_sha256),
             ..Default::default()
         };
         Ok(output)
