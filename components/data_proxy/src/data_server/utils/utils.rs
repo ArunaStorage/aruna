@@ -71,7 +71,7 @@ pub fn validate_and_check_hashes(
     s3_md5_hash: Option<String>,
     s3_sha256_hash: Option<String>,
     backend_hashes: Vec<Hash>,
-) -> Result<(String, String), S3Error> {
+) -> Result<(Option<String>, Option<String>), S3Error> {
     let mut hash_md5 = match s3_md5_hash {
         Some(h) => h,
         None => String::new(),
@@ -119,7 +119,7 @@ pub fn validate_and_check_hashes(
         ));
     }
 
-    Ok((hash_md5, hash_sha256))
+    Ok((Some(hash_md5), Some(hash_sha256)))
 }
 
 pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Result<()> {

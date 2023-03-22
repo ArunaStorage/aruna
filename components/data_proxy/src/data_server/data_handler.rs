@@ -25,10 +25,9 @@ use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 use crate::backends::storage_backend::StorageBackend;
-use crate::data_server::buffered_s3_sink::BufferedS3Sink;
-
-use super::s3service::ServiceSettings;
-use super::utils::validate_expected_hashes;
+use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::data_server::utils::utils::validate_expected_hashes;
+use crate::ServiceSettings;
 
 #[derive(Debug)]
 pub struct DataHandler {

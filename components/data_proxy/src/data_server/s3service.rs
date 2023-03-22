@@ -9,7 +9,6 @@ use aruna_file::transformers::footer::FooterGenerator;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetObjectLocationRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
-use aruna_rust_api::api::internal::v1::GetOrCreateObjectByPathRequest;
 use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
@@ -27,30 +26,11 @@ use sha2::Sha256;
 use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
-use crate::data_server::buffered_s3_sink::BufferedS3Sink;
+use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 
 use super::data_handler::DataHandler;
-use super::utils::construct_path;
-use super::utils::create_location_from_hash;
-use super::utils::create_stage_object;
-use super::utils::validate_and_check_hashes;
-
-#[derive(Debug, Clone)]
-pub struct ServiceSettings {
-    pub endpoint_id: uuid::Uuid,
-    pub encrypting: bool,
-    pub compressing: bool,
-}
-
-impl Default for ServiceSettings {
-    fn default() -> Self {
-        Self {
-            endpoint_id: Default::default(),
-            encrypting: true,
-            compressing: true,
-        }
-    }
-}
+use super::utils::aruna_notifier::ArunaNotifier;
+use crate::data_server::utils::utils::create_location_from_hash;
 
 #[derive(Debug)]
 pub struct S3ServiceServer {
@@ -74,96 +54,26 @@ impl S3ServiceServer {
 impl S3 for S3ServiceServer {
     #[tracing::instrument]
     async fn put_object(&self, req: S3Request<PutObjectInput>) -> S3Result<PutObjectOutput> {
-        // Get the credentials
-        let creds = match req.credentials {
-            Some(cred) => cred,
-            None => {
-                log::error!("{}", "Not identified PutObjectRequest");
-                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
-            }
-        };
+        let mut anotif = ArunaNotifier::new(
+            self.data_handler.internal_notifier_service.clone(),
+            self.data_handler.settings.clone(),
+        );
+        anotif.set_credentials(req.credentials)?;
+        anotif
+            .get_object(&req.input.bucket, &req.input.key, req.input.content_length)
+            .await?;
+        anotif.validate_hashes(req.input.content_md5, req.input.checksum_sha256)?;
+        anotif.get_encryption_key().await?;
 
-        // Get the object from backend
-        let get_obj_req = GetOrCreateObjectByPathRequest {
-            path: construct_path(&req.input.bucket, &req.input.key),
-            access_key: creds.access_key,
-            object: Some(create_stage_object(
-                &req.input.key,
-                req.input.content_length,
-            )),
-            get_only: false,
-        };
-
-        // Get or create object by path
-        let response = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_object_by_path(get_obj_req)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                if e.message() == "Record not found" {
-                    s3_error!(NoSuchBucket, "Bucket not found")
-                } else {
-                    s3_error!(InternalError, "Internal notifier error")
-                }
-            })?
-            .into_inner();
-
-        // Check / get hashes
-        let (valid_md5, valid_sha256) = validate_and_check_hashes(
-            req.input.content_md5,
-            req.input.checksum_sha256,
-            response.hashes,
-        )?;
-
-        // Get the encryption key from backend
-        let enc_key = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: format!("s3://{}/{}", &req.input.bucket, &req.input.key),
-                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
-                hash: valid_sha256.clone(),
-            })
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner()
-            .encryption_key
-            .as_bytes()
-            .to_vec();
+        let (location, is_temp) = anotif.get_location()?;
 
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
-        // Create a target location (may be a temp location)
-        let (location, is_temp) = create_location_from_hash(
-            &valid_sha256,
-            &response.object_id,
-            &response.collection_id,
-            self.data_handler.settings.encrypting,
-            self.data_handler.settings.compressing,
-            String::from_utf8_lossy(&enc_key).into(),
-        );
-
         let resp = if !is_temp {
             // Check if this object already exists
             match self.backend.head_object(location.clone()).await {
-                Ok(size) => {
-                    if size == req.input.content_length {
-                        Some(size)
-                    } else {
-                        return Err(s3_error!(
-                            InvalidArgument,
-                            "Illegal content-length for hash"
-                        ));
-                    }
-                }
+                Ok(_) => Some(()),
                 Err(_) => None,
             }
         } else {
@@ -175,126 +85,113 @@ impl S3 for S3ServiceServer {
 
         // If the object exists and the signatures match -> Skip the download
 
-        if resp.is_some() {
-            if !valid_md5.is_empty() && !valid_sha256.is_empty() {
-                final_md5 = valid_md5.clone();
-                final_sha256 = valid_sha256.clone();
-            } else {
-                return Err(s3_error!(SignatureDoesNotMatch, "Invalid hash"));
-            }
-        }
-        if resp.is_none() {
-            match req.input.body {
-                Some(data) => {
-                    // MD5 Stream
-                    let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-                    // Sha256 stream
-                    let shaed_stream =
-                        md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
+        match resp {
+            Some(_) => {}
+            None => {
+                match req.input.body {
+                    Some(data) => {
+                        // MD5 Stream
+                        let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
+                        // Sha256 stream
+                        let shaed_stream =
+                            md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
 
-                    let mut awr = ArunaStreamReadWriter::new_with_sink(
-                        shaed_stream,
-                        BufferedS3Sink::new(
-                            self.backend.clone(),
-                            location.clone(),
-                            None,
-                            None,
-                            None,
-                        ),
-                    );
+                        let mut awr = ArunaStreamReadWriter::new_with_sink(
+                            shaed_stream,
+                            BufferedS3Sink::new(
+                                self.backend.clone(),
+                                location.clone(),
+                                None,
+                                None,
+                                None,
+                            ),
+                        );
 
-                    if self.data_handler.settings.encrypting {
-                        awr =
-                            awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
-                                log::error!("{}", e);
-                                s3_error!(
-                                    InternalError,
-                                    "Internal data transformer encryption error"
-                                )
-                            })?);
-                    }
-
-                    if self.data_handler.settings.compressing && !is_temp {
-                        if req.input.content_length > 5242880 + 80 * 28 {
-                            awr = awr.add_transformer(FooterGenerator::new(None, true))
+                        if self.data_handler.settings.encrypting {
+                            awr = awr.add_transformer(
+                                ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(
+                                    |e| {
+                                        log::error!("{}", e);
+                                        s3_error!(
+                                            InternalError,
+                                            "Internal data transformer encryption error"
+                                        )
+                                    },
+                                )?,
+                            );
                         }
-                        awr = awr.add_transformer(ZstdEnc::new(0, true));
+
+                        if self.data_handler.settings.compressing && !is_temp {
+                            if req.input.content_length > 5242880 + 80 * 28 {
+                                awr = awr.add_transformer(FooterGenerator::new(None, true))
+                            }
+                            awr = awr.add_transformer(ZstdEnc::new(0, true));
+                        }
+
+                        awr.process().await.map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal data transformer processing error")
+                        })?;
                     }
-
-                    awr.process().await.map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Internal data transformer processing error")
-                    })?;
+                    None => {
+                        return Err(s3_error!(
+                            InvalidObjectState,
+                            "Request body / data is required, use ArunaAPI for empty objects"
+                        ))
+                    }
                 }
-                None => {
-                    return Err(s3_error!(
-                        InvalidObjectState,
-                        "Request body / data is required, use ArunaAPI for empty objects"
-                    ))
-                }
-            }
 
-            final_md5 = format!("{:x}", md5_hash.finalize());
-            final_sha256 = format!("{:x}", sha256_hash.finalize());
+                final_md5 = format!("{:x}", md5_hash.finalize());
+                final_sha256 = format!("{:x}", sha256_hash.finalize());
 
-            if !valid_md5.is_empty() && !valid_md5.is_empty() && final_md5 != valid_md5 {
-                return Err(s3_error!(
-                    InvalidDigest,
-                    "Invalid or inconsistent MD5 digest"
-                ));
-            }
+                anotif.test_final_hashes(&final_md5, &final_sha256)?;
 
-            if !final_sha256.is_empty() && !valid_sha256.is_empty() && final_sha256 != valid_sha256
-            {
-                return Err(s3_error!(
-                    InvalidDigest,
-                    "Invalid or inconsistent SHA256 digest"
-                ));
-            }
-            if is_temp {
-                self.data_handler
-                    .clone()
-                    .move_encode(
-                        location.clone(),
-                        create_location_from_hash(
-                            &final_sha256,
-                            &response.object_id,
-                            &response.collection_id,
-                            self.data_handler.settings.encrypting,
-                            self.data_handler.settings.compressing,
-                            location.encryption_key.clone(),
+                if is_temp {
+                    let (object_id, collection_id) = anotif.get_col_obj()?;
+                    self.data_handler
+                        .clone()
+                        .move_encode(
+                            location.clone(),
+                            create_location_from_hash(
+                                &final_sha256,
+                                &object_id,
+                                &collection_id,
+                                self.data_handler.settings.encrypting,
+                                self.data_handler.settings.compressing,
+                                location.encryption_key.clone(),
+                            )
+                            .0,
+                            object_id,
+                            collection_id,
+                            Some(vec![
+                                Hash {
+                                    alg: Hashalgorithm::Md5 as i32,
+                                    hash: final_md5.clone(),
+                                },
+                                Hash {
+                                    alg: Hashalgorithm::Sha256 as i32,
+                                    hash: final_sha256.clone(),
+                                },
+                            ]),
+                            format!("s3://{}/{}", &req.input.bucket, &req.input.key),
                         )
-                        .0,
-                        response.object_id.clone(),
-                        response.collection_id.clone(),
-                        Some(vec![
-                            Hash {
-                                alg: Hashalgorithm::Md5 as i32,
-                                hash: final_md5.clone(),
-                            },
-                            Hash {
-                                alg: Hashalgorithm::Sha256 as i32,
-                                hash: final_sha256.clone(),
-                            },
-                        ]),
-                        format!("s3://{}/{}", &req.input.bucket, &req.input.key),
-                    )
-                    .await
-                    .map_err(|e| {
-                        log::error!("InternalError: {}", e);
-                        s3_error!(InternalError, "Internal data mover error")
-                    })?
+                        .await
+                        .map_err(|e| {
+                            log::error!("InternalError: {}", e);
+                            s3_error!(InternalError, "Internal data mover error")
+                        })?
+                }
             }
         }
 
         if !is_temp {
-            println!("War hier !!!");
+            let (object_id, collection_id) = anotif.get_col_obj()?;
             self.data_handler
                 .internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
                 .finalize_object(FinalizeObjectRequest {
-                    object_id: response.object_id.clone(),
-                    collection_id: response.collection_id.clone(),
+                    object_id: object_id,
+                    collection_id: collection_id,
                     location: Some(location),
                     content_length: req.input.content_length,
                     hashes: vec![
@@ -315,8 +212,9 @@ impl S3 for S3ServiceServer {
                 })?;
         }
 
+        let (object_id, _) = anotif.get_col_obj()?;
         let output = PutObjectOutput {
-            e_tag: Some(response.object_id),
+            e_tag: Some(object_id),
             checksum_sha256: Some(final_sha256),
             ..Default::default()
         };
@@ -328,43 +226,23 @@ impl S3 for S3ServiceServer {
         &self,
         req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<CreateMultipartUploadOutput> {
-        // Get the credentials
-        let creds = match req.credentials {
-            Some(cred) => cred,
-            None => {
-                log::error!("{}", "Not identified PutObjectRequest");
-                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
-            }
-        };
+        let mut anotif = ArunaNotifier::new(
+            self.data_handler.internal_notifier_service.clone(),
+            self.data_handler.settings.clone(),
+        );
+        anotif.set_credentials(req.credentials)?;
+        anotif
+            .get_object(&req.input.bucket, &req.input.key, 0)
+            .await?;
 
-        // Get the object from backend
-        let get_obj_req = GetOrCreateObjectByPathRequest {
-            path: construct_path(&req.input.bucket, &req.input.key),
-            access_key: creds.access_key,
-            object: Some(create_stage_object(&req.input.key, 0)),
-            get_only: false,
-        };
-
-        // Get or create object by path
-        // Check if exists
-        let response = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_object_by_path(get_obj_req)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner();
+        let (object_id, collection_id) = anotif.get_col_obj()?;
 
         let init_response = self
             .backend
             .clone()
             .init_multipart_upload(ArunaLocation {
                 bucket: "temp".to_string(),
-                path: format!("{}/{}", response.collection_id, response.object_id),
+                path: format!("{}/{}", collection_id, object_id),
                 ..Default::default()
             })
             .await
@@ -383,64 +261,30 @@ impl S3 for S3ServiceServer {
 
     #[tracing::instrument]
     async fn upload_part(&self, req: S3Request<UploadPartInput>) -> S3Result<UploadPartOutput> {
-        // Get the credentials
-        let creds = match req.credentials {
-            Some(cred) => cred,
-            None => {
-                log::error!("{}", "Not identified PutObjectRequest");
-                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
-            }
-        };
+        let mut anotif = ArunaNotifier::new(
+            self.data_handler.internal_notifier_service.clone(),
+            self.data_handler.settings.clone(),
+        );
+        anotif.set_credentials(req.credentials)?;
+        anotif
+            .get_object(&req.input.bucket, &req.input.key, 0)
+            .await?;
 
-        // Get the object from backend
-        let get_obj_req = GetOrCreateObjectByPathRequest {
-            path: construct_path(&req.input.bucket, &req.input.key),
-            access_key: creds.access_key,
-            object: Some(create_stage_object(&req.input.key, 0)),
-            get_only: true,
-        };
+        anotif.get_encryption_key().await?;
 
-        // Get or create object by path
-        self.data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_object_by_path(get_obj_req)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?;
-
-        // Get the encryption key from backend
-        let enc_key = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: "".to_string(),
-                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
-                hash: "".to_string(),
-            })
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner()
-            .encryption_key
-            .as_bytes()
-            .to_vec();
+        let (object_id, collection_id) = anotif.get_col_obj()?;
 
         let (sender, recv) = async_channel::bounded(10);
         let backend_handle = self.backend.clone();
-        let cloned_loc = ArunaLocation {
-            ..Default::default()
-        };
         let handle = tokio::spawn(async move {
             backend_handle
                 .upload_multi_object(
                     recv,
-                    cloned_loc,
+                    ArunaLocation {
+                        bucket: "temp".to_string(),
+                        path: format!("{}/{}", collection_id, object_id),
+                        ..Default::default()
+                    },
                     req.input.upload_id,
                     req.input.content_length,
                     req.input.part_number,
@@ -454,10 +298,12 @@ impl S3 for S3ServiceServer {
                     ArunaStreamReadWriter::new_with_sink(data, AsyncSenderSink::new(sender));
 
                 if self.data_handler.settings.encrypting {
-                    awr = awr.add_transformer(ChaCha20Enc::new(true, enc_key).map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Internal data transformer encryption error")
-                    })?);
+                    awr = awr.add_transformer(
+                        ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal data transformer encryption error")
+                        })?,
+                    );
                 }
 
                 awr.process().await.map_err(|e| {
@@ -495,35 +341,14 @@ impl S3 for S3ServiceServer {
         &self,
         req: S3Request<CompleteMultipartUploadInput>,
     ) -> S3Result<CompleteMultipartUploadOutput> {
-        // Get the credentials
-        let creds = match req.credentials {
-            Some(cred) => cred,
-            None => {
-                log::error!("{}", "Not identified PutObjectRequest");
-                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
-            }
-        };
-
-        // Get the object from backend
-        let get_obj_req = GetOrCreateObjectByPathRequest {
-            path: construct_path(&req.input.bucket, &req.input.key),
-            access_key: creds.access_key,
-            object: Some(create_stage_object(&req.input.key, 0)),
-            get_only: true,
-        };
-
-        // Get or create object by path
-        let response = self
-            .data_handler
-            .internal_notifier_service
-            .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-            .get_or_create_object_by_path(get_obj_req)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .into_inner();
+        let mut anotif = ArunaNotifier::new(
+            self.data_handler.internal_notifier_service.clone(),
+            self.data_handler.settings.clone(),
+        );
+        anotif.set_credentials(req.credentials)?;
+        anotif
+            .get_object(&req.input.bucket, &req.input.key, 0)
+            .await?;
 
         let parts = match req.input.multipart_upload {
             Some(parts) => parts
@@ -544,22 +369,23 @@ impl S3 for S3ServiceServer {
             })
             .collect::<Result<Vec<PartETag>, S3Error>>()?;
 
+        let (object_id, collection_id) = anotif.get_col_obj()?;
         // Does this object exists (including object id etc)
         //req.input.multipart_upload.unwrap().
         self.data_handler
             .clone()
             .finish_multipart(
                 etag_parts,
-                response.object_id.to_string(),
-                response.collection_id,
+                object_id.to_string(),
+                collection_id,
                 req.input.upload_id,
-                format!("s3://{}/{}", &req.input.bucket, &req.input.key),
+                anotif.get_path()?,
             )
             .await?;
 
         Ok(CompleteMultipartUploadOutput {
-            e_tag: Some(response.object_id),
-            version_id: Some(response.revision_number.to_string()),
+            e_tag: Some(object_id),
+            version_id: Some(anotif.get_revision_string()?),
             ..Default::default()
         })
     }

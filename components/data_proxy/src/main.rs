@@ -5,7 +5,9 @@ use futures::try_join;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
 
-use crate::data_server::{data_handler::DataHandler, s3service::ServiceSettings, server::S3Server};
+use crate::data_server::{
+    data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
+};
 
 mod backends;
 mod data_server;
@@ -43,7 +45,7 @@ async fn main() {
     };
     let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
-    let data_socket = format!("localhost:1337");
+    let data_socket = format!("{hostname}:1337");
     let aruna_server = format!("http://0.0.0.0:50052");
 
     let data_handler = Arc::new(
