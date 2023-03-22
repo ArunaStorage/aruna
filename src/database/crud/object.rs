@@ -4331,10 +4331,6 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: Option<ApiHash> = ApiHash::belonging_to(&object)
-        .first::<ApiHash>(conn)
-        .optional()?;
-
     let object_hashes = hashes.filter(database::schema::hashes::object_id.eq(object_uuid)).load::<Db_Hash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
