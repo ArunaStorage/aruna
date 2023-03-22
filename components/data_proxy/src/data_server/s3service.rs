@@ -590,16 +590,16 @@ impl S3 for S3ServiceServer {
                 endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
             })
             .await
-            .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
+            .map_err(|_| s3_error!(NoSuchKey, "Key not found, getlocation"))?
             .into_inner();
 
         let _location = get_location_response
             .location
-            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, location"))?;
 
         let object = get_location_response
             .object
-            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, object"))?;
 
         let sha256_hash = object
             .hashes
@@ -632,7 +632,7 @@ impl S3 for S3ServiceServer {
                 .await
         });
 
-        let (final_sender, final_receiver) = async_channel::bounded(10);
+        let (final_sender, final_receiver) = async_channel::unbounded();
 
         let mut dhandler_service = self.data_handler.internal_notifier_service.clone();
         let setting = self.data_handler.settings.clone();
@@ -644,6 +644,7 @@ impl S3 for S3ServiceServer {
                 internal_receiver.map(Ok),
                 AsyncSenderSink::new(final_sender),
             )
+            .add_transformer(ZstdDec::new())
             .add_transformer(
                 ChaCha20Dec::new(
                     dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
@@ -667,10 +668,18 @@ impl S3 for S3ServiceServer {
                     s3_error!(InternalError, "Internal notifier error")
                 })?,
             )
-            .add_transformer(ZstdDec::new())
             .process()
             .await
-        });
+        })
+        .await
+        .map_err(|e| {
+            log::error!("{}", e);
+            s3_error!(InternalError, "Internal notifier error")
+        })?
+        .map_err(|e| {
+            log::error!("{}", e);
+            s3_error!(InternalError, "Internal notifier error")
+        })?;
 
         let timestamp = object
             .created
@@ -732,23 +741,25 @@ impl S3 for S3ServiceServer {
                 endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
             })
             .await
-            .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
+            .map_err(|_| s3_error!(NoSuchKey, "Key not found, tag: head_get_loc"))?
             .into_inner();
 
         let _location = get_location_response
             .location
-            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_loc"))?;
 
         let object = get_location_response
             .object
-            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_obj"))?;
+
+        dbg!(object.clone());
 
         let sha256_hash = object
             .hashes
             .iter()
             .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
             .cloned()
-            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_sha"))?;
 
         let timestamp = object
             .created

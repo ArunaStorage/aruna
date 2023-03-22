@@ -124,7 +124,7 @@ impl InternalProxyService for InternalServerImpl {
     }
 }
 
-fn location_from_path(path: String) -> Result<(String, String)> {
+fn _location_from_path(path: String) -> Result<(String, String)> {
     let splits = path
         .split('/')
         .map(|e| e.to_string())
