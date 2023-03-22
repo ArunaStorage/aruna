@@ -618,7 +618,9 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                
+                use crate::database::schema::encryption_keys::dsl as keys_dsl;
+                use crate::database::schema::objects::dsl as objects_dsl;
+
                 if let Some(proto_location) = &request.location {
                     let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
 
@@ -633,19 +635,27 @@ impl Database {
                         is_compressed: proto_location.is_compressed,
                     };
 
-                    let encryption_key_insert = EncryptionKey {
-                        id: uuid::Uuid::new_v4(),
-                        hash: Some(sha256_hash),
-                        object_id: object_uuid,
-                        endpoint_id: endpoint_uuid,
-                        is_temporary: false,
-                        encryption_key: proto_location.encryption_key.to_string(),
-                    };
+                    if encryption_keys
+                        .filter(keys_dsl::hash.eq(&sha256_hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .select(keys_dsl::id)
+                        .first::<uuid::Uuid>(conn)
+                        .optional()?
+                        .is_none()
+                    {
+                        let encryption_key_insert = EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: Some(sha256_hash),
+                            object_id: object_uuid,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: proto_location.encryption_key.to_string(),
+                        };
 
-                    diesel::insert_into(encryption_keys)
-                        .values(&encryption_key_insert)
-                        .execute(conn)?;
-                    
+                        diesel::insert_into(encryption_keys)
+                            .values(&encryption_key_insert)
+                            .execute(conn)?;
+                    }
 
                     insert_into(object_locations)
                         .values(&final_location)
@@ -1115,18 +1125,26 @@ impl Database {
                     match req_object.dataclass {
                         Dataclass::PUBLIC | Dataclass::PRIVATE => (Some(is_key), false),
                         _ => {
-                            let encryption_key_insert = EncryptionKey {
-                                id: uuid::Uuid::new_v4(),
-                                hash: if request.hash.is_empty() {
-                                    None
-                                } else {
-                                    Some(request.clone().hash)
-                                },
-                                object_id: req_object.id,
-                                endpoint_id: endpoint_uuid,
-                                is_temporary: false,
-                                encryption_key: Alphanumeric
-                                    .sample_string(&mut rand::thread_rng(), 32),
+                            let encryption_key_insert = if request.hash.is_empty() {
+                                EncryptionKey {
+                                    id: uuid::Uuid::new_v4(),
+                                    hash: None,
+                                    object_id: req_object.id,
+                                    endpoint_id: endpoint_uuid,
+                                    is_temporary: true,
+                                    encryption_key: Alphanumeric
+                                        .sample_string(&mut rand::thread_rng(), 32),
+                                }
+                            } else {
+                                EncryptionKey {
+                                    id: uuid::Uuid::new_v4(),
+                                    hash: Some(request.hash.to_string()),
+                                    object_id: req_object.id,
+                                    endpoint_id: endpoint_uuid,
+                                    is_temporary: false,
+                                    encryption_key: Alphanumeric
+                                        .sample_string(&mut rand::thread_rng(), 32),
+                                }
                             };
 
                             insert_into(encryption_keys)
@@ -1137,17 +1155,24 @@ impl Database {
                         }
                     }
                 } else {
-                    let encryption_key_insert = EncryptionKey {
-                        id: uuid::Uuid::new_v4(),
-                        hash: if request.hash.is_empty() {
-                            None
-                        } else {
-                            Some(request.clone().hash)
-                        },
-                        object_id: req_object.id,
-                        endpoint_id: endpoint_uuid,
-                        is_temporary: false,
-                        encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                    let encryption_key_insert = if request.hash.is_empty() {
+                        EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: None,
+                            object_id: req_object.id,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: true,
+                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                        }
+                    } else {
+                        EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: Some(request.hash.to_string()),
+                            object_id: req_object.id,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                        }
                     };
 
                     insert_into(encryption_keys)
