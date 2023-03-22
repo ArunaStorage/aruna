@@ -31,8 +31,6 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `encryption_key` - The encryption key that is stored in backend
     /// * `chunk_size` - Size of the individual chunks which are send
     /// * `sender` - The target for the individual chunks of data
-    /// * `decrypted` - Decrypt the data
-    /// * `decompress` - Decompress the data
     async fn get_object(
         &self,
         location: Location,

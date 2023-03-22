@@ -2,6 +2,8 @@ use anyhow::Result;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::compressor::ZstdEnc;
+use aruna_file::transformers::decompressor::ZstdDec;
+use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::footer::FooterGenerator;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
@@ -33,7 +35,7 @@ use super::utils::create_location_from_hash;
 use super::utils::create_stage_object;
 use super::utils::validate_and_check_hashes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServiceSettings {
     pub endpoint_id: uuid::Uuid,
     pub encrypting: bool,
@@ -591,6 +593,8 @@ impl S3 for S3ServiceServer {
             .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
             .into_inner();
 
+        dbg!(get_location_response.clone());
+
         let _location = get_location_response
             .location
             .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
@@ -610,7 +614,9 @@ impl S3 for S3ServiceServer {
 
         let processor_clone = self.backend.clone();
 
-        tokio::spawn(async move {
+        let sha_clone = sha256_hash.hash.clone();
+
+        let get_clone = tokio::spawn(async move {
             processor_clone
                 .get_object(
                     ArunaLocation {
@@ -626,11 +632,40 @@ impl S3 for S3ServiceServer {
 
         let (final_sender, final_receiver) = async_channel::bounded(10);
 
+        let mut dhandler_service = self.data_handler.internal_notifier_service.clone();
+        let setting = self.data_handler.settings.clone();
+
+        let path = format!("s3://{}/{}", req.input.bucket, req.input.key);
+
         tokio::spawn(async move {
             ArunaStreamReadWriter::new_with_sink(
                 internal_receiver.map(Ok),
                 AsyncSenderSink::new(final_sender),
             )
+            .add_transformer(
+                ChaCha20Dec::new(
+                    dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+                        .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                            path,
+                            endpoint_id: setting.endpoint_id.to_string(),
+                            hash: sha_clone,
+                        })
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal notifier error")
+                        })?
+                        .into_inner()
+                        .encryption_key
+                        .as_bytes()
+                        .to_vec(),
+                )
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal notifier error")
+                })?,
+            )
+            .add_transformer(ZstdDec::new())
             .process()
             .await
         });
@@ -645,6 +680,17 @@ impl S3 for S3ServiceServer {
             })
             .ok_or_else(|| s3_error!(InternalError, "intenal processing error"))?
             .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
+
+        get_clone
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?;
 
         Ok(GetObjectOutput {
             body: Some(StreamingBlob::wrap(
