@@ -681,7 +681,7 @@ impl Database {
                 'outer: for proto_hash in &request.hashes {
                     for db_hash in &db_hashes {
                         if grpc_to_db_hash_type(&proto_hash.alg)? == db_hash.hash_type {
-                            if proto_hash.hash == db_hash.hash {
+                            if proto_hash.hash == db_hash.hash || db_hash.hash.is_empty(){
                                 continue 'outer
                             } else {
                                 return Err(ArunaError::InvalidRequest(format!("User provided hash {:#?} differs from data proxy calculated hash {:#?}.", db_hash, proto_hash)));
