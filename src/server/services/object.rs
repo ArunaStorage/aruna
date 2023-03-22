@@ -207,7 +207,9 @@ impl ObjectService for ObjectServiceImpl {
             // Init multipart upload
             let response = data_proxy
                 .init_multipart_upload(InitMultipartUploadRequest {
-                    path: format!("{collection_uuid}/{new_object_uuid}"),
+                    object_id: new_object_uuid.to_string(),
+                    collection_id: collection_uuid.to_string(),
+                    path: "".to_string(), // TODO: For now this is unused -> might be used later
                 })
                 .await?
                 .into_inner();
@@ -329,14 +331,25 @@ impl ObjectService for ObjectServiceImpl {
             println!("{:#?}", label);
             if label.key == *"app.aruna-storage.org/new_path" {
                 println!("Found path key with value: {}", label.value);
-                upload_path = label.value;
-                break;
+                if upload_path.is_empty() {
+                    upload_path = label.value;
+                } else {
+                    upload_path = upload_path + &label.value;
+                    break;
+                }
+            } else if label.key == *"app.aruna-storage.org/bucket" {
+                println!("Found path key with value: {}", label.value);
+                if upload_path.is_empty() {
+                    upload_path = label.value;
+                } else {
+                    upload_path = label.value + &upload_path;
+                    break;
+                }
             }
         }
-        println!("{upload_path}");
         if upload_path.is_empty() {
             return Err(tonic::Status::internal(
-                "No temp upload path for object available. This is bad.",
+                "No temp upload path for object available",
             ));
         }
 
@@ -357,7 +370,9 @@ impl ObjectService for ObjectServiceImpl {
             if !finished_parts.is_empty() {
                 let finish_multipart_request = FinishMultipartUploadRequest {
                     upload_id: inner_request.upload_id.to_string(),
-                    path: upload_path,
+                    collection_id: collection_uuid.to_string(),
+                    object_id: object_uuid.to_string(),
+                    path: format!("s3://{upload_path}"),
                     part_etags: finished_parts,
                 };
 
@@ -432,7 +447,9 @@ impl ObjectService for ObjectServiceImpl {
                 // Init multipart upload
                 let response = data_proxy
                     .init_multipart_upload(InitMultipartUploadRequest {
-                        path: format!("{collection_uuid}/{new_object_uuid}"),
+                        collection_id: collection_uuid.to_string(),
+                        object_id: new_object_uuid.to_string(),
+                        path: format!(""), // TODO: Empty for now
                     })
                     .await?
                     .into_inner();
