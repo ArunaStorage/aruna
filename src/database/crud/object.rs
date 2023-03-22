@@ -658,6 +658,12 @@ impl Database {
                             .execute(conn)?;
                     }
 
+                    // Delete all temporary encryption keys associated with this object_id
+                    delete(encryption_keys)
+                        .filter(database::schema::encryption_keys::object_id.eq(object_uuid))
+                        .filter(database::schema::encryption_keys::is_temporary.eq(true))
+                        .execute(conn)?;
+
                     insert_into(object_locations)
                         .values(&final_location)
                         .execute(conn)?;
