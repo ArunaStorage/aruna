@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::f32::consts::E;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -620,7 +619,6 @@ impl Database {
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
                 use crate::database::schema::encryption_keys::dsl as keys_dsl;
-                use crate::database::schema::objects::dsl as objects_dsl;
 
                 if let Some(proto_location) = &request.location {
                     let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
