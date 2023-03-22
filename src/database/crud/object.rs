@@ -81,7 +81,7 @@ pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
     pub hooks: Vec<KeyValue>,
-    pub hash: ApiHash,
+    pub hashes: Vec<ApiHash>,
     pub source: Option<Source>,
     pub latest: bool,
     pub update: bool,
@@ -92,7 +92,7 @@ impl PartialEq for ObjectDto {
         self.object == other.object
             && self.labels == other.labels
             && self.hooks == other.hooks
-            && self.hash == other.hash
+            && self.hashes == other.hashes
             && self.source == other.source
             && self.latest == other.latest
             && self.update == other.update
@@ -126,16 +126,16 @@ impl TryFrom<ObjectDto> for ProtoObject {
         // Transform NaiveDateTime to Timestamp
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
-        // Transform db Hash to proto Hash
-        let proto_hash = ProtoHash {
+
+        let proto_hashes = object_dto.hashes.iter().map(|h| ProtoHash {
             //alg: object_dto.hash.hash_type as i32,
-            alg: match object_dto.hash.hash_type {
+            alg: match h.hash_type {
                 HashType::MD5 => Hashalgorithm::Md5 as i32,
                 HashType::SHA256 => Hashalgorithm::Sha256 as i32,
                 _ => Hashalgorithm::Unspecified as i32,
             },
-            hash: object_dto.hash.hash,
-        };
+            hash: h.hash.to_string(),
+        }).collect::<Vec<ProtoHash>>();
 
         // Construct proto Object
         Ok(ProtoObject {
@@ -154,7 +154,7 @@ impl TryFrom<ObjectDto> for ProtoObject {
             source: proto_source,
             latest: object_dto.latest,
             auto_update: object_dto.update,
-            hashes: vec![proto_hash],
+            hashes: proto_hashes,
         })
     }
 }
@@ -4335,12 +4335,7 @@ pub fn get_object(
         .first::<ApiHash>(conn)
         .optional()?;
 
-    let object_hash = object_hash.unwrap_or_else(|| ApiHash {
-        id: uuid::Uuid::default(),
-        hash: "".to_string(),
-        object_id: uuid::Uuid::default(),
-        hash_type: HashType::MD5,
-    });
+    let object_hashes = hashes.filter(database::schema::hashes::object_id.eq(object_uuid)).load::<Db_Hash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -4381,7 +4376,7 @@ pub fn get_object(
                 object,
                 labels,
                 hooks,
-                hash: object_hash,
+                hashes: object_hashes,
                 source,
                 latest,
                 update: colobj.auto_update,
@@ -4420,7 +4415,7 @@ pub fn get_object_ignore_coll(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
+    let object_hash: Vec<ApiHash> = ApiHash::belonging_to(&object).load::<ApiHash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -4445,7 +4440,7 @@ pub fn get_object_ignore_coll(
         object,
         labels,
         hooks,
-        hash: object_hash,
+        hashes: object_hash,
         source,
         latest,
         update: false, // Always false might not include any collection_info
