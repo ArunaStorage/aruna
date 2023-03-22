@@ -593,8 +593,6 @@ impl S3 for S3ServiceServer {
             .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
             .into_inner();
 
-        dbg!(get_location_response.clone());
-
         let _location = get_location_response
             .location
             .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
@@ -609,6 +607,10 @@ impl S3 for S3ServiceServer {
             .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
             .cloned()
             .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+
+        if sha256_hash.hash.is_empty() {
+            return Err(s3_error!(InternalError, "Aruna returned empty signature"));
+        }
 
         let (internal_sender, internal_receiver) = async_channel::bounded(10);
 
