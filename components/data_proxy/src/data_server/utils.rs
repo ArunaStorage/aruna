@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_file::helpers::footer_parser::Range;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
 use aruna_rust_api::api::{
@@ -9,12 +8,6 @@ use aruna_rust_api::api::{
 };
 use s3s::s3_error;
 use s3s::S3Error;
-
-const FRAMESIZE: i64 = 5242880;
-const ENCRYPTION_BLOCKS: i64 = 65536;
-const ENCRYPTION_OFFSET: i64 = 28;
-const ENCRYPTED_BLOCKS: i64 = ENCRYPTION_BLOCKS + ENCRYPTION_OFFSET;
-const ENCRYPTED_FRAMES: i64 = (FRAMESIZE / ENCRYPTION_BLOCKS) * ENCRYPTED_BLOCKS;
 
 pub fn construct_path(bucket: &str, key: &str) -> String {
     format!("s3://{bucket}/{key}")
@@ -143,44 +136,6 @@ pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Re
             }
         }
         None => Ok(()),
-    }
-}
-
-// For now we will make 10*5Mib blocks
-pub fn create_ranges(expected_size: i64, from: Location) -> Vec<Range> {
-    if from.is_encrypted {
-        (0..(expected_size / (ENCRYPTED_FRAMES * 10)) + 1)
-            .map(|e| {
-                if ((e + 1) * ENCRYPTED_BLOCKS * 100) < expected_size {
-                    println!("Wir waren hier!!!!");
-                    Range {
-                        from: (e * ENCRYPTED_BLOCKS * 100) as u64,
-                        to: ((e + 1) * ENCRYPTED_BLOCKS * 100) as u64,
-                    }
-                } else {
-                    Range {
-                        from: (e * ENCRYPTED_BLOCKS * 100) as u64,
-                        to: expected_size as u64,
-                    }
-                }
-            })
-            .collect::<Vec<Range>>()
-    } else {
-        (0..(expected_size / FRAMESIZE * 10_i64) + 1)
-            .map(|e| {
-                if (e + 1) * ENCRYPTION_BLOCKS * 100 < expected_size {
-                    Range {
-                        from: (e * ENCRYPTION_BLOCKS * 100) as u64,
-                        to: ((e + 1) * ENCRYPTION_BLOCKS * 100) as u64,
-                    }
-                } else {
-                    Range {
-                        from: (e * ENCRYPTION_BLOCKS * 100) as u64,
-                        to: expected_size as u64,
-                    }
-                }
-            })
-            .collect::<Vec<Range>>()
     }
 }
 
