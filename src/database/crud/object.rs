@@ -596,6 +596,7 @@ impl Database {
     ) -> Result<FinalizeObjectResponse, ArunaError> {
         // Check format of provided ids
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Extract SHA256 hash from provided hashes for easier usage
         let mut sha256_hash = "".to_string();
@@ -707,6 +708,12 @@ impl Database {
                 update(objects)
                     .filter(database::schema::objects::id.eq(&object_uuid))
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    .execute(conn)?;
+
+                update(collection_objects)
+                    .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
+                    .filter(database::schema::collection_objects::collection_id.eq(&collection_uuid))
+                    .set(database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK))
                     .execute(conn)?;
 
                 Ok(())
@@ -2349,6 +2356,7 @@ impl Database {
                         }
                     }
                     None => {
+                        println!("Fetched none ?");
                         if let Some(staging_object) = request.object {
                             let staging_object_id = uuid::Uuid::new_v4();
                             let created_object = create_staging_object(

@@ -9,9 +9,9 @@ use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierService;
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetCollectionByBucketRequest,
-    GetCollectionByBucketResponse, GetOrCreateEncryptionKeyRequest, GetOrCreateEncryptionKeyResponse,
-    GetObjectLocationRequest, GetObjectLocationResponse, GetOrCreateObjectByPathRequest,
-    GetOrCreateObjectByPathResponse, Location,
+    GetCollectionByBucketResponse, GetObjectLocationRequest, GetObjectLocationResponse,
+    GetOrCreateEncryptionKeyRequest, GetOrCreateEncryptionKeyResponse,
+    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location,
 };
 use std::sync::Arc;
 use tokio::task;
