@@ -1030,13 +1030,29 @@ impl Database {
                 .filter(endpoints_dsl::id.eq(&location.endpoint_id))
                 .first::<Endpoint>(conn)?;
 
+            let sha_hash = proto_object
+                .hashes
+                .iter()
+                .find(|e| e.alg == Hashalgorithm::Sha256 as i32);
+
             // Only query encryption key if object location is encrypted
             let encryption_key = if location.is_encrypted {
-                encryption_keys
+                match encryption_keys
                     .filter(keys_dsl::object_id.eq(&db_object.id))
                     .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
                     .first::<EncryptionKey>(conn)
                     .optional()?
+                {
+                    Some(k) => Some(k),
+                    None => match sha_hash {
+                        Some(h) => encryption_keys
+                            .filter(keys_dsl::hash.eq(&h.hash))
+                            .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                            .first::<EncryptionKey>(conn)
+                            .optional()?,
+                        None => None,
+                    },
+                }
             } else {
                 None
             };
