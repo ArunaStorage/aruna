@@ -59,6 +59,7 @@ impl DataHandler {
         object_id: String,
         collection_id: String,
         expected_hashes: Option<Vec<Hash>>,
+        aruna_path: String,
     ) -> Result<()> {
         if from.is_compressed {
             bail!("Unimplemented move operation (compressed input)")
@@ -83,7 +84,7 @@ impl DataHandler {
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: format!("s3://{}/{}", &to.bucket, &to.path),
+                path: aruna_path,
                 endpoint_id: self.settings.endpoint_id.to_string(),
                 hash: sha_hash.hash.clone(),
             })
@@ -211,13 +212,14 @@ impl DataHandler {
         object_id: String,
         collection_id: String,
         upload_id: String,
+        aruna_path: String,
     ) -> Result<(), S3Error> {
         // Get the encryption key from backend
         let enc_key = self
             .internal_notifier_service
             .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
             .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                path: "".to_string(),
+                path: aruna_path.clone(),
                 endpoint_id: self.settings.endpoint_id.to_string(),
                 hash: "".to_string(),
             })
@@ -272,6 +274,7 @@ impl DataHandler {
                     object_id,
                     collection_id,
                     None,
+                    aruna_path,
                 )
                 .await
         });

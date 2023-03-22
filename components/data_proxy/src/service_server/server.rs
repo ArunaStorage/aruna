@@ -83,7 +83,10 @@ impl InternalProxyService for InternalServerImpl {
             .data_client
             .init_multipart_upload(Location {
                 bucket: "temp".to_string(),
-                path: inner_request.path,
+                path: format!(
+                    "{}/{}",
+                    inner_request.collection_id, inner_request.object_id
+                ),
                 ..Default::default()
             })
             .await
@@ -98,16 +101,14 @@ impl InternalProxyService for InternalServerImpl {
     ) -> Result<tonic::Response<FinishMultipartUploadResponse>, tonic::Status> {
         let inner_request = request.into_inner();
 
-        let (collection_id, object_id) = location_from_path(inner_request.path)
-            .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
-
         self.data_handler
             .clone()
             .finish_multipart(
                 inner_request.part_etags,
-                object_id,
-                collection_id,
+                inner_request.object_id,
+                inner_request.collection_id,
                 inner_request.upload_id,
+                inner_request.path,
             )
             .await
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;

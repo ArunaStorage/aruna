@@ -275,6 +275,7 @@ impl S3 for S3ServiceServer {
                                 hash: final_sha256.clone(),
                             },
                         ]),
+                        format!("s3://{}/{}", &req.input.bucket, &req.input.key),
                     )
                     .await
                     .map_err(|e| {
@@ -550,6 +551,7 @@ impl S3 for S3ServiceServer {
                 response.object_id.to_string(),
                 response.collection_id,
                 req.input.upload_id,
+                format!("s3://{}/{}", &req.input.bucket, &req.input.key),
             )
             .await?;
 

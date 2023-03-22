@@ -1,13 +1,10 @@
 use anyhow::Result;
-use aruna_rust_api::api::internal::v1::{
-    internal_authorize_service_client::InternalAuthorizeServiceClient, GetSecretRequest,
-};
+use aruna_rust_api::api::internal::v1::internal_authorize_service_client::InternalAuthorizeServiceClient;
 use s3s::{
     auth::{S3Auth, SecretKey},
-    s3_error, S3Result,
+    S3Result,
 };
 use tonic::transport::Channel;
-use tonic::Request;
 
 /// Aruna authprovider
 #[derive(Debug)]
