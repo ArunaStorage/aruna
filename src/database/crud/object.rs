@@ -675,13 +675,18 @@ impl Database {
                     .filter(database::schema::hashes::object_id.eq(&object_uuid))
                     .load::<ApiHash>(conn)?;
 
+                // Delete all existing hashes -> Will be inserted by proxy hashes
+                delete(hashes)
+                .filter(database::schema::hashes::object_id.eq(&object_uuid))
+                .execute(conn)?;
+
                 // Validate all data proxy calculated hashes against existing
                 let mut hashes_insert = Vec::new();
-                'outer: for proto_hash in &request.hashes {
+                for proto_hash in &request.hashes {
                     for db_hash in &db_hashes {
                         if grpc_to_db_hash_type(&proto_hash.alg)? == db_hash.hash_type {
                             if proto_hash.hash == db_hash.hash || db_hash.hash.is_empty(){
-                                continue 'outer
+                                break;
                             } else {
                                 return Err(ArunaError::InvalidRequest(format!("User provided hash {:#?} differs from data proxy calculated hash {:#?}.", db_hash, proto_hash)));
                             }
