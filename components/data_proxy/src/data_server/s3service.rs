@@ -178,7 +178,6 @@ impl S3 for S3ServiceServer {
                 final_md5 = valid_md5.clone();
                 final_sha256 = valid_sha256.clone();
             } else {
-                println!("war hier !");
                 return Err(s3_error!(SignatureDoesNotMatch, "Invalid hash"));
             }
         }
@@ -286,6 +285,7 @@ impl S3 for S3ServiceServer {
         }
 
         if !is_temp {
+            println!("War hier !!!");
             self.data_handler
                 .internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
@@ -612,7 +612,7 @@ impl S3 for S3ServiceServer {
             processor_clone
                 .get_object(
                     ArunaLocation {
-                        bucket: sha256_hash.hash[0..2].to_string(),
+                        bucket: format!("b{}", sha256_hash.hash[0..2].to_string()),
                         path: sha256_hash.hash[2..].to_string(),
                         ..Default::default()
                     },

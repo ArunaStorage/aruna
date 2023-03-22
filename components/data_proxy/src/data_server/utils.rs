@@ -62,7 +62,7 @@ pub fn create_location_from_hash(
     } else {
         (
             Location {
-                bucket: sha256_hash[0..2].to_string(),
+                bucket: format!("b{}", sha256_hash[0..2].to_string()),
                 path: sha256_hash[2..].to_string(),
                 is_compressed: compressing,
                 is_encrypted: encrypting,
@@ -149,32 +149,33 @@ pub fn validate_expected_hashes(expected: Option<Vec<Hash>>, got: &[Hash]) -> Re
 // For now we will make 10*5Mib blocks
 pub fn create_ranges(expected_size: i64, from: Location) -> Vec<Range> {
     if from.is_encrypted {
-        (0..expected_size % (ENCRYPTED_FRAMES * 10))
+        (0..(expected_size / (ENCRYPTED_FRAMES * 10)) + 1)
             .map(|e| {
-                if (e + 1) * ENCRYPTED_BLOCKS * 10 < expected_size {
+                if ((e + 1) * ENCRYPTED_BLOCKS * 100) < expected_size {
+                    println!("Wir waren hier!!!!");
                     Range {
-                        from: (e * ENCRYPTED_BLOCKS * 10) as u64,
-                        to: ((e + 1) * ENCRYPTED_BLOCKS * 10) as u64,
+                        from: (e * ENCRYPTED_BLOCKS * 100) as u64,
+                        to: ((e + 1) * ENCRYPTED_BLOCKS * 100) as u64,
                     }
                 } else {
                     Range {
-                        from: (e * ENCRYPTED_BLOCKS * 10) as u64,
+                        from: (e * ENCRYPTED_BLOCKS * 100) as u64,
                         to: expected_size as u64,
                     }
                 }
             })
             .collect::<Vec<Range>>()
     } else {
-        (0..expected_size % FRAMESIZE * 10_i64)
+        (0..(expected_size / FRAMESIZE * 10_i64) + 1)
             .map(|e| {
-                if (e + 1) * ENCRYPTION_BLOCKS * 10 < expected_size {
+                if (e + 1) * ENCRYPTION_BLOCKS * 100 < expected_size {
                     Range {
-                        from: (e * ENCRYPTION_BLOCKS * 10) as u64,
-                        to: ((e + 1) * ENCRYPTION_BLOCKS * 10) as u64,
+                        from: (e * ENCRYPTION_BLOCKS * 100) as u64,
+                        to: ((e + 1) * ENCRYPTION_BLOCKS * 100) as u64,
                     }
                 } else {
                     Range {
-                        from: (e * ENCRYPTION_BLOCKS * 10) as u64,
+                        from: (e * ENCRYPTION_BLOCKS * 100) as u64,
                         to: expected_size as u64,
                     }
                 }

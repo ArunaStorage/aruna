@@ -31,7 +31,7 @@ async fn main() {
                 record.args()
             )
         })
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .init();
 
     let s3_client = match S3Backend::new().await {

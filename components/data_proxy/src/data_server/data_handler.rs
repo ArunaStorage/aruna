@@ -69,20 +69,20 @@ impl DataHandler {
 
         let hashes = self.get_hashes(from.clone()).await?;
 
-        validate_expected_hashes(expected_hashes, &hashes)?;
+        validate_expected_hashes(expected_hashes, &hashes).unwrap();
 
         let sha_hash = hashes
             .iter()
             .find(|e| e.alg == Hashalgorithm::Sha256 as i32)
             .ok_or_else(|| anyhow!("Sha256 not found"))?;
 
-        to.bucket = sha_hash.hash[0..2].to_string();
+        to.bucket = format!("b{}", sha_hash.hash[0..2].to_string());
         to.path = sha_hash.hash[2..].to_string();
 
         // Check if this object already exists
         let resp = match self.backend.head_object(to.clone()).await {
             Ok(size) => Some(size),
-            Err(_) => None,
+            Err(e) => None,
         };
 
         // Check if size == expected size
@@ -90,153 +90,168 @@ impl DataHandler {
             if size != expected_size {
                 bail!("Target already exists but content-length does not match")
             }
+        }
 
-            // Copy and re-encode data
-            let mut ranges = create_ranges(expected_size, from.clone());
-            let mut handles: Vec<
-                JoinHandle<
-                    Result<(
-                        aruna_rust_api::api::internal::v1::PartETag,
-                        (usize, Vec<u8>),
-                    )>,
-                >,
-            > = Vec::new();
+        // Copy and re-encode data
+        let mut ranges = create_ranges(expected_size, from.clone());
 
-            let upload_id = self
-                .backend
-                .init_multipart_upload(to.clone())
-                .await
-                .unwrap();
-            let range_len = ranges.len();
+        println!(
+            "Das waren meine Ranges: {:?}, mit size {}",
+            ranges.clone(),
+            expected_size
+        );
+        //assert_eq!(ranges.len(), 1);
+        let mut handles: Vec<
+            JoinHandle<
+                Result<(
+                    aruna_rust_api::api::internal::v1::PartETag,
+                    (usize, Vec<u8>),
+                )>,
+            >,
+        > = Vec::new();
 
-            let last_range = ranges
-                .pop()
-                .ok_or(anyhow!("At least one range must be specified"))?;
+        let upload_id = self
+            .backend
+            .init_multipart_upload(to.clone())
+            .await
+            .unwrap();
+        let range_len = ranges.len();
 
-            for (part, range) in ranges.iter().enumerate() {
-                let backend_clone = self.backend.clone();
-                let backend_inner_clone = self.backend.clone();
-                let range = *range;
-                let from = from.clone();
-                let upload_id = upload_id.clone();
-                let to = to.clone();
-                let to_clone = to.clone();
-                handles.push(tokio::spawn(async move {
-                    let (sender, receiver) = async_channel::bounded(10);
+        let last_range = ranges
+            .pop()
+            .ok_or(anyhow!("At least one range must be specified"))?;
 
-                    let read_handle: JoinHandle<Result<(usize, Vec<u8>)>> =
-                        tokio::spawn(async move {
-                            let (internal_sender, internal_receiver) = async_channel::bounded(10);
-                            backend_inner_clone
-                                .get_object(from.clone(), Some(range), internal_sender)
-                                .await?;
-
-                            let mut asrw = ArunaStreamReadWriter::new_with_sink(
-                                internal_receiver.map(Ok),
-                                AsyncSenderSink::new(sender),
-                            )
-                            .add_transformer(ChaCha20Enc::new(
-                                true,
-                                to.encryption_key.as_bytes().to_vec(),
-                            )?)
-                            .add_transformer(ZstdEnc::new(part, part == range_len))
-                            .add_transformer(ChaCha20Dec::new(
-                                from.encryption_key.as_bytes().to_vec(),
-                            )?);
-
-                            asrw.process().await?;
-
-                            let notes = asrw.query_notifications().await?;
-
-                            Ok((part, parse_compressor_chunks(notes)?))
-                        });
-
-                    let tag = backend_clone
-                        .upload_multi_object(
-                            receiver,
-                            to_clone,
-                            upload_id,
-                            (range.to - range.from) as i64,
-                            (part + 1) as i32,
-                        )
-                        .await?;
-                    Ok((tag, read_handle.await??))
-                }));
-            }
-
-            // Process last_range
+        for (part, range) in ranges.iter().enumerate() {
             let backend_clone = self.backend.clone();
+            let backend_inner_clone = self.backend.clone();
+            let range = *range;
             let from = from.clone();
             let upload_id = upload_id.clone();
             let to = to.clone();
             let to_clone = to.clone();
-            let handles_len = handles.len();
+            handles.push(tokio::spawn(async move {
+                let (sender, receiver) = async_channel::bounded(10);
 
-            let mut parts_vector = Vec::new();
+                let read_handle: JoinHandle<Result<(usize, Vec<u8>)>> = tokio::spawn(async move {
+                    let (internal_sender, internal_receiver) = async_channel::bounded(10);
+                    backend_inner_clone
+                        .get_object(from.clone(), Some(range), internal_sender)
+                        .await?;
 
-            for task in handles {
-                let value = task.await??;
-                parts_vector.push((value.1 .0, value.0, value.1 .1));
-            }
-            parts_vector.sort_by(|a, b| a.0.cmp(&b.0));
-
-            let footer_info = parts_vector.iter().fold(Vec::new(), |mut acc, e| {
-                acc.extend(e.2.clone());
-                acc
-            });
-
-            let (sender, receiver) = async_channel::bounded(10);
-
-            let read_handle: JoinHandle<Result<(usize, Vec<u8>)>> = tokio::spawn(async move {
-                let (internal_sender, internal_receiver) = async_channel::bounded(10);
-                backend_clone
-                    .get_object(from.clone(), Some(last_range), internal_sender)
-                    .await?;
-
-                let mut asrw = ArunaStreamReadWriter::new_with_sink(
-                    internal_receiver.map(Ok),
-                    AsyncSenderSink::new(sender),
-                )
-                .add_transformer(ChaCha20Enc::new(
-                    true,
-                    to.encryption_key.as_bytes().to_vec(),
-                )?);
-
-                if !footer_info.is_empty() {
-                    asrw = asrw.add_transformer(FooterGenerator::new(Some(footer_info), true))
-                }
-                asrw = asrw
-                    .add_transformer(ZstdEnc::new(handles_len + 1, true))
+                    let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                        internal_receiver.map(Ok),
+                        AsyncSenderSink::new(sender),
+                    )
+                    .add_transformer(ChaCha20Enc::new(
+                        true,
+                        to.encryption_key.as_bytes().to_vec(),
+                    )?)
+                    .add_transformer(ZstdEnc::new(part, part == range_len))
                     .add_transformer(ChaCha20Dec::new(from.encryption_key.as_bytes().to_vec())?);
 
-                asrw.process().await?;
+                    asrw.process().await?;
 
-                let notes = asrw.query_notifications().await?;
+                    let notes = asrw.query_notifications().await?;
 
-                Ok((handles_len + 1, parse_compressor_chunks(notes)?))
+                    Ok((part, parse_compressor_chunks(notes)?))
+                });
+
+                let tag = backend_clone
+                    .upload_multi_object(
+                        receiver,
+                        to_clone,
+                        upload_id,
+                        (range.to - range.from) as i64,
+                        (part + 1) as i32,
+                    )
+                    .await?;
+                Ok((tag, read_handle.await??))
+            }));
+        }
+
+        // Process last_range
+        let backend_clone = self.backend.clone();
+        let from = from.clone();
+        let upload_id = upload_id.clone();
+        let to = to.clone();
+        let to_clone = to.clone();
+        let handles_len = handles.len();
+
+        let mut parts_vector = Vec::new();
+
+        for task in handles {
+            let value = task.await??;
+            parts_vector.push((value.1 .0, value.0, value.1 .1));
+        }
+        parts_vector.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let footer_info = parts_vector.iter().fold(Vec::new(), |mut acc, e| {
+            acc.extend(e.2.clone());
+            acc
+        });
+
+        let (sender, receiver) = async_channel::unbounded();
+
+        let read_handle: JoinHandle<Result<(usize, Vec<u8>)>> = tokio::spawn(async move {
+            let (internal_sender, internal_receiver) = async_channel::unbounded();
+            let from_clone = from.clone();
+
+            let download = tokio::spawn(async move {
+                backend_clone
+                    .get_object(from_clone, Some(last_range), internal_sender)
+                    .await
             });
 
-            let tag = self
-                .backend
-                .upload_multi_object(
-                    receiver,
-                    to_clone.clone(),
-                    upload_id.clone(),
-                    (last_range.to - last_range.from) as i64,
-                    (handles_len + 2) as i32,
-                )
-                .await?;
+            let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                internal_receiver.clone().map(Ok),
+                AsyncSenderSink::new(sender),
+            )
+            .add_transformer(ChaCha20Enc::new(
+                true,
+                to.encryption_key.as_bytes().to_vec(),
+            )?);
 
-            read_handle.await??;
+            if !footer_info.is_empty() {
+                asrw = asrw.add_transformer(FooterGenerator::new(Some(footer_info), true))
+            }
+            asrw = asrw
+                .add_transformer(ZstdEnc::new(handles_len + 1, true))
+                .add_transformer(ChaCha20Dec::new(
+                    from.clone().encryption_key.as_bytes().to_vec(),
+                )?);
 
-            // Finish multipart
-            let mut parts = parts_vector.into_iter().map(|e| e.1).collect::<Vec<_>>();
-            parts.push(tag);
+            asrw.process().await?;
+            download.await??;
 
-            self.backend
-                .finish_multipart_upload(to_clone, parts, upload_id)
-                .await?;
-        };
+            let notes = asrw.query_notifications().await?;
+
+            Ok((handles_len + 1, parse_compressor_chunks(notes)?))
+        });
+
+        let tag = self
+            .backend
+            .upload_multi_object(
+                receiver.clone(),
+                to_clone.clone(),
+                upload_id.clone(),
+                (last_range.to - last_range.from) as i64,
+                (handles_len + 2) as i32,
+            )
+            .await?;
+
+        read_handle.await??;
+
+        // Finish multipart
+        let mut parts = parts_vector.into_iter().map(|e| e.1).collect::<Vec<_>>();
+        parts.push(tag);
+
+        self.backend
+            .finish_multipart_upload(to_clone.clone(), parts, upload_id)
+            .await?;
+
+        let mut to_clone_clone = to_clone.clone();
+
+        to_clone_clone.endpoint_id = self.settings.endpoint_id.to_string();
 
         // Finalize the object request
         self.internal_notifier_service
@@ -244,7 +259,7 @@ impl DataHandler {
             .finalize_object(FinalizeObjectRequest {
                 object_id,
                 collection_id,
-                location: Some(to),
+                location: Some(to_clone_clone),
                 hashes,
                 content_length: expected_size,
             })
@@ -267,7 +282,7 @@ impl DataHandler {
 
         let process_handle: JoinHandle<Result<(), _>> = tokio::spawn(async move {
             ArunaStreamReadWriter::new_with_sink(
-                tx_receive.map(|e| Ok(e)),
+                tx_receive.clone().map(|e| Ok(e)),
                 AsyncSenderSink::new(transform_send),
             )
             .add_transformer(ChaCha20Dec::new(clone_key)?)
