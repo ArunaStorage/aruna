@@ -703,10 +703,45 @@ impl Database {
                     .execute(conn)?;
 
                 // Update object status to AVAILABLE
-                update(objects)
+                let updated_obj = update(objects)
                     .filter(database::schema::objects::id.eq(&object_uuid))
                     .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                    .execute(conn)?;
+                    .get_result::<Object>(conn)?;
+
+                // Get fq_path from label
+                let path_label = object_key_value
+                .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
+                .filter(
+                    database::schema::object_key_value::key
+                        .eq("app.aruna-storage.org/new_path"),
+                )
+                .first::<ObjectKeyValue>(conn)
+                .optional()?;
+            
+                if let Some(p_lbl) = path_label {
+                    let bucket_label = object_key_value
+                        .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
+                        .filter(
+                            database::schema::object_key_value::key
+                                .eq("app.aruna-storage.org/bucket"),
+                        )
+                        .first::<ObjectKeyValue>(conn)?;
+                    create_path_db(
+                        &bucket_label.value,
+                        &p_lbl.value,
+                        &updated_obj.shared_revision_id,
+                        &collection_uuid,
+                        conn,
+                    )?;
+                    // Delete the path label afterwards
+                    delete(object_key_value)
+                        .filter(database::schema::object_key_value::id.eq(p_lbl.id))
+                        .execute(conn)?;
+                    // Delete the bucket label afterwards
+                    delete(object_key_value)
+                        .filter(database::schema::object_key_value::id.eq(bucket_label.id))
+                        .execute(conn)?;
+                };
 
                 update(collection_objects)
                     .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
