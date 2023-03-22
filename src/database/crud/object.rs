@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::f32::consts::E;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -1109,6 +1110,7 @@ impl Database {
                         ))
                     })?;
 
+                // First check for matching object_ids afterwards check
                 let (encryption_key, created) = if let Some(is_key) = match encryption_keys
                     .filter(keys_dsl::object_id.eq(&req_object.id))
                     .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
@@ -1116,11 +1118,17 @@ impl Database {
                     .optional()?
                 {
                     Some(k) => Some(k),
-                    None => encryption_keys
-                        .filter(keys_dsl::hash.eq(&request.hash))
-                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                        .first::<EncryptionKey>(conn)
-                        .optional()?,
+                    None => {
+                        if !request.hash.is_empty() {
+                            encryption_keys
+                                .filter(keys_dsl::hash.eq(&request.hash))
+                                .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                                .first::<EncryptionKey>(conn)
+                                .optional()?
+                        } else {
+                            None
+                        }
+                    }
                 } {
                     match req_object.dataclass {
                         Dataclass::PUBLIC | Dataclass::PRIVATE => (Some(is_key), false),
