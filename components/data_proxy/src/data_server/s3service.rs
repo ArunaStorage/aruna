@@ -658,11 +658,69 @@ impl S3 for S3ServiceServer {
         })
     }
 
-    async fn head_object(&self, _req: S3Request<HeadObjectInput>) -> S3Result<HeadObjectOutput> {
-        Err(s3_error!(
-            NotImplemented,
-            "HeadObject is not implemented yet"
-        ))
+    async fn head_object(&self, req: S3Request<HeadObjectInput>) -> S3Result<HeadObjectOutput> {
+        // Get the credentials
+        let creds = match req.credentials {
+            Some(cred) => cred,
+            None => {
+                log::error!("{}", "Not identified PutObjectRequest");
+                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+            }
+        };
+
+        let rev_id = match req.input.version_id {
+            Some(a) => a,
+            None => String::new(),
+        };
+
+        let get_location_response = self
+            .data_handler
+            .internal_notifier_service
+            .clone()
+            .get_object_location(GetObjectLocationRequest {
+                path: format!("s3://{}/{}", req.input.bucket, req.input.key),
+                revision_id: rev_id,
+                access_key: creds.access_key,
+                endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
+            })
+            .await
+            .map_err(|_| s3_error!(NoSuchKey, "Key not found"))?
+            .into_inner();
+
+        let _location = get_location_response
+            .location
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+
+        let object = get_location_response
+            .object
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+
+        let sha256_hash = object
+            .hashes
+            .iter()
+            .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
+            .cloned()
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?;
+
+        let timestamp = object
+            .created
+            .map(|e| {
+                Timestamp::parse(
+                    TimestampFormat::EpochSeconds,
+                    format!("{}", e.seconds).as_str(),
+                )
+            })
+            .ok_or_else(|| s3_error!(InternalError, "intenal processing error"))?
+            .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
+
+        Ok(HeadObjectOutput {
+            content_length: object.content_len,
+            last_modified: Some(timestamp),
+            checksum_sha256: Some(sha256_hash.hash),
+            e_tag: Some(object.id),
+            version_id: Some(format!("{}", object.rev_number)),
+            ..Default::default()
+        })
     }
 
     async fn list_objects(&self, _req: S3Request<ListObjectsInput>) -> S3Result<ListObjectsOutput> {
