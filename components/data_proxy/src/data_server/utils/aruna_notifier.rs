@@ -124,12 +124,7 @@ impl ArunaNotifier {
                     .clone()
                     .ok_or_else(|| s3_error!(InternalError, "Path not found"))?,
                 endpoint_id: self.settings.endpoint_id.to_string(),
-                hash: self.valid_sha.clone().ok_or_else(|| {
-                    s3_error!(
-                        SignatureDoesNotMatch,
-                        "ArunaNotifier signature does not exist"
-                    )
-                })?,
+                hash: self.valid_sha.clone().unwrap_or_default(),
             })
             .await
             .map_err(|e| {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
 use anyhow::{anyhow, Result};
-use aruna_file::transformer::{AddTransformer, Notifications, Sink, Transformer};
+use aruna_file::transformer::{AddTransformer, Data, Notifications, Sink, Transformer};
 use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use bytes::{BufMut, BytesMut};
 
@@ -12,6 +12,7 @@ pub struct BufferedS3Sink {
     target_location: Location,
     upload_id: Option<String>,
     part_number: Option<i32>,
+    only_parts: bool,
     tags: Vec<PartETag>,
 }
 
@@ -23,6 +24,7 @@ impl BufferedS3Sink {
         target_location: Location,
         upload_id: Option<String>,
         part_number: Option<i32>,
+        only_parts: bool,
         tags: Option<Vec<PartETag>>,
     ) -> Self {
         let t = match tags {
@@ -35,6 +37,7 @@ impl BufferedS3Sink {
             target_location,
             upload_id,
             part_number,
+            only_parts,
             tags: t,
         }
     }
@@ -116,6 +119,9 @@ impl BufferedS3Sink {
 
         Ok(())
     }
+    async fn _get_parts(&self) -> Vec<PartETag> {
+        self.tags.clone()
+    }
 }
 
 #[async_trait::async_trait]
@@ -125,7 +131,7 @@ impl Transformer for BufferedS3Sink {
 
         self.buffer.put(buf);
 
-        if self.buffer.len() > 5242880 {
+        if self.buffer.len() > 5242880 && !self.only_parts {
             // 5 Mib -> initialize multipart
             if self.upload_id.is_none() {
                 self.initialize_multipart().await?;
@@ -139,13 +145,36 @@ impl Transformer for BufferedS3Sink {
             } else {
                 // Upload den Rest +
                 self.upload_part().await?;
-                self.finish_multipart().await?;
+                if !self.only_parts {
+                    self.finish_multipart().await?;
+                }
             }
             return Ok(true);
         }
         Ok(false)
     }
-    async fn notify(&mut self, _notes: &mut Vec<Notifications>) -> Result<()> {
+    async fn notify(&mut self, notes: &mut Vec<Notifications>) -> Result<()> {
+        notes.push(Notifications::Response(Data {
+            recipient: format!("SINK_TAG"),
+            info: self.tags.pop().map(|tag| tag.etag.as_bytes().to_vec()),
+        }));
         Ok(())
     }
+}
+
+pub fn parse_notes_get_etag(notes: Vec<Notifications>) -> Result<String> {
+    let mut result = String::new();
+    for note in notes {
+        match note {
+            Notifications::Response(data) => {
+                if data.recipient.starts_with("SINK_TAG") {
+                    result =
+                        String::from_utf8_lossy(&data.info.ok_or(anyhow!("No chunks responded"))?)
+                            .to_string()
+                }
+            }
+            _ => continue,
+        }
+    }
+    Ok(result)
 }

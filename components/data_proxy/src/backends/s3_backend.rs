@@ -206,7 +206,7 @@ impl StorageBackend for S3Backend {
             let part_number = i32::try_from(etag.part_number)?;
 
             let completed_part = CompletedPart::builder()
-                .e_tag(etag.etag)
+                .e_tag(etag.etag.replace('-', ""))
                 .part_number(part_number)
                 .build();
 

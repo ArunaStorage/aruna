@@ -111,7 +111,7 @@ impl DataHandler {
 
         let mut awr = ArunaStreamReadWriter::new_with_sink(
             tx_receive.map(Ok),
-            BufferedS3Sink::new(self.backend.clone(), to.clone(), None, None, None),
+            BufferedS3Sink::new(self.backend.clone(), to.clone(), None, None, false, None),
         );
 
         if self.settings.encrypting {

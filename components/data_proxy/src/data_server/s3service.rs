@@ -30,6 +30,7 @@ use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 
 use super::data_handler::DataHandler;
 use super::utils::aruna_notifier::ArunaNotifier;
+use super::utils::buffered_s3_sink::parse_notes_get_etag;
 use crate::data_server::utils::utils::create_location_from_hash;
 
 #[derive(Debug)]
@@ -103,6 +104,7 @@ impl S3 for S3ServiceServer {
                                 location.clone(),
                                 None,
                                 None,
+                                false,
                                 None,
                             ),
                         );
@@ -273,29 +275,25 @@ impl S3 for S3ServiceServer {
         anotif.get_encryption_key().await?;
 
         let (object_id, collection_id) = anotif.get_col_obj()?;
+        let etag;
 
-        let (sender, recv) = async_channel::bounded(10);
-        let backend_handle = self.backend.clone();
-        let handle = tokio::spawn(async move {
-            backend_handle
-                .upload_multi_object(
-                    recv,
-                    ArunaLocation {
-                        bucket: "temp".to_string(),
-                        path: format!("{}/{}", collection_id, object_id),
-                        ..Default::default()
-                    },
-                    req.input.upload_id,
-                    req.input.content_length,
-                    req.input.part_number,
-                )
-                .await
-        });
-
-        let etag = match req.input.body {
+        match req.input.body {
             Some(data) => {
-                let mut awr =
-                    ArunaStreamReadWriter::new_with_sink(data, AsyncSenderSink::new(sender));
+                let mut awr = ArunaStreamReadWriter::new_with_sink(
+                    data.into_stream(),
+                    BufferedS3Sink::new(
+                        self.backend.clone(),
+                        ArunaLocation {
+                            bucket: "temp".to_string(),
+                            path: format!("{}/{}", collection_id, object_id),
+                            ..Default::default()
+                        },
+                        Some(req.input.upload_id),
+                        Some(req.input.part_number),
+                        true,
+                        None,
+                    ),
+                );
 
                 if self.data_handler.settings.encrypting {
                     awr = awr.add_transformer(
@@ -307,31 +305,24 @@ impl S3 for S3ServiceServer {
                 }
 
                 awr.process().await.map_err(|e| {
-                    log::error!("{}", e);
+                    log::error!("Processing error: {}", e);
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
 
-                handle
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(
-                            InternalError,
-                            "Internal data transformer processing error (TokioJoinHandle)"
-                        )
-                    })?
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(
-                            InternalError,
-                            "Internal data transformer processing error (Backend)"
-                        )
-                    })?
+                etag = parse_notes_get_etag(awr.query_notifications().await.map_err(|e| {
+                    log::error!("Processing error: {}", e);
+                    s3_error!(InternalError, "ETagError")
+                })?)
+                .map_err(|e| {
+                    log::error!("Processing error: {}", e);
+                    s3_error!(InternalError, "ETagError")
+                })?;
             }
             _ => return Err(s3_error!(InvalidPart, "MultiPart cannot be empty")),
         };
+
         Ok(UploadPartOutput {
-            e_tag: Some(etag.etag),
+            e_tag: Some(format!("-{}", etag)),
             ..Default::default()
         })
     }
