@@ -1,3 +1,7 @@
+use crate::backends::storage_backend::StorageBackend;
+use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::data_server::utils::utils::validate_expected_hashes;
+use crate::ServiceSettings;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -21,13 +25,7 @@ use s3s::s3_error;
 use s3s::S3Error;
 use sha2::Sha256;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tonic::transport::Channel;
-
-use crate::backends::storage_backend::StorageBackend;
-use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
-use crate::data_server::utils::utils::validate_expected_hashes;
-use crate::ServiceSettings;
 
 #[derive(Debug)]
 pub struct DataHandler {
@@ -104,38 +102,42 @@ impl DataHandler {
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
         let backend_clone = self.backend.clone();
+        let settings_clone = self.settings.clone();
         let from_clone = from.clone();
-
-        let get_handle =
-            tokio::spawn(async move { backend_clone.get_object(from_clone, None, tx_send).await });
-
-        let mut awr = ArunaStreamReadWriter::new_with_sink(
-            tx_receive.map(Ok),
-            BufferedS3Sink::new(self.backend.clone(), to.clone(), None, None, false, None),
-        );
-
-        if self.settings.encrypting {
-            awr = awr.add_transformer(
-                ChaCha20Enc::new(false, to.encryption_key.as_bytes().to_vec()).map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal data transformer encryption error")
-                })?,
-            );
-        }
-
-        if self.settings.compressing {
-            if current_size > 5242880 + 80 * 28 {
-                awr = awr.add_transformer(FooterGenerator::new(None, true))
-            }
-            awr = awr.add_transformer(ZstdEnc::new(0, true));
-        }
-
-        awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
-
-        awr.process().await?;
-        get_handle.await??;
-
         let mut to_clone = to.clone();
+
+        let awr_handle = tokio::spawn(async move {
+            let mut awr = ArunaStreamReadWriter::new_with_sink(
+                tx_receive.clone().map(Ok),
+                BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None),
+            );
+
+            if settings_clone.encrypting {
+                awr = awr.add_transformer(
+                    ChaCha20Enc::new(false, to.encryption_key.as_bytes().to_vec()).map_err(
+                        |e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal data transformer encryption error")
+                        },
+                    )?,
+                );
+            }
+
+            if settings_clone.compressing {
+                if current_size > 5242880 + 80 * 28 {
+                    awr = awr.add_transformer(FooterGenerator::new(None, true))
+                }
+                awr = awr.add_transformer(ZstdEnc::new(0, true));
+            }
+
+            awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
+
+            awr.process().await
+        });
+
+        self.backend.get_object(from_clone, None, tx_send).await?;
+
+        awr_handle.await??;
         to_clone.endpoint_id = self.settings.endpoint_id.to_string();
 
         // Finalize the object request
@@ -156,25 +158,26 @@ impl DataHandler {
     }
 
     pub async fn get_hashes(&self, location: ArunaLocation) -> Result<Vec<Hash>> {
-        let (tx_send, tx_receive) = async_channel::unbounded();
+        let locstring = format!("{}/{}", location.clone().bucket, location.clone().path);
+        log::info!("Calculating hashes for {:?}", locstring.clone());
 
-        let backend_clone = self.backend.clone();
+        let (tx_send, tx_receive) = async_channel::bounded(10);
+
         let clone_key = location.encryption_key.as_bytes().to_vec();
-        let get_handle =
-            tokio::spawn(async move { backend_clone.get_object(location, None, tx_send).await });
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
         let (transform_send, transform_receive) = async_channel::unbounded();
 
-        let process_handle: JoinHandle<Result<(), _>> = tokio::spawn(async move {
-            ArunaStreamReadWriter::new_with_sink(
+        let aswr_handle = tokio::spawn(async move {
+            // Bind to variable to extend the lifetime of arsw to the end of the function
+            let mut asr = ArunaStreamReadWriter::new_with_sink(
                 tx_receive.clone().map(|e| Ok(e)),
                 AsyncSenderSink::new(transform_send),
             )
-            .add_transformer(ChaCha20Dec::new(clone_key)?)
-            .process()
-            .await
+            .add_transformer(ChaCha20Dec::new(clone_key)?);
+
+            asr.process().await
         });
 
         let md5_str = transform_receive.inspect(|res_bytes| {
@@ -187,11 +190,12 @@ impl DataHandler {
                 sha256_hash.update(bytes)
             }
         });
+        self.backend.get_object(location, None, tx_send).await?;
+        aswr_handle.await??;
         // iterate the whole stream and do nothing
         sha_str.for_each(|_| future::ready(())).await;
 
-        get_handle.await??;
-        process_handle.await??;
+        log::info!("Finished calculating hashes for {:?}", locstring);
 
         Ok(vec![
             Hash {
