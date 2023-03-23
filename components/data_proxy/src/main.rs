@@ -9,6 +9,13 @@ use crate::data_server::{
     data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
 };
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 mod backends;
 mod data_server;
 mod helpers;
