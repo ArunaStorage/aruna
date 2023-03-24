@@ -8,7 +8,7 @@ version = "1.0.0-rc.5"
 [dependencies]
 anyhow = "1.0.69"
 aruna-rust-api = "1.0.0-rc.11"
-aruna-file = "0.1.7"
+aruna-file = "0.1.10"
 async-channel = "1.8.0"
 async-stream = "0.3.4"
 async-trait = "0.1.64"
@@ -33,6 +33,7 @@ reqwest = "0.11.14"
 serde = {version = "1.0.152", features = ["derive"]}
 sha2 = {version = "0.10.6", features = ["std", "asm", "sha2-asm"]}
 tokio = {version = "1.25.0", features = ["full"]}
+tokio-stream = "0.1.12"
 tonic = "0.8.3"
 url = "2.3.1"
 uuid = {version = "1.3.0", features = ["v4", "fast-rng"]}
@@ -49,7 +50,3 @@ md-5 = "0.10.5"
 
 [build-dependencies]
 tonic-build = "0.8.4"
-
-
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5"

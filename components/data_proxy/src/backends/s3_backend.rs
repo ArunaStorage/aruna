@@ -9,10 +9,8 @@ use aws_sdk_s3::{
     types::ByteStream,
     Client, Region,
 };
-use bytes::BufMut;
-use bytes::BytesMut;
 use std::env;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio_stream::StreamExt;
 
 use super::storage_backend::StorageBackend;
 
@@ -99,7 +97,7 @@ impl StorageBackend for S3Backend {
             object = object.set_range(Some(range_string));
         }
 
-        let object_request = match object.send().await {
+        let mut object_request = match object.send().await {
             Ok(value) => value,
             Err(err) => {
                 log::error!("{}", err);
@@ -107,32 +105,8 @@ impl StorageBackend for S3Backend {
             }
         };
 
-        let body_reader = object_request.body.into_async_read();
-
-        let mut buf_reader = BufReader::with_capacity(65_536, body_reader);
-        let mut bytes_buf = BytesMut::with_capacity(65_536);
-
-        loop {
-            let consumed_len = {
-                let buffer_result = buf_reader.fill_buf().await;
-                bytes_buf.put(buffer_result?);
-                let buf_len = bytes_buf.len();
-                match sender.send(bytes_buf.split().freeze()).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        log::error!("{}", err);
-                        return Err(err.into());
-                    }
-                }
-
-                buf_len
-            };
-
-            if consumed_len == 0 {
-                break;
-            }
-
-            buf_reader.consume(consumed_len);
+        while let Some(bytes) = object_request.body.next().await {
+            sender.send(bytes?).await?;
         }
         return Ok(());
     }

@@ -167,7 +167,7 @@ impl DataHandler {
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
-        let (transform_send, transform_receive) = async_channel::unbounded();
+        let (transform_send, transform_receive) = async_channel::bounded(10);
 
         let aswr_handle = tokio::spawn(async move {
             // Bind to variable to extend the lifetime of arsw to the end of the function
@@ -180,31 +180,39 @@ impl DataHandler {
             asr.process().await
         });
 
-        let md5_str = transform_receive.inspect(|res_bytes| {
-            if let Ok(bytes) = res_bytes {
-                md5_hash.update(bytes)
-            }
+        let hashing_handle = tokio::spawn(async move {
+            let md5_str = transform_receive.inspect(|res_bytes| {
+                if let Ok(bytes) = res_bytes {
+                    md5_hash.update(bytes)
+                }
+            });
+            let sha_str = md5_str.inspect(|res_bytes| {
+                if let Ok(bytes) = res_bytes {
+                    sha256_hash.update(bytes)
+                }
+            });
+            sha_str.for_each(|_| future::ready(())).await;
+            (
+                format!("{:x}", sha256_hash.finalize()),
+                format!("{:x}", md5_hash.finalize()),
+            )
         });
-        let sha_str = md5_str.inspect(|res_bytes| {
-            if let Ok(bytes) = res_bytes {
-                sha256_hash.update(bytes)
-            }
-        });
+
         self.backend.get_object(location, None, tx_send).await?;
         aswr_handle.await??;
+        let (sha, md5) = hashing_handle.await?;
         // iterate the whole stream and do nothing
-        sha_str.for_each(|_| future::ready(())).await;
 
         log::info!("Finished calculating hashes for {:?}", locstring);
 
         Ok(vec![
             Hash {
                 alg: Hashalgorithm::Md5 as i32,
-                hash: format!("{:x}", md5_hash.finalize()),
+                hash: md5,
             },
             Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: format!("{:x}", sha256_hash.finalize()),
+                hash: sha,
             },
         ])
     }
