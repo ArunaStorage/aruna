@@ -30,7 +30,7 @@ jsonwebtoken = "8.1.1"
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 reqwest = {version = "0.11.11", features = ["json"] }
-openssl = "0.10.41"
+openssl = "0.10.48"
 toml = "0.5.9"
 aruna-rust-api = "0.5.0"
 bigdecimal = "0.3.0"
