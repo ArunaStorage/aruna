@@ -56,6 +56,7 @@ impl BufferedS3Sink {
                 .init_multipart_upload(self.target_location.clone())
                 .await?,
         );
+        log::debug!("Initialized multipart: {:?}", self.upload_id);
         Ok(())
     }
 
@@ -75,6 +76,7 @@ impl BufferedS3Sink {
         })
         .await??;
 
+        log::debug!("Single upload to: {:?}", self.target_location.clone());
         Ok(())
     }
 
@@ -105,6 +107,13 @@ impl BufferedS3Sink {
 
         self.part_number = Some(pnummer + 1);
 
+        log::debug!(
+            "Uploaded part: {:?}, number:{}, size: {}",
+            self.upload_id,
+            pnummer,
+            expected_len
+        );
+
         Ok(())
     }
 
@@ -116,6 +125,8 @@ impl BufferedS3Sink {
         self.backend
             .finish_multipart_upload(self.target_location.clone(), self.tags.clone(), up_id)
             .await?;
+
+        log::debug!("Finished multipart: {:?}", self.upload_id);
 
         Ok(())
     }

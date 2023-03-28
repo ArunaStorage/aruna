@@ -88,6 +88,8 @@ impl ArunaNotifier {
                     log::error!("{}", e);
                     if e.message() == "Record not found" {
                         s3_error!(NoSuchBucket, "Bucket not found")
+                    } else if e.message() == "Format of path test.test is not valid." {
+                        s3_error!(NoSuchBucket, "Bucket not found / invalid bucket scheme")
                     } else {
                         s3_error!(InternalError, "Internal notifier error")
                     }

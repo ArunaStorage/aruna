@@ -6,7 +6,7 @@ pub struct DebugTransformer<'a> {
 }
 
 impl DebugTransformer<'_> {
-    pub fn new() -> Self {
+    pub fn _new() -> Self {
         Self { next: None }
     }
 }

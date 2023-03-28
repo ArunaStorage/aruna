@@ -1,10 +1,12 @@
 use anyhow::Result;
-use aruna_rust_api::api::internal::v1::internal_authorize_service_client::InternalAuthorizeServiceClient;
+use aruna_rust_api::api::internal::v1::{
+    internal_authorize_service_client::InternalAuthorizeServiceClient, GetSecretRequest,
+};
 use s3s::{
     auth::{S3Auth, SecretKey},
-    S3Result,
+    s3_error, S3Result,
 };
-use tonic::transport::Channel;
+use tonic::{transport::Channel, Request};
 
 /// Aruna authprovider
 #[derive(Debug)]
@@ -23,18 +25,18 @@ impl AuthProvider {
 #[async_trait::async_trait]
 impl S3Auth for AuthProvider {
     async fn get_secret_key(&self, access_key: &str) -> S3Result<SecretKey> {
-        // let secret = self
-        //     .client
-        //     .clone()
-        //     .get_secret(Request::new(GetSecretRequest {
-        //         accesskey: access_key.to_string(),
-        //     }))
-        //     .await
-        //     .map_err(|_| s3_error!(NotSignedUp, "Unable to authenticate user"))?
-        //     .into_inner()
-        //     .authorization
-        //     .ok_or_else(|| s3_error!(NotSignedUp, "Unable to authenticate user"))?
-        //     .accesskey;
-        Ok("1234".into())
+        let secret = self
+            .client
+            .clone()
+            .get_secret(Request::new(GetSecretRequest {
+                accesskey: access_key.to_string(),
+            }))
+            .await
+            .map_err(|_| s3_error!(NotSignedUp, "Unable to authenticate user"))?
+            .into_inner()
+            .authorization
+            .ok_or_else(|| s3_error!(NotSignedUp, "Unable to authenticate user"))?
+            .secretkey;
+        Ok(secret.into())
     }
 }
