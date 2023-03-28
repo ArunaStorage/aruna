@@ -2375,6 +2375,7 @@ impl Database {
                     },
                 )?;
 
+
                 // - If object already exists and no staging object provided -> return
                 // - If object already exists and staging object provided    -> update
                 // - If object does not exist and staging object provided    -> init
@@ -2432,7 +2433,6 @@ impl Database {
                         }
                     }
                     None => {
-                        println!("Fetched none ?");
                         if let Some(staging_object) = request.object {
                             let staging_object_id = uuid::Uuid::new_v4();
                             let created_object = create_staging_object(
@@ -3273,12 +3273,16 @@ pub fn get_object_revision_by_path(
     object_revision: i64,
     check_collection: Option<uuid::Uuid>,
 ) -> Result<Option<Object>, ArunaError> {
+
+    dbg!(object_path.to_string(), object_revision.clone());
+
     if !object_path.starts_with("s3://") {
         return Err(ArunaError::InvalidRequest(
             "Path does not start with s3://".to_string(),
         ));
     }
 
+    // Split of "s3://"
     let (s3bucket, s3path) = object_path[5..]
         .split_once('/')
         .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
