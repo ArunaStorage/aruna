@@ -11,6 +11,10 @@
 use super::utils::*;
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, Project as ProjectDB, User, UserPermission};
+use crate::database::models::enums::UserRights;
+use crate::database::schema::api_tokens::dsl::api_tokens;
+use crate::error::ArunaError;
+
 use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
@@ -24,9 +28,6 @@ use aruna_rust_api::api::storage::services::v1::{
 };
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-
-use crate::database::models::enums::UserRights;
-use crate::error::ArunaError;
 
 use chrono::Utc;
 use diesel::{delete, insert_into};
@@ -303,6 +304,32 @@ impl Database {
                 permission: map_permissions_rev(api_token.user_right),
             }),
         })
+    }
+
+    /// Gets a specific API Token by its unique id.
+    ///
+    /// ## Arguments
+    ///
+    /// * token_id: &uuid::Uuid: Unique api token id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<ApiToken, ArunaError>: Token Response, this does not contain the signed Token only
+    ///   all Database information
+    pub fn get_api_token_by_id(&self, token_id: &uuid::Uuid) -> Result<ApiToken, ArunaError> {
+        use crate::database::schema::api_tokens::dsl as tokens_dsl;
+
+        // Fetch token info from database
+        let api_token = self
+            .pg_connection
+            .get()?
+            .transaction::<ApiToken, ArunaError, _>(|conn| {
+                Ok(api_tokens
+                    .filter(tokens_dsl::id.eq(token_id))
+                    .first::<ApiToken>(conn)?)
+            })?;
+
+        Ok(api_token)
     }
 
     /// Gets all API Tokens from a user.
