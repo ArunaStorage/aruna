@@ -1,10 +1,5 @@
-use std::sync::Arc;
-
-use crate::backends::storage_backend::StorageBackend;
-use anyhow::{anyhow, Result};
-use aruna_file::transformer::{AddTransformer, Data, Notifications, Sink, Transformer};
-use aruna_rust_api::api::internal::v1::{Location, PartETag};
-use bytes::{BufMut, BytesMut};
+use anyhow::Result;
+use aruna_file::transformer::{AddTransformer, Notifications, Transformer};
 
 pub struct DebugTransformer<'a> {
     next: Option<Box<dyn Transformer + Send + 'a>>,
