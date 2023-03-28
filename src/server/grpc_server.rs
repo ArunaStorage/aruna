@@ -125,10 +125,6 @@ impl ServiceServer {
                 .add_service(ResourceInfoServiceServer::new(resource_info_service))
                 .add_service(StorageInfoServiceServer::new(storage_info_service))
                 .add_service(ServiceAccountServiceServer::new(service_account_service))
-                .add_service(InternalEventServiceServer::new(internal_event_service))
-                .add_service(InternalAuthorizeServiceServer::new(
-                    internal_authorize_service,
-                ))
                 .serve(addr)
                 .await
                 .unwrap();
@@ -139,6 +135,10 @@ impl ServiceServer {
         Server::builder()
             .add_service(InternalProxyNotifierServiceServer::new(
                 internal_proxy_notifier_service,
+            ))
+            .add_service(InternalEventServiceServer::new(internal_event_service))
+            .add_service(InternalAuthorizeServiceServer::new(
+                internal_authorize_service,
             ))
             .serve(other_addr)
             .await
