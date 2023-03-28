@@ -80,7 +80,7 @@ fn add_endpoint_test() {
         internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
         documentation_path: "/somewhere/else/docu.pdf".to_string(),
         is_public: true,
-        pubkey: "MCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=".to_string(),
+        pubkey: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----".to_string(),
     };
 
     // Validate endpoint creation
