@@ -105,7 +105,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         );
 
         // Return gRPC response after everything succeeded
-        log::info!("Sending InitializeNewObjectResponse back to client.");
+        log::info!("Sending FinalizeObjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
