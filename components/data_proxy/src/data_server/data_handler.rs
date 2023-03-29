@@ -129,9 +129,12 @@ impl DataHandler {
                 if settings_clone.compressing {
                     if temp_size > 5242880 + 80 * 28 {
                         log::debug!("Added footer !");
-                        awr = awr.add_transformer(FooterGenerator::new(None, true))
+                        awr = awr.add_transformer(FooterGenerator::new(None, true));
+                        // Add padding if a footer is generated
+                        awr = awr.add_transformer(ZstdEnc::new(0, false));
+                    } else {
+                        awr = awr.add_transformer(ZstdEnc::new(0, true));
                     }
-                    awr = awr.add_transformer(ZstdEnc::new(0, true));
                 }
 
                 awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
