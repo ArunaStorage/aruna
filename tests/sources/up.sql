@@ -398,12 +398,14 @@ INSERT INTO pub_keys (
         pubkey
     )
 VALUES('1',E'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n');
-INSERT INTO api_tokens (id, creator_user_id, pub_key, expires_at)
+INSERT INTO api_tokens (id, creator_user_id, pub_key, accesskey, expires_at)
 VALUES (
         '12345678-8888-8888-8888-999999999999',
         '12345678-1234-1234-1234-111111111111',
         '1',
-        '2050-01-01 00:00:00'
+        '1234',
+        '2100-03-28 09:26:53.197386'
+
     );
 INSERT INTO api_tokens (id, creator_user_id, pub_key, expires_at)
 VALUES (
