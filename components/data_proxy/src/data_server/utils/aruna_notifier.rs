@@ -56,7 +56,7 @@ impl ArunaNotifier {
             }
             None => {
                 log::error!("{}", "Not identified PutObjectRequest");
-                return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
+                Err(s3_error!(NotSignedUp, "Your account is not signed up"))
             }
         }
     }

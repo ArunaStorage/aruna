@@ -55,7 +55,7 @@ pub fn create_location_from_hash(
     } else {
         (
             Location {
-                bucket: format!("b{}", sha256_hash[0..2].to_string()),
+                bucket: format!("b{}", &sha256_hash[0..2]),
                 path: sha256_hash[2..].to_string(),
                 is_compressed: compressing,
                 is_encrypted: encrypting,

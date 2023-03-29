@@ -75,7 +75,7 @@ impl DataHandler {
             .find(|e| e.alg == Hashalgorithm::Sha256 as i32)
             .ok_or_else(|| anyhow!("Sha256 not found"))?;
 
-        to.bucket = format!("b{}", sha_hash.hash[0..2].to_string());
+        to.bucket = format!("b{}", &sha_hash.hash[0..2]);
         to.path = sha_hash.hash[2..].to_string();
 
         // Get the correct encryption key based on the actual hash of the object
@@ -96,10 +96,7 @@ impl DataHandler {
             .encryption_key;
 
         // Check if this object already exists
-        let existing = match self.backend.head_object(to.clone()).await {
-            Ok(_) => true,
-            Err(_) => false,
-        };
+        let existing = self.backend.head_object(to.clone()).await.is_ok();
         let mut to_clone = to.clone();
 
         if !existing {
@@ -182,7 +179,7 @@ impl DataHandler {
         let aswr_handle = tokio::spawn(async move {
             // Bind to variable to extend the lifetime of arsw to the end of the function
             let mut asr = ArunaStreamReadWriter::new_with_sink(
-                tx_receive.clone().map(|e| Ok(e)),
+                tx_receive.clone().map(Ok),
                 AsyncSenderSink::new(transform_send),
             );
 

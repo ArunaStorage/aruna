@@ -170,7 +170,7 @@ impl Transformer for BufferedS3Sink {
     async fn notify(&mut self, notes: &mut Vec<Notifications>) -> Result<()> {
         if self.only_parts {
             notes.push(Notifications::Response(Data {
-                recipient: format!("SINK_TAG"),
+                recipient: "SINK_TAG".to_string(),
                 info: self.tags.pop().map(|tag| tag.etag.as_bytes().to_vec()),
             }));
         }
@@ -184,9 +184,10 @@ pub fn parse_notes_get_etag(notes: Vec<Notifications>) -> Result<String> {
         match note {
             Notifications::Response(data) => {
                 if data.recipient.starts_with("SINK_TAG") {
-                    result =
-                        String::from_utf8_lossy(&data.info.ok_or(anyhow!("No chunks responded"))?)
-                            .to_string()
+                    result = String::from_utf8_lossy(
+                        &data.info.ok_or_else(|| anyhow!("No chunks responded"))?,
+                    )
+                    .to_string()
                 }
             }
             _ => continue,

@@ -192,8 +192,8 @@ impl S3 for S3ServiceServer {
                 .internal_notifier_service
                 .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
                 .finalize_object(FinalizeObjectRequest {
-                    object_id: object_id,
-                    collection_id: collection_id,
+                    object_id,
+                    collection_id,
                     location: Some(location),
                     content_length: req.input.content_length,
                     hashes: vec![
@@ -439,7 +439,7 @@ impl S3 for S3ServiceServer {
             processor_clone
                 .get_object(
                     ArunaLocation {
-                        bucket: format!("b{}", sha256_hash.hash[0..2].to_string()),
+                        bucket: format!("b{}", &sha256_hash.hash[0..2]),
                         path: sha256_hash.hash[2..].to_string(),
                         ..Default::default()
                     },
@@ -521,7 +521,7 @@ impl S3 for S3ServiceServer {
             })));
 
         Ok(GetObjectOutput {
-            body: body,
+            body,
             content_length: object.content_len,
             last_modified: Some(timestamp),
             e_tag: Some(object.id),
