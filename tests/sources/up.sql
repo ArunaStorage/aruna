@@ -270,7 +270,7 @@ CREATE TABLE api_tokens (
     -- IF collection_id and project_id is NULL, the token is a global personal token of creator_user_id
     collection_id UUID,
     user_right USER_RIGHTS,
-    accesskey VARCHAR(255) NOT NULL DEFAULT '-',
+    secretkey VARCHAR(255) NOT NULL DEFAULT '-',
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (pub_key) REFERENCES pub_keys(id),
@@ -398,7 +398,7 @@ INSERT INTO pub_keys (
         pubkey
     )
 VALUES('1',E'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n');
-INSERT INTO api_tokens (id, creator_user_id, pub_key, accesskey, expires_at)
+INSERT INTO api_tokens (id, creator_user_id, pub_key, secretkey, expires_at)
 VALUES (
         '12345678-8888-8888-8888-999999999999',
         '12345678-1234-1234-1234-111111111111',

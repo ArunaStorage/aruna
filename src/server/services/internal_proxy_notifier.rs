@@ -48,7 +48,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         &self,
         request: Request<GetOrCreateObjectByPathRequest>,
     ) -> Result<Response<GetOrCreateObjectByPathResponse>, Status> {
-        log::info!("Received GetOrCreateObjectByPathRequest.");
+        log::debug!("Received GetOrCreateObjectByPathRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
         // Consume gRPC request
@@ -65,7 +65,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         );
 
         // Return gRPC response after everything succeeded
-        log::info!("Sending GetOrCreateObjectByPathResponse back to client.");
+        log::debug!("Sending GetOrCreateObjectByPathResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
@@ -90,7 +90,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         &self,
         request: Request<FinalizeObjectRequest>,
     ) -> Result<Response<FinalizeObjectResponse>, Status> {
-        log::info!("Received FinalizeObjectRequest.");
+        log::debug!("Received FinalizeObjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
         // Consume gRPC request
@@ -105,7 +105,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         );
 
         // Return gRPC response after everything succeeded
-        log::info!("Sending FinalizeObjectResponse back to client.");
+        log::debug!("Sending FinalizeObjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
@@ -125,7 +125,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         &self,
         request: Request<GetOrCreateEncryptionKeyRequest>,
     ) -> Result<Response<GetOrCreateEncryptionKeyResponse>, Status> {
-        log::info!("Received GetEncryptionKeyRequest.");
+        log::debug!("Received GetEncryptionKeyRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
         // Consume gRPC request
@@ -154,7 +154,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         });
 
         // Return gRPC response after everything succeeded
-        log::info!("Sending GetEncryptionKeyResponse back to client.");
+        log::debug!("Sending GetEncryptionKeyResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
@@ -175,7 +175,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         &self,
         request: Request<GetObjectLocationRequest>,
     ) -> Result<Response<GetObjectLocationResponse>, Status> {
-        log::info!("Received GetObjectLocationRequest.");
+        log::debug!("Received GetObjectLocationRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
         // Consume gRPC request
@@ -231,7 +231,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         });
 
         // Return gRPC response after everything succeeded
-        log::info!("Sending GetObjectLocationResponse back to client.");
+        log::debug!("Sending GetObjectLocationResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }

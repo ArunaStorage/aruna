@@ -70,7 +70,7 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         // Return gRPC response
         Ok(tonic::Response::new(GetSecretResponse {
             authorization: Some(Authorization {
-                secretkey: api_token.accesskey,
+                secretkey: api_token.secretkey,
                 accesskey: api_token.id.to_string(),
             }),
         }))

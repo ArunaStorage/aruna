@@ -1,6 +1,6 @@
 -- Your SQL goes here
 
-ALTER TABLE api_tokens ADD accesskey VARCHAR(255) NOT NULL DEFAULT '-';
+ALTER TABLE api_tokens ADD secretkey VARCHAR(255) NOT NULL DEFAULT '-';
 
 CREATE TABLE encryption_keys (
     id UUID PRIMARY KEY,

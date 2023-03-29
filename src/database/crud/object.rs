@@ -3274,8 +3274,6 @@ pub fn get_object_revision_by_path(
     check_collection: Option<uuid::Uuid>,
 ) -> Result<Option<Object>, ArunaError> {
 
-    dbg!(object_path.to_string(), object_revision.clone());
-
     if !object_path.starts_with("s3://") {
         return Err(ArunaError::InvalidRequest(
             "Path does not start with s3://".to_string(),

@@ -172,7 +172,7 @@ impl Database {
         }
 
         // Create random access_key
-        let access_key: String = thread_rng()
+        let secret_key: String = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
             .map(char::from)
@@ -189,7 +189,7 @@ impl Database {
             project_id: parsed_project_id,
             collection_id: parsed_collection_id,
             user_right: user_right_db,
-            accesskey: access_key,
+            secretkey: secret_key,
         };
 
         use crate::database::schema::api_tokens::dsl::*;
