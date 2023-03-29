@@ -456,43 +456,36 @@ impl S3 for S3ServiceServer {
 
         let path = format!("s3://{}/{}", req.input.bucket, req.input.key);
 
-        tokio::spawn(async move {
-            ArunaStreamReadWriter::new_with_sink(
-                internal_receiver.map(Ok),
-                AsyncSenderSink::new(final_sender),
+        ArunaStreamReadWriter::new_with_sink(
+            internal_receiver.map(Ok),
+            AsyncSenderSink::new(final_sender),
+        )
+        .add_transformer(ZstdDec::new())
+        .add_transformer(
+            ChaCha20Dec::new(
+                dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+                    .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                        path,
+                        endpoint_id: setting.endpoint_id.to_string(),
+                        hash: sha_clone,
+                    })
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Internal notifier error")
+                    })?
+                    .into_inner()
+                    .encryption_key
+                    .as_bytes()
+                    .to_vec(),
             )
-            .add_transformer(ZstdDec::new())
-            .add_transformer(
-                ChaCha20Dec::new(
-                    dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-                        .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                            path,
-                            endpoint_id: setting.endpoint_id.to_string(),
-                            hash: sha_clone,
-                        })
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Internal notifier error")
-                        })?
-                        .into_inner()
-                        .encryption_key
-                        .as_bytes()
-                        .to_vec(),
-                )
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal notifier error")
-                })?,
-            )
-            .process()
-            .await
-        })
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?,
+        )
+        .process()
         .await
-        .map_err(|e| {
-            log::error!("{}", e);
-            s3_error!(InternalError, "Internal notifier error")
-        })?
         .map_err(|e| {
             log::error!("{}", e);
             s3_error!(InternalError, "Internal notifier error")
