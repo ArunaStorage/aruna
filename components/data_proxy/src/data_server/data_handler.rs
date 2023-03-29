@@ -5,12 +5,14 @@ use crate::ServiceSettings;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_file::helpers::notifications_helper::parse_size_from_notifications;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::footer::FooterGenerator;
+use aruna_file::transformers::size_probe::SizeProbe;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
@@ -18,7 +20,6 @@ use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
-use bytes::Bytes;
 use futures::future;
 use futures::StreamExt;
 use md5::{Digest, Md5};
@@ -63,9 +64,9 @@ impl DataHandler {
             bail!("Unimplemented move operation (compressed input)")
         }
 
-        let expected_size = self.backend.clone().head_object(from.clone()).await?;
+        let temp_size = self.backend.clone().head_object(from.clone()).await?;
 
-        let hashes = self.get_hashes(from.clone()).await?;
+        let (hashes, raw_file_size) = self.get_hashes(from.clone()).await?;
 
         validate_expected_hashes(expected_hashes, &hashes)?;
 
@@ -95,54 +96,58 @@ impl DataHandler {
             .encryption_key;
 
         // Check if this object already exists
-        let current_size = match self.backend.head_object(to.clone()).await {
-            Ok(size) => size,
-            Err(_) => 0,
+        let existing = match self.backend.head_object(to.clone()).await {
+            Ok(_) => true,
+            Err(_) => false,
         };
-
-        let (tx_send, tx_receive) = async_channel::bounded(10);
-
-        let backend_clone = self.backend.clone();
-        let settings_clone = self.settings.clone();
-        let from_clone = from.clone();
         let mut to_clone = to.clone();
 
-        let awr_handle = tokio::spawn(async move {
-            let mut sum = 0;
-            let tx_receive_2 = tx_receive.inspect(|e: &Bytes| sum += e.len());
-            let mut awr = ArunaStreamReadWriter::new_with_sink(
-                tx_receive_2.map(Ok),
-                BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None),
-            );
+        if !existing {
+            let (tx_send, tx_receive) = async_channel::bounded(10);
 
-            if settings_clone.encrypting {
-                awr = awr.add_transformer(
-                    ChaCha20Enc::new(false, to.encryption_key.as_bytes().to_vec()).map_err(
-                        |e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Internal data transformer encryption error")
-                        },
-                    )?,
+            let backend_clone = self.backend.clone();
+            let settings_clone = self.settings.clone();
+            let from_clone = from.clone();
+
+            let awr_handle = tokio::spawn(async move {
+                let mut awr = ArunaStreamReadWriter::new_with_sink(
+                    tx_receive.map(Ok),
+                    BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None),
                 );
-            }
 
-            if settings_clone.compressing {
-                if current_size > 5242880 + 80 * 28 {
-                    awr = awr.add_transformer(FooterGenerator::new(None, true))
+                if settings_clone.encrypting {
+                    awr = awr.add_transformer(
+                        ChaCha20Enc::new(false, to.encryption_key.as_bytes().to_vec()).map_err(
+                            |e| {
+                                log::error!("{}", e);
+                                s3_error!(
+                                    InternalError,
+                                    "Internal data transformer encryption error"
+                                )
+                            },
+                        )?,
+                    );
                 }
-                awr = awr.add_transformer(ZstdEnc::new(0, true));
-            }
 
-            awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
+                if settings_clone.compressing {
+                    if temp_size > 5242880 + 80 * 28 {
+                        log::debug!("Added footer !");
+                        awr = awr.add_transformer(FooterGenerator::new(None, true))
+                    }
+                    awr = awr.add_transformer(ZstdEnc::new(0, true));
+                }
 
-            let result = awr.process().await;
+                awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
 
-            result
-        });
+                let result = awr.process().await;
 
-        self.backend.get_object(from_clone, None, tx_send).await?;
+                result
+            });
 
-        awr_handle.await??;
+            self.backend.get_object(from_clone, None, tx_send).await?;
+
+            awr_handle.await??;
+        }
         to_clone.endpoint_id = self.settings.endpoint_id.to_string();
 
         // Finalize the object request
@@ -153,7 +158,7 @@ impl DataHandler {
                 collection_id,
                 location: Some(to_clone),
                 hashes,
-                content_length: expected_size,
+                content_length: raw_file_size,
             })
             .await?;
 
@@ -162,7 +167,7 @@ impl DataHandler {
         Ok(())
     }
 
-    pub async fn get_hashes(&self, location: ArunaLocation) -> Result<Vec<Hash>> {
+    pub async fn get_hashes(&self, location: ArunaLocation) -> Result<(Vec<Hash>, i64)> {
         let locstring = format!("{}/{}", location.clone().bucket, location.clone().path);
         log::debug!("Calculating hashes for {:?}", locstring.clone());
 
@@ -179,10 +184,19 @@ impl DataHandler {
             let mut asr = ArunaStreamReadWriter::new_with_sink(
                 tx_receive.clone().map(|e| Ok(e)),
                 AsyncSenderSink::new(transform_send),
-            )
-            .add_transformer(ChaCha20Dec::new(clone_key)?);
+            );
 
-            asr.process().await
+            asr = asr.add_transformer(SizeProbe::new(1));
+            asr = asr.add_transformer(ChaCha20Dec::new(clone_key)?);
+
+            asr.process().await?;
+
+            let notes = asr.query_notifications().await?;
+
+            match 1 {
+                1 => Ok(parse_size_from_notifications(notes, 1)?),
+                _ => Err(anyhow!("Will not occur")),
+            }
         });
 
         let hashing_handle = tokio::spawn(async move {
@@ -204,22 +218,25 @@ impl DataHandler {
         });
 
         self.backend.get_object(location, None, tx_send).await?;
-        aswr_handle.await??;
+        let size = aswr_handle.await??;
         let (sha, md5) = hashing_handle.await?;
         // iterate the whole stream and do nothing
 
         log::debug!("Finished calculating hashes for {:?}", locstring);
 
-        Ok(vec![
-            Hash {
-                alg: Hashalgorithm::Md5 as i32,
-                hash: md5,
-            },
-            Hash {
-                alg: Hashalgorithm::Sha256 as i32,
-                hash: sha,
-            },
-        ])
+        Ok((
+            vec![
+                Hash {
+                    alg: Hashalgorithm::Md5 as i32,
+                    hash: md5,
+                },
+                Hash {
+                    alg: Hashalgorithm::Sha256 as i32,
+                    hash: sha,
+                },
+            ],
+            size as i64,
+        ))
     }
 
     pub async fn finish_multipart(

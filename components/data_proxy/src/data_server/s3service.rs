@@ -513,10 +513,15 @@ impl S3 for S3ServiceServer {
                 s3_error!(InternalError, "Internal notifier error")
             })?;
 
+        log::debug!("Stream has length: {}", final_receiver.len());
+
+        let body =
+            Some(StreamingBlob::wrap(final_receiver.clone().map_err(|_| {
+                s3_error!(InternalError, "intenal processing error")
+            })));
+
         Ok(GetObjectOutput {
-            body: Some(StreamingBlob::wrap(
-                final_receiver.map_err(|_| s3_error!(InternalError, "intenal processing error")),
-            )),
+            body: body,
             content_length: object.content_len,
             last_modified: Some(timestamp),
             e_tag: Some(object.id),

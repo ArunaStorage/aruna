@@ -168,10 +168,12 @@ impl Transformer for BufferedS3Sink {
         Ok(false)
     }
     async fn notify(&mut self, notes: &mut Vec<Notifications>) -> Result<()> {
-        notes.push(Notifications::Response(Data {
-            recipient: format!("SINK_TAG"),
-            info: self.tags.pop().map(|tag| tag.etag.as_bytes().to_vec()),
-        }));
+        if self.only_parts {
+            notes.push(Notifications::Response(Data {
+                recipient: format!("SINK_TAG"),
+                info: self.tags.pop().map(|tag| tag.etag.as_bytes().to_vec()),
+            }));
+        }
         Ok(())
     }
 }
