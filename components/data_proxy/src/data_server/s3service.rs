@@ -1,10 +1,12 @@
 use anyhow::Result;
+use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::decompressor::ZstdDec;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
+use aruna_file::transformers::filter::Filter;
 use aruna_file::transformers::footer::FooterGenerator;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetObjectLocationRequest;
@@ -31,6 +33,7 @@ use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 use super::data_handler::DataHandler;
 use super::utils::aruna_notifier::ArunaNotifier;
 use super::utils::buffered_s3_sink::parse_notes_get_etag;
+use super::utils::ranges::calculate_ranges;
 use crate::data_server::utils::utils::create_location_from_hash;
 
 #[derive(Debug)]
@@ -416,6 +419,7 @@ impl S3 for S3ServiceServer {
 
         let object = get_location_response
             .object
+            .clone()
             .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, object"))?;
 
         let sha256_hash = object
@@ -435,62 +439,122 @@ impl S3 for S3ServiceServer {
 
         let sha_clone = sha256_hash.hash.clone();
 
+        let content_length = get_location_response
+            .object
+            .clone()
+            .ok_or_else(|| s3_error!(NoSuchKey, "Key not found"))?
+            .content_len;
+
+        let get_location = ArunaLocation {
+            bucket: format!("b{}", &sha256_hash.hash[0..2]),
+            path: sha256_hash.hash[2..].to_string(),
+            ..Default::default()
+        };
+
+        let setting = self.data_handler.settings.clone();
+
+        let path = format!("s3://{}/{}", req.input.bucket, req.input.key);
+
+        let encryption_key = self
+            .data_handler
+            .internal_notifier_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
+            .clone()
+            .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
+                path,
+                endpoint_id: setting.endpoint_id.to_string(),
+                hash: sha_clone,
+            })
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?
+            .into_inner()
+            .encryption_key
+            .as_bytes()
+            .to_vec();
+
+        let footer_parser = if content_length > (65536 + 28) * 2 {
+            let (footer_sender, footer_receiver) = async_channel::unbounded();
+            self.backend
+                .get_object(
+                    get_location.clone(),
+                    Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                    footer_sender,
+                )
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Unable to get encryption_key")
+                })?;
+
+            let mut output = Vec::with_capacity(130_000);
+
+            let mut arsw =
+                ArunaStreamReadWriter::new_with_writer(footer_receiver.map(Ok), &mut output);
+
+            arsw.process().await.map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to get footer")
+            })?;
+            drop(arsw);
+
+            Some(
+                FooterParser::from_encrypted(
+                    &output
+                        .try_into()
+                        .map_err(|_| s3_error!(InternalError, "Unable to get encryption_key"))?,
+                    &encryption_key,
+                )
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Unable to build FooterParser")
+                })?,
+            )
+        } else {
+            None
+        };
+
+        let (query_range, filter_ranges) =
+            calculate_ranges(req.input.range, content_length as u64, footer_parser).map_err(
+                |e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Unable to build FooterParser")
+                },
+            )?;
+
         tokio::spawn(async move {
             processor_clone
-                .get_object(
-                    ArunaLocation {
-                        bucket: format!("b{}", &sha256_hash.hash[0..2]),
-                        path: sha256_hash.hash[2..].to_string(),
-                        ..Default::default()
-                    },
-                    None,
-                    internal_sender,
-                )
+                .get_object(get_location, query_range, internal_sender)
                 .await
         });
 
         let (final_sender, final_receiver) = async_channel::bounded(10);
 
-        let mut dhandler_service = self.data_handler.internal_notifier_service.clone();
-        let setting = self.data_handler.settings.clone();
-
-        let path = format!("s3://{}/{}", req.input.bucket, req.input.key);
-
         tokio::spawn(async move {
-            ArunaStreamReadWriter::new_with_sink(
-            internal_receiver.map(Ok),
-            AsyncSenderSink::new(final_sender),
-        )
-        .add_transformer(ZstdDec::new())
-        .add_transformer(
-            ChaCha20Dec::new(
-                dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-                    .get_or_create_encryption_key(GetOrCreateEncryptionKeyRequest {
-                        path,
-                        endpoint_id: setting.endpoint_id.to_string(),
-                        hash: sha_clone,
-                    })
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Internal notifier error")
-                    })?
-                    .into_inner()
-                    .encryption_key
-                    .as_bytes()
-                    .to_vec(),
-            )
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?,
-        )
-        .process()
-        .await
-        .map_err(|e| {
-            log::error!("{}", e);
-            s3_error!(InternalError, "Internal notifier error")
-        })?;
+            let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                internal_receiver.map(Ok),
+                AsyncSenderSink::new(final_sender),
+            );
+
+            match filter_ranges {
+                Some(r) => {
+                    asrw = asrw.add_transformer(Filter::new(r));
+                }
+                _ => (),
+            };
+
+            asrw.add_transformer(ZstdDec::new())
+                .add_transformer(ChaCha20Dec::new(encryption_key).map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal notifier error")
+                })?)
+                .process()
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal notifier error")
+                })?;
 
             match 1 {
                 1 => Ok(()),

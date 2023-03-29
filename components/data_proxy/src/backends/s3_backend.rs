@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_file::helpers::footer_parser::Range;
 use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -83,19 +82,15 @@ impl StorageBackend for S3Backend {
     async fn get_object(
         &self,
         location: Location,
-        range: Option<Range>,
+        range: Option<String>,
         sender: Sender<bytes::Bytes>,
     ) -> Result<()> {
-        let mut object = self
+        let object = self
             .s3_client
             .get_object()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path));
-
-        if let Some(value) = range {
-            let range_string = format!("Range: bytes={}-{}", value.from, value.to);
-            object = object.set_range(Some(range_string));
-        }
+            .set_key(Some(location.path))
+            .set_range(range);
 
         let mut object_request = match object.send().await {
             Ok(value) => value,

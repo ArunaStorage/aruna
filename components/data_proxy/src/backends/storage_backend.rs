@@ -1,5 +1,4 @@
 use anyhow::Result;
-use aruna_file::helpers::footer_parser::Range;
 use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -34,7 +33,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn get_object(
         &self,
         location: Location,
-        range: Option<Range>,
+        range: Option<String>,
         sender: Sender<bytes::Bytes>,
     ) -> Result<()>;
 
