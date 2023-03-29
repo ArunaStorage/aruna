@@ -499,18 +499,15 @@ impl S3 for S3ServiceServer {
             })?;
             drop(arsw);
 
-            Some(
-                FooterParser::from_encrypted(
-                    &output
-                        .try_into()
-                        .map_err(|_| s3_error!(InternalError, "Unable to get encryption_key"))?,
-                    &encryption_key,
-                )
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Unable to build FooterParser")
-                })?,
-            )
+            match FooterParser::from_encrypted(
+                &output
+                    .try_into()
+                    .map_err(|_| s3_error!(InternalError, "Unable to get encryption_key"))?,
+                &encryption_key,
+            ) {
+                Ok(p) => Some(p),
+                Err(_) => None,
+            }
         } else {
             None
         };

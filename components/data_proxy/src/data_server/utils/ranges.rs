@@ -16,7 +16,13 @@ pub fn calculate_ranges(
                     foot.get_offsets_by_range(aruna_range_from_s3range(r, content_length))?;
                 Ok((Some(format!("bytes={}-{}", o1.from, o1.to)), Some(o2)))
             }
-            None => return Ok((None, None)),
+            None => {
+                let ar_range = aruna_range_from_s3range(r, content_length);
+                Ok((
+                    Some(format!("bytes={}-{}", ar_range.from, ar_range.to)),
+                    None,
+                ))
+            }
         },
         None => return Ok((None, None)),
     }
