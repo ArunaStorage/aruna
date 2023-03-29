@@ -675,11 +675,6 @@ impl Database {
                     .filter(database::schema::hashes::object_id.eq(&object_uuid))
                     .load::<ApiHash>(conn)?;
 
-                // Delete all existing hashes -> Will be inserted by proxy hashes
-                delete(hashes)
-                .filter(database::schema::hashes::object_id.eq(&object_uuid))
-                .execute(conn)?;
-
                 // Validate all data proxy calculated hashes against existing
                 let mut hashes_insert = Vec::new();
                 for proto_hash in &request.hashes {
@@ -702,6 +697,11 @@ impl Database {
                     });
                 }
 
+                // Delete all existing hashes -> Will be inserted by proxy hashes
+                delete(hashes)
+                .filter(database::schema::hashes::object_id.eq(&object_uuid))
+                .execute(conn)?;
+
                 // Insert all object hashes which do not already exist
                 insert_into(hashes)
                     .values(hashes_insert)
@@ -710,7 +710,10 @@ impl Database {
                 // Update object status to AVAILABLE
                 let updated_obj = update(objects)
                     .filter(database::schema::objects::id.eq(&object_uuid))
-                    .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    .set((
+                            database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE), 
+                            database::schema::objects::content_len.eq(request.content_length)
+                        ))
                     .get_result::<Object>(conn)?;
 
                 // Get fq_path from label
