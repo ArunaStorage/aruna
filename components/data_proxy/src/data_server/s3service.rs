@@ -435,7 +435,7 @@ impl S3 for S3ServiceServer {
 
         let sha_clone = sha256_hash.hash.clone();
 
-        let get_clone = tokio::spawn(async move {
+        tokio::spawn(async move {
             processor_clone
                 .get_object(
                     ArunaLocation {
@@ -449,14 +449,15 @@ impl S3 for S3ServiceServer {
                 .await
         });
 
-        let (final_sender, final_receiver) = async_channel::unbounded();
+        let (final_sender, final_receiver) = async_channel::bounded(10);
 
         let mut dhandler_service = self.data_handler.internal_notifier_service.clone();
         let setting = self.data_handler.settings.clone();
 
         let path = format!("s3://{}/{}", req.input.bucket, req.input.key);
 
-        ArunaStreamReadWriter::new_with_sink(
+        tokio::spawn(async move {
+            ArunaStreamReadWriter::new_with_sink(
             internal_receiver.map(Ok),
             AsyncSenderSink::new(final_sender),
         )
@@ -491,6 +492,12 @@ impl S3 for S3ServiceServer {
             s3_error!(InternalError, "Internal notifier error")
         })?;
 
+            match 1 {
+                1 => Ok(()),
+                _ => Err(s3_error!(InternalError, "Internal notifier error")),
+            }
+        });
+
         let timestamp = object
             .created
             .map(|e| {
@@ -501,19 +508,6 @@ impl S3 for S3ServiceServer {
             })
             .ok_or_else(|| s3_error!(InternalError, "intenal processing error"))?
             .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
-
-        get_clone
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?;
-
-        log::debug!("Stream has length: {}", final_receiver.len());
 
         let body =
             Some(StreamingBlob::wrap(final_receiver.clone().map_err(|_| {
