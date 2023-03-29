@@ -31,7 +31,6 @@ use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 use super::data_handler::DataHandler;
 use super::utils::aruna_notifier::ArunaNotifier;
 use super::utils::buffered_s3_sink::parse_notes_get_etag;
-use super::utils::debug_transformer::DebugTransformer;
 use crate::data_server::utils::utils::create_location_from_hash;
 
 #[derive(Debug)]
@@ -462,9 +461,7 @@ impl S3 for S3ServiceServer {
                 internal_receiver.map(Ok),
                 AsyncSenderSink::new(final_sender),
             )
-            .add_transformer(DebugTransformer::_new())
             .add_transformer(ZstdDec::new())
-            .add_transformer(DebugTransformer::_new())
             .add_transformer(
                 ChaCha20Dec::new(
                     dhandler_service // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
@@ -571,8 +568,6 @@ impl S3 for S3ServiceServer {
         let object = get_location_response
             .object
             .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_obj"))?;
-
-        dbg!(object.clone());
 
         let sha256_hash = object
             .hashes

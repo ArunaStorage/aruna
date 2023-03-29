@@ -18,6 +18,7 @@ use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
+use bytes::Bytes;
 use futures::future;
 use futures::StreamExt;
 use md5::{Digest, Md5};
@@ -107,8 +108,10 @@ impl DataHandler {
         let mut to_clone = to.clone();
 
         let awr_handle = tokio::spawn(async move {
+            let mut sum = 0;
+            let tx_receive_2 = tx_receive.inspect(|e: &Bytes| sum += e.len());
             let mut awr = ArunaStreamReadWriter::new_with_sink(
-                tx_receive.clone().map(Ok),
+                tx_receive_2.map(Ok),
                 BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None),
             );
 
@@ -132,7 +135,9 @@ impl DataHandler {
 
             awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
 
-            awr.process().await
+            let result = awr.process().await;
+
+            result
         });
 
         self.backend.get_object(from_clone, None, tx_send).await?;
@@ -159,7 +164,7 @@ impl DataHandler {
 
     pub async fn get_hashes(&self, location: ArunaLocation) -> Result<Vec<Hash>> {
         let locstring = format!("{}/{}", location.clone().bucket, location.clone().path);
-        log::info!("Calculating hashes for {:?}", locstring.clone());
+        log::debug!("Calculating hashes for {:?}", locstring.clone());
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
@@ -203,7 +208,7 @@ impl DataHandler {
         let (sha, md5) = hashing_handle.await?;
         // iterate the whole stream and do nothing
 
-        log::info!("Finished calculating hashes for {:?}", locstring);
+        log::debug!("Finished calculating hashes for {:?}", locstring);
 
         Ok(vec![
             Hash {

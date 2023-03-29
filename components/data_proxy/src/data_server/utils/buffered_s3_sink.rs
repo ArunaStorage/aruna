@@ -14,6 +14,7 @@ pub struct BufferedS3Sink {
     part_number: Option<i32>,
     only_parts: bool,
     tags: Vec<PartETag>,
+    sum: usize,
 }
 
 impl Sink for BufferedS3Sink {}
@@ -39,6 +40,7 @@ impl BufferedS3Sink {
             part_number,
             only_parts,
             tags: t,
+            sum: 0,
         }
     }
 }
@@ -56,7 +58,7 @@ impl BufferedS3Sink {
                 .init_multipart_upload(self.target_location.clone())
                 .await?,
         );
-        log::debug!("Initialized multipart: {:?}", self.upload_id);
+        log::info!("Initialized multipart: {:?}", self.upload_id);
         Ok(())
     }
 
@@ -76,7 +78,7 @@ impl BufferedS3Sink {
         })
         .await??;
 
-        log::debug!("Single upload to: {:?}", self.target_location.clone());
+        log::info!("Single upload to: {:?}", self.target_location.clone());
         Ok(())
     }
 
@@ -107,7 +109,7 @@ impl BufferedS3Sink {
 
         self.part_number = Some(pnummer + 1);
 
-        log::debug!(
+        log::info!(
             "Uploaded part: {:?}, number:{}, size: {}",
             self.upload_id,
             pnummer,
@@ -126,8 +128,9 @@ impl BufferedS3Sink {
             .finish_multipart_upload(self.target_location.clone(), self.tags.clone(), up_id)
             .await?;
 
-        log::debug!("Finished multipart: {:?}", self.upload_id);
+        log::info!("Finished multipart: {:?}", self.upload_id);
 
+        log::info!("Finished with: {:?}", self.sum);
         Ok(())
     }
     async fn _get_parts(&self) -> Vec<PartETag> {
@@ -138,6 +141,7 @@ impl BufferedS3Sink {
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
     async fn process_bytes(&mut self, buf: &mut bytes::Bytes, finished: bool) -> Result<bool> {
+        self.sum += buf.len();
         let len = buf.len();
 
         self.buffer.put(buf);

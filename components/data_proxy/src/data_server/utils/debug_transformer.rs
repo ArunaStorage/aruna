@@ -22,7 +22,7 @@ impl Transformer for DebugTransformer<'_> {
         // Try to write the buf to the "next" in the chain, even if the buf is empty
         if let Some(next) = &mut self.next {
             // Should be called even if bytes.len() == 0 to drive underlying Transformer to completion
-            log::info!(
+            log::debug!(
                 "DebugTransformer: processed: {} Bytes, finished: {}",
                 buf.len(),
                 finished

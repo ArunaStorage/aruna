@@ -147,7 +147,7 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-        log::info!("Submitted content-length was: {:#?}", content_len);
+        log::debug!("Submitted content-length was: {:#?}", content_len);
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
@@ -187,7 +187,7 @@ impl StorageBackend for S3Backend {
             completed_parts.push(completed_part);
         }
 
-        log::info!("{:?}", completed_parts);
+        log::debug!("{:?}", completed_parts);
 
         self.s3_client
             .complete_multipart_upload()
