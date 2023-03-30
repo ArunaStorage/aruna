@@ -12,12 +12,14 @@ pub fn calculate_ranges(
         Some(r) => match footer {
             Some(mut foot) => {
                 foot.parse()?;
-                let (o1, o2) =
+                let (o1, mut o2) =
                     foot.get_offsets_by_range(aruna_range_from_s3range(r, content_length))?;
-                Ok((Some(format!("bytes={}-{}", o1.from, o1.to)), Some(o2)))
+                o2.to += 1;
+                Ok((Some(format!("bytes={}-{}", o1.from, o1.to - 1)), Some(o2)))
             }
             None => {
-                let ar_range = aruna_range_from_s3range(r, content_length);
+                let mut ar_range = aruna_range_from_s3range(r, content_length);
+                ar_range.to += 1;
                 Ok((
                     Some(format!("bytes={}-{}", ar_range.from, ar_range.to)),
                     None,
@@ -29,7 +31,7 @@ pub fn calculate_ranges(
 }
 
 pub fn calculate_content_length_from_range(range: ArunaRange) -> i64 {
-    (range.to - range.from) as i64
+    (range.to - range.from) as i64 // Note: -1 bytes-ranges are inclusive
 }
 
 pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> ArunaRange {
