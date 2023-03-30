@@ -33,6 +33,7 @@ use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 use super::data_handler::DataHandler;
 use super::utils::aruna_notifier::ArunaNotifier;
 use super::utils::buffered_s3_sink::parse_notes_get_etag;
+use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
 use crate::data_server::utils::utils::create_location_from_hash;
 
@@ -520,6 +521,11 @@ impl S3 for S3ServiceServer {
                 },
             )?;
 
+        let calc_content_len = match filter_ranges {
+            Some(r) => calculate_content_length_from_range(r),
+            None => object.content_len,
+        };
+
         tokio::spawn(async move {
             processor_clone
                 .get_object(get_location, query_range, internal_sender)
@@ -577,7 +583,7 @@ impl S3 for S3ServiceServer {
 
         Ok(GetObjectOutput {
             body,
-            content_length: object.content_len,
+            content_length: calc_content_len,
             last_modified: Some(timestamp),
             e_tag: Some(object.id),
             version_id: Some(format!("{}", object.rev_number)),

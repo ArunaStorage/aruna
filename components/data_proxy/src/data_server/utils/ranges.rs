@@ -28,6 +28,10 @@ pub fn calculate_ranges(
     }
 }
 
+pub fn calculate_content_length_from_range(range: ArunaRange) -> i64 {
+    (range.to - range.from) as i64
+}
+
 pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> ArunaRange {
     match range_string {
         Normal { first, last } => match last {
