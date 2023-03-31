@@ -74,7 +74,7 @@ impl S3 for S3ServiceServer {
 
         let exists = match hash {
             Some(h) => {
-                if !h.is_empty() {
+                if !h.is_empty() || h.len() != 32 {
                     match self
                         .backend
                         .head_object(ArunaLocation {
@@ -611,6 +611,7 @@ impl S3 for S3ServiceServer {
 
     async fn head_object(&self, req: S3Request<HeadObjectInput>) -> S3Result<HeadObjectOutput> {
         // Get the credentials
+
         let creds = match req.credentials {
             Some(cred) => cred,
             None => {
