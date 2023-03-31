@@ -4510,7 +4510,7 @@ fn set_object_available(
                 // Object is still latest revision on finish --> Normal case
                 // Delete staging reference
                 delete(collection_objects)
-                    .filter(database::schema::collection_objects::object_id.eq(coll_uuid))
+                    .filter(database::schema::collection_objects::object_id.eq(object.id))
                     .filter(database::schema::collection_objects::collection_id.eq(coll_uuid))
                     .filter(
                         database::schema::collection_objects::reference_status
