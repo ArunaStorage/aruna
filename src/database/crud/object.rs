@@ -234,6 +234,18 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+
+
+                // Check if object is latest!
+                let latest = get_latest_obj(conn, req_object_uuid)?;
+                let is_still_latest = latest.id == req_object_uuid;
+
+                if !is_still_latest {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Object {req_object_uuid} is not latest revision. "
+                    )));
+                }
+
                 // What can we do here ?
                 // - Set auto update ?
                 // - Set or check expected hashes
@@ -246,28 +258,32 @@ impl Database {
                 // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                 // .get_result::<Object>(conn)?;
 
-                // // Update hash if (re-)upload and request contains hash
-                // if !request.no_upload && request.hash.is_some() {
-                //     (match &request.hash {
-                //         None => {
-                //             return Err(ArunaError::InvalidRequest(
-                //                 "Missing hash after re-upload.".to_string(),
-                //             ));
-                //         }
-                //         Some(req_hash) => diesel::update(ApiHash::belonging_to(&returned_obj))
-                //             .set((
-                //                 database::schema::hashes::hash.eq(&req_hash.hash),
-                //                 database::schema::hashes::hash_type
-                //                     .eq(HashType::from_grpc(req_hash.alg)),
-                //             ))
-                //             .execute(conn),
-                //     })?;
-                // }
+                // Update hash if (re-)upload and request contains hash
+                if !request.no_upload && request.hash.is_some() {
+                    (match &request.hash {
+                        None => {
+                            return Err(ArunaError::InvalidRequest(
+                                "Missing hash after re-upload.".to_string(),
+                            ));
+                        }
+                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                            .set((
+                                database::schema::hashes::hash.eq(&req_hash.hash),
+                                database::schema::hashes::hash_type
+                                    .eq(HashType::from_grpc(req_hash.alg)),
+                            ))
+                            .execute(conn),
+                    })?;
+                }
 
                 // Check if the origin id is different from uuid
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
+
+                if latest.object_status != ObjectStatus::AVAILABLE {
+                    set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                }
 
                 Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
             })?;
@@ -297,7 +313,7 @@ impl Database {
     /// already exists in the database. Finally the objects status is set to `Available`.
     pub fn finalize_object(
         &self,
-        request: &mut FinalizeObjectRequest,
+        request: &FinalizeObjectRequest,
     ) -> Result<FinalizeObjectResponse, ArunaError> {
         // Check format of provided ids
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
@@ -334,6 +350,58 @@ impl Database {
                     )));
                 }
 
+                use crate::database::schema::encryption_keys::dsl as keys_dsl;
+                if let Some(proto_location) = &request.location {
+                    let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
+            
+                    let final_location = ObjectLocation {
+                        id: uuid::Uuid::new_v4(),
+                        bucket: proto_location.bucket.clone(),
+                        path: proto_location.path.clone(),
+                        endpoint_id: endpoint_uuid,
+                        object_id: object_uuid,
+                        is_primary: true, // First location of object, so primary.
+                        is_encrypted: proto_location.is_encrypted,
+                        is_compressed: proto_location.is_compressed,
+                    };
+            
+                    if encryption_keys
+                        .filter(keys_dsl::hash.eq(&sha256_hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .select(keys_dsl::id)
+                        .first::<uuid::Uuid>(conn)
+                        .optional()?
+                        .is_none()
+                    {
+                        let encryption_key_insert = EncryptionKey {
+                            id: uuid::Uuid::new_v4(),
+                            hash: Some(sha256_hash.to_string()),
+                            object_id: object_uuid,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: proto_location.encryption_key.to_string(),
+                        };
+            
+                        diesel::insert_into(encryption_keys)
+                            .values(&encryption_key_insert)
+                            .execute(conn)?;
+                    }
+            
+                    // Delete all temporary encryption keys associated with this object_id
+                    delete(encryption_keys)
+                        .filter(database::schema::encryption_keys::object_id.eq(&object_uuid))
+                        .filter(database::schema::encryption_keys::is_temporary.eq(true))
+                        .execute(conn)?;
+            
+                    insert_into(object_locations)
+                        .values(&final_location)
+                        .execute(conn)?;
+                } else {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Request contains no valid location to finalize object {}",
+                        object_uuid
+                    )));
+                }
 
                 let db_hashes = hashes
                     .filter(database::schema::hashes::object_id.eq(&object_uuid))
@@ -371,7 +439,9 @@ impl Database {
                     .values(hashes_insert)
                     .execute(conn)?;
 
-                set_object_available(conn, &latest, &collection_uuid, &sha256_hash, Some(request.content_length), request.location.take())?;
+                if latest.object_status != ObjectStatus::AVAILABLE {
+                    set_object_available(conn, &latest, &collection_uuid, Some(request.content_length))?;
+                }
                 Ok(())
             })?;
 
@@ -4265,63 +4335,8 @@ fn set_object_available(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     object: &Object,
     coll_uuid: &uuid::Uuid,
-    sha_hash: &str,
     measures_length: Option<i64>,
-    location: Option<ProtoLocation>,
 ) -> Result<(), ArunaError> {
-    use crate::database::schema::encryption_keys::dsl as keys_dsl;
-    if let Some(proto_location) = location {
-        let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
-
-        let final_location = ObjectLocation {
-            id: uuid::Uuid::new_v4(),
-            bucket: proto_location.bucket.clone(),
-            path: proto_location.path.clone(),
-            endpoint_id: endpoint_uuid,
-            object_id: object.id,
-            is_primary: true, // First location of object, so primary.
-            is_encrypted: proto_location.is_encrypted,
-            is_compressed: proto_location.is_compressed,
-        };
-
-        if encryption_keys
-            .filter(keys_dsl::hash.eq(sha_hash))
-            .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-            .select(keys_dsl::id)
-            .first::<uuid::Uuid>(conn)
-            .optional()?
-            .is_none()
-        {
-            let encryption_key_insert = EncryptionKey {
-                id: uuid::Uuid::new_v4(),
-                hash: Some(sha_hash.to_string()),
-                object_id: object.id,
-                endpoint_id: endpoint_uuid,
-                is_temporary: false,
-                encryption_key: proto_location.encryption_key.to_string(),
-            };
-
-            diesel::insert_into(encryption_keys)
-                .values(&encryption_key_insert)
-                .execute(conn)?;
-        }
-
-        // Delete all temporary encryption keys associated with this object_id
-        delete(encryption_keys)
-            .filter(database::schema::encryption_keys::object_id.eq(object.id))
-            .filter(database::schema::encryption_keys::is_temporary.eq(true))
-            .execute(conn)?;
-
-        insert_into(object_locations)
-            .values(&final_location)
-            .execute(conn)?;
-    } else {
-        return Err(ArunaError::InvalidRequest(format!(
-            "Request contains no valid location to finalize object {}",
-            object.id
-        )));
-    }
-
     let content_length = match measures_length {
         Some(l) => l,
         None => object.content_len,
