@@ -38,6 +38,8 @@ pub fn create_location_from_hash(
     encrypting: bool,
     compressing: bool,
     encryption_key: String,
+    endpoint_id: String,
+    exists: bool,
 ) -> (Location, bool) {
     if sha256_hash.is_empty() {
         (
@@ -47,23 +49,43 @@ pub fn create_location_from_hash(
                 is_compressed: false,
                 is_encrypted: encrypting,
                 encryption_key,
+                endpoint_id,
                 path: format!("{}/{}", collection_id, object_id),
                 ..Default::default()
             },
             true,
         )
     } else {
-        (
-            Location {
-                bucket: format!("b{}", &sha256_hash[0..2]),
-                path: sha256_hash[2..].to_string(),
-                is_compressed: compressing,
-                is_encrypted: encrypting,
-                encryption_key,
-                ..Default::default()
-            },
-            false,
-        )
+        // If not existing -> Write directly to the expected location,
+        if !exists {
+            (
+                Location {
+                    bucket: format!("b{}", &sha256_hash[0..2]),
+                    path: sha256_hash[2..].to_string(),
+                    is_compressed: compressing,
+                    is_encrypted: encrypting,
+                    encryption_key,
+                    endpoint_id,
+                    ..Default::default()
+                },
+                false,
+            )
+        // Otherwise do not try to overwrite the expected location
+        } else {
+            (
+                // For now we do not compress temp values
+                Location {
+                    bucket: "temp".to_string(),
+                    is_compressed: false,
+                    is_encrypted: encrypting,
+                    encryption_key,
+                    endpoint_id,
+                    path: format!("{}/{}", collection_id, object_id),
+                    ..Default::default()
+                },
+                true,
+            )
+        }
     }
 }
 

@@ -65,128 +65,141 @@ impl S3 for S3ServiceServer {
         );
         anotif.set_credentials(req.credentials)?;
         anotif
-            .get_object(&req.input.bucket, &req.input.key, req.input.content_length)
+            .get_or_create_object(&req.input.bucket, &req.input.key, req.input.content_length)
             .await?;
         anotif.validate_hashes(req.input.content_md5, req.input.checksum_sha256)?;
         anotif.get_encryption_key().await?;
 
-        let (location, is_temp) = anotif.get_location()?;
+        let hash = anotif.get_sha256();
+
+        let exists = match hash {
+            Some(h) => {
+                match self
+                    .backend
+                    .head_object(ArunaLocation {
+                        bucket: format!("b{}", &h[0..2]),
+                        path: h[2..].to_string(),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    Ok(_) => true,
+                    Err(_) => false,
+                }
+            }
+            None => false,
+        };
+
+        let (location, is_temp) = anotif.get_location(exists)?;
 
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
-
-        let resp = if !is_temp {
-            // Check if this object already exists
-            match self.backend.head_object(location.clone()).await {
-                Ok(_) => Some(()),
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-
         let mut final_md5 = String::new();
         let mut final_sha256 = String::new();
 
         // If the object exists and the signatures match -> Skip the download
 
-        match resp {
-            Some(_) => {}
-            None => {
-                match req.input.body {
-                    Some(data) => {
-                        // MD5 Stream
-                        let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-                        // Sha256 stream
-                        let shaed_stream =
-                            md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
+        if !exists {
+            match req.input.body {
+                Some(data) => {
+                    // MD5 Stream
+                    let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
+                    // Sha256 stream
+                    let shaed_stream =
+                        md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
 
-                        let mut awr = ArunaStreamReadWriter::new_with_sink(
-                            shaed_stream,
-                            BufferedS3Sink::new(
-                                self.backend.clone(),
-                                location.clone(),
-                                None,
-                                None,
-                                false,
-                                None,
-                            ),
-                        );
-
-                        if self.data_handler.settings.encrypting {
-                            awr = awr.add_transformer(
-                                ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(
-                                    |e| {
-                                        log::error!("{}", e);
-                                        s3_error!(
-                                            InternalError,
-                                            "Internal data transformer encryption error"
-                                        )
-                                    },
-                                )?,
-                            );
-                        }
-
-                        if self.data_handler.settings.compressing && !is_temp {
-                            if req.input.content_length > 5242880 + 80 * 28 {
-                                awr = awr.add_transformer(FooterGenerator::new(None, true))
-                            }
-                            awr = awr.add_transformer(ZstdEnc::new(0, true));
-                        }
-
-                        awr.process().await.map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Internal data transformer processing error")
-                        })?;
-                    }
-                    None => {
-                        return Err(s3_error!(
-                            InvalidObjectState,
-                            "Request body / data is required, use ArunaAPI for empty objects"
-                        ))
-                    }
-                }
-
-                final_md5 = format!("{:x}", md5_hash.finalize());
-                final_sha256 = format!("{:x}", sha256_hash.finalize());
-
-                anotif.test_final_hashes(&final_md5, &final_sha256)?;
-
-                if is_temp {
-                    let (object_id, collection_id) = anotif.get_col_obj()?;
-                    self.data_handler
-                        .clone()
-                        .move_encode(
+                    let mut awr = ArunaStreamReadWriter::new_with_sink(
+                        shaed_stream,
+                        BufferedS3Sink::new(
+                            self.backend.clone(),
                             location.clone(),
-                            create_location_from_hash(
-                                &final_sha256,
-                                &object_id,
-                                &collection_id,
-                                self.data_handler.settings.encrypting,
-                                self.data_handler.settings.compressing,
-                                location.encryption_key.clone(),
-                            )
-                            .0,
-                            object_id,
-                            collection_id,
-                            Some(vec![
-                                Hash {
-                                    alg: Hashalgorithm::Md5 as i32,
-                                    hash: final_md5.clone(),
-                                },
-                                Hash {
-                                    alg: Hashalgorithm::Sha256 as i32,
-                                    hash: final_sha256.clone(),
-                                },
-                            ]),
-                            format!("s3://{}/{}", &req.input.bucket, &req.input.key),
-                        )
-                        .await
-                        .map_err(|e| {
-                            log::error!("InternalError: {}", e);
-                            s3_error!(InternalError, "Internal data mover error")
-                        })?
+                            None,
+                            None,
+                            false,
+                            None,
+                        ),
+                    );
+
+                    if location.is_encrypted {
+                        awr = awr.add_transformer(
+                            ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
+                                log::error!("{}", e);
+                                s3_error!(
+                                    InternalError,
+                                    "Internal data transformer encryption error"
+                                )
+                            })?,
+                        );
+                    }
+
+                    if location.is_compressed {
+                        if req.input.content_length > 5242880 + 80 * 28 {
+                            awr = awr.add_transformer(FooterGenerator::new(None, true))
+                        }
+                        awr = awr.add_transformer(ZstdEnc::new(0, true));
+                    }
+
+                    awr.process().await.map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Internal data transformer processing error")
+                    })?;
                 }
+                None => {
+                    return Err(s3_error!(
+                        InvalidObjectState,
+                        "Request body / data is required, use ArunaAPI for empty objects"
+                    ))
+                }
+            }
+
+            final_md5 = format!("{:x}", md5_hash.finalize());
+            final_sha256 = format!("{:x}", sha256_hash.finalize());
+
+            let hashes_is_ok = anotif.test_final_hashes(&final_md5, &final_sha256)?;
+
+            if !hashes_is_ok {
+                self.backend.delete_object(location).await.map_err(|e| {
+                    log::error!("PUT: Unable to delete object, after wrong hash: {}", e);
+                    s3_error!(InternalError, "PUT: Unable to delete object")
+                })?;
+                return Err(s3_error!(InvalidDigest, "Invalid hash digest"));
+            };
+            if is_temp {
+                let (object_id, collection_id) = anotif.get_col_obj()?;
+                self.data_handler
+                    .clone()
+                    .move_encode(
+                        location.clone(),
+                        create_location_from_hash(
+                            &final_sha256,
+                            &object_id,
+                            &collection_id,
+                            self.data_handler.settings.encrypting,
+                            self.data_handler.settings.compressing,
+                            location.encryption_key.clone(),
+                            self.data_handler.settings.endpoint_id.to_string(),
+                            exists,
+                        )
+                        .0,
+                        object_id,
+                        collection_id,
+                        Some(vec![
+                            Hash {
+                                alg: Hashalgorithm::Md5 as i32,
+                                hash: final_md5.clone(),
+                            },
+                            Hash {
+                                alg: Hashalgorithm::Sha256 as i32,
+                                hash: final_sha256.clone(),
+                            },
+                        ]),
+                        format!("s3://{}/{}", &req.input.bucket, &req.input.key),
+                    )
+                    .await
+                    .map_err(|e| {
+                        log::error!("InternalError: {}", e);
+                        s3_error!(InternalError, "Internal data mover error")
+                    })?
             }
         }
 
@@ -238,7 +251,7 @@ impl S3 for S3ServiceServer {
         );
         anotif.set_credentials(req.credentials)?;
         anotif
-            .get_object(&req.input.bucket, &req.input.key, 0)
+            .get_or_create_object(&req.input.bucket, &req.input.key, 0)
             .await?;
 
         let (object_id, collection_id) = anotif.get_col_obj()?;
@@ -273,7 +286,7 @@ impl S3 for S3ServiceServer {
         );
         anotif.set_credentials(req.credentials)?;
         anotif
-            .get_object(&req.input.bucket, &req.input.key, 0)
+            .get_or_create_object(&req.input.bucket, &req.input.key, 0)
             .await?;
 
         anotif.get_encryption_key().await?;
@@ -342,7 +355,7 @@ impl S3 for S3ServiceServer {
         );
         anotif.set_credentials(req.credentials)?;
         anotif
-            .get_object(&req.input.bucket, &req.input.key, 0)
+            .get_or_create_object(&req.input.bucket, &req.input.key, 0)
             .await?;
 
         let parts = match req.input.multipart_upload {
@@ -387,6 +400,7 @@ impl S3 for S3ServiceServer {
 
     async fn get_object(&self, req: S3Request<GetObjectInput>) -> S3Result<GetObjectOutput> {
         // Get the credentials
+        dbg!(req.credentials.clone());
         let creds = match req.credentials {
             Some(cred) => cred,
             None => {

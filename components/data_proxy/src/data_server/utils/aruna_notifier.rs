@@ -61,7 +61,11 @@ impl ArunaNotifier {
         }
     }
 
-    pub async fn get_object(
+    pub fn get_sha256(&self) -> Option<String> {
+        self.valid_sha.clone()
+    }
+
+    pub async fn get_or_create_object(
         &mut self,
         bucket: &str,
         key: &str,
@@ -142,7 +146,7 @@ impl ArunaNotifier {
         Ok(())
     }
 
-    pub fn get_location(&self) -> Result<(Location, bool), S3Error> {
+    pub fn get_location(&self, exists: bool) -> Result<(Location, bool), S3Error> {
         // Create a target location (may be a temp location)
         Ok(create_location_from_hash(
             &self.valid_sha.clone().ok_or_else(|| {
@@ -180,6 +184,8 @@ impl ArunaNotifier {
                     .as_ref(),
             )
             .into(),
+            self.settings.endpoint_id.to_string(),
+            exists,
         ))
     }
 
@@ -192,7 +198,7 @@ impl ArunaNotifier {
         })
     }
 
-    pub fn test_final_hashes(&self, md5: &str, sha: &str) -> Result<(), S3Error> {
+    pub fn test_final_hashes(&self, md5: &str, sha: &str) -> Result<bool, S3Error> {
         let got_md5 = self
             .valid_md5
             .clone()
@@ -204,19 +210,13 @@ impl ArunaNotifier {
             .ok_or_else(|| s3_error!(InvalidDigest, "Invalid or inconsistent SHA256 digest"))?;
 
         if !got_md5.is_empty() && !md5.is_empty() && md5 != got_md5 {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent MD5 digest"
-            ));
+            return Ok(false);
         }
         if !got_sha.is_empty() && !sha.is_empty() && got_sha != sha {
-            return Err(s3_error!(
-                InvalidDigest,
-                "Invalid or inconsistent SHA256 digest"
-            ));
+            return Ok(false);
         }
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn get_col_obj(&self) -> Result<(String, String), S3Error> {
