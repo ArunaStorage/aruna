@@ -59,6 +59,8 @@ impl S3ServiceServer {
 impl S3 for S3ServiceServer {
     #[tracing::instrument]
     async fn put_object(&self, req: S3Request<PutObjectInput>) -> S3Result<PutObjectOutput> {
+        dbg!(req.input.tagging);
+
         let mut anotif = ArunaNotifier::new(
             self.data_handler.internal_notifier_service.clone(),
             self.data_handler.settings.clone(),
@@ -74,7 +76,7 @@ impl S3 for S3ServiceServer {
 
         let exists = match hash {
             Some(h) => {
-                if !h.is_empty() || h.len() != 32 {
+                if !h.is_empty() && h.len() == 32 {
                     match self
                         .backend
                         .head_object(ArunaLocation {
