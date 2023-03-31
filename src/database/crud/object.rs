@@ -126,16 +126,19 @@ impl TryFrom<ObjectDto> for ProtoObject {
         // Transform NaiveDateTime to Timestamp
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
-
-        let proto_hashes = object_dto.hashes.iter().map(|h| ProtoHash {
-            //alg: object_dto.hash.hash_type as i32,
-            alg: match h.hash_type {
-                HashType::MD5 => Hashalgorithm::Md5 as i32,
-                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-                _ => Hashalgorithm::Unspecified as i32,
-            },
-            hash: h.hash.to_string(),
-        }).collect::<Vec<ProtoHash>>();
+        let proto_hashes = object_dto
+            .hashes
+            .iter()
+            .map(|h| ProtoHash {
+                //alg: object_dto.hash.hash_type as i32,
+                alg: match h.hash_type {
+                    HashType::MD5 => Hashalgorithm::Md5 as i32,
+                    HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+                    _ => Hashalgorithm::Unspecified as i32,
+                },
+                hash: h.hash.to_string(),
+            })
+            .collect::<Vec<ProtoHash>>();
 
         // Construct proto Object
         Ok(ProtoObject {
@@ -221,7 +224,7 @@ impl Database {
     pub fn finish_object_staging(
         &self,
         request: &FinishObjectStagingRequest,
-        user_id: &uuid::Uuid,
+        _user_id: &uuid::Uuid,
     ) -> Result<FinishObjectStagingResponse, ArunaError> {
         let req_object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
         let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
@@ -231,338 +234,40 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
-                let latest = get_latest_obj(conn, req_object_uuid)?;
-                let is_still_latest = latest.id == req_object_uuid;
+                // What can we do here ?
+                // - Set auto update ?
+                // - Set or check expected hashes
+                // - Finalize EMPTY object ?
 
-                if !is_still_latest {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Object {req_object_uuid} is not latest revision. "
-                    )));
-                }
+                // // Update the object itself to be available
+                // let returned_obj = diesel::update(
+                //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                // )
+                // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                // .get_result::<Object>(conn)?;
 
-                // Update the object itself to be available
-                let returned_obj = diesel::update(
-                    objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                )
-                .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                .get_result::<Object>(conn)?;
-
-                // Get fq_path from label
-                let path_label = object_key_value
-                    .filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
-                    .filter(
-                        database::schema::object_key_value::key
-                            .eq("app.aruna-storage.org/new_path"),
-                    )
-                    .first::<ObjectKeyValue>(conn)
-                    .optional()?;
-
-                if let Some(p_lbl) = path_label {
-                    let bucket_label = object_key_value
-                        .filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
-                        .filter(
-                            database::schema::object_key_value::key
-                                .eq("app.aruna-storage.org/bucket"),
-                        )
-                        .first::<ObjectKeyValue>(conn)?;
-                    create_path_db(
-                        &bucket_label.value,
-                        &p_lbl.value,
-                        &returned_obj.shared_revision_id,
-                        &req_coll_uuid,
-                        conn,
-                    )?;
-                    // Delete the path label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(p_lbl.id))
-                        .execute(conn)?;
-                    // Delete the bucket label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(bucket_label.id))
-                        .execute(conn)?;
-                };
-
-                // Update hash if (re-)upload and request contains hash
-                if !request.no_upload && request.hash.is_some() {
-                    (match &request.hash {
-                        None => {
-                            return Err(ArunaError::InvalidRequest(
-                                "Missing hash after re-upload.".to_string(),
-                            ));
-                        }
-                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&returned_obj))
-                            .set((
-                                database::schema::hashes::hash.eq(&req_hash.hash),
-                                database::schema::hashes::hash_type
-                                    .eq(HashType::from_grpc(req_hash.alg)),
-                            ))
-                            .execute(conn),
-                    })?;
-                }
+                // // Update hash if (re-)upload and request contains hash
+                // if !request.no_upload && request.hash.is_some() {
+                //     (match &request.hash {
+                //         None => {
+                //             return Err(ArunaError::InvalidRequest(
+                //                 "Missing hash after re-upload.".to_string(),
+                //             ));
+                //         }
+                //         Some(req_hash) => diesel::update(ApiHash::belonging_to(&returned_obj))
+                //             .set((
+                //                 database::schema::hashes::hash.eq(&req_hash.hash),
+                //                 database::schema::hashes::hash_type
+                //                     .eq(HashType::from_grpc(req_hash.alg)),
+                //             ))
+                //             .execute(conn),
+                //     })?;
+                // }
 
                 // Check if the origin id is different from uuid
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
-                let orig_id = returned_obj.origin_id;
-                // origin_id != object_id => Update
-                if orig_id != returned_obj.id {
-                    // Get all revisions of the object it could be that an older version still has "auto_update" set
-                    let all_revisions = get_all_revisions(conn, &req_object_uuid)?;
-
-                    // Filter out the UUIDs
-                    let all_rev_ids = all_revisions.iter().map(|full| full.id).collect::<Vec<_>>();
-
-                    // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
-                    // Set all auto_updates and is_latest to be false
-                    let auto_updating_coll_obj: Vec<CollectionObject> = collection_objects
-                        .filter(
-                            database::schema::collection_objects::object_id.eq_any(&all_rev_ids),
-                        )
-                        .filter(database::schema::collection_objects::auto_update.eq(true))
-                        .load::<CollectionObject>(conn)
-                        .optional()?
-                        .unwrap_or_default();
-
-                    // Filter collection_object references to object's collection
-                    let auto_update_collection_references = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.collection_id == req_coll_uuid)
-                        .collect::<Vec<_>>();
-
-                    let (auto_update_collection_reference, auto_update_collection_reference_id): (
-                        Option<CollectionObject>,
-                        uuid::Uuid,
-                    ) = match auto_update_collection_references.len() {
-                        0 => (None, uuid::Uuid::default()),
-                        1 => (
-                            Some(auto_update_collection_references[0].clone()),
-                            auto_update_collection_references[0].clone().id,
-                        ),
-                        _ => {
-                            return Err(ArunaError::InvalidRequest(
-                                "More than one revision with auto_update == true".to_string(),
-                            ));
-                        }
-                    };
-
-                    // object ids inside references
-                    let auto_updating_obj_id = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.id != auto_update_collection_reference_id)
-                        .map(|elem| elem.object_id)
-                        .collect::<Vec<_>>();
-
-                    // collection_object ids
-                    let auto_updating_coll_obj_id = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.id != auto_update_collection_reference_id)
-                        .map(|elem| elem.id)
-                        .collect::<Vec<_>>();
-
-                    // Only proceed if the list () is not empty, if it is empty no updates need to be performed
-                    // Update ObjectGroups and Objects reference in other collections
-                    if !auto_updating_coll_obj_id.is_empty() {
-                        // Query the affected object_groups
-                        let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
-                            .filter(
-                                database::schema::object_group_objects::object_id
-                                    .eq_any(&auto_updating_obj_id),
-                            )
-                            .select(database::schema::object_group_objects::object_group_id)
-                            .load::<uuid::Uuid>(conn)
-                            .optional()?;
-
-                        match affected_object_groups {
-                            None => {}
-                            Some(obj_grp_ids) => {
-                                // Bump all revisions for object_groups
-                                let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
-                                let new_group_ids =
-                                    new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
-
-                                // Update object_group references
-                                update(object_group_objects)
-                                    .filter(
-                                        database::schema::object_group_objects::object_group_id
-                                            .eq_any(&new_group_ids),
-                                    )
-                                    .filter(
-                                        database::schema::object_group_objects::object_id
-                                            .eq(orig_id),
-                                    )
-                                    .set(
-                                        database::schema::object_group_objects::object_id
-                                            .eq(req_object_uuid),
-                                    )
-                                    .execute(conn)?;
-                            }
-                        }
-
-                        // Update Collection_Objects to use the new object_id
-                        update(
-                            collection_objects.filter(
-                                database::schema::collection_objects::id
-                                    .eq_any(&auto_updating_coll_obj_id),
-                            ),
-                        )
-                        .set((database::schema::collection_objects::object_id.eq(req_object_uuid),))
-                        .execute(conn)?;
-                    }
-
-                    // Query the affected object_groups
-                    let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
-                        .filter(
-                            database::schema::object_group_objects::object_id
-                                .eq(&returned_obj.origin_id),
-                        )
-                        .select(database::schema::object_group_objects::object_group_id)
-                        .load::<uuid::Uuid>(conn)
-                        .optional()?;
-
-                    match affected_object_groups {
-                        None => {}
-                        Some(obj_grp_ids) => {
-                            // Bump all revisions for object_groups
-                            let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
-                            let new_group_ids =
-                                new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
-
-                            // Update object_group references
-                            update(object_group_objects)
-                                .filter(
-                                    database::schema::object_group_objects::object_group_id
-                                        .eq_any(&new_group_ids),
-                                )
-                                .filter(
-                                    database::schema::object_group_objects::object_id.eq(orig_id),
-                                )
-                                .set(
-                                    database::schema::object_group_objects::object_id
-                                        .eq(req_object_uuid),
-                                )
-                                .execute(conn)?;
-                        }
-                    }
-
-                    // Update inside collection of update object
-                    match auto_update_collection_reference {
-                        None => {
-                            // Update latest staging object reference
-                            update(collection_objects)
-                                .filter(
-                                    database::schema::collection_objects::object_id
-                                        .eq(&req_object_uuid),
-                                )
-                                .filter(
-                                    database::schema::collection_objects::collection_id
-                                        .eq(&req_coll_uuid),
-                                )
-                                .filter(
-                                    database::schema::collection_objects::reference_status
-                                        .eq(&ReferenceStatus::STAGING),
-                                )
-                                .set((
-                                    database::schema::collection_objects::object_id
-                                        .eq(req_object_uuid),
-                                    database::schema::collection_objects::is_latest
-                                        .eq(is_still_latest),
-                                    database::schema::collection_objects::reference_status
-                                        .eq(ReferenceStatus::OK),
-                                    database::schema::collection_objects::auto_update
-                                        .eq(request.auto_update),
-                                ))
-                                .execute(conn)?;
-                        }
-                        Some(reference) => {
-                            if is_still_latest {
-                                // Object is still latest revision on finish --> Normal case
-                                // Delete staging reference
-                                delete(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id
-                                            .eq(&req_object_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status
-                                            .eq(&ReferenceStatus::STAGING),
-                                    )
-                                    .execute(conn)?;
-
-                                // Update latest staging object reference
-                                update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::id.eq(&reference.id),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .set((
-                                        database::schema::collection_objects::object_id
-                                            .eq(req_object_uuid),
-                                        database::schema::collection_objects::is_latest
-                                            .eq(is_still_latest),
-                                        database::schema::collection_objects::reference_status
-                                            .eq(ReferenceStatus::OK),
-                                        database::schema::collection_objects::auto_update
-                                            .eq(request.auto_update && is_still_latest),
-                                    ))
-                                    .execute(conn)?;
-                            } else {
-                                //Note: This case should not exist anymore without concurrent object updates.
-                                //      The staging object should always be latest with a STAGING reference!
-                                /*
-                                // Update staging reference of outdated object with is_latest == false and auto_update == false
-                                update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id
-                                            .eq(&req_object_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status
-                                            .eq(&ReferenceStatus::STAGING),
-                                    )
-                                    .set((
-                                        database::schema::collection_objects::object_id
-                                            .eq(req_object_uuid),
-                                        database::schema::collection_objects::is_latest
-                                            .eq(is_still_latest),
-                                        database::schema::collection_objects::reference_status
-                                            .eq(ReferenceStatus::OK),
-                                        database::schema::collection_objects::auto_update
-                                            .eq(request.auto_update),
-                                    ))
-                                    .execute(conn)?;
-                                */
-                            }
-                        }
-                    }
-                // origin_id == object_id => Initialize
-                } else {
-                    // Update the collection objects
-                    // - Status
-                    // - is_latest
-                    // - auto_update
-                    diesel::update(collection_objects)
-                        .filter(database::schema::collection_objects::object_id.eq(req_object_uuid))
-                        .set((
-                            database::schema::collection_objects::is_latest.eq(is_still_latest),
-                            database::schema::collection_objects::reference_status
-                                .eq(ReferenceStatus::OK),
-                            database::schema::collection_objects::auto_update
-                                .eq(request.auto_update),
-                        ))
-                        .execute(conn)?;
-                }
 
                 Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
             })?;
@@ -592,7 +297,7 @@ impl Database {
     /// already exists in the database. Finally the objects status is set to `Available`.
     pub fn finalize_object(
         &self,
-        request: &FinalizeObjectRequest,
+        request: &mut FinalizeObjectRequest,
     ) -> Result<FinalizeObjectResponse, ArunaError> {
         // Check format of provided ids
         let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
@@ -618,58 +323,17 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-                use crate::database::schema::encryption_keys::dsl as keys_dsl;
 
-                if let Some(proto_location) = &request.location {
-                    let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
+                // Check if object is latest!
+                let latest = get_latest_obj(conn, object_uuid)?;
+                let is_still_latest = latest.id == object_uuid;
 
-                    let final_location = ObjectLocation {
-                        id: uuid::Uuid::new_v4(),
-                        bucket: proto_location.bucket.clone(),
-                        path: proto_location.path.clone(),
-                        endpoint_id: endpoint_uuid,
-                        object_id: object_uuid,
-                        is_primary: true, // First location of object, so primary.
-                        is_encrypted: proto_location.is_encrypted,
-                        is_compressed: proto_location.is_compressed,
-                    };
-
-                    if encryption_keys
-                        .filter(keys_dsl::hash.eq(&sha256_hash))
-                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                        .select(keys_dsl::id)
-                        .first::<uuid::Uuid>(conn)
-                        .optional()?
-                        .is_none()
-                    {
-                        let encryption_key_insert = EncryptionKey {
-                            id: uuid::Uuid::new_v4(),
-                            hash: Some(sha256_hash),
-                            object_id: object_uuid,
-                            endpoint_id: endpoint_uuid,
-                            is_temporary: false,
-                            encryption_key: proto_location.encryption_key.to_string(),
-                        };
-
-                        diesel::insert_into(encryption_keys)
-                            .values(&encryption_key_insert)
-                            .execute(conn)?;
-                    }
-
-                    // Delete all temporary encryption keys associated with this object_id
-                    delete(encryption_keys)
-                        .filter(database::schema::encryption_keys::object_id.eq(object_uuid))
-                        .filter(database::schema::encryption_keys::is_temporary.eq(true))
-                        .execute(conn)?;
-
-                    insert_into(object_locations)
-                        .values(&final_location)
-                        .execute(conn)?;
-                } else {
+                if !is_still_latest {
                     return Err(ArunaError::InvalidRequest(format!(
-                        "Request contains no valid location to finalize object {object_uuid}"
+                        "Object {object_uuid} is not latest revision. "
                     )));
                 }
+
 
                 let db_hashes = hashes
                     .filter(database::schema::hashes::object_id.eq(&object_uuid))
@@ -707,56 +371,7 @@ impl Database {
                     .values(hashes_insert)
                     .execute(conn)?;
 
-                // Update object status to AVAILABLE
-                let updated_obj = update(objects)
-                    .filter(database::schema::objects::id.eq(&object_uuid))
-                    .set((
-                            database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE), 
-                            database::schema::objects::content_len.eq(request.content_length)
-                        ))
-                    .get_result::<Object>(conn)?;
-
-                // Get fq_path from label
-                let path_label = object_key_value
-                .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
-                .filter(
-                    database::schema::object_key_value::key
-                        .eq("app.aruna-storage.org/new_path"),
-                )
-                .first::<ObjectKeyValue>(conn)
-                .optional()?;
-            
-                if let Some(p_lbl) = path_label {
-                    let bucket_label = object_key_value
-                        .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
-                        .filter(
-                            database::schema::object_key_value::key
-                                .eq("app.aruna-storage.org/bucket"),
-                        )
-                        .first::<ObjectKeyValue>(conn)?;
-                    create_path_db(
-                        &bucket_label.value,
-                        &p_lbl.value,
-                        &updated_obj.shared_revision_id,
-                        &collection_uuid,
-                        conn,
-                    )?;
-                    // Delete the path label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(p_lbl.id))
-                        .execute(conn)?;
-                    // Delete the bucket label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(bucket_label.id))
-                        .execute(conn)?;
-                };
-
-                update(collection_objects)
-                    .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
-                    .filter(database::schema::collection_objects::collection_id.eq(&collection_uuid))
-                    .set(database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK))
-                    .execute(conn)?;
-
+                set_object_available(conn, &latest, &collection_uuid, &sha256_hash, Some(request.content_length), request.location.take())?;
                 Ok(())
             })?;
 
@@ -2378,7 +1993,6 @@ impl Database {
                     },
                 )?;
 
-
                 // - If object already exists and no staging object provided -> return
                 // - If object already exists and staging object provided    -> update
                 // - If object does not exist and staging object provided    -> init
@@ -3276,7 +2890,6 @@ pub fn get_object_revision_by_path(
     object_revision: i64,
     check_collection: Option<uuid::Uuid>,
 ) -> Result<Option<Object>, ArunaError> {
-
     if !object_path.starts_with("s3://") {
         return Err(ArunaError::InvalidRequest(
             "Path does not start with s3://".to_string(),
@@ -4336,7 +3949,9 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hashes = hashes.filter(database::schema::hashes::object_id.eq(object_uuid)).load::<Db_Hash>(conn)?;
+    let object_hashes = hashes
+        .filter(database::schema::hashes::object_id.eq(object_uuid))
+        .load::<Db_Hash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -4644,4 +4259,294 @@ pub fn get_object_hashes(
             hash: e.hash.to_string(),
         })
         .collect::<Vec<_>>())
+}
+
+fn set_object_available(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object: &Object,
+    coll_uuid: &uuid::Uuid,
+    sha_hash: &str,
+    measures_length: Option<i64>,
+    location: Option<ProtoLocation>,
+) -> Result<(), ArunaError> {
+    use crate::database::schema::encryption_keys::dsl as keys_dsl;
+    if let Some(proto_location) = location {
+        let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
+
+        let final_location = ObjectLocation {
+            id: uuid::Uuid::new_v4(),
+            bucket: proto_location.bucket.clone(),
+            path: proto_location.path.clone(),
+            endpoint_id: endpoint_uuid,
+            object_id: object.id,
+            is_primary: true, // First location of object, so primary.
+            is_encrypted: proto_location.is_encrypted,
+            is_compressed: proto_location.is_compressed,
+        };
+
+        if encryption_keys
+            .filter(keys_dsl::hash.eq(sha_hash))
+            .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+            .select(keys_dsl::id)
+            .first::<uuid::Uuid>(conn)
+            .optional()?
+            .is_none()
+        {
+            let encryption_key_insert = EncryptionKey {
+                id: uuid::Uuid::new_v4(),
+                hash: Some(sha_hash.to_string()),
+                object_id: object.id,
+                endpoint_id: endpoint_uuid,
+                is_temporary: false,
+                encryption_key: proto_location.encryption_key.to_string(),
+            };
+
+            diesel::insert_into(encryption_keys)
+                .values(&encryption_key_insert)
+                .execute(conn)?;
+        }
+
+        // Delete all temporary encryption keys associated with this object_id
+        delete(encryption_keys)
+            .filter(database::schema::encryption_keys::object_id.eq(object.id))
+            .filter(database::schema::encryption_keys::is_temporary.eq(true))
+            .execute(conn)?;
+
+        insert_into(object_locations)
+            .values(&final_location)
+            .execute(conn)?;
+    } else {
+        return Err(ArunaError::InvalidRequest(format!(
+            "Request contains no valid location to finalize object {}",
+            object.id
+        )));
+    }
+
+    let content_length = match measures_length {
+        Some(l) => l,
+        None => object.content_len,
+    };
+
+    // Update object status to AVAILABLE
+    let updated_obj = update(objects)
+        .filter(database::schema::objects::id.eq(object.id))
+        .set((
+            database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE),
+            database::schema::objects::content_len.eq(content_length),
+        ))
+        .get_result::<Object>(conn)?;
+
+    // Get fq_path from label
+    let path_label = object_key_value
+        .filter(database::schema::object_key_value::object_id.eq(object.id))
+        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"))
+        .first::<ObjectKeyValue>(conn)
+        .optional()?;
+
+    if let Some(p_lbl) = path_label {
+        let bucket_label = object_key_value
+            .filter(database::schema::object_key_value::object_id.eq(object.id))
+            .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"))
+            .first::<ObjectKeyValue>(conn)?;
+        create_path_db(
+            &bucket_label.value,
+            &p_lbl.value,
+            &updated_obj.shared_revision_id,
+            coll_uuid,
+            conn,
+        )?;
+        // Delete the path label afterwards
+        delete(object_key_value)
+            .filter(database::schema::object_key_value::id.eq(p_lbl.id))
+            .execute(conn)?;
+        // Delete the bucket label afterwards
+        delete(object_key_value)
+            .filter(database::schema::object_key_value::id.eq(bucket_label.id))
+            .execute(conn)?;
+    };
+
+    let orig_id = updated_obj.origin_id;
+    // origin_id != object_id => Update
+    if orig_id != object.id {
+        // Get all revisions of the object it could be that an older version still has "auto_update" set
+        let all_revisions = get_all_revisions(conn, &object.id)?;
+
+        // Filter out the UUIDs
+        let all_rev_ids = all_revisions.iter().map(|full| full.id).collect::<Vec<_>>();
+
+        // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
+        // Set all auto_updates and is_latest to be false
+        let auto_updating_coll_obj: Vec<CollectionObject> = collection_objects
+            .filter(database::schema::collection_objects::object_id.eq_any(&all_rev_ids))
+            .filter(database::schema::collection_objects::auto_update.eq(true))
+            .load::<CollectionObject>(conn)
+            .optional()?
+            .unwrap_or_default();
+
+        // Filter collection_object references to object's collection
+        let auto_update_collection_references = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.collection_id == coll_uuid.clone())
+            .collect::<Vec<_>>();
+
+        let (auto_update_collection_reference, auto_update_collection_reference_id): (
+            Option<CollectionObject>,
+            uuid::Uuid,
+        ) = match auto_update_collection_references.len() {
+            0 => (None, uuid::Uuid::default()),
+            1 => (
+                Some(auto_update_collection_references[0].clone()),
+                auto_update_collection_references[0].clone().id,
+            ),
+            _ => {
+                return Err(ArunaError::InvalidRequest(
+                    "More than one revision with auto_update == true".to_string(),
+                ));
+            }
+        };
+
+        // object ids inside references
+        let auto_updating_obj_id = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.id != auto_update_collection_reference_id)
+            .map(|elem| elem.object_id)
+            .collect::<Vec<_>>();
+
+        // collection_object ids
+        let auto_updating_coll_obj_id = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.id != auto_update_collection_reference_id)
+            .map(|elem| elem.id)
+            .collect::<Vec<_>>();
+
+        // Only proceed if the list () is not empty, if it is empty no updates need to be performed
+        // Update ObjectGroups and Objects reference in other collections
+        if !auto_updating_coll_obj_id.is_empty() {
+            // Query the affected object_groups
+            let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
+                .filter(
+                    database::schema::object_group_objects::object_id.eq_any(&auto_updating_obj_id),
+                )
+                .select(database::schema::object_group_objects::object_group_id)
+                .load::<uuid::Uuid>(conn)
+                .optional()?;
+
+            match affected_object_groups {
+                None => {}
+                Some(obj_grp_ids) => {
+                    // Bump all revisions for object_groups
+                    let new_ogroups =
+                        bump_revisisions(&obj_grp_ids, &updated_obj.created_by, conn)?;
+                    let new_group_ids =
+                        new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                    // Update object_group references
+                    update(object_group_objects)
+                        .filter(
+                            database::schema::object_group_objects::object_group_id
+                                .eq_any(&new_group_ids),
+                        )
+                        .filter(database::schema::object_group_objects::object_id.eq(orig_id))
+                        .set(database::schema::object_group_objects::object_id.eq(&object.id))
+                        .execute(conn)?;
+                }
+            }
+
+            // Update Collection_Objects to use the new object_id
+            update(collection_objects.filter(
+                database::schema::collection_objects::id.eq_any(&auto_updating_coll_obj_id),
+            ))
+            .set((database::schema::collection_objects::object_id.eq(&object.id),))
+            .execute(conn)?;
+        }
+
+        // Query the affected object_groups
+        let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
+            .filter(database::schema::object_group_objects::object_id.eq(&updated_obj.origin_id))
+            .select(database::schema::object_group_objects::object_group_id)
+            .load::<uuid::Uuid>(conn)
+            .optional()?;
+
+        match affected_object_groups {
+            None => {}
+            Some(obj_grp_ids) => {
+                // Bump all revisions for object_groups
+                let new_ogroups = bump_revisisions(&obj_grp_ids, &updated_obj.created_by, conn)?;
+                let new_group_ids = new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                // Update object_group references
+                update(object_group_objects)
+                    .filter(
+                        database::schema::object_group_objects::object_group_id
+                            .eq_any(&new_group_ids),
+                    )
+                    .filter(database::schema::object_group_objects::object_id.eq(orig_id))
+                    .set(database::schema::object_group_objects::object_id.eq(&object.id))
+                    .execute(conn)?;
+            }
+        }
+
+        // Update inside collection of update object
+        match auto_update_collection_reference {
+            None => {
+                // Update latest staging object reference
+                update(collection_objects)
+                    .filter(database::schema::collection_objects::object_id.eq(&object.id))
+                    .filter(database::schema::collection_objects::collection_id.eq(&coll_uuid))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .set((
+                        database::schema::collection_objects::object_id.eq(&object.id),
+                        database::schema::collection_objects::is_latest.eq(true),
+                        database::schema::collection_objects::reference_status
+                            .eq(ReferenceStatus::OK),
+                        database::schema::collection_objects::auto_update.eq(true),
+                    ))
+                    .execute(conn)?;
+            }
+            Some(reference) => {
+                // Object is still latest revision on finish --> Normal case
+                // Delete staging reference
+                delete(collection_objects)
+                    .filter(database::schema::collection_objects::object_id.eq(coll_uuid))
+                    .filter(database::schema::collection_objects::collection_id.eq(coll_uuid))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .execute(conn)?;
+
+                // Update latest staging object reference
+                update(collection_objects)
+                    .filter(database::schema::collection_objects::id.eq(&reference.id))
+                    .filter(database::schema::collection_objects::collection_id.eq(coll_uuid))
+                    .set((
+                        database::schema::collection_objects::object_id.eq(object.id),
+                        database::schema::collection_objects::is_latest.eq(true),
+                        database::schema::collection_objects::reference_status
+                            .eq(ReferenceStatus::OK),
+                        database::schema::collection_objects::auto_update.eq(true),
+                    ))
+                    .execute(conn)?;
+            }
+        }
+    // origin_id == object_id => Initialize
+    } else {
+        // Update the collection objects
+        // - Status
+        // - is_latest
+        // - auto_update
+        diesel::update(collection_objects)
+            .filter(database::schema::collection_objects::object_id.eq(object.id))
+            .set((
+                database::schema::collection_objects::is_latest.eq(true),
+                database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                database::schema::collection_objects::auto_update.eq(true),
+            ))
+            .execute(conn)?;
+    }
+
+    Ok(())
 }
