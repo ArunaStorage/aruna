@@ -74,17 +74,21 @@ impl S3 for S3ServiceServer {
 
         let exists = match hash {
             Some(h) => {
-                match self
-                    .backend
-                    .head_object(ArunaLocation {
-                        bucket: format!("b{}", &h[0..2]),
-                        path: h[2..].to_string(),
-                        ..Default::default()
-                    })
-                    .await
-                {
-                    Ok(_) => true,
-                    Err(_) => false,
+                if !h.is_empty() {
+                    match self
+                        .backend
+                        .head_object(ArunaLocation {
+                            bucket: format!("b{}", &h[0..2]),
+                            path: h[2..].to_string(),
+                            ..Default::default()
+                        })
+                        .await
+                    {
+                        Ok(_) => true,
+                        Err(_) => false,
+                    }
+                } else {
+                    false
                 }
             }
             None => false,
