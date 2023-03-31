@@ -4,7 +4,7 @@ oauth_realminfo = 'http://localhost:8999/aruna.json'
 [default_endpoint]
 ep_type         = 'S3'
 endpoint_name   = 'Default Data Proxy'
-endpoint_proxy  = 'http://localhost:8081'
+endpoint_proxy  = 'http://localhost:1337'
 endpoint_host   = 'http://localhost:8081'
 endpoint_public = true
 endpoint_serial = 123456
