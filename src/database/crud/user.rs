@@ -189,7 +189,7 @@ impl Database {
             project_id: parsed_project_id,
             collection_id: parsed_collection_id,
             user_right: user_right_db,
-            secretkey: secret_key,
+            secretkey: secret_key.to_string(),
         };
 
         use crate::database::schema::api_tokens::dsl::*;
@@ -221,8 +221,8 @@ impl Database {
                 project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                 permission: map_permissions_rev(api_token.user_right),
             },
-            "".to_string(),
-            "".to_string(),
+            api_token.id.to_string(),
+            secret_key.to_string(),
         ))
     }
 
