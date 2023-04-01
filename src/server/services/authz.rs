@@ -4,19 +4,26 @@ use crate::database::models::auth::{ApiToken, PubKey};
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
+
+use anyhow::Result;
 use chrono::prelude::*;
 use dotenv::dotenv;
+use http::Method;
 use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
 };
 use openssl::pkey::PKey;
+use reqsign::credential::{Credential, CredentialLoad};
+use reqsign::{AwsCredentialLoader, AwsV4Signer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
+use time::Duration;
 use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
+use url::Url;
 
 /// This is the main struct for the Authz handling
 ///
@@ -94,6 +101,27 @@ pub struct Context {
     // All other fields will be ignored, this should only be used for
     // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
+}
+
+#[derive(Debug)]
+pub struct CustomLoader {
+    pub access_key: String,
+    pub secret_key: String,
+}
+
+impl CustomLoader {
+    pub fn new(access_key: &str, secret_key: &str) -> Self {
+        CustomLoader {
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+        }
+    }
+}
+
+impl CredentialLoad for CustomLoader {
+    fn load_credential(&self) -> Result<Option<Credential>> {
+        Ok(Some(Credential::new(&self.access_key, &self.secret_key)))
+    }
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -562,7 +590,111 @@ impl Authz {
     }
 }
 
-fn get_token_from_md(md: &MetadataMap) -> Result<String, ArunaError> {
+/// Creates a fully customized presigned S3 url.
+///
+/// ## Arguments:
+///
+/// * `method: http::Method` - Http method the request is valid for
+/// * `access_key: &String` - Secret key id
+/// * `secret_key: &String` - Secret key for access
+/// * `ssl: bool` - Flag if the endpoint is accessible via ssl
+/// * `multipart: bool` - Flag if the request is for a specific multipart part upload
+/// * `part_number: i32` - Specific part number if multipart: true
+/// * `upload_id: &String` - Multipart upload id if multipart: true
+/// * `bucket: &String` - Bucket name
+/// * `key: &String` - Full path of object in bucket
+/// * `endpoint: &String` - Full path of object in bucket
+/// * `duration: i64` - Full path of object in bucket
+/// *
+///
+/// ## Returns:
+///
+/// * `` -
+///
+pub fn sign_url(
+    method: http::Method,
+    access_key: &str,
+    secret_key: &str,
+    ssl: bool,
+    multipart: bool,
+    part_number: i32,
+    upload_id: &str,
+    bucket: &str,
+    key: &str,
+    endpoint: &str,
+    duration: i64,
+) -> Result<String> {
+    // Signer will load region and credentials from environment by default.
+    let cloder = reqsign::AwsConfigLoader::with_loaded();
+    cloder.set_region("RegionOne");
+
+    let signer = AwsV4Signer::builder()
+        .config_loader(cloder.clone())
+        .credential_loader(
+            AwsCredentialLoader::new(cloder).with_customed_credential_loader(Arc::new(
+                CustomLoader::new(access_key, secret_key),
+            )),
+        )
+        .service("s3")
+        .build()?;
+
+    // Set protocol depending if ssl
+    let protocol = if ssl { "https://" } else { "http://" };
+
+    // Remove http:// or https:// from beginning of endpoint url if present
+    let endpoint_sanitized = if endpoint.starts_with("https://") {
+        endpoint[8..].to_string()
+    } else if endpoint.starts_with("http://") {
+        endpoint[7..].to_string()
+    } else {
+        endpoint.to_string()
+    };
+
+    // Construct request
+    let url = if multipart {
+        Url::parse(&format!(
+            "{}{}.{}/{}?partNumber={}&uploadId={}",
+            protocol, bucket, endpoint_sanitized, key, part_number, upload_id
+        ))?
+    } else {
+        Url::parse(&format!(
+            "{}{}.{}/{}",
+            protocol, bucket, endpoint_sanitized, key
+        ))?
+    };
+
+    let mut req = reqwest::Request::new(method, url);
+
+    // Signing request with Signer
+    signer.sign_query(&mut req, Duration::seconds(duration))?;
+    Ok(req.url().to_string())
+}
+
+/// Convenience wrapper function for sign_url(...) to reduce unused parameters for download url.
+pub fn sign_download_url(
+    access_key: &str,
+    secret_key: &str,
+    ssl: bool,
+    bucket: &str,
+    key: &str,
+    endpoint: &str,
+) -> Result<String> {
+    sign_url(
+        Method::GET,
+        access_key,
+        secret_key,
+        ssl,
+        false,
+        0,
+        &"".to_string(),
+        bucket,
+        key,
+        endpoint,
+        604800, //Note: Default 1 week until requests allow custom duration
+    )
+}
+
+pub fn get_token_from_md(md: &MetadataMap) -> Result<String, ArunaError> {
     let token_string = md
         .get("Authorization")
         .ok_or(ArunaError::GrpcNotFoundError(

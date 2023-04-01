@@ -282,7 +282,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
             ))),
             Some(collection_uuid) => {
                 // Validate permission with queried collection id
-                let _creator_uuid = self.database.get_checked_user_id_from_token(
+                self.database.get_checked_user_id_from_token(
                     &access_key,
                     &Context {
                         user_right: UserRights::READ,
