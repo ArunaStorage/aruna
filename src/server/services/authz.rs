@@ -262,6 +262,51 @@ impl Authz {
         }
     }
 
+    /// The `authorize_verbose` method is used to check if the supplied user token has enough permissions
+    /// to fullfill the gRPC request the `db.get_checked_user_id_from_token()` method will check if the token and its
+    /// associated permissions permissions are sufficient enough to execute the request.
+    ///
+    /// ## Arguments
+    ///
+    /// - Metadata of the request containing a token
+    /// - Context that specifies which ressource is accessed and which permissions are requested
+    ///
+    /// ## Return
+    ///
+    /// This returns an Result<(UUID, Option<ApiToken>)> or an Error.
+    /// If it returns an Error the authorization failed otherwise.
+    /// The uuid is the user_id of the user that owns the token.
+    /// This user_id will for example be used to specify the "created_by" field in the database.
+    /// The ApiToken only additionally returns if no OIDC token was used for authorization.
+    ///
+    pub async fn authorize_verbose(
+        &self,
+        metadata: &MetadataMap,
+        context: &Context,
+    ) -> Result<(uuid::Uuid, Option<ApiToken>), ArunaError> {
+        let oidc_user = self.check_if_oidc(metadata).await?;
+
+        match oidc_user {
+            Some(u) => {
+                if context.personal {
+                    Ok((u, None))
+                } else {
+                    Err(ArunaError::AuthorizationError(
+                        AuthorizationError::PERMISSIONDENIED,
+                    ))
+                }
+            }
+            None => {
+                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+                let (creator_uuid, api_token) = self
+                    .db
+                    .get_checked_user_id_from_token(&token_uuid, context)?;
+
+                Ok((creator_uuid, Some(api_token)))
+            }
+        }
+    }
+
     /// This is a wrapper that runs the authorize function with a `personal` context
     /// a convenience function if this request is `personal` scoped
     pub async fn personal_authorize(

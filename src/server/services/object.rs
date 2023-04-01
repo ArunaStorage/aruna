@@ -240,14 +240,24 @@ impl ObjectService for ObjectServiceImpl {
         let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let _creator_id = self
+        let api_token = self
             .authz
-            .collection_authorize(
-                request.metadata(),
-                collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::APPEND, // User needs at least append permission to create an object
+            .authorize_verbose(
+                &request.metadata(),
+                &Context {
+                    user_right: UserRights::APPEND,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
@@ -738,14 +748,27 @@ impl ObjectService for ObjectServiceImpl {
         let collection_uuid =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        let _creator_id = self
+        let api_token = self
             .authz
-            .collection_authorize(
-                request.metadata(),
-                collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::READ,
+            .authorize_verbose(
+                &request.metadata(),
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid.clone(),
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
 
         // Get object and its location
         let database_clone = self.database.clone();
@@ -791,13 +814,25 @@ impl ObjectService for ObjectServiceImpl {
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
-                request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
-                UserRights::READ, // User needs at least append permission to create an object
+        // Check if user is authorized to fetch objects from collection
+        let api_token = self
+            .authz
+            .authorize_verbose(
+                &request.metadata(),
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         let req_clone = request.get_ref().clone();
         // Create Object in database
@@ -846,13 +881,25 @@ impl ObjectService for ObjectServiceImpl {
         let collection_id =
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
-                request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
-                UserRights::READ, // User needs at least append permission to create an object
+        // Check if user is authorized to fetch revisions of specific object
+        let api_token = self
+            .authz
+            .authorize_verbose(
+                &request.metadata(),
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         let req_clone = request.get_ref().clone();
         // Create Object in database
@@ -900,13 +947,25 @@ impl ObjectService for ObjectServiceImpl {
         let _object_uuid =
             uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
-                request.metadata(),
-                target_collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::READ,       // User needs at least append permission to create an object
+        // Check if user is authorized to fetch latest object revision
+        let api_token = self
+            .authz
+            .authorize_verbose(
+                &request.metadata(),
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Consume tonic gRPC request
         let inner_request = request.into_inner();
@@ -1063,10 +1122,10 @@ impl ObjectService for ObjectServiceImpl {
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
-                request.metadata(),
+            .authorize_verbose(
+                &metadata,
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
@@ -1076,10 +1135,11 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
-
-        // Extract request body
-        let inner_request = request.into_inner(); // Consumes the gRPC request
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Validate uuid format of object id provided in the request
         let object_uuid =
@@ -1128,9 +1188,9 @@ impl ObjectService for ObjectServiceImpl {
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
+            .authorize_verbose(
                 request.metadata(),
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
@@ -1141,7 +1201,11 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
@@ -1202,9 +1266,9 @@ impl ObjectService for ObjectServiceImpl {
             uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
+            .authorize_verbose(
                 request.metadata(),
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
@@ -1215,7 +1279,10 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
+            .await?
+            .1.ok_or_else(|| {
+            ArunaError::InvalidRequest("Request is missing api token".to_string())
+        })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
