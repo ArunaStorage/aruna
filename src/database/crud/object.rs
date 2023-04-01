@@ -1938,6 +1938,41 @@ impl Database {
         Ok(CreateObjectPathResponse { path: db_path })
     }
 
+    /// Generates the default path of an object for the specific collection.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `` -
+    /// * `` -
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<String, ArunaError>` - The
+    ///
+    pub fn generate_object_path(
+        &self,
+        object_uuid: &uuid::Uuid,
+        collection_uuid: &uuid::Uuid,
+    ) -> Result<(String, String), ArunaError> {
+        use crate::database::schema::objects::dsl as objects_dsl;
+
+        let (object_bucket, object_key) = self
+            .pg_connection
+            .get()?
+            .transaction::<(String, String), ArunaError, _>(|conn| {
+                // Fetch object filename
+                let file_name = objects
+                    .filter(objects_dsl::id.eq(object_uuid))
+                    .select(objects_dsl::filename)
+                    .first::<String>(conn)?;
+
+                // Generate default path
+                construct_path_string(collection_uuid, file_name.as_str(), "", conn)
+            })?;
+
+        Ok((object_bucket, object_key))
+    }
+
     /// ToDo: Rust Doc
     pub fn set_object_path_visibility(
         &self,
