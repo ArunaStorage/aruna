@@ -405,14 +405,14 @@ VALUES (
         '1',
         '1234',
         '2100-03-28 09:26:53.197386'
-
     );
-INSERT INTO api_tokens (id, creator_user_id, pub_key, expires_at)
+INSERT INTO api_tokens (id, creator_user_id, pub_key, secretkey, expires_at)
 VALUES (
         'e4b36f63-a633-48a8-9748-7f82058e8e3b',
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
         '1',
-        '2050-01-01 00:00:00'
+        '12345',
+        '2100-03-28 09:26:53.197386'
     );
 INSERT INTO endpoints (
         id,
@@ -425,6 +425,6 @@ VALUES (
         '12345678-6666-6666-6666-999999999999',
         'S3',
         'demo_endpoint',
-        'https://proxy.example.com',
+        'http://localhost:1337',
         'http://localhost:8081'
     );

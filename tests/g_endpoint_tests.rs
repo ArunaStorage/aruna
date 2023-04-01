@@ -130,7 +130,7 @@ fn get_endpoint_test() {
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "https://proxy.example.com");
+    assert_eq!(proxy_hostname, "http://localhost:1337");
     assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
@@ -159,7 +159,7 @@ fn get_endpoint_by_name_test() {
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "https://proxy.example.com");
+    assert_eq!(proxy_hostname, "http://localhost:1337");
     assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
