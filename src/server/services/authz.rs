@@ -696,7 +696,7 @@ pub fn sign_download_url(
         ssl,
         false,
         0,
-        &"".to_string(),
+        "",
         bucket,
         key,
         endpoint,

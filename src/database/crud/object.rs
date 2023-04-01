@@ -828,7 +828,7 @@ impl Database {
                 } else {
                     return Err(ArunaError::InvalidRequest(format!(
                         "Could not find object {}",
-                        db_object.id.to_string()
+                        db_object.id
                     )));
                 };
             let location: ObjectLocation = object_locations
@@ -4542,7 +4542,7 @@ fn set_object_available(
         // Filter collection_object references to object's collection
         let auto_update_collection_references = auto_updating_coll_obj
             .iter()
-            .filter(|elem| elem.collection_id == coll_uuid.clone())
+            .filter(|elem| elem.collection_id == *coll_uuid)
             .collect::<Vec<_>>();
 
         let (auto_update_collection_reference, auto_update_collection_reference_id): (

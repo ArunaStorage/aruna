@@ -247,7 +247,7 @@ impl ObjectService for ObjectServiceImpl {
         let api_token = self
             .authz
             .authorize_verbose(
-                &request.metadata(),
+                request.metadata(),
                 &Context {
                     user_right: UserRights::APPEND,
                     resource_type: Resources::COLLECTION,
@@ -274,7 +274,7 @@ impl ObjectService for ObjectServiceImpl {
         } else if !inner_request.multipart {
             1
         } else {
-            inner_request.part_number as i32
+            inner_request.part_number
         };
 
         // Check object status == INITIALIZING before url creation
@@ -309,9 +309,9 @@ impl ObjectService for ObjectServiceImpl {
             }
 
             for label in object_info.labels {
-                if label.key == "app.aruna-storage.org/new_path".to_string() {
+                if label.key == *"app.aruna-storage.org/new_path" {
                     s3key_option = Some(label.value.to_string());
-                } else if label.key == "app.aruna-storage.org/bucket".to_string() {
+                } else if label.key == *"app.aruna-storage.org/bucket" {
                     s3bucket_option = Some(label.value.to_string());
                 }
 
@@ -324,10 +324,13 @@ impl ObjectService for ObjectServiceImpl {
             .ok_or_else(|| {
                 Status::new(Code::Internal, "Staging object has no internal path label")
             })?
-            .replace("/", "");
+            .replace('/', "");
 
         let s3bucket = s3bucket_option.ok_or_else(|| {
-            Status::new(Code::Internal, "Staging object has no internal bucket label")
+            Status::new(
+                Code::Internal,
+                "Staging object has no internal bucket label",
+            )
         })?;
 
         // Self sign upload url
@@ -341,8 +344,8 @@ impl ObjectService for ObjectServiceImpl {
                     inner_request.multipart,
                     part_number,
                     &inner_request.upload_id,
-                    &s3bucket.to_string(),
-                    &s3key.to_string(),
+                    &s3bucket,
+                    &s3key,
                     &self.default_endpoint.proxy_hostname, // Will be "sanitized" in the sign_url(...) function
                     604800, // Default 1 week until requests support custom duration
                 )
@@ -520,7 +523,7 @@ impl ObjectService for ObjectServiceImpl {
                     .init_multipart_upload(InitMultipartUploadRequest {
                         collection_id: collection_uuid.to_string(),
                         object_id: new_object_uuid.to_string(),
-                        path: format!(""), // TODO: Empty for now
+                        path: String::new(), // TODO: Empty for now
                     })
                     .await?
                     .into_inner();
@@ -809,11 +812,11 @@ impl ObjectService for ObjectServiceImpl {
         let api_token = self
             .authz
             .authorize_verbose(
-                &request.metadata(),
+                request.metadata(),
                 &Context {
                     user_right: UserRights::READ,
                     resource_type: Resources::COLLECTION,
-                    resource_id: collection_uuid.clone(),
+                    resource_id: collection_uuid,
                     admin: false,
                     personal: false,
                     oidc_context: false,
@@ -883,7 +886,7 @@ impl ObjectService for ObjectServiceImpl {
         let api_token = self
             .authz
             .authorize_verbose(
-                &request.metadata(),
+                request.metadata(),
                 &Context {
                     user_right: UserRights::READ,
                     resource_type: Resources::COLLECTION,
@@ -968,7 +971,7 @@ impl ObjectService for ObjectServiceImpl {
         let api_token = self
             .authz
             .authorize_verbose(
-                &request.metadata(),
+                request.metadata(),
                 &Context {
                     user_right: UserRights::READ,
                     resource_type: Resources::COLLECTION,
@@ -1052,7 +1055,7 @@ impl ObjectService for ObjectServiceImpl {
         let api_token = self
             .authz
             .authorize_verbose(
-                &request.metadata(),
+                request.metadata(),
                 &Context {
                     user_right: UserRights::READ,
                     resource_type: Resources::COLLECTION,
@@ -1820,7 +1823,7 @@ fn get_object_download_url(
     let (object_bucket, object_key) = if let Some(path) = paths.first() {
         (
             path.bucket.to_string(),
-            if path.path.starts_with("/") {
+            if path.path.starts_with('/') {
                 path.path[1..].to_string()
             } else {
                 path.path.to_string()

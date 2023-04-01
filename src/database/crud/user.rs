@@ -222,7 +222,7 @@ impl Database {
                 permission: map_permissions_rev(api_token.user_right),
             },
             api_token.id.to_string(),
-            secret_key.to_string(),
+            secret_key,
         ))
     }
 
