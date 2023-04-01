@@ -690,6 +690,82 @@ impl Database {
         Ok(location_info)
     }
 
+    /// Get the full location info of the provided object as database objects:
+    ///
+    /// * Primary object location
+    /// * Endpoint associated with the primary location
+    /// * Optional encryption key if the location is encrypted
+    /// * A vector of all active paths associated with the provided collection
+    ///
+    /// ## Arguments:
+    ///
+    /// * `object_uuid: &uuid::Uuid` - Unique object identifier for staging object
+    /// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError>` -
+    ///     * Primary object location
+    ///     * Endpoint associated with the primary location
+    ///     * Optional encryption key if the location is encrypted
+    ///     * A vector of all active paths associated with the provided collection
+    ///
+    pub fn get_primary_object_location_with_endpoint_and_collection_paths(
+        &self,
+        object_uuid: &uuid::Uuid,
+        collection_uuid: &uuid::Uuid,
+    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::objects::dsl as objects_dsl;
+        use crate::database::schema::paths::dsl as paths_dsl;
+
+        let location_info = self.pg_connection.get()?.transaction::<(
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+            Vec<Path>,
+        ), ArunaError, _>(|conn| {
+            let shared_revision_uuid = objects
+                .filter(objects_dsl::id.eq(object_uuid))
+                .select(objects_dsl::shared_revision_id)
+                .first::<uuid::Uuid>(conn)?;
+
+            let active_paths = paths
+                .filter(paths_dsl::collection_id.eq(&collection_uuid))
+                .filter(paths_dsl::shared_revision_id.eq(&shared_revision_uuid))
+                .filter(paths_dsl::active.eq(&true))
+                .load::<Path>(conn)?;
+
+            let location: ObjectLocation = object_locations
+                .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                .filter(database::schema::object_locations::is_primary.eq(true))
+                .first::<ObjectLocation>(conn)?;
+
+            let endpoint: Endpoint = endpoints
+                .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                .first::<Endpoint>(conn)?;
+
+            // Only query encryption key if object location is encrypted
+            let encryption_key = if location.is_encrypted {
+                encryption_keys
+                    .filter(keys_dsl::object_id.eq(&object_uuid))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+            } else {
+                None
+            };
+
+            if location.is_encrypted && encryption_key.is_none() {
+                return Err(ArunaError::InvalidRequest("".to_string()));
+            }
+
+            Ok((location, endpoint, encryption_key, active_paths))
+        })?;
+
+        Ok(location_info)
+    }
+
     /// Get an object with its location for a specific endpoint. The data specific
     /// encryption/decryption key will be returned also if available.
     ///
