@@ -125,17 +125,17 @@ impl Database {
         &self,
         ctx_token: &uuid::Uuid,
         req_ctx: &Context,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<(uuid::Uuid, ApiToken), ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
         //use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
 
-        let creator_uid =
+        let (creator_uid, api_token) =
             self.pg_connection
                 .get()?
-                .transaction::<Option<uuid::Uuid>, dError, _>(|conn| {
+                .transaction::<(Option<uuid::Uuid>, ApiToken), dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
                         .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
@@ -163,7 +163,7 @@ impl Database {
                         // If an associated admin_user_perm is found, this can return a new context
                         // for the admin scope
                         if admin_user_perm.is_some() {
-                            return Ok(Some(api_token.creator_user_id));
+                            return Ok((Some(api_token.creator_user_id), api_token));
                         }
                     }
 
@@ -173,7 +173,7 @@ impl Database {
                     // Mostly used to modify tokens
                     if req_ctx.personal {
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
-                            return Ok(Some(api_token.creator_user_id));
+                            return Ok((Some(api_token.creator_user_id), api_token));
                         } else {
                             return Err(dError::NotFound);
                         }
@@ -198,7 +198,7 @@ impl Database {
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
                             // in case the response is None -> just continue
                             if collection_ctx.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -231,7 +231,7 @@ impl Database {
                             );
 
                             if col_in_proj_context.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -266,7 +266,7 @@ impl Database {
                                 );
 
                                 if col_in_proj_ctx2.is_some() {
-                                    return Ok(Some(api_token.creator_user_id));
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
                         }
@@ -289,7 +289,7 @@ impl Database {
                             // If apitoken.collection_id == context_collection_id
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
                             if project_ctx.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -315,17 +315,17 @@ impl Database {
                                 );
 
                                 if col_in_proj_ctx.is_some() {
-                                    return Ok(Some(api_token.creator_user_id));
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
                         }
                     }
 
-                    Ok(None)
+                    Ok((None, api_token))
                 })?;
 
         match creator_uid {
-            Some(uid) => Ok(uid),
+            Some(uid) => Ok((uid, api_token)),
             None => Err(ArunaError::AuthorizationError(
                 AuthorizationError::PERMISSIONDENIED,
             )),

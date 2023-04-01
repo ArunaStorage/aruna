@@ -815,7 +815,7 @@ fn get_checked_user_id_from_token_test() {
 
     // TEST all tokens / cases
     // Case 1. Admin token / Admin context:
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &admin_token,
             &(Context {
@@ -829,7 +829,7 @@ fn get_checked_user_id_from_token_test() {
         )
         .unwrap();
     assert_eq!(
-        res.to_string(),
+        token_user_uuid.to_string(),
         "12345678-1234-1234-1234-111111111111".to_string()
     );
     // Case 2. Non admin token / Requested admin context: SHOULD fail
@@ -846,7 +846,7 @@ fn get_checked_user_id_from_token_test() {
     );
     assert!(res.is_err());
     // Case 3. Personal token in "ADMIN" project
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &regular_personal_token,
             &(Context {
@@ -859,9 +859,9 @@ fn get_checked_user_id_from_token_test() {
             }),
         )
         .unwrap();
-    assert_eq!(res, user_id);
+    assert_eq!(token_user_uuid, user_id);
     // READ project
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &regular_personal_token,
             &(Context {
@@ -874,9 +874,9 @@ fn get_checked_user_id_from_token_test() {
             }),
         )
         .unwrap();
-    assert_eq!(res, user_id);
+    assert_eq!(token_user_uuid, user_id);
     // READ in ADMIN project
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &regular_personal_token,
             &(Context {
@@ -889,9 +889,9 @@ fn get_checked_user_id_from_token_test() {
             }),
         )
         .unwrap();
-    assert_eq!(res, user_id);
+    assert_eq!(token_user_uuid, user_id);
     // Personal only
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &regular_personal_token,
             &(Context {
@@ -904,7 +904,7 @@ fn get_checked_user_id_from_token_test() {
             }),
         )
         .unwrap();
-    assert_eq!(res, user_id);
+    assert_eq!(token_user_uuid, user_id);
     // Personal with unpersonal token user
     let res = db.get_checked_user_id_from_token(
         &project_token_with_admin,
@@ -920,7 +920,7 @@ fn get_checked_user_id_from_token_test() {
     assert!(res.is_err());
     // Project token for collection
     // Personal with unpersonal token user
-    let res = db
+    let (token_user_uuid, _) = db
         .get_checked_user_id_from_token(
             &project_token_with_admin,
             &(Context {
@@ -933,7 +933,7 @@ fn get_checked_user_id_from_token_test() {
             }),
         )
         .unwrap();
-    assert_eq!(res, user_id);
+    assert_eq!(token_user_uuid, user_id);
     // Collection with read with "higher" permissions -> Should fail
     let res = db.get_checked_user_id_from_token(
         &col_token_with_read,

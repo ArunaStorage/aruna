@@ -234,8 +234,6 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
-
-
                 // Check if object is latest!
                 let latest = get_latest_obj(conn, req_object_uuid)?;
                 let is_still_latest = latest.id == req_object_uuid;
@@ -353,7 +351,7 @@ impl Database {
                 use crate::database::schema::encryption_keys::dsl as keys_dsl;
                 if let Some(proto_location) = &request.location {
                     let endpoint_uuid = uuid::Uuid::parse_str(proto_location.endpoint_id.as_str())?;
-            
+
                     let final_location = ObjectLocation {
                         id: uuid::Uuid::new_v4(),
                         bucket: proto_location.bucket.clone(),
@@ -364,7 +362,7 @@ impl Database {
                         is_encrypted: proto_location.is_encrypted,
                         is_compressed: proto_location.is_compressed,
                     };
-            
+
                     if encryption_keys
                         .filter(keys_dsl::hash.eq(&sha256_hash))
                         .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
@@ -381,18 +379,18 @@ impl Database {
                             is_temporary: false,
                             encryption_key: proto_location.encryption_key.to_string(),
                         };
-            
+
                         diesel::insert_into(encryption_keys)
                             .values(&encryption_key_insert)
                             .execute(conn)?;
                     }
-            
+
                     // Delete all temporary encryption keys associated with this object_id
                     delete(encryption_keys)
                         .filter(database::schema::encryption_keys::object_id.eq(&object_uuid))
                         .filter(database::schema::encryption_keys::is_temporary.eq(true))
                         .execute(conn)?;
-            
+
                     insert_into(object_locations)
                         .values(&final_location)
                         .execute(conn)?;
@@ -2047,7 +2045,7 @@ impl Database {
                     get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid))?;
 
                 // Check permissions
-                let creator_uuid = self.get_checked_user_id_from_token(
+                let (creator_uuid, _) = self.get_checked_user_id_from_token(
                     &access_key,
                     &Context {
                         user_right: if get_object.is_some() && request.object.is_none() {

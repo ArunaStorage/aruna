@@ -1,6 +1,6 @@
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
-use crate::database::models::auth::PubKey;
+use crate::database::models::auth::{ApiToken, PubKey};
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
@@ -253,8 +253,11 @@ impl Authz {
                 }
             }
             None => {
-                let token = self.validate_and_query_token(metadata).await?;
-                self.db.get_checked_user_id_from_token(&token, context)
+                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+                Ok(self
+                    .db
+                    .get_checked_user_id_from_token(&token_uuid, context)?
+                    .0)
             }
         }
     }
