@@ -460,13 +460,19 @@ impl Authz {
         }
     }
 
-    pub async fn validate_and_query_token(
+    pub async fn validate_and_query_token_from_md(
         &self,
         metadata: &MetadataMap,
     ) -> Result<uuid::Uuid, ArunaError> {
         let token_string = get_token_from_md(metadata)?;
+        self.validate_and_query_token(&token_string).await
+    }
 
-        let header = decode_header(&token_string)?;
+    pub async fn validate_and_query_token(
+        &self,
+        token_secret: &String,
+    ) -> Result<uuid::Uuid, ArunaError> {
+        let header = decode_header(token_secret.as_str())?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
@@ -494,8 +500,12 @@ impl Authz {
                 .ok_or(AuthorizationError::PERMISSIONDENIED)
         })?;
 
-        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))
-            .map_err(|e| match e.into_kind() {
+        let token_data = decode::<Claims>(
+            token_secret.as_str(),
+            key,
+            &Validation::new(Algorithm::EdDSA),
+        )
+        .map_err(|e| match e.into_kind() {
             jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthorizationError::TOKENEXPIRED,
             _ => AuthorizationError::PERMISSIONDENIED,
         })?;
