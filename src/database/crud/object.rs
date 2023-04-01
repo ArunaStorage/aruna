@@ -511,7 +511,11 @@ impl Database {
                     // Use the helper function to execute the request
                     let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
                     let proto_paths = if let Some(obj) = object.clone() {
-                        get_paths_proto(&obj.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &obj.object.shared_revision_id,
+                            Some(&collection_uuid),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -568,7 +572,11 @@ impl Database {
                     let object_dto_option = get_object_ignore_coll(object_uuid, conn)?;
 
                     let proto_paths = if let Some(object_dto) = object_dto_option.clone() {
-                        get_paths_proto(&object_dto.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &object_dto.object.shared_revision_id,
+                            Some(collection_uuid),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -958,7 +966,11 @@ impl Database {
                     let obj = get_object(&lat_obj.id, &parsed_collection_id, false, conn)?;
 
                     let proto_paths = if let Some(obj) = obj.clone() {
-                        get_paths_proto(&obj.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &obj.object.shared_revision_id,
+                            Some(&parsed_collection_id),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -1003,7 +1015,7 @@ impl Database {
                     .filter(database::schema::collection_objects::object_id.eq_any(&all_ids))
                     .filter(
                         database::schema::collection_objects::collection_id
-                            .eq(parsed_collection_id),
+                            .eq(&parsed_collection_id),
                     )
                     .first::<CollectionObject>(conn)
                     .optional()?;
@@ -1011,10 +1023,14 @@ impl Database {
                 // Query and return all revisions
                 Ok(if issomewherereferenced.is_some() {
                     let obj_paths = if let Some(first_obj) = all.first() {
-                        get_paths_proto(&first_obj.shared_revision_id, conn)?
-                            .iter()
-                            .map(|e| e.path.to_string())
-                            .collect::<Vec<String>>()
+                        get_paths_proto(
+                            &first_obj.shared_revision_id,
+                            Some(&parsed_collection_id),
+                            conn,
+                        )?
+                        .iter()
+                        .map(|e| e.path.to_string())
+                        .collect::<Vec<String>>()
                     } else {
                         Vec::new()
                     };
@@ -1146,11 +1162,14 @@ impl Database {
                         if let Some(obj) =
                             get_object(&s_obj.object_id, &query_collection_id, false, conn)?
                         {
-                            let proto_paths =
-                                get_paths_proto(&obj.object.shared_revision_id, conn)?
-                                    .iter()
-                                    .map(|p| p.path.clone())
-                                    .collect::<Vec<String>>();
+                            let proto_paths = get_paths_proto(
+                                &obj.object.shared_revision_id,
+                                Some(&query_collection_id),
+                                conn,
+                            )?
+                            .iter()
+                            .map(|p| p.path.clone())
+                            .collect::<Vec<String>>();
                             return_vec.push(ObjectWithUrl {
                                 object: Some(obj.try_into()?),
                                 url: "".to_string(),
@@ -4246,7 +4265,7 @@ pub fn construct_path_string(
             return Err(ArunaError::InvalidRequest(
             "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
                 .to_string(),
-        ));
+            ));
         }
 
         let modified_path = if subpath.starts_with('/') {
@@ -4301,12 +4320,25 @@ pub fn create_path_db(
 
 pub fn get_paths_proto(
     shared_rev_id: &uuid::Uuid,
+    maybe_collection_uuid: Option<&uuid::Uuid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ProtoPath>, ArunaError> {
-    let p = paths
-        .filter(database::schema::paths::shared_revision_id.eq(shared_rev_id))
-        .load::<Path>(conn)?;
-    Ok(p.iter()
+    use crate::database::schema::paths::dsl as paths_dsl;
+
+    // Construct query to fetch paths from
+    let mut path_query = paths
+        .filter(paths_dsl::shared_revision_id.eq(shared_rev_id))
+        .filter(database::schema::paths::active.eq(true))
+        .into_boxed();
+
+    if let Some(collection_uuid) = maybe_collection_uuid {
+        path_query = path_query.filter(paths_dsl::collection_id.eq(collection_uuid))
+    }
+
+    let active_paths = path_query.load::<Path>(conn)?;
+
+    Ok(active_paths
+        .iter()
         .map(|pth| ProtoPath {
             path: format!("s3://{}{}", pth.bucket, pth.path),
             visibility: pth.active,
