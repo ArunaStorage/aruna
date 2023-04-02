@@ -119,7 +119,7 @@ impl ObjectServiceImpl {
     /// * On success returns the open connection to the internal data proxy with its corresponding location.
     /// * On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn try_connect_object_endpoint(
+    async fn _try_connect_object_endpoint(
         &self,
         object_uuid: &uuid::Uuid,
     ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
@@ -450,14 +450,8 @@ impl ObjectService for ObjectServiceImpl {
                     part_etags: finished_parts,
                 };
 
-                // Get the data_proxy
-                let (mut data_proxy, _location) = self
-                    .try_connect_object_endpoint(
-                        &uuid::Uuid::parse_str(&inner_request.object_id).map_err(|_| {
-                            Status::invalid_argument("Unable to parse object_id to uuid")
-                        })?,
-                    )
-                    .await?;
+                //ToDo: Get the correct data proxy where the user uploaded the data!
+                let mut data_proxy = self.try_connect_default_endpoint().await?;
 
                 // Execute the proxy request and get the result
                 let proxy_result = data_proxy
