@@ -1814,11 +1814,19 @@ fn get_object_download_url(
     collection_uuid: &uuid::Uuid,
     api_token: &ApiToken,
 ) -> Result<String, ArunaError> {
-    let (_, endpoint, _, paths) = database
-        .get_primary_object_location_with_endpoint_and_collection_paths(
-            object_uuid,
-            collection_uuid,
-        )?;
+    let result = database.get_primary_object_location_with_endpoint_and_collection_paths(
+        object_uuid,
+        collection_uuid,
+    );
+
+    let (_, endpoint, _, paths) = match result {
+        Ok((loc, endp, key_opt, paths)) => (loc, endp, key_opt, paths),
+        Err(_) => {
+            return Err(ArunaError::InvalidRequest(
+                "Still waiting for object location finalization".to_string(),
+            ))
+        }
+    };
 
     let (object_bucket, object_key) = if let Some(path) = paths.first() {
         (
