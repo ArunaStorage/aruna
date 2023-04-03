@@ -470,9 +470,9 @@ impl Authz {
 
     pub async fn validate_and_query_token(
         &self,
-        token_secret: &String,
+        token_secret: &str,
     ) -> Result<uuid::Uuid, ArunaError> {
-        let header = decode_header(token_secret.as_str())?;
+        let header = decode_header(token_secret)?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
@@ -500,15 +500,13 @@ impl Authz {
                 .ok_or(AuthorizationError::PERMISSIONDENIED)
         })?;
 
-        let token_data = decode::<Claims>(
-            token_secret.as_str(),
-            key,
-            &Validation::new(Algorithm::EdDSA),
-        )
-        .map_err(|e| match e.into_kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthorizationError::TOKENEXPIRED,
-            _ => AuthorizationError::PERMISSIONDENIED,
-        })?;
+        let token_data = decode::<Claims>(token_secret, key, &Validation::new(Algorithm::EdDSA))
+            .map_err(|e| match e.into_kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    AuthorizationError::TOKENEXPIRED
+                }
+                _ => AuthorizationError::PERMISSIONDENIED,
+            })?;
 
         Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
     }
@@ -652,10 +650,10 @@ pub fn sign_url(
     let protocol = if ssl { "https://" } else { "http://" };
 
     // Remove http:// or https:// from beginning of endpoint url if present
-    let endpoint_sanitized = if endpoint.starts_with("https://") {
-        endpoint[8..].to_string()
-    } else if endpoint.starts_with("http://") {
-        endpoint[7..].to_string()
+    let endpoint_sanitized = if let Some(stripped) = endpoint.strip_prefix("https://") {
+        stripped.to_string()
+    } else if let Some(stripped) = endpoint.strip_prefix("http://") {
+        stripped.to_string()
     } else {
         endpoint.to_string()
     };

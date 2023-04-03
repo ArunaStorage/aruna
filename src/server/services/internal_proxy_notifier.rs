@@ -94,12 +94,12 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Consume gRPC request
-        let mut inner_request = request.into_inner();
+        let inner_request = request.into_inner();
 
         // Finalize Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.finalize_object(&mut inner_request))
+            task::spawn_blocking(move || database_clone.finalize_object(&inner_request))
                 .await
                 .map_err(ArunaError::from)??,
         );
