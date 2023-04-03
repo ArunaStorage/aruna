@@ -2473,6 +2473,7 @@ pub fn create_staging_object(
 ///
 /// * `Result<Object, ArunaError>` - The created staging object
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn update_object_init(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     staging_object: StageObject,

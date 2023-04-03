@@ -619,6 +619,7 @@ impl Authz {
 ///
 /// * `` -
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn sign_url(
     method: http::Method,
     access_key: &str,
