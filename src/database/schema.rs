@@ -6,6 +6,10 @@ pub mod sql_types {
     pub struct Dataclass;
 
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "endpoint_status"))]
+    pub struct EndpointStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "endpoint_type"))]
     pub struct EndpointType;
 
@@ -57,6 +61,8 @@ diesel::table! {
         collection_id -> Nullable<Uuid>,
         user_right -> Nullable<UserRights>,
         secretkey -> Varchar,
+        used_at -> Timestamp,
+        is_session -> Bool,
     }
 }
 
@@ -138,6 +144,7 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::EndpointType;
+    use super::sql_types::EndpointStatus;
 
     endpoints (id) {
         id -> Uuid,
@@ -147,6 +154,7 @@ diesel::table! {
         internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,
         is_public -> Bool,
+        status -> EndpointStatus,
     }
 }
 
@@ -342,6 +350,7 @@ diesel::table! {
         external_id -> Text,
         display_name -> Text,
         active -> Bool,
+        is_service_account -> Bool,
     }
 }
 
