@@ -77,6 +77,7 @@ impl Database {
                     internal_hostname: default_endpoint.endpoint_host,
                     documentation_path: default_endpoint.endpoint_docu,
                     is_public: default_endpoint.endpoint_public,
+                    status: database::models::enums::EndpointStatus::AVAILABLE,
                 };
 
                 self.pg_connection
@@ -120,6 +121,7 @@ impl Database {
                 false => Some(request.documentation_path.to_string()),
             },
             is_public: request.is_public,
+            status: database::models::enums::EndpointStatus::AVAILABLE,
         };
 
         let db_pubkey = PubKeyInsert {

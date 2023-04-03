@@ -55,6 +55,7 @@ pub struct Endpoint {
     pub internal_hostname: String,
     pub documentation_path: Option<String>,
     pub is_public: bool,
+    pub status: EndpointStatus,
 }
 
 #[derive(AsChangeset, Associations, Queryable, Insertable, Identifiable, Debug)]

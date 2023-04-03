@@ -11,12 +11,13 @@ pub struct IdentityProvider {
     pub idp_type: IdentityProviderType,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Clone, Default)]
 pub struct User {
     pub id: uuid::Uuid,
     pub external_id: String,
     pub display_name: String,
     pub active: bool,
+    pub is_service_account: bool,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
@@ -76,6 +77,8 @@ pub struct ApiToken {
     pub collection_id: Option<uuid::Uuid>,
     pub user_right: Option<UserRights>,
     pub secretkey: String,
+    pub used_at: chrono::NaiveDateTime,
+    pub is_session: bool,
 }
 
 #[derive(Queryable, Identifiable, Debug)]

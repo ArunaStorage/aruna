@@ -64,6 +64,7 @@ impl Database {
             display_name: request.display_name,
             external_id: ext_id,
             active: false,
+            is_service_account: false,
         };
 
         // Insert the user and return the user_id
@@ -190,6 +191,8 @@ impl Database {
             collection_id: parsed_collection_id,
             user_right: user_right_db,
             secretkey: secret_key.to_string(),
+            used_at: Utc::now().naive_local(),
+            is_session: false,
         };
 
         use crate::database::schema::api_tokens::dsl::*;
@@ -539,16 +542,7 @@ impl Database {
             project_permissions: perm
                 .iter()
                 .map(|elem| ProjectPermission {
-                    user_id: user_info
-                        .clone()
-                        .unwrap_or_else(|| User {
-                            id: uuid::Uuid::default(),
-                            external_id: String::default(),
-                            display_name: String::default(),
-                            active: false,
-                        })
-                        .id
-                        .to_string(),
+                    user_id: user_info.clone().unwrap_or_default().id.to_string(),
                     project_id: elem.project_id.to_string(),
                     permission: map_permissions_rev(Some(elem.user_right)),
                     // TODO: check for service account

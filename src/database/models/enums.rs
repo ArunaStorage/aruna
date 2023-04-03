@@ -15,6 +15,7 @@ pub enum ObjectStatus {
     ERROR,
     DELETED,
     TRASH,
+    FINALIZING,
 }
 
 #[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -145,6 +146,17 @@ pub enum ReferenceStatus {
     STAGING,
     HIDDEN,
     OK,
+}
+
+#[derive(Debug, DbEnum, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[ExistingTypePath = "sql_types::EndpointStatus"]
+#[DbValueStyle = "UPPERCASE"]
+pub enum EndpointStatus {
+    INITIALIZING,
+    AVAILABLE,
+    DEGRADED,
+    UNAVAILABLE,
+    MAINTENANCE,
 }
 
 #[cfg(test)]
