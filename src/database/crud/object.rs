@@ -950,11 +950,30 @@ impl Database {
                     Some(k) => Some(k),
                     None => {
                         if !request.hash.is_empty() {
-                            encryption_keys
+                            match encryption_keys
                                 .filter(keys_dsl::hash.eq(&request.hash))
                                 .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
                                 .first::<EncryptionKey>(conn)
                                 .optional()?
+                            {
+                                Some(kk) => {
+                                    let key_insert = EncryptionKey {
+                                        id: uuid::Uuid::new_v4(),
+                                        hash: Some(request.hash.to_string()),
+                                        object_id: req_object.id,
+                                        endpoint_id: endpoint_uuid,
+                                        is_temporary: false,
+                                        encryption_key: kk.encryption_key.to_string(),
+                                    };
+
+                                    insert_into(encryption_keys)
+                                        .values(&key_insert)
+                                        .execute(conn)?;
+
+                                    Some(key_insert)
+                                },
+                                None => None
+                            }
                         } else {
                             None
                         }
