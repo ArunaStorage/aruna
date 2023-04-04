@@ -9,7 +9,8 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'UNAVAILABLE',
     'ERROR',
     'DELETED', -- Permanently deleted objects that are preserved for history reasons
-    'TRASH' -- Objects that should be cleaned up and removed
+    'TRASH', -- Objects that should be cleaned up and removed
+    'FINALIZING'
 );
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
@@ -32,6 +33,15 @@ CREATE TYPE HASH_TYPE AS ENUM (
     'MURMUR3A32',
     'XXHASH32'
 );
+
+CREATE TYPE ENDPOINT_STATUS AS ENUM (
+    'INITIALIZING',
+    'AVAILABLE',
+    'DEGRADED',
+    'UNAVAILABLE',
+    'MAINTENANCE'
+);
+
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
 -- Currently not used
@@ -158,7 +168,8 @@ CREATE TABLE endpoints (
     proxy_hostname VARCHAR(255) NOT NULL,
     internal_hostname VARCHAR(255) NOT NULL,
     documentation_path TEXT DEFAULT NULL,
-    is_public BOOL NOT NULL DEFAULT TRUE
+    is_public BOOL NOT NULL DEFAULT TRUE,
+    status ENDPOINT_STATUS NOT NULL DEFAULT 'AVAILABLE';
 );
 -- Table with object locations which describe
 CREATE TABLE object_locations (
@@ -205,6 +216,7 @@ CREATE TABLE object_groups (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
     PRIMARY KEY (id),
+    is_service_account BOOL NOT NULL DEFAULT FALSE,
     UNIQUE(shared_revision_id, revision_number),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -271,6 +283,8 @@ CREATE TABLE api_tokens (
     collection_id UUID,
     user_right USER_RIGHTS,
     secretkey VARCHAR(255) NOT NULL DEFAULT '-',
+    used_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    api_tokens ADD COLUMN is_session BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (pub_key) REFERENCES pub_keys(id),
