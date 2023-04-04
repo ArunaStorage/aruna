@@ -81,6 +81,7 @@ impl ArunaNotifier {
             access_key: self.credentials.access_key.to_string(),
             object: Some(create_stage_object(key, content_len)),
             get_only: false,
+            endpoint_id: self.settings.endpoint_id.to_string(),
         };
 
         // Get or create object by path
