@@ -230,61 +230,69 @@ impl Database {
         let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Insert all defined objects into the database
-        let object_dto = self
-            .pg_connection
-            .get()?
-            .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
-                // Check if object is latest!
-                let latest = get_latest_obj(conn, req_object_uuid)?;
-                let is_still_latest = latest.id == req_object_uuid;
+        let object_dto =
+            self.pg_connection
+                .get()?
+                .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+                    // Check if object is latest!
+                    let latest = get_latest_obj(conn, req_object_uuid)?;
+                    let is_still_latest = latest.id == req_object_uuid;
 
-                if !is_still_latest {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Object {req_object_uuid} is not latest revision. "
-                    )));
-                }
+                    if !is_still_latest {
+                        return Err(ArunaError::InvalidRequest(format!(
+                            "Object {req_object_uuid} is not latest revision. "
+                        )));
+                    }
 
-                // What can we do here ?
-                // - Set auto update ?
-                // - Set or check expected hashes
-                // - Finalize EMPTY object ?
+                    // What can we do here ?
+                    // - Set auto update ?
+                    // - Set or check expected hashes
+                    // - Finalize EMPTY object ?
 
-                // // Update the object itself to be available
-                // let returned_obj = diesel::update(
-                //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                // )
-                // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                // .get_result::<Object>(conn)?;
+                    // // Update the object itself to be available
+                    // let returned_obj = diesel::update(
+                    //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                    // )
+                    // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    // .get_result::<Object>(conn)?;
 
-                // Update hash if (re-)upload and request contains hash
-                if !request.no_upload && request.hash.is_some() {
-                    (match &request.hash {
-                        None => {
-                            return Err(ArunaError::InvalidRequest(
-                                "Missing hash after re-upload.".to_string(),
-                            ));
-                        }
-                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
-                            .set((
-                                database::schema::hashes::hash.eq(&req_hash.hash),
-                                database::schema::hashes::hash_type
-                                    .eq(HashType::from_grpc(req_hash.alg)),
-                            ))
-                            .execute(conn),
-                    })?;
-                }
+                    // Update hash if (re-)upload and request contains hash
+                    if !request.no_upload && request.hash.is_some() {
+                        (match &request.hash {
+                            None => {
+                                return Err(ArunaError::InvalidRequest(
+                                    "Missing hash after re-upload.".to_string(),
+                                ));
+                            }
+                            Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                                .set((
+                                    database::schema::hashes::hash.eq(&req_hash.hash),
+                                    database::schema::hashes::hash_type
+                                        .eq(HashType::from_grpc(req_hash.alg)),
+                                ))
+                                .execute(conn),
+                        })?;
+                    }
 
-                // Check if the origin id is different from uuid
-                // This indicates an "updated" object and not a new one
-                // Finishing updates need extra steps to update all references
-                // In other collections / objectgroups
+                    // Check if the origin id is different from uuid
+                    // This indicates an "updated" object and not a new one
+                    // Finishing updates need extra steps to update all references
+                    // In other collections / objectgroups
 
-                if latest.object_status != ObjectStatus::AVAILABLE {
-                    set_object_available(conn, &latest, &req_coll_uuid, None)?;
-                }
+                    if latest.object_status != ObjectStatus::AVAILABLE {
+                        update(objects)
+                            .filter(database::schema::objects::id.eq(&req_object_uuid))
+                            .set((database::schema::objects::object_status
+                                .eq(ObjectStatus::FINALIZING),))
+                            .execute(conn)?;
+                    }
 
-                Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
-            })?;
+                    if request.no_upload {
+                        set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                    }
+
+                    Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
+                })?;
 
         let mapped = object_dto
             .map(|e| e.try_into())
