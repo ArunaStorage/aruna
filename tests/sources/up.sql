@@ -55,7 +55,8 @@ CREATE TABLE users (
     id UUID PRIMARY KEY,
     external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
-    active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
+    active BOOL NOT NULL DEFAULT FALSE, -- Users must be activated by an administrator
+    is_service_account BOOL NOT NULL DEFAULT FALSE
 );
 -- Join table to map users to multiple identity providers
 -- Currently not used
@@ -169,7 +170,7 @@ CREATE TABLE endpoints (
     internal_hostname VARCHAR(255) NOT NULL,
     documentation_path TEXT DEFAULT NULL,
     is_public BOOL NOT NULL DEFAULT TRUE,
-    status ENDPOINT_STATUS NOT NULL DEFAULT 'AVAILABLE';
+    status ENDPOINT_STATUS NOT NULL DEFAULT 'AVAILABLE'
 );
 -- Table with object locations which describe
 CREATE TABLE object_locations (
@@ -284,7 +285,7 @@ CREATE TABLE api_tokens (
     user_right USER_RIGHTS,
     secretkey VARCHAR(255) NOT NULL DEFAULT '-',
     used_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    api_tokens ADD COLUMN is_session BOOL NOT NULL DEFAULT FALSE,
+    is_session BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (pub_key) REFERENCES pub_keys(id),

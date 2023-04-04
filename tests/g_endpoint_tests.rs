@@ -93,6 +93,7 @@ fn add_endpoint_test() {
             internal_hostname,
             documentation_path,
             is_public,
+            status: _,
         },
         pubkey_serial,
     ) = db.add_endpoint(&add_request).unwrap();
@@ -124,6 +125,7 @@ fn get_endpoint_test() {
         internal_hostname,
         documentation_path,
         is_public,
+        status: _,
     } = db.get_endpoint(&endpoint_uuid).unwrap();
 
     // Validate returned endpoint
@@ -153,6 +155,7 @@ fn get_endpoint_by_name_test() {
         internal_hostname,
         documentation_path,
         is_public,
+        status: _,
     } = db.get_endpoint_by_name(endpoint_name).unwrap();
 
     // Validate returned endpoint

@@ -607,7 +607,6 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
             hooks: dummy_hooks.clone(),
             sub_path,
         }),
-        force: true,
         reupload: true,
         preferred_endpoint_id: "".to_string(),
         multi_part: false,

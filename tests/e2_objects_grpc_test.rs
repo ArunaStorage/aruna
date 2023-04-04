@@ -379,7 +379,6 @@ async fn get_objects_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -515,7 +514,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -692,7 +690,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -758,7 +755,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -813,7 +809,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -929,7 +924,6 @@ async fn update_outdated_revision_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -977,7 +971,7 @@ async fn update_outdated_revision_grpc_test() {
     assert_eq!(rev_1_object.rev_number, 1);
 
     // Try to update old revision without force --> Error
-    let mut inner_update_request = UpdateObjectRequest {
+    let inner_update_request = UpdateObjectRequest {
         object_id: rev_0_object.id.to_string(),
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
@@ -999,7 +993,6 @@ async fn update_outdated_revision_grpc_test() {
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
         is_specification: false,
-        force: false,
         hash: None,
     };
     let update_object_request = common::grpc_helpers::add_token(
@@ -1009,17 +1002,6 @@ async fn update_outdated_revision_grpc_test() {
     let update_object_response = object_service.update_object(update_object_request).await;
 
     assert!(update_object_response.is_err()); // Fails because it is not the latest revision
-
-    // Use the same request with force --> Error
-    inner_update_request.force = true;
-
-    let update_object_request = common::grpc_helpers::add_token(
-        tonic::Request::new(inner_update_request.clone()),
-        common::oidc::ADMINTOKEN,
-    );
-    let update_object_response = object_service.update_object(update_object_request).await;
-
-    assert!(update_object_response.is_err()); // Fails because it is still not the latest revision
 }
 
 /// The individual steps of this test function contains:
@@ -1097,7 +1079,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1132,7 +1113,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1167,7 +1147,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: true,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1424,7 +1403,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1520,7 +1498,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1634,7 +1611,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1661,7 +1637,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1916,7 +1891,6 @@ async fn add_labels_to_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::REGULARTOKEN,
@@ -2568,7 +2542,6 @@ async fn delete_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::REGULARTOKEN,
