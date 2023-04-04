@@ -282,6 +282,7 @@ impl Database {
                         .unwrap_or_default(),
                     is_public: ep.is_public,
                     is_default,
+                    status: ep.status as i32,
                 }
             })
             .collect::<Vec<_>>();
