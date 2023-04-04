@@ -2445,6 +2445,25 @@ pub fn create_staging_object(
         conn,
     )?;
 
+    // Check if path already exists
+    let exists = paths
+        .filter(database::schema::paths::path.eq(&s3path))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)
+        .optional()?;
+
+    // If it already exists
+    if let Some(existing) = exists {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        if existing.shared_revision_id != object.shared_revision_id {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path, already exists for different object hierarchy".to_string(),
+            ));
+        }
+    }
+
+    // If path not exists -> Add labels
     key_value_pairs.push(ObjectKeyValue {
         id: uuid::Uuid::new_v4(),
         object_id: object.id,
