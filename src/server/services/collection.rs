@@ -8,6 +8,7 @@ use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
 use tokio::task;
+use tonic::Request;
 use tonic::Response;
 
 use super::authz::Authz;
@@ -202,8 +203,8 @@ impl CollectionService for CollectionServiceImpl {
     ///
     async fn update_collection(
         &self,
-        request: tonic::Request<UpdateCollectionRequest>,
-    ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
+        request: Request<UpdateCollectionRequest>,
+    ) -> Result<Response<UpdateCollectionResponse>, tonic::Status> {
         log::info!("Received UpdateCollectionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
