@@ -77,18 +77,14 @@ impl S3 for S3ServiceServer {
         let exists = match hash {
             Some(h) => {
                 if !h.is_empty() && h.len() == 32 {
-                    match self
-                        .backend
+                    self.backend
                         .head_object(ArunaLocation {
                             bucket: format!("b{}", &h[0..2]),
                             path: h[2..].to_string(),
                             ..Default::default()
                         })
                         .await
-                    {
-                        Ok(_) => true,
-                        Err(_) => false,
-                    }
+                        .is_ok()
                 } else {
                     false
                 }
@@ -560,11 +556,8 @@ impl S3 for S3ServiceServer {
                 AsyncSenderSink::new(final_sender),
             );
 
-            match filter_ranges {
-                Some(r) => {
-                    asrw = asrw.add_transformer(Filter::new(r));
-                }
-                _ => (),
+            if let Some(r) = filter_ranges {
+                asrw = asrw.add_transformer(Filter::new(r));
             };
 
             asrw.add_transformer(ZstdDec::new())
@@ -597,7 +590,7 @@ impl S3 for S3ServiceServer {
             .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
 
         let body =
-            Some(StreamingBlob::wrap(final_receiver.clone().map_err(|_| {
+            Some(StreamingBlob::wrap(final_receiver.map_err(|_| {
                 s3_error!(InternalError, "intenal processing error")
             })));
 

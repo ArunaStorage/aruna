@@ -139,9 +139,7 @@ impl DataHandler {
 
                 awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
 
-                let result = awr.process().await;
-
-                result
+                awr.process().await
             });
 
             self.backend.get_object(from_clone, None, tx_send).await?;

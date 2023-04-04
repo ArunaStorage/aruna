@@ -26,7 +26,7 @@ pub fn calculate_ranges(
                 ))
             }
         },
-        None => return Ok((None, None)),
+        None => Ok((None, None)),
     }
 }
 

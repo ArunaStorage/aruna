@@ -31,6 +31,7 @@ pub fn extract_filename_path(path: &str) -> (String, String) {
     (String::from(splits.pop().unwrap_or("")), splits.join("/"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_location_from_hash(
     sha256_hash: &str,
     object_id: &str,
