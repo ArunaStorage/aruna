@@ -342,17 +342,17 @@ impl Database {
         }
 
         // Start transaction to update object assets
-        self.pg_connection
+        let result = self
+            .pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
-
                 // Check if object is latest!
                 let latest = get_latest_obj(conn, object_uuid)?;
                 let is_still_latest = latest.id == object_uuid;
 
                 if !is_still_latest {
                     return Err(ArunaError::InvalidRequest(format!(
-                        "Object {object_uuid} is not latest revision. "
+                        "Object {object_uuid} is not latest revision."
                     )));
                 }
 
@@ -418,10 +418,13 @@ impl Database {
                 for proto_hash in &request.hashes {
                     for db_hash in &db_hashes {
                         if grpc_to_db_hash_type(&proto_hash.alg)? == db_hash.hash_type {
-                            if proto_hash.hash == db_hash.hash || db_hash.hash.is_empty(){
+                            if proto_hash.hash == db_hash.hash || db_hash.hash.is_empty() {
                                 break;
                             } else {
-                                return Err(ArunaError::InvalidRequest(format!("User provided hash {:#?} differs from data proxy calculated hash {:#?}.", db_hash, proto_hash)));
+                                return Err(ArunaError::InvalidRequest(format!(
+                                    "Provided hash: {:#?} != Calculated hash: {:#?}",
+                                    db_hash, proto_hash
+                                )));
                             }
                         }
                     }
@@ -437,21 +440,61 @@ impl Database {
 
                 // Delete all existing hashes -> Will be inserted by proxy hashes
                 delete(hashes)
-                .filter(database::schema::hashes::object_id.eq(&object_uuid))
-                .execute(conn)?;
-
-                // Insert all object hashes which do not already exist
-                insert_into(hashes)
-                    .values(hashes_insert)
+                    .filter(database::schema::hashes::object_id.eq(&object_uuid))
                     .execute(conn)?;
 
+                // Insert all object hashes which do not already exist
+                insert_into(hashes).values(hashes_insert).execute(conn)?;
+
                 if latest.object_status != ObjectStatus::AVAILABLE {
-                    set_object_available(conn, &latest, &collection_uuid, Some(request.content_length))?;
+                    set_object_available(
+                        conn,
+                        &latest,
+                        &collection_uuid,
+                        Some(request.content_length),
+                    )?;
                 }
                 Ok(())
-            })?;
+            });
 
-        Ok(FinalizeObjectResponse {})
+        // Check if finalize succeeded. If not, set object status to ERROR and add internal label with truncated error message
+        match result {
+            Ok(_) => Ok(FinalizeObjectResponse {}),
+            Err(err) => {
+                self.pg_connection
+                    .get()?
+                    .transaction::<_, ArunaError, _>(|conn| {
+                        use crate::database::schema::objects::dsl as object_dsl;
+
+                        // Set object status to ERROR
+                        update(objects)
+                            .filter(object_dsl::id.eq(&object_uuid))
+                            .set(object_dsl::object_status.eq(ObjectStatus::ERROR))
+                            .execute(conn)?;
+
+                        // Truncate error message to at most 255 characters
+                        let mut error_msg = err.to_string();
+                        error_msg.truncate(255);
+
+                        // Add label with error message
+                        let error_label = ObjectKeyValue {
+                            id: uuid::Uuid::new_v4(),
+                            object_id: object_uuid,
+                            key: "app.aruna-storage.org/error".to_string(),
+                            value: error_msg,
+                            key_value_type: KeyValueType::LABEL,
+                        };
+
+                        insert_into(object_key_value)
+                            .values(error_label)
+                            .execute(conn)?;
+
+                        Ok(())
+                    })?;
+
+                Err(err)
+            }
+        }
     }
 
     ///ToDo: Rust Doc
