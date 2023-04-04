@@ -223,6 +223,8 @@ impl Database {
                 collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
                 project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                 permission: map_permissions_rev(api_token.user_right),
+                is_session: api_token.is_session,
+                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
             },
             api_token.id.to_string(),
             secret_key,
@@ -305,6 +307,8 @@ impl Database {
                 collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
                 project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                 permission: map_permissions_rev(api_token.user_right),
+                is_session: api_token.is_session,
+                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
             }),
         })
     }
@@ -400,6 +404,8 @@ impl Database {
                     collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
                     project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                     permission: map_permissions_rev(api_token.user_right),
+                    is_session: api_token.is_session,
+                    used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
                 })
             })
             .collect::<Result<Vec<_>, ArunaError>>()?;
@@ -538,6 +544,7 @@ impl Database {
                 external_id: u.external_id,
                 active: u.active,
                 is_admin,
+                is_service_account: u.is_service_account,
             }),
             project_permissions: perm
                 .iter()
@@ -602,6 +609,7 @@ impl Database {
                 external_id: user.external_id,
                 active: user.active,
                 is_admin,
+                is_service_account: user.is_service_account,
             }),
         })
     }
@@ -694,6 +702,7 @@ impl Database {
                     display_name: us.display_name.to_string(),
                     active: us.active,
                     is_admin: us.active,
+                    is_service_account: us.is_service_account,
                 })
                 .collect::<Vec<_>>(),
             None => Vec::new(),

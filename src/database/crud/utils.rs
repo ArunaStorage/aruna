@@ -528,6 +528,7 @@ pub fn db_to_grpc_object_status(db_status: ObjectStatus) -> Status {
         ObjectStatus::ERROR => Status::Error,
         ObjectStatus::DELETED => Status::Unavailable,
         ObjectStatus::TRASH => Status::Trash,
+        ObjectStatus::FINALIZING => Status::Finalizing,
     }
 }
 
