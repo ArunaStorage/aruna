@@ -373,14 +373,27 @@ impl Database {
                         is_compressed: proto_location.is_compressed,
                     };
 
-                    if encryption_keys
+                    if let Some(enc_key) = encryption_keys
                         .filter(keys_dsl::hash.eq(&sha256_hash))
                         .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
-                        .select(keys_dsl::id)
-                        .first::<uuid::Uuid>(conn)
+                        .first::<EncryptionKey>(conn)
                         .optional()?
-                        .is_none()
                     {
+                        if enc_key.object_id != object_uuid {
+                            let encryption_key_insert = EncryptionKey {
+                                id: uuid::Uuid::new_v4(),
+                                hash: Some(sha256_hash.to_string()),
+                                object_id: object_uuid,
+                                endpoint_id: endpoint_uuid,
+                                is_temporary: false,
+                                encryption_key: enc_key.encryption_key,
+                            };
+
+                            diesel::insert_into(encryption_keys)
+                                .values(&encryption_key_insert)
+                                .execute(conn)?;
+                        }
+                    } else {
                         let encryption_key_insert = EncryptionKey {
                             id: uuid::Uuid::new_v4(),
                             hash: Some(sha256_hash.to_string()),
@@ -983,7 +996,7 @@ impl Database {
         let key_info = self
             .pg_connection
             .get()?
-            .transaction::<(Option<EncryptionKey>, bool), Error, _>(|conn| {
+            .transaction::<(Option<EncryptionKey>, bool), ArunaError, _>(|conn| {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
@@ -1012,20 +1025,20 @@ impl Database {
                                 .optional()?
                             {
                                 Some(kk) => {
-                                    let key_insert = EncryptionKey {
+                                    let encryption_key_insert = EncryptionKey {
                                         id: uuid::Uuid::new_v4(),
-                                        hash: Some(request.hash.to_string()),
+                                        hash: Some(request.hash.clone()),
                                         object_id: req_object.id,
                                         endpoint_id: endpoint_uuid,
                                         is_temporary: false,
-                                        encryption_key: kk.encryption_key,
+                                        encryption_key: kk.encryption_key.to_string(),
                                     };
 
                                     insert_into(encryption_keys)
-                                        .values(&key_insert)
+                                        .values(&encryption_key_insert)
                                         .execute(conn)?;
 
-                                    Some(key_insert)
+                                    Some(encryption_key_insert)
                                 }
                                 None => None,
                             }
@@ -4083,8 +4096,6 @@ pub fn delete_multiple_objects(
     relevant_collections.sort();
     relevant_collections.dedup();
 
-    //dbg!(references.clone(), object_id_shared_rev_id.clone());
-
     for rel_col in relevant_collections {
         for reference in references.clone() {
             if reference.collection_id == rel_col {
@@ -4609,9 +4620,9 @@ fn set_object_available(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     object: &Object,
     coll_uuid: &uuid::Uuid,
-    measures_length: Option<i64>,
+    measured_length: Option<i64>,
 ) -> Result<(), ArunaError> {
-    let content_length = match measures_length {
+    let content_length = match measured_length {
         Some(l) => l,
         None => object.content_len,
     };
