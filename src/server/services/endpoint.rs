@@ -241,7 +241,8 @@ impl TryFrom<Endpoint> for ProtoEndpoint {
                 Some(path) => path,
             },
             is_public: db_endpoint.is_public,
-            is_default: false, //ToDo: How to to know default from outside?
+            is_default: false,
+            status: db_endpoint.status as i32, //ToDo: How to to know default from outside?
         })
     }
 }
