@@ -2617,6 +2617,7 @@ pub fn update_object_init(
                 &current_object_uuid,
                 creator_uuid,
                 &collection_uuid,
+                endpoint_uuid,
                 &staging_object,
             )
         } else {
@@ -2898,6 +2899,7 @@ pub fn update_object_in_place(
     object_uuid: &uuid::Uuid,
     user_uuid: &uuid::Uuid,
     collection_uuid: &uuid::Uuid,
+    endpoint_uuid: Option<&uuid::Uuid>,
     stage_object: &StageObject,
 ) -> Result<Object, ArunaError> {
     // Get mutable object record from database
@@ -2991,6 +2993,16 @@ pub fn update_object_in_place(
         value: s3bucket,
         key_value_type: KeyValueType::LABEL,
     });
+
+    if let Some(endpoint) = endpoint_uuid {
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: *object_uuid,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
 
     delete(object_key_value)
         .filter(database::schema::object_key_value::object_id.eq(&object_uuid))
