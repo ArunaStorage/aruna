@@ -39,7 +39,7 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn try_connect_default_endpoint(
+    async fn _try_connect_default_endpoint(
         &self,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Evaluate endpoint url
@@ -195,7 +195,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Evaluate endpoint id
         let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
-            self.default_endpoint.id.clone()
+            self.default_endpoint.id
         } else {
             uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
         };
@@ -204,7 +204,12 @@ impl ObjectService for ObjectServiceImpl {
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
         let mut response = task::spawn_blocking(move || {
-            database_clone.create_object(&inner_request_clone, &creator_id, new_object_uuid, &endpoint_uuid)
+            database_clone.create_object(
+                &inner_request_clone,
+                &creator_id,
+                new_object_uuid,
+                &endpoint_uuid,
+            )
         })
         .await
         .map_err(ArunaError::from)??;
@@ -288,7 +293,8 @@ impl ObjectService for ObjectServiceImpl {
         let database_clone = self.database.clone();
         let endpoint_clone = self.default_endpoint.clone();
         let response = task::spawn_blocking(move || {
-            let proto_object_url = database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
+            let proto_object_url =
+                database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
 
             let object_data = match &proto_object_url.object {
                 Some(p) => p,
@@ -323,7 +329,9 @@ impl ObjectService for ObjectServiceImpl {
                         endpoint_option = Some(label.value.to_string());
                     }
 
-                    if s3bucket_option.is_some() && s3key_option.is_some() && endpoint_option.is_some()
+                    if s3bucket_option.is_some()
+                        && s3key_option.is_some()
+                        && endpoint_option.is_some()
                     {
                         break;
                     }
@@ -364,9 +372,9 @@ impl ObjectService for ObjectServiceImpl {
                         endpoint_proxy_hostname.as_str(), // Will be "sanitized" in the sign_url(...) function
                         604800, // Default 1 week until requests support custom duration
                     )
-                        .map_err(|err| {
-                            tonic::Status::new(Code::Internal, format!("Url signing failed: {err}"))
-                        })?,
+                    .map_err(|err| {
+                        tonic::Status::new(Code::Internal, format!("Url signing failed: {err}"))
+                    })?,
                 }),
             })
         })
@@ -546,7 +554,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Evaluate endpoint id
         let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
-            self.default_endpoint.id.clone()
+            self.default_endpoint.id
         } else {
             uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
         };
@@ -577,7 +585,12 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let mut response = task::spawn_blocking(move || {
-            database_clone.update_object(inner_request, &creator_id, new_object_uuid, &endpoint_uuid)
+            database_clone.update_object(
+                inner_request,
+                &creator_id,
+                new_object_uuid,
+                &endpoint_uuid,
+            )
         })
         .await
         .map_err(ArunaError::from)??;
