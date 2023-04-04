@@ -189,6 +189,7 @@ impl Database {
         request: &InitializeNewObjectRequest,
         creator_uuid: &uuid::Uuid,
         object_uuid: uuid::Uuid,
+        endpoint_uuid: &uuid::Uuid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
@@ -209,6 +210,7 @@ impl Database {
                     &collection_uuid,
                     creator_uuid,
                     request.is_specification,
+                    Some(endpoint_uuid),
                 )?)
             })?;
 
@@ -503,6 +505,7 @@ impl Database {
         request: UpdateObjectRequest,
         creator_uuid: &uuid::Uuid,
         new_obj_id: uuid::Uuid,
+        endpoint_uuid: &uuid::Uuid,
     ) -> Result<UpdateObjectResponse, ArunaError> {
         if let Some(sobj) = request.object {
             let parsed_old_id = uuid::Uuid::parse_str(&request.object_id)?;
@@ -519,6 +522,7 @@ impl Database {
                         new_obj_id,
                         parsed_col_id,
                         creator_uuid,
+                        Some(endpoint_uuid),
                         request.reupload,
                         request.is_specification,
                     )?;
@@ -1022,8 +1026,8 @@ impl Database {
                                         .execute(conn)?;
 
                                     Some(key_insert)
-                                },
-                                None => None
+                                }
+                                None => None,
                             }
                         } else {
                             None
@@ -2194,7 +2198,7 @@ impl Database {
     /// ## Arguments:
     ///
     /// * `GetOrCreateObjectByPathRequest` -
-    ///   The request contains the information needed to fetch or create/update an object.
+    ///   The request containing the information needed to fetch or create/update an object.
     ///
     /// ## Returns:
     ///
@@ -2226,6 +2230,9 @@ impl Database {
 
         let access_key =
             uuid::Uuid::parse_str(request.access_key.as_str()).map_err(ArunaError::from)?;
+
+        let endpoint_uuid =
+            uuid::Uuid::parse_str(request.endpoint_id.as_str()).map_err(ArunaError::from)?;
 
         let response = self
             .pg_connection
@@ -2292,6 +2299,7 @@ impl Database {
                                     staging_object_uuid,
                                     collection_uuid,
                                     &creator_uuid,
+                                    Some(&endpoint_uuid),
                                     true,
                                     false,
                                 )?;
@@ -2328,6 +2336,7 @@ impl Database {
                                 &collection_uuid,
                                 &creator_uuid,
                                 false,
+                                Some(&endpoint_uuid),
                             )?;
 
                             Ok(GetOrCreateObjectByPathResponse {
@@ -2422,6 +2431,7 @@ pub fn create_staging_object(
     collection_uuid: &uuid::Uuid,
     creator_uuid: &uuid::Uuid,
     is_collection_specification: bool,
+    endpoint_uuid: Option<&uuid::Uuid>,
 ) -> Result<Object, ArunaError> {
     //Define source object from updated request; None if empty
     let source: Option<Source> = match &staging_object.source {
@@ -2531,6 +2541,16 @@ pub fn create_staging_object(
         key_value_type: KeyValueType::LABEL,
     });
 
+    if let Some(endpoint) = endpoint_uuid {
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: object.id,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
+
     if let Some(sour) = source {
         diesel::insert_into(sources).values(&sour).execute(conn)?;
     }
@@ -2570,6 +2590,7 @@ pub fn update_object_init(
     staging_object_uuid: uuid::Uuid,
     collection_uuid: uuid::Uuid,
     creator_uuid: &uuid::Uuid,
+    endpoint_uuid: Option<&uuid::Uuid>,
     reupload: bool,
     is_collection_specification: bool,
 ) -> Result<Object, ArunaError> {
@@ -2733,6 +2754,16 @@ pub fn update_object_init(
         value: s3bucket,
         key_value_type: KeyValueType::LABEL,
     });
+
+    if let Some(endpoint) = endpoint_uuid {
+        key_value_pairs.push(ObjectKeyValue {
+            id: uuid::Uuid::new_v4(),
+            object_id: staging_object_uuid,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
 
     // Insert entities which are always created on update
     diesel::insert_into(objects)
@@ -4581,6 +4612,12 @@ fn set_object_available(
             database::schema::objects::content_len.eq(content_length),
         ))
         .get_result::<Object>(conn)?;
+
+    // Delete endpoint label as multipart finish is already running/done at this point
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::object_id.eq(object.id))
+        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/endpoint_id"))
+        .execute(conn)?;
 
     // Get fq_path from label
     let path_label = object_key_value

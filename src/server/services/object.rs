@@ -78,9 +78,9 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the specific data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn _try_connect_endpoint(
+    async fn try_connect_endpoint(
         &self,
-        _endpoint_uuid: uuid::Uuid,
+        _endpoint_uuid: &uuid::Uuid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
         /*
@@ -193,11 +193,18 @@ impl ObjectService for ObjectServiceImpl {
         // Generate uuid for staging object
         let new_object_uuid = uuid::Uuid::new_v4();
 
+        // Evaluate endpoint id
+        let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
+            self.default_endpoint.id.clone()
+        } else {
+            uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
+        };
+
         // Create Object in database
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
         let mut response = task::spawn_blocking(move || {
-            database_clone.create_object(&inner_request_clone, &creator_id, new_object_uuid)
+            database_clone.create_object(&inner_request_clone, &creator_id, new_object_uuid, &endpoint_uuid)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -205,7 +212,7 @@ impl ObjectService for ObjectServiceImpl {
         // Fill upload id of response
         response.upload_id = if inner_request.multipart {
             // Connect to default data proxy endpoint
-            let mut data_proxy = self.try_connect_default_endpoint().await?;
+            let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
             // Init multipart upload
             let response = data_proxy
@@ -279,85 +286,99 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check object status == INITIALIZING before url creation
         let database_clone = self.database.clone();
-        let proto_object_url = task::spawn_blocking(move || {
-            database_clone.get_object_by_id(&object_uuid, &collection_uuid)
+        let endpoint_clone = self.default_endpoint.clone();
+        let response = task::spawn_blocking(move || {
+            let proto_object_url = database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
+
+            let object_data = match &proto_object_url.object {
+                Some(p) => p,
+                None => {
+                    return Err(Status::invalid_argument("object not found"));
+                }
+            };
+            if grpc_to_db_object_status(&object_data.status) != ObjectStatus::INITIALIZING {
+                return Err(Status::new(
+                    Code::InvalidArgument,
+                    "Upload urls can only be generated for objects in staging phase",
+                ));
+            }
+
+            // Create presigned upload url
+            let mut endpoint_option: Option<String> = None;
+            let mut s3bucket_option: Option<String> = None;
+            let mut s3key_option: Option<String> = None;
+            if let Some(object_info) = proto_object_url.object {
+                if object_info.status != ProtoStatus::Initializing as i32 {
+                    return Err(tonic::Status::invalid_argument(format!(
+                        "object {object_uuid} is not in staging phase."
+                    )));
+                }
+
+                for label in object_info.labels {
+                    if label.key == *"app.aruna-storage.org/new_path" {
+                        s3key_option = Some(label.value.to_string());
+                    } else if label.key == *"app.aruna-storage.org/bucket" {
+                        s3bucket_option = Some(label.value.to_string());
+                    } else if label.key == *"app.aruna-storage.org/endpoint_id" {
+                        endpoint_option = Some(label.value.to_string());
+                    }
+
+                    if s3bucket_option.is_some() && s3key_option.is_some() && endpoint_option.is_some()
+                    {
+                        break;
+                    }
+                }
+            }
+            let s3key = s3key_option
+                .ok_or_else(|| {
+                    Status::new(Code::Internal, "Staging object has no internal path label")
+                })?
+                .replace('/', "");
+
+            let s3bucket = s3bucket_option.ok_or_else(|| {
+                Status::new(
+                    Code::Internal,
+                    "Staging object has no internal bucket label",
+                )
+            })?;
+
+            let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
+                let ep_uuid = uuid::Uuid::parse_str(&endpoint_uuid).map_err(ArunaError::from)?;
+                database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
+            } else {
+                endpoint_clone.proxy_hostname.to_string()
+            };
+
+            Ok(GetUploadUrlResponse {
+                url: Some(Url {
+                    url: sign_url(
+                        Method::PUT,
+                        &api_token.id.to_string(),
+                        &api_token.secretkey,
+                        endpoint_proxy_hostname.starts_with("https://"),
+                        inner_request.multipart,
+                        part_number,
+                        &inner_request.upload_id,
+                        &s3bucket,
+                        &s3key,
+                        endpoint_proxy_hostname.as_str(), // Will be "sanitized" in the sign_url(...) function
+                        604800, // Default 1 week until requests support custom duration
+                    )
+                        .map_err(|err| {
+                            tonic::Status::new(Code::Internal, format!("Url signing failed: {err}"))
+                        })?,
+                }),
+            })
         })
         .await
         .map_err(ArunaError::from)??;
 
-        let object_data = match &proto_object_url.object {
-            Some(p) => p,
-            None => {
-                return Err(Status::invalid_argument("object not found"));
-            }
-        };
-        if grpc_to_db_object_status(&object_data.status) != ObjectStatus::INITIALIZING {
-            return Err(Status::new(
-                Code::InvalidArgument,
-                "Upload urls can only be generated for objects in staging phase",
-            ));
-        }
-
-        // Create presigned upload url
-        let mut s3bucket_option: Option<String> = None;
-        let mut s3key_option: Option<String> = None;
-        if let Some(object_info) = proto_object_url.object {
-            if object_info.status != ProtoStatus::Initializing as i32 {
-                return Err(tonic::Status::invalid_argument(format!(
-                    "object {object_uuid} is not in staging phase."
-                )));
-            }
-
-            for label in object_info.labels {
-                if label.key == *"app.aruna-storage.org/new_path" {
-                    s3key_option = Some(label.value.to_string());
-                } else if label.key == *"app.aruna-storage.org/bucket" {
-                    s3bucket_option = Some(label.value.to_string());
-                }
-
-                if s3bucket_option.is_some() && s3key_option.is_some() {
-                    break;
-                }
-            }
-        }
-        let s3key = s3key_option
-            .ok_or_else(|| {
-                Status::new(Code::Internal, "Staging object has no internal path label")
-            })?
-            .replace('/', "");
-
-        let s3bucket = s3bucket_option.ok_or_else(|| {
-            Status::new(
-                Code::Internal,
-                "Staging object has no internal bucket label",
-            )
-        })?;
-
         // Self sign upload url
-        let response = Response::new(GetUploadUrlResponse {
-            url: Some(Url {
-                url: sign_url(
-                    Method::PUT,
-                    &api_token.id.to_string(),
-                    &api_token.secretkey,
-                    self.default_endpoint.proxy_hostname.starts_with("https://"),
-                    inner_request.multipart,
-                    part_number,
-                    &inner_request.upload_id,
-                    &s3bucket,
-                    &s3key,
-                    &self.default_endpoint.proxy_hostname, // Will be "sanitized" in the sign_url(...) function
-                    604800, // Default 1 week until requests support custom duration
-                )
-                .map_err(|err| {
-                    tonic::Status::new(Code::Internal, format!("Url signing failed: {err}"))
-                })?,
-            }),
-        });
+        let grpc_response = Response::new(response);
 
         log::info!("Sending GetUploadUrlResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     async fn finish_object_staging(
@@ -403,22 +424,32 @@ impl ObjectService for ObjectServiceImpl {
             ));
         }
 
+        // Process internal labels
         let mut upload_path = "".to_string();
+        let mut endpoint_label_value = "".to_string();
         for label in staging_object.labels {
             if label.key == *"app.aruna-storage.org/new_path" {
                 if upload_path.is_empty() {
                     upload_path = label.value;
                 } else {
                     upload_path = upload_path + &label.value;
-                    break;
+
+                    if !endpoint_label_value.is_empty() {
+                        break;
+                    }
                 }
             } else if label.key == *"app.aruna-storage.org/bucket" {
                 if upload_path.is_empty() {
                     upload_path = label.value;
                 } else {
                     upload_path = label.value + &upload_path;
-                    break;
+
+                    if !endpoint_label_value.is_empty() {
+                        break;
+                    }
                 }
+            } else if label.key == *"app.aruna-storage.org/endpoint" {
+                endpoint_label_value = label.value;
             }
         }
         if upload_path.is_empty() {
@@ -426,6 +457,12 @@ impl ObjectService for ObjectServiceImpl {
                 "No temp upload path for object available",
             ));
         }
+        if endpoint_label_value.is_empty() {
+            endpoint_label_value = self.default_endpoint.id.to_string();
+        }
+
+        let endpoint_uuid = uuid::Uuid::parse_str(&endpoint_label_value)
+            .map_err(|_| Status::invalid_argument("Unable to parse provided endpoint id"))?;
 
         // Only finish the upload if no_upload == false
         // This will otherwise skip the data proxy finish routine
@@ -450,8 +487,8 @@ impl ObjectService for ObjectServiceImpl {
                     part_etags: finished_parts,
                 };
 
-                //ToDo: Get the correct data proxy where the user uploaded the data!
-                let mut data_proxy = self.try_connect_default_endpoint().await?;
+                // Connect to the data proxy where the user (hopefully) uploaded the data
+                let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
                 // Execute the proxy request and get the result
                 let proxy_result = data_proxy
@@ -507,10 +544,17 @@ impl ObjectService for ObjectServiceImpl {
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
+        // Evaluate endpoint id
+        let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
+            self.default_endpoint.id.clone()
+        } else {
+            uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
+        };
+
         let upload_id = if inner_request.reupload {
             if inner_request.multi_part {
                 // Connect to default data proxy endpoint
-                let mut data_proxy = self.try_connect_default_endpoint().await?;
+                let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
                 // Init multipart upload
                 let response = data_proxy
@@ -533,7 +577,7 @@ impl ObjectService for ObjectServiceImpl {
         // Create Object in database
         let database_clone = self.database.clone();
         let mut response = task::spawn_blocking(move || {
-            database_clone.update_object(inner_request, &creator_id, new_object_uuid)
+            database_clone.update_object(inner_request, &creator_id, new_object_uuid, &endpoint_uuid)
         })
         .await
         .map_err(ArunaError::from)??;
