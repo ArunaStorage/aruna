@@ -446,13 +446,15 @@ fn update_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
+    let _sobj_1 = db
+        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
+        .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -482,13 +484,15 @@ fn update_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
+    let _sobj_2 = db
+        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
+        .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -636,13 +640,15 @@ fn pin_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
+    let _sobj_1 = db
+        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
+        .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -672,13 +678,15 @@ fn pin_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
+    let _sobj_2 = db
+        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
+        .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -783,13 +791,15 @@ fn delete_collection_test() {
     };
     let obj_1_id = uuid::Uuid::new_v4();
 
-    let _sobj_1 = db.create_object(&new_obj_1, &creator, obj_1_id).unwrap();
+    let _sobj_1 = db
+        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
+        .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -828,13 +838,15 @@ fn delete_collection_test() {
 
     let obj_2_id = uuid::Uuid::new_v4();
 
-    let _sobj_2 = db.create_object(&new_obj_2, &creator, obj_2_id).unwrap();
+    let _sobj_2 = db
+        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
+        .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -948,7 +960,7 @@ pub fn test_collection_materialized_views_stats() {
     };
 
     let init_object_response = db
-        .create_object(&init_object_request, &creator, new_object_id)
+        .create_object(&init_object_request, &creator, new_object_id, &endpoint_id)
         .unwrap();
 
     assert_eq!(&init_object_response.object_id, &new_object_id.to_string());
@@ -968,7 +980,7 @@ pub fn test_collection_materialized_views_stats() {
         upload_id,
         collection_id: collection_id.to_string(),
         hash: Some(finish_hash),
-        no_upload: false,
+        no_upload: true,
         completed_parts: vec![],
         auto_update: true,
     };

@@ -146,7 +146,7 @@ async fn create_object_with_path_grpc_test() {
                 hash: "4ec2d656985e3d823b81cc2cd9b56ec27ab1303cfebaf5f95c37d2fe1661a779"
                     .to_string(),
             }),
-            no_upload: false,
+            no_upload: true,
             completed_parts: vec![],
             auto_update: true,
         }),
