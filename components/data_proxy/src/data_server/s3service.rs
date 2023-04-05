@@ -98,7 +98,7 @@ impl S3 for S3ServiceServer {
         let mut sha256_hash = Sha256::new();
         let mut final_md5 = String::new();
         let mut final_sha256 = String::new();
-
+        let mut size_counter = 0;
         // If the object exists and the signatures match -> Skip the download
 
         if !exists {
@@ -110,8 +110,10 @@ impl S3 for S3ServiceServer {
                     let shaed_stream =
                         md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
 
+                    let sized_stream = shaed_stream.inspect_ok(|by| size_counter += by.len());
+
                     let mut awr = ArunaStreamReadWriter::new_with_sink(
-                        shaed_stream,
+                        sized_stream,
                         BufferedS3Sink::new(
                             self.backend.clone(),
                             location.clone(),
@@ -145,6 +147,20 @@ impl S3 for S3ServiceServer {
                         log::error!("{}", e);
                         s3_error!(InternalError, "Internal data transformer processing error")
                     })?;
+
+                    if size_counter as i64 != req.input.content_length {
+                        self.backend.delete_object(location).await.map_err(|e| {
+                            log::error!(
+                                "PUT: Unable to delete object, after wrong content_len: {}",
+                                e
+                            );
+                            s3_error!(InternalError, "PUT: Unable to delete object")
+                        })?;
+                        return Err(s3_error!(
+                            UnexpectedContent,
+                            "Content length does not match"
+                        ));
+                    }
                 }
                 None => {
                     return Err(s3_error!(
