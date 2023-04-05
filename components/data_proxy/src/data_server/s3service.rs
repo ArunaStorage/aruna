@@ -59,7 +59,12 @@ impl S3ServiceServer {
 impl S3 for S3ServiceServer {
     #[tracing::instrument]
     async fn put_object(&self, req: S3Request<PutObjectInput>) -> S3Result<PutObjectOutput> {
-        dbg!(req.input.tagging);
+        if req.input.content_length == 0 {
+            return Err(s3_error!(
+                MissingContentLength,
+                "Missing or invalid (0) content-length"
+            ));
+        }
 
         let mut anotif = ArunaNotifier::new(
             self.data_handler.internal_notifier_service.clone(),
@@ -298,6 +303,12 @@ impl S3 for S3ServiceServer {
 
     #[tracing::instrument]
     async fn upload_part(&self, req: S3Request<UploadPartInput>) -> S3Result<UploadPartOutput> {
+        if req.input.content_length == 0 {
+            return Err(s3_error!(
+                MissingContentLength,
+                "Missing or invalid (0) content-length"
+            ));
+        }
         let mut anotif = ArunaNotifier::new(
             self.data_handler.internal_notifier_service.clone(),
             self.data_handler.settings.clone(),
