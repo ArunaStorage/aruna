@@ -83,6 +83,7 @@ impl Database {
             user_id: user_id.to_string(),
         })
     }
+
     /// Activates a registered user, only activated users can create new api tokens.
     ///
     /// ## Arguments
@@ -115,6 +116,34 @@ impl Database {
 
         // Create successfull response
         Ok(ActivateUserResponse {})
+    }
+
+    /// Deactivates a registered user.
+    ///
+    /// ## Arguments
+    ///
+    /// * user_uuid: &uuid::Uuid`: the user id that should be deactivated
+    ///
+    /// ## Returns
+    ///
+    /// * `Result<(), ArunaError>`: Ok() result return indicates success
+    ///
+    pub fn deactivate_user(&self, user_uuid: &uuid::Uuid) -> Result<(), ArunaError> {
+        use crate::database::schema::users::dsl::*;
+
+        // Update the user
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                update(users)
+                    .filter(id.eq(user_uuid))
+                    .set(active.eq(false))
+                    .execute(conn)?;
+                Ok(())
+            })?;
+
+        // Create successful response
+        Ok(())
     }
 
     /// Creates a new API Token. This request can be made either with an already existing

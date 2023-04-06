@@ -17,6 +17,7 @@ use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::*;
 use std::sync::Arc;
+use tokio::task;
 use tonic::Response;
 
 // This automatically creates the UserServiceImpl struct and ::new methods
@@ -62,6 +63,52 @@ impl UserService for UserServiceImpl {
                 "ArunaToken not allowed, use OIDC Token.",
             ))
         }
+    }
+
+    /// Deactivate user deactivates an activated user.
+    ///
+    ///  ## Arguments
+    ///
+    /// * request: DeactivateUserRequest: gRPC request, that contains the user_id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<DeactivateUserResponse>, tonic::Status>: Empty response indicates success
+    ///
+    async fn deactivate_user(
+        &self,
+        request: tonic::Request<DeactivateUserRequest>,
+    ) -> Result<tonic::Response<DeactivateUserResponse>, tonic::Status> {
+        log::info!("Received DeactivateUserRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Check permissions
+        let token_user_uuid = self.authz.admin_authorize(request.metadata()).await?;
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Evaluate user id from request
+        let user_uuid = if inner_request.user_id.is_empty() {
+            token_user_uuid
+        } else {
+            uuid::Uuid::parse_str(&inner_request.user_id).map_err(|_| {
+                ArunaError::InvalidRequest("Can not parse provided user id".to_string())
+            })?
+        };
+
+        // Deactivate user with user_uuid
+        let database_clone = self.database.clone();
+        task::spawn_blocking(move || database_clone.deactivate_user(&user_uuid))
+            .await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response
+        let response = tonic::Response::new(DeactivateUserResponse {});
+
+        log::info!("Sending DeactivateUserResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     /// Activate user activates a not activated but registered user
