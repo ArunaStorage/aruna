@@ -1031,7 +1031,7 @@ impl Database {
                                         object_id: req_object.id,
                                         endpoint_id: endpoint_uuid,
                                         is_temporary: false,
-                                        encryption_key: kk.encryption_key.to_string(),
+                                        encryption_key: kk.encryption_key,
                                     };
 
                                     insert_into(encryption_keys)

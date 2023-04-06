@@ -725,7 +725,7 @@ impl Database {
                 active: user.active,
                 is_admin,
                 is_service_account: user.is_service_account,
-                email: user.email.to_string(),
+                email: user.email,
             }),
         })
     }
@@ -783,7 +783,7 @@ impl Database {
                 active: user.active,
                 is_admin,
                 is_service_account: user.is_service_account,
-                email: user.email.to_string(),
+                email: user.email,
             }),
         })
     }

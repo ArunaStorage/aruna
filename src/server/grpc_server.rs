@@ -44,13 +44,7 @@ impl ServiceServer {
         let db_ref = Arc::new(db);
 
         let dev_env = match env::var("ARUNA_DEV_ENV") {
-            Ok(var) => {
-                if var.to_ascii_uppercase() == "TRUE" {
-                    true
-                } else {
-                    false
-                }
-            }
+            Ok(var) => var.to_ascii_uppercase() == "TRUE",
             _ => false,
         };
 

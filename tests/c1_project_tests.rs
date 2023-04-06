@@ -147,7 +147,7 @@ fn add_remove_project_user_test() {
         let register_user_request = RegisterUserRequest {
             display_name: format!("Random User {}", num),
             email: format!("randy{num}@mail.dev"),
-            project: format!("Some really nice project"),
+            project: "Some really nice project".to_string(),
         };
         let user_id = db
             .register_user(
