@@ -351,6 +351,7 @@ diesel::table! {
         display_name -> Text,
         active -> Bool,
         is_service_account -> Bool,
+        email -> Varchar,
     }
 }
 

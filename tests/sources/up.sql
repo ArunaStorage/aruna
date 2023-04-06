@@ -55,8 +55,9 @@ CREATE TABLE users (
     id UUID PRIMARY KEY,
     external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
+    email VARCHAR(511) DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE, -- Users must be activated by an administrator
-    is_service_account BOOL NOT NULL DEFAULT FALSE
+    is_service_account BOOL NOT NULL DEFAULT FALSE,
 );
 -- Join table to map users to multiple identity providers
 -- Currently not used

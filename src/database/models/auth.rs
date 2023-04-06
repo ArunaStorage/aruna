@@ -18,6 +18,7 @@ pub struct User {
     pub display_name: String,
     pub active: bool,
     pub is_service_account: bool,
+    pub email: String,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug)]

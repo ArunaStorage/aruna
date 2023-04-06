@@ -66,6 +66,7 @@ impl Database {
             external_id: ext_id,
             active: false,
             is_service_account: false,
+            email: request.email,
         };
 
         // Insert the user and return the user_id
@@ -575,6 +576,7 @@ impl Database {
                 active: u.active,
                 is_admin,
                 is_service_account: u.is_service_account,
+                email: u.email,
             }),
             project_permissions: perm
                 .iter()
@@ -634,6 +636,7 @@ impl Database {
                         active: user.active,
                         is_admin: admin_user_perm.is_some(),
                         is_service_account: user.is_service_account,
+                        email: user.email.to_string(),
                     };
 
                     if include_permissions {
@@ -721,6 +724,7 @@ impl Database {
                 active: user.active,
                 is_admin,
                 is_service_account: user.is_service_account,
+                email: user.email.to_string(),
             }),
         })
     }
@@ -814,6 +818,7 @@ impl Database {
                     active: us.active,
                     is_admin: us.active,
                     is_service_account: us.is_service_account,
+                    email: us.email.to_string(),
                 })
                 .collect::<Vec<_>>(),
             None => Vec::new(),
