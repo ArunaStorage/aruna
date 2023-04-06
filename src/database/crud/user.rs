@@ -24,7 +24,8 @@ use aruna_rust_api::api::storage::services::v1::{
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
     GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetUserProjectsRequest,
     GetUserProjectsResponse, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
-    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject, UserWithPerms,
+    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UpdateUserEmailRequest,
+    UpdateUserEmailResponse, UserProject, UserWithPerms,
 };
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -717,6 +718,64 @@ impl Database {
 
         // Parse to gRPC format and return
         Ok(UpdateUserDisplayNameResponse {
+            user: Some(gRPCUser {
+                id: user.id.to_string(),
+                display_name: user.display_name,
+                external_id: user.external_id,
+                active: user.active,
+                is_admin,
+                is_service_account: user.is_service_account,
+                email: user.email.to_string(),
+            }),
+        })
+    }
+
+    /// Updates the email for the requesting user.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateUserDisplayNameRequest: Contains the new email
+    /// * user_id: String: User id validated by personal aruna_token
+    ///
+    /// ## Returns
+    ///
+    /// * Result<UpdateUserDisplayNameResponse, ArunaError>:
+    /// Basic information about the (updated) requesting user, id, displayname, etc.
+    ///
+    pub fn update_user_email(
+        &self,
+        request: UpdateUserEmailRequest,
+        user_uuid: uuid::Uuid,
+    ) -> Result<UpdateUserEmailResponse, ArunaError> {
+        use crate::database::schema::users::dsl::*;
+
+        // Update user display_name in Database return "new" name
+        let (user, is_admin) = self
+            .pg_connection
+            .get()?
+            .transaction::<(User, bool), ArunaError, _>(|conn| {
+                let admin_user_perm = sql_query(
+                    "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id
+                       FROM user_permissions AS uperm
+                       JOIN projects AS p
+                       ON p.id = uperm.project_id
+                       WHERE uperm.user_id = $1
+                       AND p.flag & 1 = 1
+                       LIMIT 1",
+                )
+                .bind::<Uuid, _>(user_uuid)
+                .get_result::<UserPermission>(conn)
+                .optional()?;
+
+                let update_ret = update(users.filter(id.eq(&user_uuid)))
+                    .set(email.eq(&request.new_email))
+                    .get_result(conn)?;
+
+                Ok((update_ret, admin_user_perm.is_some()))
+            })?;
+
+        // Parse to gRPC format and return
+        Ok(UpdateUserEmailResponse {
             user: Some(gRPCUser {
                 id: user.id.to_string(),
                 display_name: user.display_name,

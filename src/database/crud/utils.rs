@@ -22,6 +22,7 @@ lazy_static! {
     /// the string is static.
     pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$").unwrap();
     pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[a-z0-9\-]+)+/?$").unwrap();
+    pub static ref EMAIL_SCHEMA: Regex = Regex::new(r"^([a-z0-9_+]([a-z0-9_+.]*[a-z0-9_+])?)@([a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6})").unwrap();
 }
 
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp

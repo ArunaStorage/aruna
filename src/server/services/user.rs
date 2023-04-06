@@ -11,7 +11,7 @@
 //!
 use super::authz::Authz;
 use crate::database::connection::Database;
-use crate::database::crud::utils::map_permissions;
+use crate::database::crud::utils::{map_permissions, EMAIL_SCHEMA};
 use crate::error::ArunaError;
 use crate::server::mail_client::MailClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
@@ -19,7 +19,7 @@ use aruna_rust_api::api::storage::services::v1::user_service_server::UserService
 use aruna_rust_api::api::storage::services::v1::*;
 use std::sync::Arc;
 use tokio::task;
-use tonic::Response;
+use tonic::{Request, Response};
 
 // This automatically creates the UserServiceImpl struct and ::new methods
 crate::impl_grpc_server!(UserServiceImpl, mail_client: Option<MailClient>);
@@ -483,6 +483,43 @@ impl UserService for UserServiceImpl {
         );
 
         log::info!("Sending UpdateUserDisplayNameResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
+    }
+
+    /// UpdateUserEmail request changes the email of the current user to a new value
+    /// The email is optional and can be empty if the user does not want to receive notifications via email.
+    ///
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateUserEmailRequest: Contains the new email address
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<UpdateUserEmailResponse>, tonic::Status>: UserInformation like, id, displayname, active status etc.
+    ///
+    async fn update_user_email(
+        &self,
+        request: Request<UpdateUserEmailRequest>,
+    ) -> Result<Response<UpdateUserEmailResponse>, tonic::Status> {
+        log::info!("Received UpdateUserEmailRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        if !EMAIL_SCHEMA.is_match(&request.get_ref().new_email) {
+            return Err(tonic::Status::invalid_argument("Invalid email format"));
+        }
+
+        // Authenticate the user personally
+        let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
+        // Update the display_name and return the new user_info
+        let response = Response::new(
+            self.database
+                .update_user_email(request.into_inner(), user_id)?,
+        );
+
+        log::info!("Sending UpdateUserEmailResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
     }
