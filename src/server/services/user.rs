@@ -569,4 +569,44 @@ impl UserService for UserServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
     }
+
+    /// Fetches all users with permission informations.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetAllUsersRequest: Contains flag if user permissions shall be included in response
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<GetAllUsersResponse>, tonic::Status>:
+    /// UserInformation like, id, displayname, active status and user_permissions for each project etc. of all registered users
+    ///
+    async fn get_all_users(
+        &self,
+        request: tonic::Request<GetAllUsersRequest>,
+    ) -> Result<tonic::Response<GetAllUsersResponse>, tonic::Status> {
+        log::info!("Received GetAllUsersRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Check permissions
+        self.authz.admin_authorize(request.metadata()).await?;
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Deactivate user with user_uuid
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.get_all_users(inner_request.include_permissions)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Return gRPC response
+        let grpc_response = tonic::Response::new(response);
+
+        log::info!("Sending GetAllUsersResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
+    }
 }

@@ -20,15 +20,16 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
-    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
-    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetNotActivatedUsersRequest,
-    GetNotActivatedUsersResponse, GetUserProjectsRequest, GetUserProjectsResponse, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
-    UpdateUserDisplayNameResponse, UserProject,
+    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse,
+    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
+    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetUserProjectsRequest,
+    GetUserProjectsResponse, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UserProject, UserWithPerms,
 };
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
+use crate::database::schema::users::dsl::users;
 use chrono::Utc;
 use diesel::{delete, insert_into};
 use diesel::{prelude::*, sql_query, sql_types::Uuid, update};
@@ -585,6 +586,87 @@ impl Database {
                     service_account: false,
                 })
                 .collect::<Vec<_>>(),
+        })
+    }
+
+    /// Request that returns personal user information of all registered users.
+    ///
+    /// ## Arguments
+    ///
+    /// * include_permissions: &bool: Flag if permissions shall be included in response
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetAllUsersResponse, ArunaError>: Response contains vector with user information of all users
+    ///
+    pub fn get_all_users(
+        &self,
+        include_permissions: bool,
+    ) -> Result<GetAllUsersResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+
+        // Query the user information
+        let user_infos = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<UserWithPerms>, ArunaError, _>(|conn| {
+                let db_users: Vec<User> = users.load::<User>(conn)?;
+
+                let mut users_with_permissions = Vec::new();
+                for user in db_users {
+                    let admin_user_perm = sql_query(
+                        "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id
+                           FROM user_permissions AS uperm
+                           JOIN projects AS p
+                           ON p.id = uperm.project_id
+                           WHERE uperm.user_id = $1
+                           AND p.flag & 1 = 1
+                           LIMIT 1",
+                    )
+                    .bind::<Uuid, _>(user.id)
+                    .get_result::<UserPermission>(conn)
+                    .optional()?;
+
+                    let proto_user = gRPCUser {
+                        id: user.id.to_string(),
+                        external_id: user.external_id.to_string(),
+                        display_name: user.display_name.to_string(),
+                        active: user.active,
+                        is_admin: admin_user_perm.is_some(),
+                        is_service_account: user.is_service_account,
+                    };
+
+                    if include_permissions {
+                        let all_user_permissions = user_permissions
+                            .filter(crate::database::schema::user_permissions::user_id.eq(&user.id))
+                            .load::<UserPermission>(conn)?;
+
+                        users_with_permissions.push(UserWithPerms {
+                            user: Some(proto_user),
+                            project_perms: all_user_permissions
+                                .iter()
+                                .map(|perm| ProjectPermission {
+                                    user_id: perm.user_id.to_string(),
+                                    project_id: perm.project_id.to_string(),
+                                    permission: map_permissions_rev(Some(perm.user_right)),
+                                    service_account: user.is_service_account,
+                                })
+                                .collect::<Vec<_>>(),
+                        })
+                    } else {
+                        users_with_permissions.push(UserWithPerms {
+                            user: Some(proto_user),
+                            project_perms: vec![],
+                        })
+                    }
+                }
+
+                Ok(users_with_permissions)
+            })?;
+
+        // Convert information to gRPC format
+        Ok(GetAllUsersResponse {
+            user_with_perms: user_infos,
         })
     }
 
