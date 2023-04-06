@@ -57,7 +57,7 @@ CREATE TABLE users (
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) DEFAULT '',
     active BOOL NOT NULL DEFAULT FALSE, -- Users must be activated by an administrator
-    is_service_account BOOL NOT NULL DEFAULT FALSE,
+    is_service_account BOOL NOT NULL DEFAULT FALSE
 );
 -- Join table to map users to multiple identity providers
 -- Currently not used
@@ -350,19 +350,21 @@ FROM object_groups AS objgrp
 GROUP BY objgrp.id;
 -- Insert initial data
 -- ADMIN
-INSERT INTO users (id, external_id, display_name, active)
+INSERT INTO users (id, external_id, display_name, email, active)
 VALUES (
         '12345678-1234-1234-1234-111111111111',
         'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
         'admin',
+        '',
         TRUE
     );
 -- REGULAR_USER
-INSERT INTO users (id, external_id, display_name, active)
+INSERT INTO users (id, external_id, display_name, email, active)
 VALUES (
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
         '39893781-320e-4dbf-be39-c06d8b28e897',
         'regular_user',
+        '',
         TRUE
     );
 
