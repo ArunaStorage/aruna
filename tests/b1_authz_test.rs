@@ -96,6 +96,8 @@ fn register_user_test() {
     // Build request for new user
     let req = RegisterUserRequest {
         display_name: "test_user_1".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     // Create new user
     let _resp = db
@@ -113,6 +115,8 @@ fn activate_user_test() {
     // Build request for new user
     let req_2 = RegisterUserRequest {
         display_name: "test_user_2".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     // Create new user
     let resp_2 = db
@@ -122,6 +126,7 @@ fn activate_user_test() {
     // Build request for new user
     let req = ActivateUserRequest {
         user_id: resp_2.user_id,
+        project_perms: None,
     };
 
     db.activate_user(req).unwrap();
@@ -136,6 +141,8 @@ fn create_api_token_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_3".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_3_oidc".to_string())
@@ -145,6 +152,7 @@ fn create_api_token_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -162,6 +170,7 @@ fn create_api_token_test() {
         name: "personal_u1_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     let _token = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
@@ -174,6 +183,7 @@ fn create_api_token_test() {
             timestamp: Some(prost_types::Timestamp::default()),
         }),
         permission: 1,
+        is_session: false,
     };
     let _token = db.create_api_token(req, user_id, pubkey_result).unwrap();
 
@@ -184,6 +194,7 @@ fn create_api_token_test() {
         name: "broken_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     let res = db.create_api_token(req, user_id, pubkey_result);
 
@@ -204,6 +215,8 @@ fn get_api_token_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -213,6 +226,7 @@ fn get_api_token_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -230,6 +244,7 @@ fn get_api_token_test() {
         name: "personal_u2_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     // Create a initial token
     let (initial_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -248,6 +263,7 @@ fn get_api_token_test() {
         name: "collection_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     // Create a initial token
     let (tok, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -278,6 +294,8 @@ fn get_api_tokens_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -287,6 +305,7 @@ fn get_api_tokens_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -304,6 +323,7 @@ fn get_api_tokens_test() {
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     // Create a initial token
     let (_token_a, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -315,6 +335,7 @@ fn get_api_tokens_test() {
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 2,
+        is_session: false,
     };
     // Create a initial token
     let (_token_b, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -344,6 +365,8 @@ fn delete_api_token_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -353,6 +376,7 @@ fn delete_api_token_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -370,6 +394,7 @@ fn delete_api_token_test() {
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     // Create a initial token
     let (token_a, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -403,6 +428,8 @@ fn delete_api_tokens_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -412,6 +439,7 @@ fn delete_api_tokens_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -429,6 +457,7 @@ fn delete_api_tokens_test() {
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
+        is_session: false,
     };
     // Create a initial token
     let _token_a = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -440,6 +469,7 @@ fn delete_api_tokens_test() {
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 2,
+        is_session: false,
     };
     // Create a initial token
     let _token_b = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -472,6 +502,8 @@ fn get_user_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -481,6 +513,7 @@ fn get_user_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -518,6 +551,8 @@ fn get_not_activated_users_test() {
         // Build request for new user
         let req_2 = RegisterUserRequest {
             display_name: format!("test_user_{}", x),
+            email: "e@mail.dev".to_string(),
+            project: "".to_string(),
         };
         // Create new user
         let _resp_2 = db
@@ -557,6 +592,8 @@ fn update_user_display_name_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -566,6 +603,7 @@ fn update_user_display_name_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
     let user_info = db.get_user(user_id).unwrap();
@@ -605,6 +643,8 @@ fn get_user_projects_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -614,6 +654,7 @@ fn get_user_projects_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -675,6 +716,8 @@ fn get_checked_user_id_from_token_test() {
     // Create new user
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
+        email: "e@mail.dev".to_string(),
+        project: "".to_string(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -684,6 +727,7 @@ fn get_checked_user_id_from_token_test() {
     // Activate the user
     let req = ActivateUserRequest {
         user_id: user_resp.user_id,
+        project_perms: None,
     };
     db.activate_user(req).unwrap();
 
@@ -734,6 +778,7 @@ fn get_checked_user_id_from_token_test() {
         name: "personal_u2_token".to_string(),
         expires_at: None,
         permission: 3, // "APPEND permissions" -> Should be ignored
+        is_session: false,
     };
     // Create a initial token
     let (regular_personal_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -748,6 +793,7 @@ fn get_checked_user_id_from_token_test() {
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 2, // READ permissions
+        is_session: false,
     };
     // Create a initial token
     let (project_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -759,6 +805,7 @@ fn get_checked_user_id_from_token_test() {
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 5, // ADMIN permissions
+        is_session: false,
     };
     // Create a initial token
     let (project_token_with_admin, _, _) =
@@ -797,6 +844,7 @@ fn get_checked_user_id_from_token_test() {
         name: "personal_u5_token".to_string(),
         expires_at: None,
         permission: 2, // ADMIN permissions
+        is_session: false,
     };
     // Create a initial token
     let (col_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
@@ -808,6 +856,7 @@ fn get_checked_user_id_from_token_test() {
         name: "personal_u5_token".to_string(),
         expires_at: None,
         permission: 5, // ADMIN permissions
+        is_session: false,
     };
     // Create a initial token
     let (col_token_with_admin, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();

@@ -36,7 +36,7 @@ async fn create_collection_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let user_service = UserServiceImpl::new(db.clone(), authz.clone()).await;
+    let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
     let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
     let collection_service = CollectionServiceImpl::new(db, authz).await;
 

@@ -146,6 +146,8 @@ fn add_remove_project_user_test() {
     for num in 1..5 {
         let register_user_request = RegisterUserRequest {
             display_name: format!("Random User {}", num),
+            email: format!("randy{num}@mail.dev"),
+            project: format!("Some really nice project"),
         };
         let user_id = db
             .register_user(
@@ -156,6 +158,7 @@ fn add_remove_project_user_test() {
             .user_id;
         db.activate_user(ActivateUserRequest {
             user_id: user_id.clone(),
+            project_perms: None,
         })
         .unwrap();
         rnd_user_ids.push(user_id);
@@ -230,6 +233,8 @@ fn edit_project_user_permissions_test() {
     // Register and activate a random user
     let register_user_request = RegisterUserRequest {
         display_name: "Test".to_string(),
+        email: "".to_string(),
+        project: "whatever".to_string(),
     };
     let user_id = db
         .register_user(
@@ -240,6 +245,7 @@ fn edit_project_user_permissions_test() {
         .user_id;
     db.activate_user(ActivateUserRequest {
         user_id: user_id.clone(),
+        project_perms: None,
     })
     .unwrap();
 

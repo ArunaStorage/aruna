@@ -55,7 +55,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let userservice = UserServiceImpl::new(db, authz).await;
+    let userservice = UserServiceImpl::new(db, authz, None).await;
 
     let tokname = if create_token.name.is_empty() {
         format!("token_{}", super::functions::rand_string(5))
@@ -88,6 +88,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
                 }),
             }),
             permission: create_token.permission,
+            is_session: false,
         }),
         &token,
     );
@@ -107,7 +108,7 @@ pub async fn get_token_user_id(token: &str) -> String {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let user_service = UserServiceImpl::new(db, authz).await;
+    let user_service = UserServiceImpl::new(db, authz, None).await;
 
     // Fetch user information associated with token
     let get_user_request = add_token(
