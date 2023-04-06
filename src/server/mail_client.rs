@@ -27,7 +27,7 @@ impl MailClient {
     pub fn send_message(&self, recepient: &str, message: String, subject: &str) -> Result<()> {
         // Open a remote connection to gmail
         let mailer = SmtpTransport::relay(&self.server)?
-            .credentials(self.creds)
+            .credentials(self.creds.clone())
             .build();
 
         let email = Message::builder()

@@ -13,6 +13,7 @@ use super::authz::Authz;
 use crate::database::connection::Database;
 use crate::database::crud::utils::map_permissions;
 use crate::error::ArunaError;
+use crate::server::mail_client::MailClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::*;
@@ -21,7 +22,7 @@ use tokio::task;
 use tonic::Response;
 
 // This automatically creates the UserServiceImpl struct and ::new methods
-crate::impl_grpc_server!(UserServiceImpl);
+crate::impl_grpc_server!(UserServiceImpl, mail_client: Option<MailClient>);
 
 /// Trait created by tonic based on gRPC service definitions from .proto files
 /// .proto files defined in ArunaAPI repo

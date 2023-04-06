@@ -1,8 +1,10 @@
+use std::env;
 use std::sync::Arc;
 
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
+use crate::server::mail_client::MailClient;
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
@@ -40,6 +42,29 @@ impl ServiceServer {
         // Connects to database
         let db = Database::new(&config.clone().config.database_url);
         let db_ref = Arc::new(db);
+
+        let dev_env = match env::var("ARUNA_DEV_ENV") {
+            Ok(var) => {
+                if var.to_ascii_uppercase() == "TRUE" {
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        let mailclient = if !dev_env {
+            match MailClient::new() {
+                Ok(mc) => Some(mc),
+                Err(e) => {
+                    log::error!("Failed to initialize mail_client, err: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         // Initialize instance default data proxy endpoint
         let default_endpoint = db_ref
@@ -87,7 +112,7 @@ impl ServiceServer {
         let endpoint_service =
             EndpointServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let project_service = ProjectServiceImpl::new(db_ref.clone(), authz.clone()).await;
-        let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone()).await;
+        let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone(), mailclient).await;
         let collection_service = CollectionServiceImpl::new(db_ref.clone(), authz.clone()).await;
         let object_service =
             ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
@@ -145,7 +170,7 @@ impl ServiceServer {
         });
 
         match tokio::try_join!(main_server, internal_server) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => {
                 log::error!("Task failed with {}.", err);
             }
