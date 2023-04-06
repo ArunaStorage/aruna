@@ -114,7 +114,7 @@ impl ServiceServer {
 
         log::info!("ArunaServer (external) listening on {}", addr);
 
-        tokio::spawn(async move {
+        let main_server = tokio::spawn(async move {
             Server::builder()
                 .add_service(EndpointServiceServer::new(endpoint_service))
                 .add_service(UserServiceServer::new(user_service))
@@ -127,21 +127,28 @@ impl ServiceServer {
                 .add_service(ServiceAccountServiceServer::new(service_account_service))
                 .serve(addr)
                 .await
-                .unwrap();
         });
 
         let other_addr = "0.0.0.0:50052".parse().unwrap();
         log::info!("ArunaServer (internal) listening on {}", other_addr);
-        Server::builder()
-            .add_service(InternalProxyNotifierServiceServer::new(
-                internal_proxy_notifier_service,
-            ))
-            .add_service(InternalEventServiceServer::new(internal_event_service))
-            .add_service(InternalAuthorizeServiceServer::new(
-                internal_authorize_service,
-            ))
-            .serve(other_addr)
-            .await
-            .unwrap();
+        let internal_server = tokio::spawn(async move {
+            Server::builder()
+                .add_service(InternalProxyNotifierServiceServer::new(
+                    internal_proxy_notifier_service,
+                ))
+                .add_service(InternalEventServiceServer::new(internal_event_service))
+                .add_service(InternalAuthorizeServiceServer::new(
+                    internal_authorize_service,
+                ))
+                .serve(other_addr)
+                .await
+        });
+
+        match tokio::try_join!(main_server, internal_server) {
+            Ok(val) => {}
+            Err(err) => {
+                log::error!("Task failed with {}.", err);
+            }
+        }
     }
 }
