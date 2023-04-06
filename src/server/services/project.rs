@@ -263,7 +263,6 @@ impl ProjectService for ProjectServiceImpl {
     }
 
     /// Get the user_permission of a specific user for the project.
-    /// Needs project admin permissions and the project
     ///
     /// ## Arguments
     ///
@@ -292,12 +291,55 @@ impl ProjectService for ProjectServiceImpl {
         // Execute request and return response
         let response = Response::new(
             self.database
-                .get_userpermission_from_project(request.into_inner(), _admin_user)?,
+                .get_user_permission_from_project(request.into_inner(), _admin_user)?,
         );
 
         log::info!("Sending GetUserPermissionsForProjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
+    }
+
+    /// Get all user permissions associated with a specific project.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetAllUserPermissionsForProjectRequest: Contains project id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<GetAllUserPermissionsForProjectResponse>, tonic::Status>:
+    /// Contains the user permissions associated with the provided project
+    ///
+    async fn get_all_user_permissions_for_project(
+        &self,
+        request: tonic::Request<GetAllUserPermissionsForProjectRequest>,
+    ) -> Result<tonic::Response<GetAllUserPermissionsForProjectResponse>, tonic::Status> {
+        log::info!("Received GetAllUserPermissionsForProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let project_uuid =
+            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+
+        // Authorize user
+        self.authz
+            .project_authorize(request.metadata(), project_uuid, UserRights::READ)
+            .await?;
+
+        // Execute request and return response
+        let database_clone = self.database.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            database_clone.get_all_user_permissions_from_project(&project_uuid)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Return gRPC response
+        let grpc_response = tonic::Response::new(response);
+
+        log::info!("Sending GetAllUserPermissionsForProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     /// EditUserPermissionsForProject updates the user permissions of a specific user

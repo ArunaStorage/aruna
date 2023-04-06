@@ -10,22 +10,27 @@
 //!
 use super::utils::*;
 use crate::database::connection::Database;
-use crate::database::models::auth::{Project, UserPermission};
+use crate::database::models::auth::{Project, User, UserPermission};
 use crate::database::models::collection::Collection;
 use crate::error::ArunaError;
-use aruna_rust_api::api::storage::models::v1::{ProjectOverview, ProjectPermissionDisplayName};
+use aruna_rust_api::api::storage::models::v1::{
+    ProjectOverview, ProjectPermission, ProjectPermissionDisplayName, User as gRPCUser,
+};
 use aruna_rust_api::api::storage::services::v1::{
     AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
-    EditUserPermissionsForProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetProjectsRequest, GetProjectsResponse, GetUserPermissionsForProjectRequest,
-    GetUserPermissionsForProjectResponse, RemoveUserFromProjectRequest,
-    RemoveUserFromProjectResponse, UpdateProjectRequest, UpdateProjectResponse,
+    EditUserPermissionsForProjectResponse, GetAllUserPermissionsForProjectResponse,
+    GetProjectRequest, GetProjectResponse, GetProjectsRequest, GetProjectsResponse,
+    GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
+    RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
+    UpdateProjectResponse, UserWithProjectPermissions,
 };
 
+use crate::database;
 use chrono::Utc;
 use diesel::result::Error;
-use diesel::{delete, insert_into, prelude::*, update};
+use diesel::sql_types::Uuid;
+use diesel::{delete, insert_into, prelude::*, sql_query, update};
 
 impl Database {
     /// Creates a new project in the database. Adds the creating user to the project with admin permissions.
@@ -569,7 +574,7 @@ impl Database {
     ///
     /// * Result<GetUserPermissionsForProjectResponse, ArunaError>: Placeholder, currently empty
     ///
-    pub fn get_userpermission_from_project(
+    pub fn get_user_permission_from_project(
         &self,
         request: GetUserPermissionsForProjectRequest,
         _req_user_id: uuid::Uuid,
@@ -584,23 +589,21 @@ impl Database {
         let permissions = self
             .pg_connection
             .get()?
-            .transaction::<(Option<UserPermission>, Option<String>), diesel::result::Error, _>(
-                |conn| {
-                    let user_name = users
-                        .filter(crate::database::schema::users::id.eq(d_u_id))
-                        .select(crate::database::schema::users::display_name)
-                        .first::<String>(conn)
-                        .optional()?;
+            .transaction::<(Option<UserPermission>, Option<String>), ArunaError, _>(|conn| {
+                let user_name = users
+                    .filter(crate::database::schema::users::id.eq(d_u_id))
+                    .select(crate::database::schema::users::display_name)
+                    .first::<String>(conn)
+                    .optional()?;
 
-                    let perm = user_permissions
-                        .filter(crate::database::schema::user_permissions::user_id.eq(d_u_id))
-                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
-                        .first::<UserPermission>(conn)
-                        .optional()?;
+                let perm = user_permissions
+                    .filter(crate::database::schema::user_permissions::user_id.eq(d_u_id))
+                    .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
+                    .first::<UserPermission>(conn)
+                    .optional()?;
 
-                    Ok((perm, user_name))
-                },
-            )?;
+                Ok((perm, user_name))
+            })?;
 
         let resp = GetUserPermissionsForProjectResponse {
             user_permission: permissions.0.map(|perm| ProjectPermissionDisplayName {
@@ -613,6 +616,100 @@ impl Database {
 
         // Return empty response
         Ok(resp)
+    }
+
+    /// Requests all users of a specific project with their associated permission.
+    ///
+    /// ## Arguments
+    ///
+    /// * `request: GetUserPermissionsForProjectRequest`:
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetUserPermissionsForProjectResponse, ArunaError>: Placeholder, currently empty
+    ///
+    pub fn get_all_user_permissions_from_project(
+        &self,
+        project_uuid: &uuid::Uuid,
+    ) -> Result<GetAllUserPermissionsForProjectResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
+
+        // Execute db query
+        let permissions = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<UserWithProjectPermissions>, ArunaError, _>(|conn| {
+                // Fetch all permissions associated with the project
+                let all_project_permissions = user_permissions
+                    .filter(database::schema::user_permissions::project_id.eq(project_uuid))
+                    .load::<UserPermission>(conn)?;
+
+                // Fetch user info associated with the project permissions
+                let perm_user_ids = all_project_permissions
+                    .iter()
+                    .map(|permission| permission.user_id)
+                    .collect::<Vec<_>>();
+
+                let project_users = users
+                    .filter(database::schema::users::id.eq_any(&perm_user_ids))
+                    .load::<User>(conn)?;
+
+                // Collect all project users with their associated collection in proto format
+                let mut users_with_permission = Vec::new();
+                'outer: for user in project_users {
+                    let admin_user_perm = sql_query(
+                        "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id
+                           FROM user_permissions AS uperm
+                           JOIN projects AS p
+                           ON p.id = uperm.project_id
+                           WHERE uperm.user_id = $1
+                           AND p.flag & 1 = 1
+                           LIMIT 1",
+                    )
+                    .bind::<Uuid, _>(user.id)
+                    .get_result::<UserPermission>(conn)
+                    .optional()?;
+
+                    let proto_user = gRPCUser {
+                        id: user.id.to_string(),
+                        external_id: user.external_id.to_string(),
+                        display_name: user.display_name.to_string(),
+                        active: user.active,
+                        is_admin: admin_user_perm.is_some(),
+                        is_service_account: user.is_service_account,
+                        email: user.email.to_string(),
+                    };
+
+                    for user_permission in all_project_permissions.iter() {
+                        if user_permission.id == user.id {
+                            users_with_permission.push(UserWithProjectPermissions {
+                                user: Some(proto_user),
+                                user_permissions: Some(ProjectPermission {
+                                    user_id: user_permission.user_id.to_string(),
+                                    project_id: user_permission.project_id.to_string(),
+                                    permission: map_permissions_rev(Some(
+                                        user_permission.user_right,
+                                    )),
+                                    service_account: user.is_service_account,
+                                }),
+                            });
+
+                            continue 'outer;
+                        }
+                    }
+
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "User {} is member of project {} without permission",
+                        user.id, project_uuid
+                    )));
+                }
+
+                Ok(users_with_permission)
+            })?;
+
+        // Return empty response
+        Ok(GetAllUserPermissionsForProjectResponse { users: permissions })
     }
 
     /// Modifies the permissions of specific user for a project
