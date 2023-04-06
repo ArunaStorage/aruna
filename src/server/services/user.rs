@@ -506,7 +506,7 @@ impl UserService for UserServiceImpl {
         log::info!("Received UpdateUserEmailRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        if !EMAIL_SCHEMA.is_match(&request.get_ref().new_email) {
+        if !EMAIL_SCHEMA.is_match(&request.get_ref().new_email.to_lowercase()) {
             return Err(tonic::Status::invalid_argument("Invalid email format"));
         }
 
