@@ -46,6 +46,13 @@ impl UserService for UserServiceImpl {
         log::info!("Received RegisterUserRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        // Validate email address format on registration
+        if !request.get_ref().email.is_empty()
+            && !EMAIL_SCHEMA.is_match(&request.get_ref().email.to_lowercase())
+        {
+            return Err(tonic::Status::invalid_argument("Invalid email format"));
+        }
+
         if Authz::is_oidc_from_metadata(request.metadata()).await? {
             // Get subject from OIDC context in metadata
             let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
@@ -506,7 +513,10 @@ impl UserService for UserServiceImpl {
         log::info!("Received UpdateUserEmailRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        if !EMAIL_SCHEMA.is_match(&request.get_ref().new_email.to_lowercase()) {
+        // Validate email address format on update
+        if !request.get_ref().new_email.is_empty()
+            && !EMAIL_SCHEMA.is_match(&request.get_ref().new_email.to_lowercase())
+        {
             return Err(tonic::Status::invalid_argument("Invalid email format"));
         }
 
