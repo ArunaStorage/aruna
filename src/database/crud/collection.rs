@@ -36,7 +36,6 @@ use aruna_rust_api::api::storage::services::v1::{
     PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
 };
 use bigdecimal::ToPrimitive;
-use chrono::Local;
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{delete, prelude::*};
@@ -111,7 +110,7 @@ impl Database {
             name: request.name.clone(),
             description: request.description.clone(),
             created_by: creator,
-            created_at: Local::now().naive_local(),
+            created_at: chrono::Utc::now().naive_utc(),
             version_id: None,
             dataclass: Some(request.dataclass()).map(DBDataclass::from),
             project_id: uuid::Uuid::parse_str(&request.project_id)?,
@@ -1234,7 +1233,7 @@ fn pin_paths_to_version(
                     )
                 })?,
             collection_id: pin_collection.coll.id,
-            created_at: Local::now().naive_local(),
+            created_at: chrono::Utc::now().naive_utc(),
             active: true,
         });
     }

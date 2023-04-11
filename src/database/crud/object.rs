@@ -2462,7 +2462,7 @@ pub fn create_staging_object(
         shared_revision_id: uuid::Uuid::new_v4(),
         revision_number: 0,
         filename: staging_object.filename.clone(),
-        created_at: Local::now().naive_local(),
+        created_at: chrono::Utc::now().naive_utc(),
         created_by: *creator_uuid,
         content_len: staging_object.content_len,
         object_status: ObjectStatus::INITIALIZING,
@@ -3101,7 +3101,7 @@ pub fn clone_object(
     db_object.revision_number = 0;
     db_object.origin_id = object_uuid;
     db_object.created_by = *creator_uuid;
-    db_object.created_at = Local::now().naive_local();
+    db_object.created_at = chrono::Utc::now().naive_utc();
 
     // Modify hash
     db_hash.id = uuid::Uuid::new_v4();
@@ -4064,7 +4064,7 @@ pub fn delete_multiple_objects(
                 id: uuid::Uuid::new_v4(),
                 object_id: obj_to_trash,
                 key: "app.aruna-storage.org/deleted_at".to_string(),
-                value: Local::now().naive_local().to_string(),
+                value: chrono::Utc::now().naive_utc().to_string(),
                 key_value_type: KeyValueType::LABEL,
             });
             key_values.push(ObjectKeyValue {
@@ -4556,7 +4556,7 @@ pub fn create_path_db(
         path: s3path.into(),
         shared_revision_id: *shared_rev_id,
         collection_id: *collection_uuid,
-        created_at: Local::now().naive_local(),
+        created_at: chrono::Utc::now().naive_utc(),
         active: true,
     };
 
