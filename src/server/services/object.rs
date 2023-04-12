@@ -1865,10 +1865,8 @@ fn get_object_download_url(
     collection_uuid: &uuid::Uuid,
     api_token: &ApiToken,
 ) -> Result<String, ArunaError> {
-    let result = database.get_primary_object_location_with_endpoint_and_collection_paths(
-        object_uuid,
-        collection_uuid,
-    );
+    let result =
+        database.get_primary_object_location_with_endpoint_and_paths(object_uuid, collection_uuid);
 
     let (_, endpoint, _, paths) = match result {
         Ok((loc, endp, key_opt, paths)) => (loc, endp, key_opt, paths),
@@ -1879,18 +1877,31 @@ fn get_object_download_url(
         }
     };
 
-    let (object_bucket, object_key) = if let Some(path) = paths.first() {
+    let active_paths = paths.iter().filter(|path| path.active).collect::<Vec<_>>();
+    let (object_bucket, object_key) = if let Some(latest_active_path) = active_paths.first() {
         (
-            path.bucket.to_string(),
-            if path.path.starts_with('/') {
-                path.path[1..].to_string()
+            latest_active_path.bucket.to_string(),
+            if latest_active_path.path.starts_with('/') {
+                latest_active_path.path[1..].to_string()
             } else {
-                path.path.to_string()
+                latest_active_path.path.to_string()
             },
         )
     } else {
-        // If no active path is available for the specific collection -> generate default path on-the-fly
-        database.generate_object_path(object_uuid, collection_uuid)?
+        let latest_inactive_path = if let Some(latest_inactive_path) = paths.first() {
+            latest_inactive_path
+        } else {
+            return Err(ArunaError::InvalidRequest(format!("Object has location but no path. This is an internal error.")));
+        };
+
+        (
+            latest_inactive_path.bucket.to_string(),
+            if latest_inactive_path.path.starts_with('/') {
+                latest_inactive_path.path[1..].to_string()
+            } else {
+                latest_inactive_path.path.to_string()
+            },
+        )
     };
 
     Ok(sign_download_url(

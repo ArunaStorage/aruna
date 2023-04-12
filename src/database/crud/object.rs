@@ -825,8 +825,13 @@ impl Database {
     ///     * Endpoint associated with the primary location
     ///     * Optional encryption key if the location is encrypted
     ///     * A vector of all active paths associated with the provided collection
+    /// 
+    /// ## Behaviour:
+    /// 
+    /// If the object is empty (i.e. no data was uploaded in any revision) this function will 
+    /// fail as the object has no location and path in the database.
     ///
-    pub fn get_primary_object_location_with_endpoint_and_collection_paths(
+    pub fn get_primary_object_location_with_endpoint_and_paths(
         &self,
         object_uuid: &uuid::Uuid,
         collection_uuid: &uuid::Uuid,
@@ -841,22 +846,26 @@ impl Database {
             Option<EncryptionKey>,
             Vec<Path>,
         ), ArunaError, _>(|conn| {
+            // Fetch shared_revision_id of provided object
             let shared_revision_uuid = objects
                 .filter(objects_dsl::id.eq(object_uuid))
                 .select(objects_dsl::shared_revision_id)
                 .first::<uuid::Uuid>(conn)?;
 
-            let active_paths = paths
+            // Fetch all paths associated with the shared_revision_id
+            let all_paths = paths
                 .filter(paths_dsl::collection_id.eq(&collection_uuid))
                 .filter(paths_dsl::shared_revision_id.eq(&shared_revision_uuid))
-                .filter(paths_dsl::active.eq(&true))
+                .order_by(paths_dsl::created_at.desc())
                 .load::<Path>(conn)?;
 
+            // Fetch primary location of the object
             let location: ObjectLocation = object_locations
                 .filter(database::schema::object_locations::object_id.eq(&object_uuid))
                 .filter(database::schema::object_locations::is_primary.eq(true))
                 .first::<ObjectLocation>(conn)?;
 
+            // Fetch endpoint info associated with the primary location
             let endpoint: Endpoint = endpoints
                 .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
                 .first::<Endpoint>(conn)?;
@@ -876,7 +885,7 @@ impl Database {
                 return Err(ArunaError::InvalidRequest("".to_string()));
             }
 
-            Ok((location, endpoint, encryption_key, active_paths))
+            Ok((location, endpoint, encryption_key, all_paths))
         })?;
 
         Ok(location_info)
@@ -2006,9 +2015,13 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                use crate::database::schema::paths::dsl as paths_dsl;
+
                 // Get all paths for collection
                 let obj_paths = paths
-                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .filter(paths_dsl::collection_id.eq(col_id))
+                    .order_by(paths_dsl::shared_revision_id)
+                    .order_by(paths_dsl::created_at.desc())
                     .load::<Path>(conn)
                     .optional()?;
 
@@ -3163,8 +3176,8 @@ pub fn clone_object(
 
     // Modify hashes
     for db_hash in &mut db_hashes {
-    db_hash.id = uuid::Uuid::new_v4();
-    db_hash.object_id = db_object.id;
+        db_hash.id = uuid::Uuid::new_v4();
+        db_hash.object_id = db_object.id;
     }
 
     // Modify collection_object reference
@@ -3235,7 +3248,7 @@ pub fn clone_object(
             hashes: db_hashes
                 .iter()
                 .map(|db_hash| ProtoHash {
-                alg: db_to_grpc_hash_type(&db_hash.hash_type),
+                    alg: db_to_grpc_hash_type(&db_hash.hash_type),
                     hash: db_hash.hash.to_string(),
                 })
                 .collect::<Vec<_>>(),
