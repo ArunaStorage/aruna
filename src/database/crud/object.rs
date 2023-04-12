@@ -1954,19 +1954,24 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                use crate::database::schema::paths::dsl as paths_dsl;
+
                 // Get the object to aquire shared revision
                 let get_obj = objects
                     .filter(database::schema::objects::id.eq(obj_id))
                     .first::<Object>(conn)?;
 
-                // Get all paths
-                let obj_paths = paths
-                    .filter(database::schema::paths::collection_id.eq(col_id))
-                    .filter(
-                        database::schema::paths::shared_revision_id.eq(&get_obj.shared_revision_id),
-                    )
-                    .load::<Path>(conn)
-                    .optional()?;
+                // Get all paths depending on include_inactive parameter
+                let mut path_query = paths
+                    .filter(paths_dsl::collection_id.eq(col_id))
+                    .filter(paths_dsl::shared_revision_id.eq(&get_obj.shared_revision_id))
+                    .into_boxed();
+
+                if !request.include_inactive {
+                    path_query = path_query.filter(paths_dsl::active.eq(&true))
+                }
+
+                let obj_paths = path_query.order_by(paths_dsl::created_at.desc()).load::<Path>(conn).optional()?;
 
                 // Filter paths for active / not active, map to protopath
                 match obj_paths {
@@ -4641,7 +4646,8 @@ pub fn get_paths_proto(
     // Construct query to fetch paths from
     let mut path_query = paths
         .filter(paths_dsl::shared_revision_id.eq(shared_rev_id))
-        .filter(database::schema::paths::active.eq(true))
+        .filter(paths_dsl::active.eq(&true))
+        .order_by(paths_dsl::created_at.desc())
         .into_boxed();
 
     if let Some(collection_uuid) = maybe_collection_uuid {
