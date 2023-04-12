@@ -3,7 +3,6 @@ use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use chrono::Local;
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
@@ -201,7 +200,7 @@ impl Database {
         let created_object = self
             .pg_connection
             .get()?
-            .transaction::<Object, Error, _>(|conn| {
+            .transaction::<Object, ArunaError, _>(|conn| {
                 Ok(create_staging_object(
                     conn,
                     staging_object,
@@ -232,69 +231,118 @@ impl Database {
         let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
 
         // Insert all defined objects into the database
-        let object_dto =
-            self.pg_connection
-                .get()?
-                .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
-                    // Check if object is latest!
-                    let latest = get_latest_obj(conn, req_object_uuid)?;
-                    let is_still_latest = latest.id == req_object_uuid;
+        let object_dto = self
+            .pg_connection
+            .get()?
+            .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+                // Check if object is latest!
+                let latest = get_latest_obj(conn, req_object_uuid)?;
+                let is_still_latest = latest.id == req_object_uuid;
 
-                    if !is_still_latest {
-                        return Err(ArunaError::InvalidRequest(format!(
-                            "Object {req_object_uuid} is not latest revision. "
-                        )));
-                    }
+                if !is_still_latest {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Object {req_object_uuid} is not latest revision. "
+                    )));
+                }
 
-                    // What can we do here ?
-                    // - Set auto update ?
-                    // - Set or check expected hashes
-                    // - Finalize EMPTY object ?
+                // What can we do here ?
+                // - Set auto update ?
+                // - Set or check expected hashes
+                // - Finalize EMPTY object ?
 
-                    // // Update the object itself to be available
-                    // let returned_obj = diesel::update(
-                    //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                    // )
-                    // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                    // .get_result::<Object>(conn)?;
+                // // Update the object itself to be available
+                // let returned_obj = diesel::update(
+                //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                // )
+                // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                // .get_result::<Object>(conn)?;
 
-                    // Update hash if (re-)upload and request contains hash
-                    if !request.no_upload && request.hash.is_some() {
-                        (match &request.hash {
-                            None => {
-                                return Err(ArunaError::InvalidRequest(
-                                    "Missing hash after re-upload.".to_string(),
-                                ));
-                            }
-                            Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
-                                .set((
-                                    database::schema::hashes::hash.eq(&req_hash.hash),
-                                    database::schema::hashes::hash_type
-                                        .eq(HashType::from_grpc(req_hash.alg)),
-                                ))
-                                .execute(conn),
-                        })?;
-                    }
+                // Update hash if (re-)upload and request contains hash
+                if !request.no_upload && request.hash.is_some() {
+                    (match &request.hash {
+                        None => {
+                            return Err(ArunaError::InvalidRequest(
+                                "Missing hash after re-upload.".to_string(),
+                            ));
+                        }
+                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                            .set((
+                                database::schema::hashes::hash.eq(&req_hash.hash),
+                                database::schema::hashes::hash_type
+                                    .eq(HashType::from_grpc(req_hash.alg)),
+                            ))
+                            .execute(conn),
+                    })?;
+                }
 
-                    // Check if the origin id is different from uuid
-                    // This indicates an "updated" object and not a new one
-                    // Finishing updates need extra steps to update all references
-                    // In other collections / objectgroups
+                // Check if the origin id is different from uuid
+                // This indicates an "updated" object and not a new one
+                // Finishing updates need extra steps to update all references
+                // In other collections / objectgroups
 
-                    if latest.object_status != ObjectStatus::AVAILABLE {
-                        update(objects)
-                            .filter(database::schema::objects::id.eq(&req_object_uuid))
-                            .set((database::schema::objects::object_status
-                                .eq(ObjectStatus::FINALIZING),))
+                if latest.object_status != ObjectStatus::AVAILABLE {
+                    update(objects)
+                        .filter(database::schema::objects::id.eq(&req_object_uuid))
+                        .set((
+                            database::schema::objects::object_status.eq(ObjectStatus::FINALIZING),
+                        ))
+                        .execute(conn)?;
+                }
+
+                // Special treatment if only metadata was updated
+                if request.no_upload {
+                    // Only on update without upload
+                    if latest.origin_id != req_object_uuid {
+                        // Clone object locations of old object with new object id as data stays the same.
+                        let mut cloned_locations = Vec::new();
+                        for old_location in object_locations
+                            .filter(
+                                database::schema::object_locations::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<ObjectLocation>(conn)?
+                        {
+                            cloned_locations.push(ObjectLocation {
+                                id: uuid::Uuid::new_v4(),
+                                bucket: old_location.bucket,
+                                path: old_location.path,
+                                endpoint_id: old_location.endpoint_id,
+                                object_id: req_object_uuid,
+                                is_primary: old_location.is_primary,
+                                is_encrypted: old_location.is_encrypted,
+                                is_compressed: old_location.is_compressed,
+                            });
+                        }
+                        insert_into(object_locations)
+                            .values(&cloned_locations)
+                            .execute(conn)?;
+
+                        // Clone encryption keys of old object for specific data hashes
+                        let mut cloned_keys = Vec::new();
+                        for old_key in encryption_keys
+                            .filter(
+                                database::schema::encryption_keys::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<EncryptionKey>(conn)?
+                        {
+                            cloned_keys.push(EncryptionKey {
+                                id: uuid::Uuid::new_v4(),
+                                hash: old_key.hash,
+                                object_id: req_object_uuid,
+                                endpoint_id: old_key.endpoint_id,
+                                is_temporary: old_key.is_temporary,
+                                encryption_key: old_key.encryption_key,
+                            });
+                        }
+                        insert_into(encryption_keys)
+                            .values(&cloned_keys)
                             .execute(conn)?;
                     }
 
-                    if request.no_upload {
-                        set_object_available(conn, &latest, &req_coll_uuid, None)?;
-                    }
+                    set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                }
 
-                    Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
-                })?;
+                Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
+            })?;
 
         let mapped = object_dto
             .map(|e| e.try_into())
@@ -2678,24 +2726,29 @@ pub fn update_object_init(
         origin_id: current_object_uuid,
     };
 
-    // Define new object hash depending if update contains data re-upload
-    let new_hash = if reupload {
-        // Create new empty hash record which will be updated on object finish
-        ApiHash {
-            id: uuid::Uuid::new_v4(),
-            hash: "".to_string(),
-            object_id: new_object.id,
-            hash_type: HashType::MD5, // Default hash type
+    // Define new object hashes depending if update contains data re-upload
+    let mut new_hashes = Vec::new();
+    if reupload {
+        // Create new empty hash record which will be updated on object finish/finalize
+        for db_hash_type in vec![HashType::MD5, HashType::SHA256] {
+            new_hashes.push(ApiHash {
+                id: uuid::Uuid::new_v4(),
+                hash: "".to_string(),
+                object_id: new_object.id,
+                hash_type: db_hash_type,
+            })
         }
     } else {
-        // Without re-upload just clone hash of object to be updated
-        let mut old_hash: ApiHash = hashes
+        // Without re-upload just clone hashes of current object
+        for mut old_hash in hashes
             .filter(database::schema::hashes::object_id.eq(current_object_uuid))
-            .first::<ApiHash>(conn)?;
+            .load::<ApiHash>(conn)?
+        {
+            old_hash.id = uuid::Uuid::new_v4();
+            old_hash.object_id = staging_object_uuid;
 
-        old_hash.id = uuid::Uuid::new_v4();
-        old_hash.object_id = staging_object_uuid;
-        old_hash
+            new_hashes.push(old_hash);
+        }
     };
 
     // Define temporary STAGING join table entry collection <-->  staging object
@@ -2784,7 +2837,7 @@ pub fn update_object_init(
         .values(&new_object)
         .execute(conn)?;
     diesel::insert_into(hashes)
-        .values(&new_hash)
+        .values(&new_hashes)
         .execute(conn)?;
     diesel::insert_into(object_key_value)
         .values(&key_value_pairs)
