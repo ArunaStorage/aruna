@@ -341,7 +341,7 @@ impl ObjectService for ObjectServiceImpl {
                 .ok_or_else(|| {
                     Status::new(Code::Internal, "Staging object has no internal path label")
                 })?
-                .replace('/', "");
+                .replacen("/", "", 1);
 
             let s3bucket = s3bucket_option.ok_or_else(|| {
                 Status::new(
