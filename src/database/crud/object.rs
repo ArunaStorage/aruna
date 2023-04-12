@@ -3130,8 +3130,8 @@ pub fn clone_object(
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
-    // Get object hash
-    let mut db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
+    // Get object hashes
+    let mut db_hashes: Vec<ApiHash> = ApiHash::belonging_to(&db_object).load::<ApiHash>(conn)?;
 
     // Get object source
     let db_source: Option<Source> = match &db_object.source_id {
@@ -3156,9 +3156,11 @@ pub fn clone_object(
     db_object.created_by = *creator_uuid;
     db_object.created_at = chrono::Utc::now().naive_utc();
 
-    // Modify hash
+    // Modify hashes
+    for db_hash in &mut db_hashes {
     db_hash.id = uuid::Uuid::new_v4();
     db_hash.object_id = db_object.id;
+    }
 
     // Modify collection_object reference
     db_collection_object.id = uuid::Uuid::new_v4();
@@ -3184,7 +3186,7 @@ pub fn clone_object(
         .values(&db_locations)
         .execute(conn)?;
     // Insert cloned hash
-    insert_into(hashes).values(&db_hash).execute(conn)?;
+    insert_into(hashes).values(&db_hashes).execute(conn)?;
     // Insert cloned key_Values
     insert_into(object_key_value)
         .values(&db_object_key_values)
@@ -3225,10 +3227,13 @@ pub fn clone_object(
             source: proto_source,
             latest: db_collection_object.is_latest,
             auto_update: db_collection_object.auto_update,
-            hashes: vec![ProtoHash {
+            hashes: db_hashes
+                .iter()
+                .map(|db_hash| ProtoHash {
                 alg: db_to_grpc_hash_type(&db_hash.hash_type),
-                hash: db_hash.hash,
-            }],
+                    hash: db_hash.hash.to_string(),
+                })
+                .collect::<Vec<_>>(),
         },
         db_object.shared_revision_id,
     ))

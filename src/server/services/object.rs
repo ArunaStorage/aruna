@@ -1874,7 +1874,7 @@ fn get_object_download_url(
         Ok((loc, endp, key_opt, paths)) => (loc, endp, key_opt, paths),
         Err(_) => {
             return Err(ArunaError::InvalidRequest(
-                "Still waiting for object location finalization".to_string(),
+                "Cannot create download url for object without uploaded data".to_string(),
             ))
         }
     };
