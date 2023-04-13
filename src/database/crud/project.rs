@@ -439,10 +439,12 @@ impl Database {
         request: UpdateProjectRequest,
         req_user_id: uuid::Uuid,
     ) -> Result<UpdateProjectResponse, ArunaError> {
-        use crate::database::schema::collections::dsl::*;
-        use crate::database::schema::projects::dsl::*;
-        use crate::database::schema::user_permissions::dsl::*;
-        use diesel::result::Error as dError;
+        use crate::database::schema::collections::dsl as collections_dsl;
+        use crate::database::schema::collections::dsl::collections;
+        use crate::database::schema::projects::dsl as projects_dsl;
+        use crate::database::schema::projects::dsl::projects;
+        use crate::database::schema::user_permissions::dsl as permissions_dsl;
+        use crate::database::schema::user_permissions::dsl::user_permissions;
 
         // Validate project name against regex schema
         if !NAME_SCHEMA.is_match(request.name.as_str()) {
@@ -455,51 +457,67 @@ impl Database {
         let p_id = uuid::Uuid::parse_str(&request.project_id)?;
 
         // Execute db query
-        let project_info = self.pg_connection.get()?.transaction::<Option<(
-            Project,
-            Option<Vec<uuid::Uuid>>,
-            Vec<uuid::Uuid>,
-        )>, dError, _>(|conn| {
-            // Update the project and return the updated project
-            let project_info =
-                update(projects.filter(crate::database::schema::projects::id.eq(p_id)))
-                    .set((
-                        crate::database::schema::projects::name.eq(request.name),
-                        crate::database::schema::projects::description.eq(request.description),
-                        crate::database::schema::projects::created_by.eq(req_user_id),
-                    ))
-                    .get_result(conn)
-                    .optional()?;
-            // Check if project_info is some
-            match project_info {
-                // If is_some
-                Some(p_info) => {
-                    // Query collection_ids
-                    let colls = collections
-                        .filter(crate::database::schema::collections::project_id.eq(p_id))
-                        .select(crate::database::schema::collections::id)
-                        .load::<uuid::Uuid>(conn)
-                        .optional()?;
-                    // Query user_ids -> Should not be optional, every project should have at least one user_permission
-                    let usrs = user_permissions
-                        .filter(crate::database::schema::user_permissions::project_id.eq(p_id))
-                        .select(crate::database::schema::user_permissions::user_id)
-                        .load::<uuid::Uuid>(conn)?;
-                    Ok(Some((p_info, colls, usrs)))
-                }
-                // If is_none return none
-                None => Ok(None),
-            }
-        })?;
+        let project_info =
+            self.pg_connection
+                .get()?
+                .transaction::<Option<(Project, Vec<uuid::Uuid>, Vec<uuid::Uuid>)>, ArunaError, _>(
+                    |conn| {
+                        // Fetch current project info if present in database
+                        let current_project: Option<Project> = projects
+                            .filter(projects_dsl::id.eq(&p_id))
+                            .first::<Project>(conn)
+                            .optional()?;
+
+                        // Check if project_info is some
+                        match current_project {
+                            // If is_some -> Update
+                            Some(p_info) => {
+                                // Query collections of project
+                                let project_collections = collections
+                                    .filter(collections_dsl::project_id.eq(p_id))
+                                    .select(collections_dsl::id)
+                                    .load::<uuid::Uuid>(conn)?;
+
+                                // Name update is only allowed for empty projects to ensure path consistency
+                                if p_info.name != request.name && project_collections.len() > 0 {
+                                    return Err(ArunaError::InvalidRequest(
+                                        "Name update only allowed for empty projects".to_string(),
+                                    ));
+                                }
+
+                                // Update project with provided name and description
+                                let updated_project =
+                                    update(projects.filter(projects_dsl::id.eq(p_id)))
+                                        .set((
+                                            projects_dsl::name.eq(&request.name),
+                                            projects_dsl::description.eq(&request.description),
+                                            projects_dsl::created_by.eq(&req_user_id),
+                                        ))
+                                        .get_result::<Project>(conn)?;
+
+                                // Query user_ids -> Should not be optional, every project should have at least one user_permission
+                                let project_users = user_permissions
+                                    .filter(permissions_dsl::project_id.eq(p_id))
+                                    .select(permissions_dsl::user_id)
+                                    .load::<uuid::Uuid>(conn)?;
+
+                                Ok(Some((updated_project, project_collections, project_users)))
+                            }
+                            // If is_none return none
+                            None => Ok(None),
+                        }
+                    },
+                )?;
 
         // Map result to Project_overview
         let map_project = match project_info {
             // If project_info is some
             Some((project_info, coll_ids, user_ids)) => {
-                let mapped_col_ids = match coll_ids {
-                    Some(c_id) => c_id.iter().map(|elem| elem.to_string()).collect::<Vec<_>>(),
-                    None => Vec::new(),
-                };
+                let mapped_col_ids = coll_ids
+                    .iter()
+                    .map(|elem| elem.to_string())
+                    .collect::<Vec<_>>();
+
                 Some(ProjectOverview {
                     id: project_info.id.to_string(),
                     name: project_info.name,

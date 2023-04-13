@@ -59,20 +59,35 @@ fn update_project_test() {
     assert!(!project_id.is_nil());
 
     // Update empty project metadata
-    let updated_name = "updated-project-name".to_string();
+    let mut updated_name = "updated-project-name".to_string();
     let updated_description = "Updated project description".to_string();
-    let update_request = UpdateProjectRequest {
+    let mut update_request = UpdateProjectRequest {
         project_id: project_id.to_string(),
         name: updated_name.to_string(),
         description: updated_description.to_string(),
     };
 
-    let update_response = db.update_project(update_request, creator).unwrap();
+    let update_response = db.update_project(update_request.clone(), creator).unwrap();
     let updated_project = update_response.project.unwrap();
 
     assert_eq!(project_id.to_string(), updated_project.id);
     assert_eq!(updated_name, updated_project.name);
     assert_eq!(updated_description, updated_project.description);
+
+    // Create random collection in project
+    let _random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: project_id.to_string(),
+        creator_id: Some(creator.to_string()),
+        ..Default::default()
+    });
+
+    // Try to update project name of non-empty project --> Error
+    updated_name = "error-project".to_string();
+    update_request.name = updated_name;
+
+    let update_response = db.update_project(update_request, creator);
+
+    assert!(update_response.is_err())
 }
 
 #[test]
