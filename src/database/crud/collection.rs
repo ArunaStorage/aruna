@@ -349,6 +349,8 @@ impl Database {
         user_id: uuid::Uuid,
     ) -> Result<UpdateCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
+        use crate::database::schema::collection_objects::dsl as references_dsl;
+        use crate::database::schema::collection_objects::dsl::collection_objects;
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::required_labels::dsl as reqlbl;
 
@@ -369,7 +371,7 @@ impl Database {
             .transaction::<Option<CollectionOverview>, ArunaError, _>(|conn| {
                 // Query the old collection
                 let old_collection = collections
-                    .filter(id.eq(old_collection_id))
+                    .filter(id.eq(&old_collection_id))
                     .first::<Collection>(conn)?;
 
                 // Check if label ontology update will succeed
@@ -450,6 +452,20 @@ impl Database {
                     Ok(Some(new_overview))
                     // This is the update "in place" for collections without versions
                 } else {
+                    // Name update is only allowed for "empty" collections
+                    if old_collection.name != request.name {
+                        let coll_objects = collection_objects
+                            .filter(references_dsl::collection_id.eq(&old_collection_id))
+                            .select(references_dsl::object_id)
+                            .load::<uuid::Uuid>(conn)?;
+
+                        if coll_objects.len() > 0 {
+                            return Err(ArunaError::InvalidRequest(
+                                "Name update only allowed for empty collections".to_string(),
+                            ));
+                        }
+                    }
+
                     // Create new collection info
                     let update_col = Collection {
                         id: old_collection.id,

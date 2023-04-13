@@ -825,10 +825,10 @@ impl Database {
     ///     * Endpoint associated with the primary location
     ///     * Optional encryption key if the location is encrypted
     ///     * A vector of all active paths associated with the provided collection
-    /// 
+    ///
     /// ## Behaviour:
-    /// 
-    /// If the object is empty (i.e. no data was uploaded in any revision) this function will 
+    ///
+    /// If the object is empty (i.e. no data was uploaded in any revision) this function will
     /// fail as the object has no location and path in the database.
     ///
     pub fn get_primary_object_location_with_endpoint_and_paths(

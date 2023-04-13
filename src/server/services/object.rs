@@ -1891,7 +1891,9 @@ fn get_object_download_url(
         let latest_inactive_path = if let Some(latest_inactive_path) = paths.first() {
             latest_inactive_path
         } else {
-            return Err(ArunaError::InvalidRequest(format!("Object has location but no path. This is an internal error.")));
+            return Err(ArunaError::InvalidRequest(format!(
+                "Object has location but no path. This is an internal error."
+            )));
         };
 
         (

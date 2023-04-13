@@ -1,11 +1,12 @@
 mod common;
 use aruna_rust_api::api::storage::models::v1::{
-    collection_overview, DataClass, Hashalgorithm, KeyValue, LabelFilter, LabelOntology,
-    LabelOrIdQuery, PageRequest, Version,
+    collection_overview, collection_overview::Version::SemanticVersion, DataClass, Hashalgorithm,
+    KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, PageRequest, Version,
 };
+
 use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
-use common::functions::{create_collection, TCreateCollection};
+use common::functions::{create_collection, TCreateCollection, TCreateObject};
 use serial_test::serial;
 use std::str::FromStr;
 
@@ -422,170 +423,139 @@ fn update_collection_test() {
     let col_id = uuid::Uuid::from_str(&result.id).unwrap();
     assert!(!col_id.is_nil());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
-
-    // Add some objects and an objectgroup
-    let new_obj_1 = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "test_obj_1".to_string(),
-            content_len: 5,
-            source: None,
-            dataclass: 2,
-            labels: vec![KeyValue {
-                key: "obj_1_key".to_string(),
-                value: "obj_1_value".to_string(),
-            }],
-            hooks: Vec::new(),
-            sub_path: "".to_string(),
-        }),
-        collection_id: col_id.to_string(),
-        preferred_endpoint_id: endpoint_uuid.to_string(),
-        multipart: false,
-        is_specification: false,
-        hash: None,
-    };
-    let obj_1_id = uuid::Uuid::new_v4();
-
-    let _sobj_1 = db
-        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
-        .unwrap();
-    let f_obj_1_stage = FinishObjectStagingRequest {
-        object_id: obj_1_id.to_string(),
-        upload_id: "uid".to_string(),
-        collection_id: col_id.to_string(),
-        hash: None,
-        no_upload: true,
-        completed_parts: Vec::new(),
-        auto_update: true,
-    };
-
-    let _res_1 = db.finish_object_staging(&f_obj_1_stage, &creator).unwrap();
-
-    // Add some objects and an objectgroup
-    let new_obj_2 = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "test_obj_2".to_string(),
-            content_len: 10,
-            source: None,
-            dataclass: 2,
-            labels: vec![KeyValue {
-                key: "obj_2_key".to_string(),
-                value: "obj_2_value".to_string(),
-            }],
-            hooks: Vec::new(),
-            sub_path: "".to_string(),
-        }),
-        collection_id: col_id.to_string(),
-        preferred_endpoint_id: endpoint_uuid.to_string(),
-        multipart: false,
-        is_specification: false,
-        hash: None,
-    };
-
-    let obj_2_id = uuid::Uuid::new_v4();
-
-    let _sobj_2 = db
-        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
-        .unwrap();
-    let _f_obj_2_stage = FinishObjectStagingRequest {
-        object_id: obj_2_id.to_string(),
-        upload_id: "uid".to_string(),
-        collection_id: col_id.to_string(),
-        hash: None,
-        no_upload: true,
-        completed_parts: Vec::new(),
-        auto_update: true,
-    };
-
-    let _res_2 = db.finish_object_staging(&f_obj_1_stage, &creator).unwrap();
-
-    let obj_grp = CreateObjectGroupRequest {
-        name: "test_group_1".to_string(),
-        description: "test_group_2".to_string(),
-        collection_id: col_id.to_string(),
-        object_ids: vec![obj_1_id.to_string()],
-        meta_object_ids: Vec::new(),
-        labels: vec![KeyValue {
-            key: "obj_grp_key".to_string(),
-            value: "obj_grp_value".to_string(),
-        }],
-        hooks: Vec::new(),
-    };
-
-    let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
-
-    let normal_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "update-collection-test-collection-001".to_string(),
-        description: "First collection update in update_collection_test()".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key".to_owned(),
-            value: "test_value".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key".to_owned(),
-            value: "test_value".to_owned(),
-        }],
+    // Define mutable request to reuse for the individual updates
+    let mut update_request = UpdateCollectionRequest {
+        collection_id: result.id.to_string(),
+        name: "plain-updated-collection".to_string(),
+        description: "Some description.".to_string(),
+        labels: vec![],
+        hooks: vec![],
         label_ontology: None,
-        dataclass: 2,
+        dataclass: DataClass::Public as i32,
         version: None,
     };
 
-    let up_res = db.update_collection(normal_update, creator).unwrap();
+    // Update plain collection name, description and data class
+    let updated_collection = db
+        .update_collection(update_request.clone(), creator.clone())
+        .unwrap()
+        .collection
+        .unwrap();
 
-    assert_eq!(up_res.collection.unwrap().id, col_id.to_string());
+    assert_eq!(updated_collection.id, result.id);
+    assert_eq!(updated_collection.name.as_str(), "plain-updated-collection");
+    assert_eq!(updated_collection.description.as_str(), "Some description.");
+    assert_eq!(updated_collection.labels, vec![]);
+    assert_eq!(updated_collection.hooks, vec![]);
+    assert_eq!(updated_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert!(updated_collection.is_public);
 
-    let pin_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "update-collection-test-collection-fail".to_string(),
-        description: "Second collection update in update_collection_test()".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        label_ontology: Some(LabelOntology {
-            required_label_keys: vec!["test_key".to_string()],
-        }),
-        dataclass: 2,
-        version: Some(Version {
+    // Update plain collection labels/hooks
+    update_request.labels = vec![KeyValue {
+        key: "my_little_label".to_owned(),
+        value: "test_value".to_owned(),
+    }];
+    update_request.hooks = vec![KeyValue {
+        key: "my_little_hook".to_owned(),
+        value: "test_value".to_owned(),
+    }];
+
+    let updated_collection = db
+        .update_collection(update_request.clone(), creator.clone())
+        .unwrap()
+        .collection
+        .unwrap();
+
+    assert_eq!(updated_collection.id, result.id);
+    assert_eq!(updated_collection.name.as_str(), "plain-updated-collection");
+    assert_eq!(updated_collection.description.as_str(), "Some description.");
+    assert_eq!(
+        updated_collection.labels,
+        vec![KeyValue {
+            key: "my_little_label".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        updated_collection.hooks,
+        vec![KeyValue {
+            key: "my_little_hook".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(updated_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert!(updated_collection.is_public);
+
+    // Add some objects
+    let _rand_object_01 = common::functions::create_object(&TCreateObject {
+        collection_id: updated_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    let _rand_object_02 = common::functions::create_object(&TCreateObject {
+        collection_id: updated_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Update label ontology --> Error, as objects do not have required labels
+    update_request.label_ontology = Some(LabelOntology {
+        required_label_keys: vec!["dummy_label".to_owned()],
+    });
+
+    let error_collection = db.update_collection(update_request.clone(), creator.clone());
+
+    assert!(error_collection.is_err());
+
+    // Try to update collection name --> Error, as name update is only allowed with empty collections
+    update_request.label_ontology = None;
+    update_request.name = "error-collection".to_string();
+
+    let error_collection = db.update_collection(update_request.clone(), creator.clone());
+
+    assert!(error_collection.is_err());
+
+    //ToDo: Update collection with pin to version
+    update_request.name = "archived-collection".to_string();
+    update_request.version = Some(Version {
+        major: 1,
+        minor: 0,
+        patch: 0,
+    });
+    update_request.dataclass = DataClass::Private as i32;
+
+    let archived_collection = db
+        .update_collection(update_request.clone(), creator.clone())
+        .unwrap()
+        .collection
+        .unwrap();
+
+    assert_ne!(archived_collection.id, updated_collection.id);
+    assert_eq!(archived_collection.name.as_str(), "archived-collection");
+    assert_eq!(archived_collection.description.as_str(), "Some description.");
+    assert_eq!(
+        archived_collection.labels,
+        vec![KeyValue {
+            key: "my_little_label".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        archived_collection.hooks,
+        vec![KeyValue {
+            key: "my_little_hook".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(archived_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert_eq!(
+        archived_collection.version,
+        Some(SemanticVersion(Version {
             major: 1,
-            minor: 1,
-            patch: 1,
-        }),
-    };
-
-    let pin_up_res = db.update_collection(pin_update, creator);
-    // Should fail because of label ontology
-    assert!(pin_up_res.is_err());
-
-    let pin_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "update-collection-test-collection-versioned".to_string(),
-        description: "Second collection update in update_collection_test()".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        label_ontology: None,
-        dataclass: 2,
-        version: Some(Version {
-            major: 1,
-            minor: 1,
-            patch: 1,
-        }),
-    };
-
-    let pin_up_res = db.update_collection(pin_update, creator).unwrap();
-
-    assert!(pin_up_res.collection.unwrap().id != col_id.to_string());
+            minor: 0,
+            patch: 0
+        }))
+    );
+    assert!(!archived_collection.is_public)
 }
 
 #[test]
