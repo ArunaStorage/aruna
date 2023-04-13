@@ -201,7 +201,7 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Object, ArunaError, _>(|conn| {
-                Ok(create_staging_object(
+                create_staging_object(
                     conn,
                     staging_object,
                     &object_uuid,
@@ -210,7 +210,7 @@ impl Database {
                     creator_uuid,
                     request.is_specification,
                     Some(endpoint_uuid),
-                )?)
+                )
             })?;
 
         // Return response which is missing the upload id which will be created by upload init
@@ -2502,6 +2502,7 @@ impl Database {
 ///
 /// * `Result<Object, ArunaError>` - The created staging object
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn create_staging_object(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     staging_object: StageObject,
@@ -2748,12 +2749,12 @@ pub fn update_object_init(
     let mut new_hashes = Vec::new();
     if reupload {
         // Create new empty hash record which will be updated on object finish/finalize
-        for db_hash_type in vec![HashType::MD5, HashType::SHA256] {
+        for db_hash_type in &[HashType::MD5, HashType::SHA256] {
             new_hashes.push(ApiHash {
                 id: uuid::Uuid::new_v4(),
                 hash: "".to_string(),
                 object_id: new_object.id,
-                hash_type: db_hash_type,
+                hash_type: *db_hash_type,
             })
         }
     } else {

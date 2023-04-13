@@ -459,7 +459,7 @@ impl Database {
                             .select(references_dsl::object_id)
                             .load::<uuid::Uuid>(conn)?;
 
-                        if coll_objects.len() > 0 {
+                        if !coll_objects.is_empty() {
                             return Err(ArunaError::InvalidRequest(
                                 "Name update only allowed for empty collections".to_string(),
                             ));

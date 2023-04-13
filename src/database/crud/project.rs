@@ -479,7 +479,7 @@ impl Database {
                                     .load::<uuid::Uuid>(conn)?;
 
                                 // Name update is only allowed for empty projects to ensure path consistency
-                                if p_info.name != request.name && project_collections.len() > 0 {
+                                if p_info.name != request.name && !project_collections.is_empty() {
                                     return Err(ArunaError::InvalidRequest(
                                         "Name update only allowed for empty projects".to_string(),
                                     ));

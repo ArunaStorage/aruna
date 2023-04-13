@@ -437,7 +437,7 @@ fn update_collection_test() {
 
     // Update plain collection name, description and data class
     let updated_collection = db
-        .update_collection(update_request.clone(), creator.clone())
+        .update_collection(update_request.clone(), creator)
         .unwrap()
         .collection
         .unwrap();
@@ -447,7 +447,12 @@ fn update_collection_test() {
     assert_eq!(updated_collection.description.as_str(), "Some description.");
     assert_eq!(updated_collection.labels, vec![]);
     assert_eq!(updated_collection.hooks, vec![]);
-    assert_eq!(updated_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert_eq!(
+        updated_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
     assert!(updated_collection.is_public);
 
     // Update plain collection labels/hooks
@@ -461,7 +466,7 @@ fn update_collection_test() {
     }];
 
     let updated_collection = db
-        .update_collection(update_request.clone(), creator.clone())
+        .update_collection(update_request.clone(), creator)
         .unwrap()
         .collection
         .unwrap();
@@ -483,7 +488,12 @@ fn update_collection_test() {
             value: "test_value".to_owned(),
         }]
     );
-    assert_eq!(updated_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert_eq!(
+        updated_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
     assert!(updated_collection.is_public);
 
     // Add some objects
@@ -502,7 +512,7 @@ fn update_collection_test() {
         required_label_keys: vec!["dummy_label".to_owned()],
     });
 
-    let error_collection = db.update_collection(update_request.clone(), creator.clone());
+    let error_collection = db.update_collection(update_request.clone(), creator);
 
     assert!(error_collection.is_err());
 
@@ -510,7 +520,7 @@ fn update_collection_test() {
     update_request.label_ontology = None;
     update_request.name = "error-collection".to_string();
 
-    let error_collection = db.update_collection(update_request.clone(), creator.clone());
+    let error_collection = db.update_collection(update_request.clone(), creator);
 
     assert!(error_collection.is_err());
 
@@ -524,14 +534,17 @@ fn update_collection_test() {
     update_request.dataclass = DataClass::Private as i32;
 
     let archived_collection = db
-        .update_collection(update_request.clone(), creator.clone())
+        .update_collection(update_request, creator)
         .unwrap()
         .collection
         .unwrap();
 
     assert_ne!(archived_collection.id, updated_collection.id);
     assert_eq!(archived_collection.name.as_str(), "archived-collection");
-    assert_eq!(archived_collection.description.as_str(), "Some description.");
+    assert_eq!(
+        archived_collection.description.as_str(),
+        "Some description."
+    );
     assert_eq!(
         archived_collection.labels,
         vec![KeyValue {
@@ -546,7 +559,12 @@ fn update_collection_test() {
             value: "test_value".to_owned(),
         }]
     );
-    assert_eq!(archived_collection.label_ontology, Some(LabelOntology { required_label_keys: vec![] }));
+    assert_eq!(
+        archived_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
     assert_eq!(
         archived_collection.version,
         Some(SemanticVersion(Version {
