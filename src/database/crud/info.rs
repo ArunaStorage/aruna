@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::{
     GetResourceHierarchyRequest, GetResourceHierarchyResponse, Hierarchy,
@@ -16,7 +18,7 @@ impl Database {
     pub fn validate_and_query_hierarchy(
         &self,
         request: GetResourceHierarchyRequest,
-        token_id: uuid::Uuid,
+        token_id: diesel_ulid::DieselUlid,
     ) -> Result<GetResourceHierarchyResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collection_object_groups::dsl::*;
@@ -24,7 +26,7 @@ impl Database {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::object_group_objects::dsl::*;
 
-        let parsed_resource = uuid::Uuid::parse_str(&request.resource_id)?;
+        let parsed_resource = diesel_ulid::DieselUlid::from_str(&request.resource_id)?;
 
         // Check if endpoint defined in the config already exists in the database
         let _hierarchy = self
@@ -33,8 +35,8 @@ impl Database {
             .transaction::<Vec<Hierarchy>, ArunaError, _>(|conn| {
                 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
                 enum Scoped {
-                    Collectionid(uuid::Uuid),
-                    Projectid(uuid::Uuid),
+                    Collectionid(diesel_ulid::DieselUlid),
+                    Projectid(diesel_ulid::DieselUlid),
                     None,
                 }
 
@@ -95,7 +97,7 @@ impl Database {
                         let obj_group_ids = object_grp_objects.map(|grps| {
                             grps.iter()
                                 .map(|grp| (grp.object_group_id, grp.object_id))
-                                .collect::<Vec<(uuid::Uuid, uuid::Uuid)>>()
+                                .collect::<Vec<(diesel_ulid::DieselUlid, diesel_ulid::DieselUlid)>>()
                         });
 
                         // Vec with coll_id & object_group_id
@@ -104,7 +106,7 @@ impl Database {
                                 let ogroup_ids = ogroup_tuple
                                     .iter()
                                     .map(|(og, _)| og.to_owned())
-                                    .collect::<Vec<uuid::Uuid>>();
+                                    .collect::<Vec<diesel_ulid::DieselUlid>>();
 
                                 match collection_object_groups
                                     .filter(
@@ -117,7 +119,7 @@ impl Database {
                                     Some(grp) => grp
                                         .iter()
                                         .map(|grp| (grp.collection_id, grp.object_group_id))
-                                        .collect::<Vec<(uuid::Uuid, uuid::Uuid)>>(),
+                                        .collect::<Vec<(diesel_ulid::DieselUlid, diesel_ulid::DieselUlid)>>(),
                                     None => Vec::new(),
                                 }
                             }
@@ -129,7 +131,7 @@ impl Database {
                             .iter()
                             .map(|(coll, _)| coll.to_owned())
                             .unique()
-                            .collect::<Vec<uuid::Uuid>>();
+                            .collect::<Vec<diesel_ulid::DieselUlid>>();
 
                         let colls = collections
                             .filter(database::schema::collections::id.eq_any(&coll_ids))
@@ -138,7 +140,7 @@ impl Database {
                         let _col_projs = colls
                             .iter()
                             .map(|col| (col.project_id, col.id))
-                            .collect::<Vec<(uuid::Uuid, uuid::Uuid)>>();
+                            .collect::<Vec<(diesel_ulid::DieselUlid, diesel_ulid::DieselUlid)>>();
 
                         todo!()
                     }

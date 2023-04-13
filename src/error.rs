@@ -74,6 +74,12 @@ impl From<UuidError> for ArunaError {
     }
 }
 
+impl From<rusty_ulid::DecodingError> for ArunaError {
+    fn from(_: rusty_ulid::DecodingError) -> Self {
+        ArunaError::TypeConversionError(TypeConversionError::ULID)
+    }
+}
+
 impl From<TonicToStrError> for ArunaError {
     fn from(_: TonicToStrError) -> Self {
         ArunaError::TypeConversionError(TypeConversionError::TONICMETADATATOSTR)
@@ -205,6 +211,7 @@ impl Display for ConnectionError {
 #[derive(Debug)]
 pub enum TypeConversionError {
     UUID,
+    ULID,
     TONICMETADATATOSTR,
     BIGDECIMAL,
     JWT,
@@ -218,6 +225,7 @@ impl Display for TypeConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeConversionError::UUID => write!(f, "Typeconversion for UUID failed"),
+            TypeConversionError::ULID => write!(f, "Typeconversion for ULID failed"),
             TypeConversionError::TONICMETADATATOSTR => {
                 write!(f, "Typeconversion for gRPC metadata 'to_str' failed")
             }

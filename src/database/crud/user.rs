@@ -18,6 +18,7 @@ use crate::error::ArunaError;
 use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
+use std::str::FromStr;
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
     DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse,
@@ -62,7 +63,7 @@ impl Database {
 
         // Create a new DB user object
         let db_user = User {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             display_name: request.display_name,
             external_id: ext_id,
             active: false,
@@ -74,7 +75,7 @@ impl Database {
         let user_id = self
             .pg_connection
             .get()?
-            .transaction::<uuid::Uuid, Error, _>(|conn| {
+            .transaction::<diesel_ulid::DieselUlid, Error, _>(|conn| {
                 insert_into(users)
                     .values(&db_user)
                     .returning(id)
@@ -104,7 +105,7 @@ impl Database {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error;
 
-        let user_id = uuid::Uuid::parse_str(&request.user_id)?;
+        let user_id = diesel_ulid::DieselUlid::from_str(&request.user_id)?;
 
         // Update the user
         self.pg_connection
@@ -125,13 +126,13 @@ impl Database {
     ///
     /// ## Arguments
     ///
-    /// * user_uuid: &uuid::Uuid`: the user id that should be deactivated
+    /// * user_uuid: &diesel_ulid::DieselUlid`: the user id that should be deactivated
     ///
     /// ## Returns
     ///
     /// * `Result<(), ArunaError>`: Ok() result return indicates success
     ///
-    pub fn deactivate_user(&self, user_uuid: &uuid::Uuid) -> Result<(), ArunaError> {
+    pub fn deactivate_user(&self, user_uuid: &diesel_ulid::DieselUlid) -> Result<(), ArunaError> {
         use crate::database::schema::users::dsl::*;
 
         // Update the user
@@ -168,11 +169,11 @@ impl Database {
     pub fn create_api_token(
         &self,
         request: CreateApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
         pubkey_id: i64,
     ) -> Result<(Token, String, String), ArunaError> {
         // Generate a new UUID for the token
-        let new_uid = uuid::Uuid::new_v4();
+        let new_uid = diesel_ulid::DieselUlid::generate();
 
         // Get the expiry_time
         let expiry_time = request.expires_at.clone();
@@ -185,9 +186,9 @@ impl Database {
         };
 
         // Parse the optional project_id -> only used for scoped tokens
-        let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.project_id).ok();
         // Parse the optional collection_id -> only used for scoped tokens
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id).ok();
         // Parse the permissions, should already be validated by the request
         let user_right_db: Option<UserRights> = map_permissions(request.permission());
         // Create a token_type variable for the response
@@ -279,14 +280,14 @@ impl Database {
     pub fn get_api_token(
         &self,
         request: GetApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<GetApiTokenResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
 
         // Parse the token_id from the request
         let token_id = if !request.token_id.is_empty() {
-            Some(uuid::Uuid::parse_str(&request.token_id)?)
+            Some(diesel_ulid::DieselUlid::from_str(&request.token_id)?)
         } else {
             None
         };
@@ -349,13 +350,13 @@ impl Database {
     ///
     /// ## Arguments
     ///
-    /// * token_id: &uuid::Uuid: Unique api token id
+    /// * token_id: &diesel_ulid::DieselUlid: Unique api token id
     ///
     /// ## Returns
     ///
     /// * Result<ApiToken, ArunaError>: Token Response, this does not contain the signed Token only
     ///   all Database information
-    pub fn get_api_token_by_id(&self, token_id: &uuid::Uuid) -> Result<ApiToken, ArunaError> {
+    pub fn get_api_token_by_id(&self, token_id: &diesel_ulid::DieselUlid) -> Result<ApiToken, ArunaError> {
         use crate::database::schema::api_tokens::dsl as tokens_dsl;
 
         // Fetch token info from database
@@ -387,7 +388,7 @@ impl Database {
     pub fn get_api_tokens(
         &self,
         _request: GetApiTokensRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<GetApiTokensResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
@@ -460,13 +461,13 @@ impl Database {
     pub fn delete_api_token(
         &self,
         request: DeleteApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteApiTokenResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
 
         // Get token_id from request
-        let token_id_request = uuid::Uuid::parse_str(&request.token_id)?;
+        let token_id_request = diesel_ulid::DieselUlid::from_str(&request.token_id)?;
 
         // Execute db delete
         self.pg_connection
@@ -499,7 +500,7 @@ impl Database {
     pub fn delete_api_tokens(
         &self,
         _request: DeleteApiTokensRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteApiTokensResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
@@ -528,7 +529,7 @@ impl Database {
     ///
     /// * Result<UserWhoAmIResponse, ArunaError>: Basic information about the requesting user, id, displayname etc.
     ///
-    pub fn get_user(&self, req_user_id: uuid::Uuid) -> Result<GetUserResponse, ArunaError> {
+    pub fn get_user(&self, req_user_id: diesel_ulid::DieselUlid) -> Result<GetUserResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
@@ -688,7 +689,7 @@ impl Database {
     pub fn update_user_display_name(
         &self,
         request: UpdateUserDisplayNameRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<UpdateUserDisplayNameResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
@@ -745,7 +746,7 @@ impl Database {
     pub fn update_user_email(
         &self,
         request: UpdateUserEmailRequest,
-        user_uuid: uuid::Uuid,
+        user_uuid: diesel_ulid::DieselUlid,
     ) -> Result<UpdateUserEmailResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
 
@@ -802,7 +803,7 @@ impl Database {
     pub fn get_user_projects(
         &self,
         _request: GetUserProjectsRequest,
-        user_grpc_id: uuid::Uuid,
+        user_grpc_id: diesel_ulid::DieselUlid,
     ) -> Result<GetUserProjectsResponse, ArunaError> {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
@@ -850,7 +851,7 @@ impl Database {
     pub fn get_not_activated_users(
         &self,
         _request: GetNotActivatedUsersRequest,
-        _user_grpc_id: uuid::Uuid,
+        _user_grpc_id: diesel_ulid::DieselUlid,
     ) -> Result<GetNotActivatedUsersResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;

@@ -19,6 +19,7 @@ use aruna_server::{
 };
 use serial_test::serial;
 use std::sync::Arc;
+use std::str::FromStr;
 
 mod common;
 
@@ -50,7 +51,7 @@ async fn create_project_grpc_test() {
         .into_inner();
 
     // Validate project id format
-    uuid::Uuid::parse_str(create_project_response.project_id.as_str()).unwrap();
+    diesel_ulid::DieselUlid::from_str(create_project_response.project_id.as_str()).unwrap();
 
     // Create gPC Request for failing project creation
     let create_project_request = common::grpc_helpers::add_token(
@@ -310,7 +311,7 @@ async fn add_remove_project_user_grpc_test() {
         tonic::Request::new(AddUserToProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: uuid::Uuid::new_v4().to_string(), // Random id
+                user_id: diesel_ulid::DieselUlid::generate().to_string(), // Random id
                 project_id: project_id.to_string(),
                 permission: Permission::Read as i32,
                 service_account: false,
@@ -553,7 +554,7 @@ async fn edit_project_user_grpc_test() {
         tonic::Request::new(EditUserPermissionsForProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: uuid::Uuid::new_v4().to_string(),
+                user_id: diesel_ulid::DieselUlid::generate().to_string(),
                 project_id: project_id.to_string(),
                 permission: Permission::Admin as i32,
                 service_account: false,

@@ -43,6 +43,7 @@ use diesel::{insert_into, update};
 use r2d2::PooledConnection;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Helper struct that contains a `CollectionOverviewDb`
 ///
@@ -80,7 +81,7 @@ impl Database {
     pub fn create_new_collection(
         &self,
         request: CreateNewCollectionRequest,
-        creator: uuid::Uuid,
+        creator: diesel_ulid::DieselUlid,
     ) -> Result<CreateNewCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
@@ -94,9 +95,9 @@ impl Database {
         }
 
         // Create new collection uuid
-        let collection_uuid = uuid::Uuid::new_v4();
+        let collection_uuid = diesel_ulid::DieselUlid::generate();
         // Create new "shared_version_uuid"
-        let shared_version_uuid = uuid::Uuid::new_v4();
+        let shared_version_uuid = diesel_ulid::DieselUlid::generate();
         // Convert request key_values to DB Keyvalue list
         let key_values = to_key_values::<CollectionKeyValue>(
             request.labels.clone(),
@@ -113,7 +114,7 @@ impl Database {
             created_at: chrono::Utc::now().naive_utc(),
             version_id: None,
             dataclass: Some(request.dataclass()).map(DBDataclass::from),
-            project_id: uuid::Uuid::parse_str(&request.project_id)?,
+            project_id: diesel_ulid::DieselUlid::from_str(&request.project_id)?,
         };
 
         // Map ontology TODO add LabelOntology to createCollection request
@@ -167,7 +168,7 @@ impl Database {
         use crate::database::schema::collections::dsl as col;
         use diesel::prelude::*;
         // Parse the collection_id to uuid
-        let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         // Execute request and return CollectionOverviewDb
         let ret_collection = self
             .pg_connection
@@ -216,7 +217,7 @@ impl Database {
         // Parse the query to a `ParsedQuery`
         let parsed_query = parse_query(request.label_or_id_filter)?;
         // Get the project_id
-        let project_id = uuid::Uuid::parse_str(&request.project_id)?;
+        let project_id = diesel_ulid::DieselUlid::from_str(&request.project_id)?;
         // Execute request
         let ret_collections = self
             .pg_connection
@@ -245,7 +246,7 @@ impl Database {
                             // Create key value boxed request
                             let mut ckv_query = ckv::collection_key_value.into_boxed();
                             // Create vector with "matching" collections
-                            let found_cols: Option<Vec<uuid::Uuid>>;
+                            let found_cols: Option<Vec<diesel_ulid::DieselUlid>>;
                             // Is "and"
                             if l_query.1 {
                                 // Add each key / value to label query
@@ -278,7 +279,7 @@ impl Database {
                                 found_cols = ckv_query
                                     .select(ckv::collection_id)
                                     .distinct()
-                                    .load::<uuid::Uuid>(conn)
+                                    .load::<diesel_ulid::DieselUlid>(conn)
                                     .optional()?;
                             }
                             // Add to query if something was found otherwise return Only
@@ -346,7 +347,7 @@ impl Database {
     pub fn update_collection(
         &self,
         request: UpdateCollectionRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<UpdateCollectionResponse, ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collection_objects::dsl as references_dsl;
@@ -362,7 +363,7 @@ impl Database {
         }
 
         // Query the old collection id that should be updated
-        let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let old_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Execute request in transaction
         let ret_collections = self
@@ -396,7 +397,7 @@ impl Database {
                     let new_version = request
                         .version
                         .clone()
-                        .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
+                        .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
                         .ok_or_else(|| {
                             ArunaError::InvalidRequest(
                                 "Unable to create collection version".to_string(),
@@ -404,7 +405,7 @@ impl Database {
                         })?;
 
                     // Create new Uuid for collection
-                    let new_coll_uuid = uuid::Uuid::new_v4();
+                    let new_coll_uuid = diesel_ulid::DieselUlid::generate();
                     // Create new key_values
                     let new_key_values = to_key_values::<CollectionKeyValue>(
                         request.labels.clone(),
@@ -436,7 +437,7 @@ impl Database {
                     )?;
 
                     // Parse the uuid
-                    let new_uuid_parsed = uuid::Uuid::parse_str(&new_overview.id)?;
+                    let new_uuid_parsed = diesel_ulid::DieselUlid::from_str(&new_overview.id)?;
                     // Update ontology
                     // Delete old required labels
                     delete(reqlbl::required_labels)
@@ -457,7 +458,7 @@ impl Database {
                         let coll_objects = collection_objects
                             .filter(references_dsl::collection_id.eq(&old_collection_id))
                             .select(references_dsl::object_id)
-                            .load::<uuid::Uuid>(conn)?;
+                            .load::<diesel_ulid::DieselUlid>(conn)?;
 
                         if !coll_objects.is_empty() {
                             return Err(ArunaError::InvalidRequest(
@@ -540,11 +541,11 @@ impl Database {
     pub fn pin_collection_version(
         &self,
         request: PinCollectionVersionRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<PinCollectionVersionResponse, ArunaError> {
         use crate::database::schema::collections::dsl::*;
         // Parse the old collection id
-        let old_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let old_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         // Execute the database transaction
         let ret_collections = self
             .pg_connection
@@ -574,11 +575,11 @@ impl Database {
                 let new_version = request
                     .version
                     .clone()
-                    .map(|v| from_grpc_version(v, uuid::Uuid::new_v4()))
+                    .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
                     .unwrap();
                 // Create new collection database struct
                 let new_coll = Collection {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     shared_version_id: old_collection.shared_version_id,
                     name: old_collection.name,
                     description: old_collection.description,
@@ -618,7 +619,7 @@ impl Database {
     pub fn delete_collection(
         &self,
         request: DeleteCollectionRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteCollectionResponse, ArunaError> {
         // Import of database structures
         use crate::database::schema::collection_key_value::dsl as colkv;
@@ -629,7 +630,7 @@ impl Database {
         use crate::database::schema::object_group_objects::dsl as objgrpobj;
         use crate::database::schema::object_groups::dsl as objgrp;
         // Parse the collection_id string to uuid
-        let collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         // Execute the request in transaction
         self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
             // Query all object references
@@ -712,13 +713,13 @@ impl Database {
 ///
 pub fn is_collection_versioned(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    collection_uuid: &uuid::Uuid,
+    collection_uuid: &diesel_ulid::DieselUlid,
 ) -> Result<bool, ArunaError> {
     // Get collection version from database
-    let collection_version: Option<uuid::Uuid> = collections
+    let collection_version: Option<diesel_ulid::DieselUlid> = collections
         .filter(database::schema::collections::id.eq(collection_uuid))
         .select(database::schema::collections::version_id)
-        .first::<Option<uuid::Uuid>>(conn)?;
+        .first::<Option<diesel_ulid::DieselUlid>>(conn)?;
 
     // Unwrap Option with version id
     match collection_version {
@@ -898,7 +899,7 @@ fn transform_collection_overviewdb(
                 collinfo_kv
                     .iter_mut()
                     .map(|elem| {
-                        elem.id = uuid::Uuid::new_v4();
+                        elem.id = diesel_ulid::DieselUlid::generate();
                         elem.collection_id = new_coll.id;
                         elem.to_owned()
                     })
@@ -909,7 +910,7 @@ fn transform_collection_overviewdb(
                 collreq_label
                     .iter_mut()
                     .map(|elem| {
-                        elem.id = uuid::Uuid::new_v4();
+                        elem.id = diesel_ulid::DieselUlid::generate();
                         elem.collection_id = new_coll.id;
                         elem.to_owned()
                     })
@@ -943,8 +944,8 @@ fn transform_collection_overviewdb(
 ///
 /// ## Arguments
 ///
-/// * origin_collection: uuid::Uuid, The original collection that should be cloned and pinned to a specific version
-/// * creator_user: uuid::Uuid, The user that initiated the pin
+/// * origin_collection: diesel_ulid::DieselUlid, The original collection that should be cloned and pinned to a specific version
+/// * creator_user: diesel_ulid::DieselUlid, The user that initiated the pin
 /// * new_collection_overview: CollectionOverviewDb, The CollectionOverviewDb that describes the basic attributes of the new collection
 ///
 /// ## Returns
@@ -952,8 +953,8 @@ fn transform_collection_overviewdb(
 /// * Result<Option<CollectionOverview>, ArunaError>: Returns a CollectionOverview or an Error
 ///
 fn pin_collection_to_version(
-    origin_collection: uuid::Uuid,
-    creator_user: uuid::Uuid,
+    origin_collection: diesel_ulid::DieselUlid,
+    creator_user: diesel_ulid::DieselUlid,
     collection_overview: CollectionOverviewDb,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<CollectionOverview, ArunaError> {
@@ -1066,7 +1067,7 @@ fn pin_collection_to_version(
             }
         };
 
-        object_mapping_table.insert(orig_obj.id, uuid::Uuid::parse_str(&new_obj.id)?);
+        object_mapping_table.insert(orig_obj.id, diesel_ulid::DieselUlid::from_str(&new_obj.id)?);
         new_objects.push(new_obj);
     }
     // Clone and adjust existing paths belonging to the shared_revision_ids of the objects
@@ -1075,10 +1076,10 @@ fn pin_collection_to_version(
     // Iterate through objectgroups
     for obj_grp in original_object_groups {
         // Create copy of objectgroup
-        let new_uuid = uuid::Uuid::new_v4();
+        let new_uuid = diesel_ulid::DieselUlid::generate();
         let new_objgrp = ObjectGroup {
             id: new_uuid,
-            shared_revision_id: uuid::Uuid::new_v4(),
+            shared_revision_id: diesel_ulid::DieselUlid::generate(),
             revision_number: 0,
             name: obj_grp.name,
             description: obj_grp.description,
@@ -1087,7 +1088,7 @@ fn pin_collection_to_version(
         };
         // Add coll_obj_group to vec
         new_coll_obj_groups.push(CollectionObjectGroup {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             collection_id: new_collection_overview.coll.id,
             object_group_id: new_uuid,
             writeable: false, // Always not writeable -> version collections are immutable
@@ -1099,7 +1100,7 @@ fn pin_collection_to_version(
     // Copy key values of objectgroup
     for obj_grp_kv in original_obj_grp_kv {
         new_object_group_kv.push(ObjectGroupKeyValue {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             object_group_id: *object_group_mappings
                 .get(&obj_grp_kv.object_group_id)
                 .unwrap(),
@@ -1111,7 +1112,7 @@ fn pin_collection_to_version(
     // Copy associations based on mappings old_uuid <-> new_uuid
     for association in objectgrp_associations {
         new_obj_grp_objs.push(ObjectGroupObject {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             object_group_id: *object_group_mappings
                 .get(&association.object_group_id)
                 .unwrap(),
@@ -1198,7 +1199,7 @@ fn pin_collection_to_version(
 ///
 fn pin_paths_to_version(
     pin_collection: &CollectionOverviewDb,
-    revision_id_mapping: HashMap<uuid::Uuid, uuid::Uuid>,
+    revision_id_mapping: HashMap<diesel_ulid::DieselUlid, diesel_ulid::DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
     use crate::database::schema::paths::dsl as paths_dsl;
@@ -1238,7 +1239,7 @@ fn pin_paths_to_version(
 
         // Created new path record and save in vector for later insertion
         modified_paths.push(Path {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             bucket: new_bucket,
             path: old_path.path,
             shared_revision_id: *revision_id_mapping
@@ -1267,7 +1268,7 @@ fn pin_paths_to_version(
 ///
 /// ## Arguments
 ///
-/// * collection_uuid: uuid::Uuid, The existing collection_uuid
+/// * collection_uuid: diesel_ulid::DieselUlid, The existing collection_uuid
 /// * required_labels: gRPC LabelOntology -> All labels that should be updated
 /// * new_collection_overview: CollectionOverviewDb, The CollectionOverviewDb that describes the basic attributes of the new collection
 ///
@@ -1276,7 +1277,7 @@ fn pin_paths_to_version(
 /// * Result<(()), ArunaError>: Returns either nothing --> success or an error to signal a failed constraint
 ///
 fn check_label_ontology(
-    collection_uuid: uuid::Uuid,
+    collection_uuid: diesel_ulid::DieselUlid,
     required_labels: Option<LabelOntology>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
@@ -1358,7 +1359,7 @@ impl From<CollectionVersion> for Version {
 
 /// Function that converts a gRPC version to a database collection version
 /// This function needs a uuid to correctly map
-fn from_grpc_version(grpc_version: Version, version_id: uuid::Uuid) -> CollectionVersion {
+fn from_grpc_version(grpc_version: Version, version_id: diesel_ulid::DieselUlid) -> CollectionVersion {
     CollectionVersion {
         id: version_id,
         major: grpc_version.major.into(),
@@ -1383,14 +1384,14 @@ impl From<DataClass> for DBDataclass {
 // Helper function that converts gRPC labelOntology to the database required label object
 fn from_ontology_todb(
     onto: Option<LabelOntology>,
-    collection_id: uuid::Uuid,
+    collection_id: diesel_ulid::DieselUlid,
 ) -> Vec<RequiredLabel> {
     match onto {
         Some(ont) => ont
             .required_label_keys
             .iter()
             .map(|label| RequiredLabel {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 collection_id,
                 label_key: label.to_string(),
             })

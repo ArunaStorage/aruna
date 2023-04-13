@@ -1,4 +1,6 @@
 use super::authz::Authz;
+use std::str::FromStr;
+
 
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
@@ -65,7 +67,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize the request
         let _user_id = self
@@ -103,7 +105,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let _user_id = self
@@ -167,7 +169,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let _user_id = self
@@ -205,7 +207,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self
@@ -243,7 +245,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self
@@ -280,7 +282,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let _admin_user = self
@@ -319,7 +321,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let project_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         self.authz
@@ -361,7 +363,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Parse the project Uuid
         let parsed_project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self

@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{thread, time};
 
@@ -551,8 +552,8 @@ async fn update_staging_object_grpc_test() {
     let rev_0_staging_object_updated_ref_status = db
         .clone()
         .get_reference_status(
-            &uuid::Uuid::parse_str(&rev_0_staging_object_updated.id).unwrap(),
-            &uuid::Uuid::parse_str(&random_collection.id).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&rev_0_staging_object_updated.id).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&random_collection.id).unwrap(),
         )
         .unwrap();
 
@@ -2036,7 +2037,7 @@ async fn clone_object_grpc_test() {
     // Try to clone non-existing object --> Error
     let clone_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(CloneObjectRequest {
-            object_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            object_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
             collection_id: source_collection.id.to_string(),
             target_collection_id: target_collection.id.to_string(),
         }),
@@ -2050,7 +2051,7 @@ async fn clone_object_grpc_test() {
     let clone_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(CloneObjectRequest {
             object_id: rev_0_object.id.to_string(),
-            collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            collection_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
             target_collection_id: target_collection.id.to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -2063,7 +2064,7 @@ async fn clone_object_grpc_test() {
         tonic::Request::new(CloneObjectRequest {
             object_id: rev_0_object.id.to_string(),
             collection_id: source_collection.id.to_string(),
-            target_collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            target_collection_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
         }),
         common::oidc::ADMINTOKEN,
     );

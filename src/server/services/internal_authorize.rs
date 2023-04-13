@@ -1,4 +1,5 @@
 use super::authz::Authz;
+use std::str::FromStr;
 use crate::database::connection::Database;
 use crate::error::ArunaError;
 use aruna_rust_api::api::internal::v1::{
@@ -41,7 +42,7 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         let inner_request = request.into_inner();
 
         // Extract AccessKey which is (everytime?) the token id
-        let token_id = uuid::Uuid::parse_str(&inner_request.accesskey).map_err(ArunaError::from)?;
+        let token_id = diesel_ulid::DieselUlid::from_str(&inner_request.accesskey).map_err(ArunaError::from)?;
 
         // Fetch token from database only by its id
         let database_clone = self.database.clone();

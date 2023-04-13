@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use time::Duration;
 use tokio::sync::RwLock;
@@ -87,7 +88,7 @@ impl KeyCloakResponse {
 pub struct Context {
     pub user_right: UserRights,
     pub resource_type: Resources,
-    pub resource_id: uuid::Uuid,
+    pub resource_id: diesel_ulid::DieselUlid,
     // These requests need admin rights
     // For this the user needs to be part of a projects with the admin flag 1
     pub admin: bool,
@@ -267,7 +268,7 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
         context: &Context,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let oidc_user = self.check_if_oidc(metadata).await?;
 
         match oidc_user {
@@ -311,7 +312,7 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
         context: &Context,
-    ) -> Result<(uuid::Uuid, Option<ApiToken>), ArunaError> {
+    ) -> Result<(diesel_ulid::DieselUlid, Option<ApiToken>), ArunaError> {
         let oidc_user = self.check_if_oidc(metadata).await?;
 
         match oidc_user {
@@ -340,13 +341,13 @@ impl Authz {
     pub async fn personal_authorize(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
-                resource_id: uuid::Uuid::default(),
+                resource_id: diesel_ulid::DieselUlid::default(),
                 admin: false,
                 personal: true,
                 oidc_context: false,
@@ -357,13 +358,13 @@ impl Authz {
 
     /// This is a wrapper that runs the authorize function with an `admin` context
     /// a convenience function if this request is `admin` scoped
-    pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<uuid::Uuid, ArunaError> {
+    pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
-                resource_id: uuid::Uuid::default(),
+                resource_id: diesel_ulid::DieselUlid::default(),
                 admin: true,
                 personal: false,
                 oidc_context: false,
@@ -377,9 +378,9 @@ impl Authz {
     pub async fn collection_authorize(
         &self,
         metadata: &MetadataMap,
-        collection_id: uuid::Uuid,
+        collection_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
@@ -399,9 +400,9 @@ impl Authz {
     pub async fn project_authorize(
         &self,
         metadata: &MetadataMap,
-        project_id: uuid::Uuid,
+        project_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
@@ -422,9 +423,9 @@ impl Authz {
     pub async fn project_authorize_by_collectionid(
         &self,
         metadata: &MetadataMap,
-        collection_id: uuid::Uuid,
+        collection_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let project_id = self.db.get_project_id_by_collection_id(collection_id)?;
         self.authorize(
             metadata,
@@ -443,7 +444,7 @@ impl Authz {
     pub async fn check_if_oidc(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<Option<uuid::Uuid>, ArunaError> {
+    ) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
         // If this token is OIDC
         if Authz::is_oidc_from_metadata(metadata).await? {
             let subject = self.validate_oidc_only(metadata).await?;
@@ -463,7 +464,7 @@ impl Authz {
     pub async fn validate_and_query_token_from_md(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let token_string = get_token_from_md(metadata)?;
         self.validate_and_query_token(&token_string).await
     }
@@ -471,7 +472,7 @@ impl Authz {
     pub async fn validate_and_query_token(
         &self,
         token_secret: &str,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let header = decode_header(token_secret)?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
@@ -508,7 +509,7 @@ impl Authz {
                 _ => AuthorizationError::PERMISSIONDENIED,
             })?;
 
-        Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
+        Ok(diesel_ulid::DieselUlid::from_str(token_data.claims.sub.as_str())?)
     }
 
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {

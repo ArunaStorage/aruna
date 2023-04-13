@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::models::v1::EndpointType as ProtoEndpointType;
 use aruna_rust_api::api::storage::services::v1::AddEndpointRequest;
 use aruna_server::config::DefaultEndpoint;
@@ -98,7 +100,7 @@ fn add_endpoint_test() {
         pubkey_serial,
     ) = db.add_endpoint(&add_request).unwrap();
 
-    let _endpoint_uuid = uuid::Uuid::parse_str(id.to_string().as_str());
+    let _endpoint_uuid = diesel_ulid::DieselUlid::from_str(id.to_string().as_str());
 
     assert!(pubkey_serial > 0);
     assert!(matches!(endpoint_type, EndpointType::S3));
@@ -114,7 +116,7 @@ fn add_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Get Endpoint by its uuid
     let Endpoint {
@@ -143,7 +145,7 @@ fn get_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_by_name_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
     let endpoint_name = "demo_endpoint";
 
     // Get Endpoint by its uuid

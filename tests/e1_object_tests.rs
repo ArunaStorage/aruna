@@ -20,6 +20,7 @@ use common::functions::{
 use rand::{thread_rng, Rng};
 use serial_test::serial;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 // Wrap struct to implement traits needed for generic comparison
 struct MyObjectWithUrl(ObjectWithUrl);
@@ -49,8 +50,8 @@ impl Hash for MyObjectWithUrl {
 #[serial(db)]
 fn create_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create Project
     let create_project_request = CreateProjectRequest {
@@ -59,9 +60,9 @@ fn create_object_test() {
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&create_project_response.project_id).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
 
-    assert!(!project_id.is_nil());
+    assert!(!project_id.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
@@ -76,10 +77,10 @@ fn create_object_test() {
     let create_collection_response = db
         .create_new_collection(create_collection_request, creator)
         .unwrap();
-    let collection_id = uuid::Uuid::parse_str(&create_collection_response.collection_id).unwrap();
+    let collection_id = diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
 
     // Create Object
-    let new_object_id = uuid::Uuid::new_v4();
+    let new_object_id = diesel_ulid::DieselUlid::generate();
     let upload_id = "".to_string();
 
     let init_object_request = InitializeNewObjectRequest {
@@ -546,8 +547,8 @@ fn update_object_get_references_test() {
 #[serial(db)]
 fn delete_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -624,7 +625,7 @@ fn delete_object_test() {
         hash: None, // Note: Maybe has to be refactored for future hash validation
     };
 
-    let new_id = uuid::Uuid::new_v4();
+    let new_id = diesel_ulid::DieselUlid::generate();
     let update_response = db
         .update_object(updatereq, &creator, new_id, &endpoint_id)
         .unwrap();
@@ -680,8 +681,8 @@ fn delete_object_test() {
 #[serial(db)]
 fn delete_object_references_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -741,8 +742,8 @@ fn delete_object_references_test() {
 #[serial(db)]
 fn get_objects_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -793,8 +794,8 @@ fn get_objects_test() {
 #[serial(db)]
 fn get_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -832,8 +833,8 @@ fn get_object_test() {
 
     let get_obj_internal = db
         .get_object_by_id(
-            &uuid::Uuid::parse_str(&new_obj).unwrap(),
-            &uuid::Uuid::parse_str(&random_collection.id).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&new_obj).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&random_collection.id).unwrap(),
         )
         .unwrap()
         .object
@@ -847,8 +848,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_primary_location_test() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-//     let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -873,7 +874,7 @@ fn get_object_test() {
 //     .id;
 
 //     let get_obj_loc = db
-//         .get_primary_object_location(&uuid::Uuid::parse_str(&new_obj).unwrap())
+//         .get_primary_object_location(&diesel_ulid::DieselUlid::from_str(&new_obj).unwrap())
 //         .unwrap();
 
 //     assert_eq!(get_obj_loc.bucket, random_collection.id);
@@ -885,8 +886,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_primary_location_with_endpoint_test() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-//     let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -911,7 +912,7 @@ fn get_object_test() {
 //     .id;
 
 //     let get_obj_loc = db
-//         .get_primary_object_location_with_endpoint(&uuid::Uuid::parse_str(&new_obj).unwrap())
+//         .get_primary_object_location_with_endpoint(&diesel_ulid::DieselUlid::from_str(&new_obj).unwrap())
 //         .unwrap();
 
 //     assert_eq!(get_obj_loc.0.bucket, random_collection.id);
@@ -924,8 +925,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_locations() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-//     let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -950,7 +951,7 @@ fn get_object_test() {
 //     .id;
 
 //     let get_obj_locs = db
-//         .get_object_locations(&uuid::Uuid::parse_str(&new_obj).unwrap())
+//         .get_object_locations(&diesel_ulid::DieselUlid::from_str(&new_obj).unwrap())
 //         .unwrap();
 
 //     assert_eq!(get_obj_locs.len(), 1);
@@ -963,8 +964,8 @@ fn get_object_test() {
 #[serial(db)]
 fn clone_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -1029,8 +1030,8 @@ fn clone_object_test() {
 #[serial(db)]
 fn delete_multiple_objects_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);
@@ -1179,8 +1180,8 @@ fn delete_multiple_objects_test() {
 #[serial(db)]
 fn delete_object_from_versioned_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
 
     // Create random project
     let random_project = create_project(None);

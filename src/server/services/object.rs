@@ -4,6 +4,8 @@ use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tonic::{Code, Request, Response, Status};
+use std::str::FromStr;
+
 
 use crate::database::connection::Database;
 use crate::database::crud::utils::grpc_to_db_object_status;
@@ -80,7 +82,7 @@ impl ObjectServiceImpl {
     ///
     async fn try_connect_endpoint(
         &self,
-        _endpoint_uuid: &uuid::Uuid,
+        _endpoint_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
         /*
@@ -121,7 +123,7 @@ impl ObjectServiceImpl {
     ///
     async fn _try_connect_object_endpoint(
         &self,
-        object_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
         // Get primary location with its endpoint from database
         let (location, endpoint, encryption_key) = self
@@ -176,7 +178,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to create objects in this collection
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -191,13 +193,13 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
         // Generate uuid for staging object
-        let new_object_uuid = uuid::Uuid::new_v4();
+        let new_object_uuid = diesel_ulid::DieselUlid::generate();
 
         // Evaluate endpoint id
         let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
             self.default_endpoint.id
         } else {
-            uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
+            diesel_ulid::DieselUlid::from_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
         };
 
         // Create Object in database
@@ -252,9 +254,9 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to upload object data in this collection
         let object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let api_token = self
             .authz
@@ -351,7 +353,7 @@ impl ObjectService for ObjectServiceImpl {
             })?;
 
             let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
-                let ep_uuid = uuid::Uuid::parse_str(&endpoint_uuid).map_err(ArunaError::from)?;
+                let ep_uuid = diesel_ulid::DieselUlid::from_str(&endpoint_uuid).map_err(ArunaError::from)?;
                 database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
             } else {
                 endpoint_clone.proxy_hostname.to_string()
@@ -396,11 +398,11 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received FinishObjectStagingRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let object_uuid = uuid::Uuid::parse_str(&request.get_ref().object_id)
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
             .map_err(|_| Status::invalid_argument("Unable to parse object id"))?;
 
         // Parse the provided collection id (string) to UUID
-        let collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
             .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
         // Authorize the request
@@ -469,7 +471,7 @@ impl ObjectService for ObjectServiceImpl {
             endpoint_label_value = self.default_endpoint.id.to_string();
         }
 
-        let endpoint_uuid = uuid::Uuid::parse_str(&endpoint_label_value)
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(&endpoint_label_value)
             .map_err(|_| Status::invalid_argument("Unable to parse provided endpoint id"))?;
 
         // Only finish the upload if no_upload == false
@@ -536,7 +538,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to create objects in this collection
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -547,7 +549,7 @@ impl ObjectService for ObjectServiceImpl {
             )
             .await?;
 
-        let new_object_uuid = uuid::Uuid::new_v4();
+        let new_object_uuid = diesel_ulid::DieselUlid::generate();
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
@@ -556,7 +558,7 @@ impl ObjectService for ObjectServiceImpl {
         let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
             self.default_endpoint.id
         } else {
-            uuid::Uuid::parse_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
+            diesel_ulid::DieselUlid::from_str(&inner_request.preferred_endpoint_id).map_err(ArunaError::from)?
         };
 
         let upload_id = if inner_request.reupload {
@@ -630,9 +632,9 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let src_collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let dst_collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Need WRITE permission for writeable == true; READ else
         let needed_permission = match request.get_ref().writeable {
@@ -671,7 +673,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to create objects in this collection
         let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -704,7 +706,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to create objects in this collection
         let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
         let creator_uuid = self
@@ -717,7 +719,7 @@ impl ObjectService for ObjectServiceImpl {
             .await?;
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         // Authorize "TARGET"
         self.authz
             .collection_authorize(
@@ -750,8 +752,8 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received DeleteObjectsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user: uuid::Uuid = if request.get_ref().force {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+        let user: diesel_ulid::DieselUlid = if request.get_ref().force {
+            let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
@@ -762,7 +764,7 @@ impl ObjectService for ObjectServiceImpl {
                 )
                 .await?
         } else {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+            let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
@@ -795,8 +797,8 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received DeleteObjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user: uuid::Uuid = if request.get_ref().force {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+        let user: diesel_ulid::DieselUlid = if request.get_ref().force {
+            let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
@@ -807,7 +809,7 @@ impl ObjectService for ObjectServiceImpl {
                 )
                 .await?
         } else {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
+            let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
@@ -856,9 +858,9 @@ impl ObjectService for ObjectServiceImpl {
 
         // Check if user is authorized to create objects in this collection
         let object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         let api_token = self
             .authz
@@ -931,7 +933,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate format of provided uuids
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Check if user is authorized to fetch objects from collection
         let api_token = self
@@ -972,7 +974,7 @@ impl ObjectService for ObjectServiceImpl {
                         }
                     };
                     let object_uuid =
-                        uuid::Uuid::parse_str(&object_data.id).map_err(ArunaError::from)?;
+                        diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
                     if inner_request.with_url
                         && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
@@ -1014,9 +1016,9 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate format of provided uuids
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let _object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
         // Check if user is authorized to fetch revisions of specific object
         let api_token = self
@@ -1058,7 +1060,7 @@ impl ObjectService for ObjectServiceImpl {
                     }
                 };
                 let proto_object_uuid =
-                    uuid::Uuid::parse_str(&object_data.id).map_err(ArunaError::from)?;
+                    diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
                 if inner_request.with_url
                     && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
@@ -1098,9 +1100,9 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate format of provided uuids
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let _object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
         // Check if user is authorized to fetch latest object revision
         let api_token = self
@@ -1140,7 +1142,7 @@ impl ObjectService for ObjectServiceImpl {
             };
 
             let proto_object_uuid =
-                uuid::Uuid::parse_str(&object_data.id).map_err(ArunaError::from)?;
+                diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
             if inner_request.with_url
                 && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
@@ -1179,7 +1181,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1210,7 +1212,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1241,7 +1243,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1274,9 +1276,9 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate uuid format of collection id provided in the request
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         let object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
 
         let metadata = request.metadata().clone();
 
@@ -1350,7 +1352,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate uuid format of collection id provided in the request
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize user action
         let api_token = self
@@ -1403,7 +1405,7 @@ impl ObjectService for ObjectServiceImpl {
                     }
                 };
                 let proto_object_uuid =
-                    uuid::Uuid::parse_str(&object_data.id).map_err(ArunaError::from)?;
+                    diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
                 // Generate presigned download url if object is eligible
                 let download_url =
@@ -1450,7 +1452,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // Validate uuid format of collection id provided in the request
         let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         // Authorize user action
         let api_token = self
@@ -1477,8 +1479,8 @@ impl ObjectService for ObjectServiceImpl {
         let mapped_uuids = inner_request
             .objects
             .iter()
-            .map(|obj_str| uuid::Uuid::parse_str(obj_str))
-            .collect::<Result<Vec<uuid::Uuid>, _>>()
+            .map(|obj_str| diesel_ulid::DieselUlid::from_str(obj_str))
+            .collect::<Result<Vec<diesel_ulid::DieselUlid>, _>>()
             .map_err(ArunaError::from)?;
 
         let (tx, rx) = mpsc::channel(4);
@@ -1490,7 +1492,7 @@ impl ObjectService for ObjectServiceImpl {
                         if let Some(object_data) = object_with_url.object {
                             // Parse object id of proto object
                             let proto_object_uuid =
-                                uuid::Uuid::parse_str(&object_data.id).map_err(ArunaError::from)?;
+                                diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
                             // Create presigned download url if object is eligible
                             let download_url = if grpc_to_db_object_status(&object_data.status)
@@ -1556,7 +1558,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1592,7 +1594,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1628,7 +1630,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -1665,7 +1667,7 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1819,7 +1821,7 @@ impl ObjectService for ObjectServiceImpl {
 // That can be transferred to
 pub async fn try_connect_object_endpoint_moveable(
     database: Arc<Database>,
-    object_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
 ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
     // Get primary location with its endpoint from database
     let (location, endpoint, encryption_key) =
@@ -1861,8 +1863,8 @@ pub async fn try_connect_object_endpoint_moveable(
 /// Helper function to encapsulate the creation of presigned download urls
 fn get_object_download_url(
     database: Arc<Database>,
-    object_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     api_token: &ApiToken,
 ) -> Result<String, ArunaError> {
     let result =
