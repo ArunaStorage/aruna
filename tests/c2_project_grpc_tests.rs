@@ -18,8 +18,8 @@ use aruna_server::{
     server::services::user::UserServiceImpl,
 };
 use serial_test::serial;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 mod common;
 

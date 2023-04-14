@@ -116,7 +116,7 @@ fn add_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Get Endpoint by its uuid
     let Endpoint {
@@ -145,7 +145,7 @@ fn get_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_by_name_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
     let endpoint_name = "demo_endpoint";
 
     // Get Endpoint by its uuid

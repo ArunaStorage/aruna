@@ -26,7 +26,7 @@ use crate::common::functions::{create_collection, TCreateCollection};
 #[serial(db)]
 fn create_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
     let request = CreateProjectRequest {
         name: "create-project-test-project".to_string(),
@@ -52,10 +52,9 @@ fn get_project_test() {
 #[serial(db)]
 fn update_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
-    let _created_project = common::functions::create_project(None);
-    let project_id = diesel_ulid::DieselUlid::from_str(&_created_project.id).unwrap();
+    let project_id = common::functions::create_project(None).id;
 
     assert!(!project_id.to_string().is_empty());
 
@@ -96,7 +95,7 @@ fn update_project_test() {
 #[serial(db)]
 fn destroy_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
     let _created_project = common::functions::create_project(None);
     let project_id = diesel_ulid::DieselUlid::from_str(&_created_project.id).unwrap();
@@ -130,7 +129,7 @@ fn destroy_empty_project_test() {
 #[serial(db)]
 fn destroy_non_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
     let created_project = common::functions::create_project(None);
     // Validate creation
@@ -155,7 +154,7 @@ fn destroy_non_empty_project_test() {
 #[serial(db)]
 fn add_remove_project_user_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
     // Register and activate some random users
     let mut rnd_user_ids: Vec<String> = Vec::new();
@@ -244,7 +243,7 @@ fn add_remove_project_user_test() {
 #[serial(db)]
 fn edit_project_user_permissions_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
 
     // Register and activate a random user
     let register_user_request = RegisterUserRequest {

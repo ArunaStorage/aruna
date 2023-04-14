@@ -24,6 +24,7 @@ use aruna_server::database::schema::objects::dsl::objects;
 
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
+use diesel_ulid::DieselUlid;
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
@@ -69,6 +70,54 @@ pub fn compare_it<T: Eq + Hash>(
     get_lookup(i1.into_iter()) == get_lookup(i2.into_iter())
 }
 
+/// Returns the ULID of the admin user used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
+    )
+}
+
+/// Returns the ULID of the regular user used in the test environment
+#[allow(dead_code)]
+pub fn get_regular_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("ee4e1d0b-abab-4979-a33e-dc28ed199b17").unwrap(),
+    )
+}
+
+/// Returns the ULID of the admin project used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111111").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default regular project available in the test environment
+#[allow(dead_code)]
+pub fn get_regular_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111122").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default regular collection available in the test environment
+#[allow(dead_code)]
+pub fn get_default_collection_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("40aa84c5-6c94-4f51-9d5e-607067a4dd07").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default data proxy endpoint available in the test environment
+#[allow(dead_code)]
+pub fn get_default_endpoint_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap(),
+    )
+}
+
 #[allow(dead_code)]
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
@@ -76,7 +125,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let creator = if let Some(c_id) = creator_id {
         diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap())
+        get_admin_user_ulid()
     };
 
     let project_name = rand_string(30).to_lowercase();
@@ -119,7 +168,9 @@ pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let get_request = GetProjectRequest {
         project_id: project_id.to_string(),
     };
-    let response = db.get_project(get_request, diesel_ulid::DieselUlid::default()).unwrap();
+    let response = db
+        .get_project(get_request, diesel_ulid::DieselUlid::default())
+        .unwrap();
 
     response.project.unwrap()
 }
@@ -136,17 +187,18 @@ pub fn update_project_permission(
     // Validate format of provided ids
     let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
     let user_id = diesel_ulid::DieselUlid::from_str(user_uuid).unwrap();
-    let creator_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let creator_id = get_admin_user_ulid();
 
-    let edit_perm_request = EditUserPermissionsForProjectRequest {
-        project_id: project_id.to_string(),
-        user_permission: Some(ProjectPermission {
-            user_id: user_id.to_string(),
+    let edit_perm_request: EditUserPermissionsForProjectRequest =
+        EditUserPermissionsForProjectRequest {
             project_id: project_id.to_string(),
-            permission: new_perm as i32,
-            service_account: false,
-        }),
-    };
+            user_permission: Some(ProjectPermission {
+                user_id: user_id.to_string(),
+                project_id: project_id.to_string(),
+                permission: new_perm as i32,
+                service_account: false,
+            }),
+        };
 
     let edit_perm_response = db.edit_user_permissions_for_project(edit_perm_request, creator_id);
 
@@ -183,10 +235,17 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         request: CreateNewCollectionRequest,
     }
     let creator = if let Some(c_id) = tccol.creator_id {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str(&c_id).unwrap())
+        diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap())
+        get_admin_user_ulid()
     };
+
+    let project_ulid = if tccol.project_id.is_empty() {
+        get_regular_project_ulid()
+    } else {
+        diesel_ulid::DieselUlid::from_str(&tccol.project_id.as_str()).unwrap()
+    };
+
     // Create CollectionTest object containing the Request and expected values
     let create_collection_request_test = if let Some(col_req) = tccol.col_override {
         CollectionTest {
@@ -215,7 +274,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             name: col_name.clone(),
             description: col_description.clone(),
             label_ontology: None,
-            project_id: ulid_uuid_str_conv(&tccol.project_id),
+            project_id: project_ulid.to_string(), // ulid_uuid_str_conv(&tccol.project_id),
             labels: labels.clone(),
             hooks: hooks.clone(),
             dataclass: 1,
@@ -301,13 +360,14 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let creator_id = if let Some(c_id) = &object_info.creator_id {
         diesel_ulid::DieselUlid::from_str(c_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap())
+        get_admin_user_ulid()
     };
-    let collection_id = diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
         diesel_ulid::DieselUlid::from_str(e_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap())
+        get_default_endpoint_ulid()
     };
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
@@ -399,13 +459,14 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     let creator_id = if let Some(c_id) = &object_info.creator_id {
         diesel_ulid::DieselUlid::from_str(c_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap())
+        get_admin_user_ulid()
     };
-    let collection_id = diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
         diesel_ulid::DieselUlid::from_str(e_id).unwrap()
     } else {
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap())
+        get_default_endpoint_ulid()
     };
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
@@ -453,7 +514,8 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
         .unwrap();
 
     let staging_object = get_object(collection_id.to_string(), init_response.object_id);
-    let staging_object_uuid = diesel_ulid::DieselUlid::from_str(staging_object.id.as_str()).unwrap();
+    let staging_object_uuid =
+        diesel_ulid::DieselUlid::from_str(staging_object.id.as_str()).unwrap();
 
     // Validate Object creation
     assert_eq!(staging_object.id, object_id.to_string());
@@ -560,8 +622,8 @@ pub struct TCreateUpdate {
 #[allow(dead_code)]
 pub fn update_object(update: &TCreateUpdate) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = get_admin_user_ulid();
+    let endpoint = get_default_endpoint_ulid();
 
     // ParseTCreateUpdate
     let dummy_labels = (0..update.num_labels)
@@ -676,7 +738,6 @@ pub fn get_raw_db_object_group(
     .object_group
     .unwrap()
 }
-
 
 pub fn ulid_uuid_str_conv(uuid: &str) -> String {
     diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str(uuid).unwrap()).to_string()

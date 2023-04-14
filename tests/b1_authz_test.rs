@@ -85,7 +85,7 @@ fn get_oidc_user_test() {
         .unwrap();
 
     // Expect the user to have the following uuid
-    let parsed_uid = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
+    let parsed_uid = common::functions::get_admin_user_ulid();
     assert_eq!(user_id, parsed_uid)
 }
 
@@ -210,7 +210,7 @@ fn get_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     let col = common::functions::create_collection(common::functions::TCreateCollection {
-        project_id: "12345678-1111-1111-1111-111111111111".to_string(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         ..Default::default()
     });
 
@@ -666,10 +666,7 @@ fn get_user_projects_test() {
         description: "First project created in get_user_projects_test()".to_string(),
     };
     let proj_1 = db
-        .create_project(
-            crt_proj_req,
-            diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()),
-        )
+        .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj
     let add_user_req = AddUserToProjectRequest {
@@ -739,10 +736,7 @@ fn get_checked_user_id_from_token_test() {
         description: "".to_string(),
     };
     let proj_1 = db
-        .create_project(
-            crt_proj_req,
-            diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()),
-        )
+        .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj with permissions "Read"
     let add_user_req = AddUserToProjectRequest {
@@ -785,9 +779,12 @@ fn get_checked_user_id_from_token_test() {
     // Create a initial token
     let (regular_personal_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     // Admin token
-    let admin_token = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap());
+    let admin_token = diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap(),
+    );
     // Personal token with perm = 3
-    let regular_personal_token = diesel_ulid::DieselUlid::from_str(&regular_personal_token.id).unwrap();
+    let regular_personal_token =
+        diesel_ulid::DieselUlid::from_str(&regular_personal_token.id).unwrap();
     // Project scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
         project_id: proj_1.project_id.clone(),
@@ -799,7 +796,8 @@ fn get_checked_user_id_from_token_test() {
     };
     // Create a initial token
     let (project_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let project_token_with_read = diesel_ulid::DieselUlid::from_str(&project_token_with_read.id).unwrap();
+    let project_token_with_read =
+        diesel_ulid::DieselUlid::from_str(&project_token_with_read.id).unwrap();
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
         project_id: _proj_2.project_id.clone(),
@@ -812,7 +810,8 @@ fn get_checked_user_id_from_token_test() {
     // Create a initial token
     let (project_token_with_admin, _, _) =
         db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let project_token_with_admin = diesel_ulid::DieselUlid::from_str(&project_token_with_admin.id).unwrap();
+    let project_token_with_admin =
+        diesel_ulid::DieselUlid::from_str(&project_token_with_admin.id).unwrap();
 
     // Create collection in proj_1 --> Admin
     let ccoll_1_req = CreateNewCollectionRequest {
@@ -881,7 +880,7 @@ fn get_checked_user_id_from_token_test() {
         .unwrap();
     assert_eq!(
         token_user_uuid.to_string(),
-        diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()).to_string()
+        common::functions::get_admin_user_ulid().to_string()
     );
     // Case 2. Non admin token / Requested admin context: SHOULD fail
     let res = db.get_checked_user_id_from_token(

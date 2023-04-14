@@ -298,7 +298,7 @@ async fn get_objects_grpc_test() {
         tonic::Request::new(CreateNewCollectionRequest {
             name: "test-collection".to_string(),
             description: "Test collection".to_string(),
-            project_id: "12345678-1111-1111-1111-111111111111".to_string(),
+            project_id: common::functions::get_regular_project_ulid().to_string(),
             labels: vec![],
             hooks: vec![],
             label_ontology: None,

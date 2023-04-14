@@ -50,8 +50,8 @@ impl Hash for MyObjectWithUrl {
 #[serial(db)]
 fn create_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create Project
     let create_project_request = CreateProjectRequest {
@@ -60,7 +60,8 @@ fn create_object_test() {
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id = diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
+    let project_id =
+        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
 
     assert!(!project_id.to_string().is_empty());
 
@@ -77,7 +78,8 @@ fn create_object_test() {
     let create_collection_response = db
         .create_new_collection(create_collection_request, creator)
         .unwrap();
-    let collection_id = diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
 
     // Create Object
     let new_object_id = diesel_ulid::DieselUlid::generate();
@@ -547,8 +549,8 @@ fn update_object_get_references_test() {
 #[serial(db)]
 fn delete_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -681,8 +683,8 @@ fn delete_object_test() {
 #[serial(db)]
 fn delete_object_references_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -742,8 +744,8 @@ fn delete_object_references_test() {
 #[serial(db)]
 fn get_objects_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -794,8 +796,8 @@ fn get_objects_test() {
 #[serial(db)]
 fn get_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -848,8 +850,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_primary_location_test() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+//     let creator = common::functions::get_admin_user_ulid();
+//     let endpoint_id = common::functions::get_default_endpoint_ulid();
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -886,8 +888,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_primary_location_with_endpoint_test() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+//     let creator = common::functions::get_admin_user_ulid();
+//     let endpoint_id = common::functions::get_default_endpoint_ulid();
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -925,8 +927,8 @@ fn get_object_test() {
 // #[serial(db)]
 // fn get_object_locations() {
 //     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-//     let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-//     let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+//     let creator = common::functions::get_admin_user_ulid();
+//     let endpoint_id = common::functions::get_default_endpoint_ulid();
 
 //     // Create random project
 //     let random_project = create_project(None);
@@ -964,8 +966,8 @@ fn get_object_test() {
 #[serial(db)]
 fn clone_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -1030,8 +1032,8 @@ fn clone_object_test() {
 #[serial(db)]
 fn delete_multiple_objects_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -1180,8 +1182,8 @@ fn delete_multiple_objects_test() {
 #[serial(db)]
 fn delete_object_from_versioned_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap());
-    let endpoint_id = diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap());
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
