@@ -12,6 +12,7 @@ use aruna_server::{
 };
 use serial_test::serial;
 use tonic::Code;
+
 mod common;
 
 #[ignore]
@@ -108,7 +109,7 @@ async fn activate_user_grpc_test() {
     // FAILED Test
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(ActivateUserRequest {
-            user_id: "ee4e1d0b-abab-4979-a33e-dc28ed199b17".to_string(),
+            user_id: common::functions::get_regular_user_ulid().to_string(),
             project_perms: None,
         }),
         common::oidc::REGULAROIDC,
@@ -122,7 +123,7 @@ async fn activate_user_grpc_test() {
     // FAILED Test -> ADMIN OIDC TOKEN
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(ActivateUserRequest {
-            user_id: "ee4e1d0b-abab-4979-a33e-dc28ed199b17".to_string(),
+            user_id: common::functions::get_regular_user_ulid().to_string(),
             project_perms: None,
         }),
         common::oidc::ADMINOIDC,
@@ -158,7 +159,6 @@ async fn activate_user_grpc_test() {
         }),
         common::oidc::ADMINTOKEN,
     );
-
     let resp = userservice.activate_user(req).await;
 
     println!("{:#?}", resp);
@@ -176,6 +176,8 @@ async fn create_api_token_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let userservice = UserServiceImpl::new(db, authz, None).await;
+
+    let regular_project_ulid = common::functions::get_regular_project_ulid();
 
     // Working test
     let req = common::grpc_helpers::add_token(
@@ -202,8 +204,8 @@ async fn create_api_token_grpc_test() {
     // Broken test with collection and project
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "bd62af97-6bf9-40b4-929a-686b417b8be7".to_string(),
-            collection_id: "06f2c757-4c69-43f8-af82-7bd3e321ad9e".to_string(),
+            project_id: diesel_ulid::DieselUlid::generate().to_string(),
+            collection_id: diesel_ulid::DieselUlid::generate().to_string(),
             name: "test_token_broken".to_string(),
             expires_at: None,
             permission: 0,
@@ -220,7 +222,7 @@ async fn create_api_token_grpc_test() {
     // Should work: Token for foreign collection (as_admin)
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "12345678-1111-1111-1111-111111111122".to_string(),
+            project_id: regular_project_ulid.to_string(),
             collection_id: "".to_string(),
             name: "test_token_foreign".to_string(),
             expires_at: None,
@@ -243,7 +245,7 @@ async fn create_api_token_grpc_test() {
     // Should fail for "regular user": Token for foreign collection (as_admin)
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "12345678-1111-1111-1111-111111111122".to_string(),
+            project_id: regular_project_ulid.to_string(),
             collection_id: "".to_string(),
             name: "test_token_foreign".to_string(),
             expires_at: None,
@@ -262,7 +264,7 @@ async fn create_api_token_grpc_test() {
     // Should fail for "regular user": OIDCToken for foreign collection
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "12345678-1111-1111-1111-111111111122".to_string(),
+            project_id: regular_project_ulid.to_string(),
             collection_id: "".to_string(),
             name: "test_token_foreign_fail".to_string(),
             expires_at: None,

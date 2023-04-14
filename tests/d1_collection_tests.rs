@@ -33,7 +33,7 @@ fn get_collection_by_id_test() {
     let request = CreateNewCollectionRequest {
         name: "new-collection".to_owned(),
         description: "this_is_a_demo_collection".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "label_test_key".to_owned(),
@@ -112,13 +112,13 @@ fn get_collection_by_id_test() {
 #[serial(db)]
 fn get_collections_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let regular_project_ulid = common::functions::get_regular_project_ulid();
 
     let request = CreateNewCollectionRequest {
         name: "new-collection-1".to_owned(),
         description: "this_is_a_demo_collection_1".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -143,7 +143,7 @@ fn get_collections_test() {
     let request = CreateNewCollectionRequest {
         name: "new-collection-2".to_owned(),
         description: "this_is_a_demo_collection_2".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -169,7 +169,7 @@ fn get_collections_test() {
     let request = CreateNewCollectionRequest {
         name: "new-collection-3".to_owned(),
         description: "this_is_a_demo_collection_3".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -199,7 +199,7 @@ fn get_collections_test() {
 
     // 1. ID filter no page
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: None,
             ids: vec![res_2_id.clone()],
@@ -221,7 +221,7 @@ fn get_collections_test() {
 
     // 2. Label filter (2)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -250,7 +250,7 @@ fn get_collections_test() {
 
     // 2. Label filter (3)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -270,7 +270,7 @@ fn get_collections_test() {
 
     // 2. Label filter (4)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![
@@ -305,7 +305,7 @@ fn get_collections_test() {
 
     // 2. PageRequest (1)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -336,7 +336,7 @@ fn get_collections_test() {
 
     // 2. PageRequest (2) -> next
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -382,7 +382,7 @@ fn get_collections_test() {
 
     // INVALID
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -411,8 +411,7 @@ fn get_collections_test() {
 #[serial(db)]
 fn update_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let created_project = common::functions::create_project(None);
     // Create collection in project
@@ -420,8 +419,8 @@ fn update_collection_test() {
         project_id: created_project.id,
         ..Default::default()
     });
-    let col_id = uuid::Uuid::from_str(&result.id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
     // Define mutable request to reuse for the individual updates
     let mut update_request = UpdateCollectionRequest {
@@ -581,13 +580,12 @@ fn update_collection_test() {
 #[serial(db)]
 fn pin_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let request = CreateNewCollectionRequest {
         name: "pin-collection-test-collection-001".to_owned(),
         description: "Collection created in update_collection_test()".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
@@ -601,10 +599,10 @@ fn pin_collection_test() {
     };
 
     let result = db.create_new_collection(request, creator).unwrap();
-    let col_id = uuid::Uuid::from_str(&result.collection_id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Add some objects and an objectgroup
     let new_obj_1 = InitializeNewObjectRequest {
@@ -626,7 +624,7 @@ fn pin_collection_test() {
         is_specification: false,
         hash: None,
     };
-    let obj_1_id = uuid::Uuid::new_v4();
+    let obj_1_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_1 = db
         .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
@@ -664,7 +662,7 @@ fn pin_collection_test() {
         hash: None,
     };
 
-    let obj_2_id = uuid::Uuid::new_v4();
+    let obj_2_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_2 = db
         .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
@@ -714,13 +712,13 @@ fn pin_collection_test() {
 #[serial(db)]
 fn delete_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let regular_project_ulid = common::functions::get_regular_project_ulid();
 
     let request = CreateNewCollectionRequest {
         name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
@@ -738,7 +736,7 @@ fn delete_collection_test() {
     let ref_col_request = CreateNewCollectionRequest {
         name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
@@ -752,10 +750,10 @@ fn delete_collection_test() {
     };
 
     let result_2 = db.create_new_collection(ref_col_request, creator).unwrap();
-    let col_id = uuid::Uuid::from_str(&result.collection_id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Add some objects and an objectgroup
     let new_obj_1 = InitializeNewObjectRequest {
@@ -777,7 +775,7 @@ fn delete_collection_test() {
         is_specification: false,
         hash: None,
     };
-    let obj_1_id = uuid::Uuid::new_v4();
+    let obj_1_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_1 = db
         .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
@@ -824,7 +822,7 @@ fn delete_collection_test() {
         hash: None,
     };
 
-    let obj_2_id = uuid::Uuid::new_v4();
+    let obj_2_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_2 = db
         .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
@@ -890,8 +888,8 @@ pub fn test_materialized_view_refreshs() {
 #[serial(db)]
 pub fn test_collection_materialized_views_stats() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create fresh Project
     let create_project_request = CreateProjectRequest {
@@ -901,9 +899,10 @@ pub fn test_collection_materialized_views_stats() {
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&create_project_response.project_id).unwrap();
+    let project_id =
+        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
 
-    assert!(!project_id.is_nil());
+    assert!(!project_id.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
@@ -918,10 +917,11 @@ pub fn test_collection_materialized_views_stats() {
     let create_collection_response = db
         .create_new_collection(create_collection_request, creator)
         .unwrap();
-    let collection_id = uuid::Uuid::parse_str(&create_collection_response.collection_id).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
 
     // Create Object
-    let new_object_id = uuid::Uuid::new_v4();
+    let new_object_id = diesel_ulid::DieselUlid::generate();
     let upload_id = "".to_string();
 
     let init_object_request = InitializeNewObjectRequest {

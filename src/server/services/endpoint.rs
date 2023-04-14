@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Code, Request, Response, Status};
 
@@ -101,8 +102,8 @@ impl EndpointService for EndpointServiceImpl {
                     aruna_rust_api::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointId(
                         ep_id,
                     ) => {
-                        let ep_uuid = uuid::Uuid
-                            ::parse_str(ep_id.as_str())
+                        let ep_uuid = diesel_ulid::DieselUlid
+                            ::from_str(ep_id.as_str())
                             .map_err(ArunaError::from)?;
                         self.database.get_endpoint(&ep_uuid)
                     }

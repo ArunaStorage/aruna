@@ -24,12 +24,14 @@ use aruna_server::database::schema::objects::dsl::objects;
 
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
+use diesel_ulid::DieselUlid;
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 use diesel::result::Error;
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
+use std::str::FromStr;
 
 pub fn rand_string(len: usize) -> String {
     thread_rng()
@@ -68,14 +70,62 @@ pub fn compare_it<T: Eq + Hash>(
     get_lookup(i1.into_iter()) == get_lookup(i2.into_iter())
 }
 
+/// Returns the ULID of the admin user used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
+    )
+}
+
+/// Returns the ULID of the regular user used in the test environment
+#[allow(dead_code)]
+pub fn get_regular_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("ee4e1d0b-abab-4979-a33e-dc28ed199b17").unwrap(),
+    )
+}
+
+/// Returns the ULID of the admin project used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111111").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default regular project available in the test environment
+#[allow(dead_code)]
+pub fn get_regular_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111122").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default regular collection available in the test environment
+#[allow(dead_code)]
+pub fn get_default_collection_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("40aa84c5-6c94-4f51-9d5e-607067a4dd07").unwrap(),
+    )
+}
+
+/// Returns the ULID of the default data proxy endpoint available in the test environment
+#[allow(dead_code)]
+pub fn get_default_endpoint_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap(),
+    )
+}
+
 #[allow(dead_code)]
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     let creator = if let Some(c_id) = creator_id {
-        uuid::Uuid::parse_str(&c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
 
     let project_name = rand_string(30).to_lowercase();
@@ -87,8 +137,8 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
 
     let result = db.create_project(create_request, creator).unwrap();
     // Test if project_id is parseable
-    let project_id = uuid::Uuid::parse_str(&result.project_id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&result.project_id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Query project
     let response = get_project(&result.project_id);
@@ -113,12 +163,14 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
 pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
 
     let get_request = GetProjectRequest {
         project_id: project_id.to_string(),
     };
-    let response = db.get_project(get_request, uuid::Uuid::default()).unwrap();
+    let response = db
+        .get_project(get_request, diesel_ulid::DieselUlid::default())
+        .unwrap();
 
     response.project.unwrap()
 }
@@ -133,19 +185,20 @@ pub fn update_project_permission(
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Validate format of provided ids
-    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
-    let user_id = uuid::Uuid::parse_str(user_uuid).unwrap();
-    let creator_id = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(user_uuid).unwrap();
+    let creator_id = get_admin_user_ulid();
 
-    let edit_perm_request = EditUserPermissionsForProjectRequest {
-        project_id: project_id.to_string(),
-        user_permission: Some(ProjectPermission {
-            user_id: user_id.to_string(),
+    let edit_perm_request: EditUserPermissionsForProjectRequest =
+        EditUserPermissionsForProjectRequest {
             project_id: project_id.to_string(),
-            permission: new_perm as i32,
-            service_account: false,
-        }),
-    };
+            user_permission: Some(ProjectPermission {
+                user_id: user_id.to_string(),
+                project_id: project_id.to_string(),
+                permission: new_perm as i32,
+                service_account: false,
+            }),
+        };
 
     let edit_perm_response = db.edit_user_permissions_for_project(edit_perm_request, creator_id);
 
@@ -182,10 +235,17 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         request: CreateNewCollectionRequest,
     }
     let creator = if let Some(c_id) = tccol.creator_id {
-        uuid::Uuid::parse_str(&c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
+
+    let project_ulid = if tccol.project_id.is_empty() {
+        get_regular_project_ulid()
+    } else {
+        diesel_ulid::DieselUlid::from_str(tccol.project_id.as_str()).unwrap()
+    };
+
     // Create CollectionTest object containing the Request and expected values
     let create_collection_request_test = if let Some(col_req) = tccol.col_override {
         CollectionTest {
@@ -214,7 +274,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             name: col_name.clone(),
             description: col_description.clone(),
             label_ontology: None,
-            project_id: tccol.project_id,
+            project_id: project_ulid.to_string(),
             labels: labels.clone(),
             hooks: hooks.clone(),
             dataclass: 1,
@@ -298,15 +358,16 @@ pub struct TCreateObject {
 pub fn create_object(object_info: &TCreateObject) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator_id = if let Some(c_id) = &object_info.creator_id {
-        uuid::Uuid::parse_str(c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
-    let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
-        uuid::Uuid::parse_str(e_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(e_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
+        get_default_endpoint_ulid()
     };
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
@@ -315,7 +376,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     };
 
     // Initialize Object with random values
-    let object_id = uuid::Uuid::new_v4();
+    let object_id = diesel_ulid::DieselUlid::generate();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_length = thread_rng().gen_range(1..1073741824);
     let upload_id = "".to_string();
@@ -396,15 +457,16 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
 pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator_id = if let Some(c_id) = &object_info.creator_id {
-        uuid::Uuid::parse_str(c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
-    let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
-        uuid::Uuid::parse_str(e_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(e_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
+        get_default_endpoint_ulid()
     };
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
@@ -413,10 +475,10 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     };
 
     // Initialize Object with random values
-    let object_id = uuid::Uuid::new_v4();
+    let object_id = diesel_ulid::DieselUlid::generate();
     let object_filename = format!("DummyFile.{}", rand_string(5));
     let object_length = thread_rng().gen_range(1..1073741824);
-    let _upload_id = uuid::Uuid::new_v4();
+    let _upload_id = diesel_ulid::DieselUlid::generate();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -452,7 +514,8 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
         .unwrap();
 
     let staging_object = get_object(collection_id.to_string(), init_response.object_id);
-    let staging_object_uuid = uuid::Uuid::parse_str(staging_object.id.as_str()).unwrap();
+    let staging_object_uuid =
+        diesel_ulid::DieselUlid::from_str(staging_object.id.as_str()).unwrap();
 
     // Validate Object creation
     assert_eq!(staging_object.id, object_id.to_string());
@@ -495,7 +558,7 @@ pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
 
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let object_uuid = uuid::Uuid::parse_str(object_id).unwrap();
+    let object_uuid = diesel_ulid::DieselUlid::from_str(object_id).unwrap();
 
     db.pg_connection
         .get()
@@ -535,7 +598,7 @@ pub fn get_object_status_raw(object_id: &str) -> aruna_server::database::models:
 
     let mut conn = db.pg_connection.get().unwrap();
 
-    let obj_id = uuid::Uuid::parse_str(object_id).unwrap();
+    let obj_id = diesel_ulid::DieselUlid::from_str(object_id).unwrap();
 
     objects
         .filter(database::schema::objects::id.eq(&obj_id))
@@ -559,8 +622,8 @@ pub struct TCreateUpdate {
 #[allow(dead_code)]
 pub fn update_object(update: &TCreateUpdate) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = get_admin_user_ulid();
+    let endpoint = get_default_endpoint_ulid();
 
     // ParseTCreateUpdate
     let dummy_labels = (0..update.num_labels)
@@ -594,8 +657,8 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         "".to_string()
     };
     // Update Object
-    let updated_object_id_001 = uuid::Uuid::new_v4();
-    let updated_upload_id = uuid::Uuid::new_v4();
+    let updated_object_id_001 = diesel_ulid::DieselUlid::generate();
+    let updated_upload_id = diesel_ulid::DieselUlid::generate();
     let update_request = UpdateObjectRequest {
         object_id: update.original_object.id.to_string(),
         collection_id: update.collection_id.to_string(),

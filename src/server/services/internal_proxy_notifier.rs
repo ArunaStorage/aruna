@@ -1,4 +1,6 @@
 use super::authz::Authz;
+use std::str::FromStr;
+
 use crate::database::connection::Database;
 
 use crate::error::{ArunaError, TypeConversionError};
@@ -191,11 +193,11 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                 .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?
         };
 
-        let endpoint_uuid =
-            uuid::Uuid::parse_str(&inner_request.endpoint_id).map_err(ArunaError::from)?;
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(&inner_request.endpoint_id)
+            .map_err(ArunaError::from)?;
 
-        let access_key =
-            uuid::Uuid::parse_str(&inner_request.access_key).map_err(ArunaError::from)?;
+        let access_key = diesel_ulid::DieselUlid::from_str(&inner_request.access_key)
+            .map_err(ArunaError::from)?;
 
         // Finalize Object in database
         let database_clone = self.database.clone();
@@ -263,8 +265,8 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         let inner_request = request.into_inner();
 
         // Extract token id disguised as access_key
-        let access_key =
-            uuid::Uuid::parse_str(&inner_request.access_key).map_err(ArunaError::from)?;
+        let access_key = diesel_ulid::DieselUlid::from_str(&inner_request.access_key)
+            .map_err(ArunaError::from)?;
 
         // Finalize Object in database
         let database_clone = self.database.clone();

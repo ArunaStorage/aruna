@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use diesel::insert_into;
 use diesel::prelude::*;
 use diesel::result::Error;
@@ -70,7 +72,7 @@ impl Database {
             Ok(endpoint) => Ok(endpoint),
             Err(_) => {
                 let endpoint = Endpoint {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     endpoint_type: default_endpoint.ep_type,
                     proxy_hostname: default_endpoint.endpoint_proxy,
                     name: default_endpoint.endpoint_name,
@@ -111,7 +113,7 @@ impl Database {
         request: &AddEndpointRequest,
     ) -> Result<(Endpoint, i64), ArunaError> {
         let db_endpoint = Endpoint {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             endpoint_type: EndpointType::from_i32(request.ep_type)?,
             name: request.name.to_string(),
             proxy_hostname: request.proxy_hostname.to_string(),
@@ -160,7 +162,10 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
-    pub fn get_endpoint(&self, endpoint_uuid: &uuid::Uuid) -> Result<Endpoint, ArunaError> {
+    pub fn get_endpoint(
+        &self,
+        endpoint_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<Endpoint, ArunaError> {
         let endpoint = self
             .pg_connection
             .get()?
@@ -241,12 +246,12 @@ impl Database {
         &self,
         request: GetObjectEndpointsRequest,
     ) -> Result<GetObjectEndpointsResponse, ArunaError> {
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         // Transaction time
         let obj_eps = self
             .pg_connection
             .get()?
-            .transaction::<(Vec<Endpoint>, uuid::Uuid), Error, _>(|conn| {
+            .transaction::<(Vec<Endpoint>, diesel_ulid::DieselUlid), Error, _>(|conn| {
                 // Get collection_object association of original object
                 let locations = object_locations
                     .filter(database::schema::object_locations::object_id.eq(&parsed_object_id))

@@ -1,19 +1,18 @@
 use super::collection::*;
 use super::enums::*;
-use uuid;
 
 use crate::database::schema::*;
 
 #[derive(Queryable, Insertable, Identifiable, Debug)]
 pub struct IdentityProvider {
-    pub id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
     pub name: String,
     pub idp_type: IdentityProviderType,
 }
 
 #[derive(Queryable, Insertable, Identifiable, Debug, Clone, Default)]
 pub struct User {
-    pub id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
     pub external_id: String,
     pub display_name: String,
     pub active: bool,
@@ -25,10 +24,10 @@ pub struct User {
 #[diesel(belongs_to(IdentityProvider, foreign_key = idp_id))]
 #[diesel(belongs_to(User))]
 pub struct ExternalUserId {
-    pub id: uuid::Uuid,
-    pub user_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub user_id: diesel_ulid::DieselUlid,
     pub external_id: String,
-    pub idp_id: uuid::Uuid,
+    pub idp_id: diesel_ulid::DieselUlid,
 }
 
 #[derive(
@@ -37,12 +36,12 @@ pub struct ExternalUserId {
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name = projects)]
 pub struct Project {
-    pub id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
     pub name: String,
     pub description: String,
     pub flag: i64,
     pub created_at: chrono::NaiveDateTime,
-    pub created_by: uuid::Uuid,
+    pub created_by: diesel_ulid::DieselUlid,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
@@ -50,10 +49,10 @@ pub struct Project {
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]
 pub struct UserPermission {
-    pub id: uuid::Uuid,
-    pub user_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub user_id: diesel_ulid::DieselUlid,
     pub user_right: UserRights,
-    pub project_id: uuid::Uuid,
+    pub project_id: diesel_ulid::DieselUlid,
 }
 
 /// Tokentypes:
@@ -68,14 +67,14 @@ pub struct UserPermission {
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(PubKey, foreign_key = pub_key))]
 pub struct ApiToken {
-    pub id: uuid::Uuid,
-    pub creator_user_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub creator_user_id: diesel_ulid::DieselUlid,
     pub pub_key: i64,
     pub name: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub expires_at: Option<chrono::NaiveDateTime>,
-    pub project_id: Option<uuid::Uuid>,
-    pub collection_id: Option<uuid::Uuid>,
+    pub project_id: Option<diesel_ulid::DieselUlid>,
+    pub collection_id: Option<diesel_ulid::DieselUlid>,
     pub user_right: Option<UserRights>,
     pub secretkey: String,
     pub used_at: chrono::NaiveDateTime,

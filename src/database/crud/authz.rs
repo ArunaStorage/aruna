@@ -77,7 +77,7 @@ impl Database {
     ///
     /// ## Result:
     ///
-    /// - `Result<uuid::Uuid, Error>` -> This will either return the user uuid or error
+    /// - `Result<diesel_ulid::DieselUlid, Error>` -> This will either return the user uuid or error
     ///
     /// ## Behaviour
     ///
@@ -123,9 +123,9 @@ impl Database {
     ///
     pub fn get_checked_user_id_from_token(
         &self,
-        ctx_token: &uuid::Uuid,
+        ctx_token: &diesel_ulid::DieselUlid,
         req_ctx: &Context,
-    ) -> Result<(uuid::Uuid, ApiToken), ArunaError> {
+    ) -> Result<(diesel_ulid::DieselUlid, ApiToken), ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
         //use crate::database::schema::projects::dsl::*;
@@ -135,7 +135,7 @@ impl Database {
         let (creator_uid, api_token) =
             self.pg_connection
                 .get()?
-                .transaction::<(Option<uuid::Uuid>, ApiToken), dError, _>(|conn| {
+                .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
                         .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
@@ -219,7 +219,7 @@ impl Database {
                                         .eq(api_token.project_id.unwrap_or_default()),
                                 )
                                 .select(crate::database::schema::collections::dsl::id)
-                                .first::<uuid::Uuid>(conn)
+                                .first::<diesel_ulid::DieselUlid>(conn)
                                 .optional()?;
 
                             let col_in_proj_context = option_uuid_helper(
@@ -332,7 +332,10 @@ impl Database {
         }
     }
 
-    pub fn get_oidc_user(&self, oidc_id: &str) -> Result<Option<uuid::Uuid>, ArunaError> {
+    pub fn get_oidc_user(
+        &self,
+        oidc_id: &str,
+    ) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error;
 
@@ -379,8 +382,8 @@ impl Database {
 /// or a failed check.
 ///
 fn option_uuid_helper(
-    id1: Option<uuid::Uuid>,
-    id2: Option<uuid::Uuid>,
+    id1: Option<diesel_ulid::DieselUlid>,
+    id2: Option<diesel_ulid::DieselUlid>,
     res_type: Resources,
     req_user_right: UserRights,
     actual_user_right: Option<UserRights>,
@@ -409,8 +412,8 @@ mod tests {
     use super::*;
     #[test]
     fn option_uuid_helper_test() {
-        let uuid_a = Some(uuid::Uuid::new_v4());
-        let uuid_b = Some(uuid::Uuid::new_v4());
+        let uuid_a = Some(diesel_ulid::DieselUlid::generate());
+        let uuid_b = Some(diesel_ulid::DieselUlid::generate());
 
         // This should return none because both uuids are different
         assert!(option_uuid_helper(

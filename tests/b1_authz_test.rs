@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::{
     models::v1::ProjectPermission,
     services::v1::{
@@ -83,7 +85,7 @@ fn get_oidc_user_test() {
         .unwrap();
 
     // Expect the user to have the following uuid
-    let parsed_uid = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let parsed_uid = common::functions::get_admin_user_ulid();
     assert_eq!(user_id, parsed_uid)
 }
 
@@ -147,7 +149,7 @@ fn create_api_token_test() {
     let user_resp = db
         .register_user(user_req, "test_user_3_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -189,8 +191,8 @@ fn create_api_token_test() {
 
     // Create token with error
     let req = CreateApiTokenRequest {
-        project_id: uuid::Uuid::new_v4().to_string(),
-        collection_id: uuid::Uuid::new_v4().to_string(),
+        project_id: diesel_ulid::DieselUlid::generate().to_string(),
+        collection_id: diesel_ulid::DieselUlid::generate().to_string(),
         name: "broken_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -208,7 +210,7 @@ fn get_api_token_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     let col = common::functions::create_collection(common::functions::TCreateCollection {
-        project_id: "12345678-1111-1111-1111-111111111111".to_string(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         ..Default::default()
     });
 
@@ -221,7 +223,7 @@ fn get_api_token_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -300,7 +302,7 @@ fn get_api_tokens_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -371,7 +373,7 @@ fn delete_api_token_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -434,7 +436,7 @@ fn delete_api_tokens_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -508,7 +510,7 @@ fn get_user_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -535,7 +537,7 @@ fn get_user_test() {
 
     // -------- FAILS ---------
 
-    let user_info = db.get_user(uuid::Uuid::new_v4()).unwrap();
+    let user_info = db.get_user(diesel_ulid::DieselUlid::generate()).unwrap();
 
     assert!(user_info.user.is_none())
 }
@@ -564,7 +566,7 @@ fn get_not_activated_users_test() {
     let req = GetNotActivatedUsersRequest {};
 
     let resp = db
-        .get_not_activated_users(req, uuid::Uuid::default())
+        .get_not_activated_users(req, diesel_ulid::DieselUlid::default())
         .unwrap();
 
     println!("{:#?}", resp);
@@ -598,7 +600,7 @@ fn update_user_display_name_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -649,7 +651,7 @@ fn get_user_projects_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -664,10 +666,7 @@ fn get_user_projects_test() {
         description: "First project created in get_user_projects_test()".to_string(),
     };
     let proj_1 = db
-        .create_project(
-            crt_proj_req,
-            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
-        )
+        .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj
     let add_user_req = AddUserToProjectRequest {
@@ -722,7 +721,7 @@ fn get_checked_user_id_from_token_test() {
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
         .unwrap();
-    let user_id = uuid::Uuid::parse_str(&user_resp.user_id).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(&user_resp.user_id).unwrap();
 
     // Activate the user
     let req = ActivateUserRequest {
@@ -737,10 +736,7 @@ fn get_checked_user_id_from_token_test() {
         description: "".to_string(),
     };
     let proj_1 = db
-        .create_project(
-            crt_proj_req,
-            uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
-        )
+        .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj with permissions "Read"
     let add_user_req = AddUserToProjectRequest {
@@ -783,9 +779,12 @@ fn get_checked_user_id_from_token_test() {
     // Create a initial token
     let (regular_personal_token, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
     // Admin token
-    let admin_token = uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap();
+    let admin_token = diesel_ulid::DieselUlid::from(
+        uuid::Uuid::parse_str("12345678-8888-8888-8888-999999999999").unwrap(),
+    );
     // Personal token with perm = 3
-    let regular_personal_token = uuid::Uuid::parse_str(&regular_personal_token.id).unwrap();
+    let regular_personal_token =
+        diesel_ulid::DieselUlid::from_str(&regular_personal_token.id).unwrap();
     // Project scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
         project_id: proj_1.project_id.clone(),
@@ -797,7 +796,8 @@ fn get_checked_user_id_from_token_test() {
     };
     // Create a initial token
     let (project_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let project_token_with_read = uuid::Uuid::parse_str(&project_token_with_read.id).unwrap();
+    let project_token_with_read =
+        diesel_ulid::DieselUlid::from_str(&project_token_with_read.id).unwrap();
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
         project_id: _proj_2.project_id.clone(),
@@ -810,7 +810,8 @@ fn get_checked_user_id_from_token_test() {
     // Create a initial token
     let (project_token_with_admin, _, _) =
         db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let project_token_with_admin = uuid::Uuid::parse_str(&project_token_with_admin.id).unwrap();
+    let project_token_with_admin =
+        diesel_ulid::DieselUlid::from_str(&project_token_with_admin.id).unwrap();
 
     // Create collection in proj_1 --> Admin
     let ccoll_1_req = CreateNewCollectionRequest {
@@ -848,7 +849,7 @@ fn get_checked_user_id_from_token_test() {
     };
     // Create a initial token
     let (col_token_with_read, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let col_token_with_read = uuid::Uuid::parse_str(&col_token_with_read.id).unwrap();
+    let col_token_with_read = diesel_ulid::DieselUlid::from_str(&col_token_with_read.id).unwrap();
     // Collection scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
         project_id: "".to_string(),
@@ -860,7 +861,7 @@ fn get_checked_user_id_from_token_test() {
     };
     // Create a initial token
     let (col_token_with_admin, _, _) = db.create_api_token(req, user_id, pubkey_result).unwrap();
-    let col_token_with_admin = uuid::Uuid::parse_str(&col_token_with_admin.id).unwrap();
+    let col_token_with_admin = diesel_ulid::DieselUlid::from_str(&col_token_with_admin.id).unwrap();
 
     // TEST all tokens / cases
     // Case 1. Admin token / Admin context:
@@ -870,7 +871,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::ADMIN,
                 resource_type: database::models::enums::Resources::COLLECTION,
-                resource_id: uuid::Uuid::default(),
+                resource_id: diesel_ulid::DieselUlid::default(),
                 admin: true,
                 personal: false,
                 oidc_context: false,
@@ -879,7 +880,7 @@ fn get_checked_user_id_from_token_test() {
         .unwrap();
     assert_eq!(
         token_user_uuid.to_string(),
-        "12345678-1234-1234-1234-111111111111".to_string()
+        common::functions::get_admin_user_ulid().to_string()
     );
     // Case 2. Non admin token / Requested admin context: SHOULD fail
     let res = db.get_checked_user_id_from_token(
@@ -887,7 +888,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::ADMIN,
             resource_type: database::models::enums::Resources::COLLECTION,
-            resource_id: uuid::Uuid::default(),
+            resource_id: diesel_ulid::DieselUlid::default(),
             admin: true,
             personal: false,
             oidc_context: false,
@@ -901,7 +902,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::ADMIN,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -916,7 +917,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: uuid::Uuid::parse_str(&proj_1.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&proj_1.project_id).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -931,7 +932,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -946,7 +947,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
                 admin: false,
                 personal: true,
                 oidc_context: false,
@@ -960,7 +961,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::READ,
             resource_type: database::models::enums::Resources::PROJECT,
-            resource_id: uuid::Uuid::parse_str(&_proj_2.project_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
             admin: false,
             personal: true,
             oidc_context: false,
@@ -975,7 +976,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::COLLECTION,
-                resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -989,7 +990,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::ADMIN,
             resource_type: database::models::enums::Resources::COLLECTION,
-            resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
             admin: false,
             personal: false,
             oidc_context: false,
@@ -1002,7 +1003,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::ADMIN,
             resource_type: database::models::enums::Resources::COLLECTION,
-            resource_id: uuid::Uuid::parse_str(&col_2.collection_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
             admin: false,
             personal: false,
             oidc_context: false,

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::database;
 use crate::database::connection::Database;
@@ -35,7 +36,6 @@ use chrono::Utc;
 use diesel::{delete, insert_into, prelude::*, r2d2::ConnectionManager, result::Error, update};
 use itertools::Itertools;
 use r2d2::PooledConnection;
-use uuid::Uuid;
 
 use super::{
     object::{check_if_obj_in_coll, get_object, ObjectDto},
@@ -58,19 +58,19 @@ impl Database {
     pub fn create_object_group(
         &self,
         request: &CreateObjectGroupRequest,
-        creator: &uuid::Uuid,
+        creator: &diesel_ulid::DieselUlid,
     ) -> Result<CreateObjectGroupResponse, ArunaError> {
         use crate::database::schema::collection_object_groups::dsl::*;
         use crate::database::schema::object_group_key_value::dsl::*;
         use crate::database::schema::object_group_objects::dsl::*;
         use crate::database::schema::object_groups::dsl::*;
 
-        let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-        let new_obj_grp_uuid = uuid::Uuid::new_v4();
+        let parsed_col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let new_obj_grp_uuid = diesel_ulid::DieselUlid::generate();
 
         let database_obj_group = ObjectGroup {
             id: new_obj_grp_uuid,
-            shared_revision_id: uuid::Uuid::new_v4(),
+            shared_revision_id: diesel_ulid::DieselUlid::generate(),
             revision_number: 0,
             name: Some(request.name.to_string()),
             description: Some(request.description.to_string()),
@@ -79,7 +79,7 @@ impl Database {
         };
 
         let collection_object_group = CollectionObjectGroup {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             collection_id: parsed_col_id,
             object_group_id: new_obj_grp_uuid,
             writeable: true,
@@ -95,18 +95,18 @@ impl Database {
             .object_ids
             .iter()
             .map(|id_str| {
-                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                let obj_id = diesel_ulid::DieselUlid::from_str(id_str)?;
                 Ok(ObjectGroupObject {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     object_group_id: new_obj_grp_uuid,
                     object_id: obj_id,
                     is_meta: false,
                 })
             })
             .chain(request.meta_object_ids.iter().map(|id_str| {
-                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                let obj_id = diesel_ulid::DieselUlid::from_str(id_str)?;
                 Ok(ObjectGroupObject {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     object_group_id: new_obj_grp_uuid,
                     object_id: obj_id,
                     is_meta: true,
@@ -118,7 +118,7 @@ impl Database {
             .iter()
             .map(|e| e.object_id)
             .unique()
-            .collect::<Vec<uuid::Uuid>>();
+            .collect::<Vec<diesel_ulid::DieselUlid>>();
 
         // Insert all defined object_groups into the database
         let overview = self
@@ -174,20 +174,20 @@ impl Database {
     pub fn update_object_group(
         &self,
         request: &UpdateObjectGroupRequest,
-        creator: &uuid::Uuid,
+        creator: &diesel_ulid::DieselUlid,
     ) -> Result<UpdateObjectGroupResponse, ArunaError> {
         use crate::database::schema::collection_object_groups::dsl::*;
         use crate::database::schema::object_group_key_value::dsl::*;
         use crate::database::schema::object_group_objects::dsl::*;
         use crate::database::schema::object_groups::dsl::*;
 
-        let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-        let parsed_old_id = uuid::Uuid::parse_str(&request.group_id)?;
-        let new_obj_grp_uuid = uuid::Uuid::new_v4();
+        let parsed_col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let parsed_old_id = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
+        let new_obj_grp_uuid = diesel_ulid::DieselUlid::generate();
 
         let mut database_obj_group = ObjectGroup {
             id: new_obj_grp_uuid,
-            shared_revision_id: uuid::Uuid::default(),
+            shared_revision_id: diesel_ulid::DieselUlid::default(),
             revision_number: -10,
             name: Some(request.name.to_string()),
             description: Some(request.description.to_string()),
@@ -196,7 +196,7 @@ impl Database {
         };
 
         let collection_object_group = CollectionObjectGroup {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             collection_id: parsed_col_id,
             object_group_id: new_obj_grp_uuid,
             writeable: true,
@@ -212,18 +212,18 @@ impl Database {
             .object_ids
             .iter()
             .map(|id_str| {
-                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                let obj_id = diesel_ulid::DieselUlid::from_str(id_str)?;
                 Ok(ObjectGroupObject {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     object_group_id: new_obj_grp_uuid,
                     object_id: obj_id,
                     is_meta: false,
                 })
             })
             .chain(request.meta_object_ids.iter().map(|id_str| {
-                let obj_id = uuid::Uuid::parse_str(id_str)?;
+                let obj_id = diesel_ulid::DieselUlid::from_str(id_str)?;
                 Ok(ObjectGroupObject {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     object_group_id: new_obj_grp_uuid,
                     object_id: obj_id,
                     is_meta: true,
@@ -235,7 +235,7 @@ impl Database {
             .iter()
             .map(|e| e.object_id)
             .unique()
-            .collect::<Vec<uuid::Uuid>>();
+            .collect::<Vec<diesel_ulid::DieselUlid>>();
 
         //Insert all defined object_groups into the database
         let overview = self
@@ -298,7 +298,7 @@ impl Database {
         &self,
         request: &GetObjectGroupByIdRequest,
     ) -> Result<GetObjectGroupByIdResponse, ArunaError> {
-        let parsed_obj_id = uuid::Uuid::parse_str(&request.group_id)?;
+        let parsed_obj_id = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
 
         //Insert all defined object_groups into the database
         let overview = self
@@ -321,7 +321,7 @@ impl Database {
     ) -> Result<GetObjectGroupsFromObjectResponse, ArunaError> {
         use crate::database::schema::object_group_objects::dsl::*;
 
-        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let obj_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
         //Insert all defined object_groups into the database
         let overviews = self
@@ -331,7 +331,7 @@ impl Database {
                 let object_grp_ids = object_group_objects
                     .filter(crate::database::schema::object_group_objects::object_id.eq(obj_id))
                     .select(crate::database::schema::object_group_objects::object_group_id)
-                    .load::<uuid::Uuid>(conn)?;
+                    .load::<diesel_ulid::DieselUlid>(conn)?;
 
                 object_grp_ids
                     .iter()
@@ -365,7 +365,7 @@ impl Database {
         let parsed_query = parse_query(request.label_id_filter)?;
 
         // Parse the collection-id of the request
-        let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // ObjectGroup context
         use crate::database::schema::collection_object_groups::dsl as cogrps;
@@ -379,10 +379,10 @@ impl Database {
             .get()?
             .transaction::<Option<Vec<ObjectGroupDb>>, Error, _>(|conn| {
                 // Get all collection object group ids of collection object group references for filter
-                let ids: Option<Vec<Uuid>> = cogrps::collection_object_groups
+                let ids: Option<Vec<diesel_ulid::DieselUlid>> = cogrps::collection_object_groups
                     .select(cogrps::object_group_id)
                     .filter(cogrps::collection_id.eq(&collection_uuid))
-                    .load::<uuid::Uuid>(conn)
+                    .load::<diesel_ulid::DieselUlid>(conn)
                     .optional()?;
 
                 // First build a "boxed" base request to which additional parameters can be added later
@@ -394,7 +394,8 @@ impl Database {
                 if let Some(valid_ids) = ids {
                     base_request = base_request.filter(ogrps::id.eq_any(valid_ids));
                 } else {
-                    base_request = base_request.filter(ogrps::id.eq_any(Vec::<Uuid>::new()));
+                    base_request = base_request
+                        .filter(ogrps::id.eq_any(Vec::<diesel_ulid::DieselUlid>::new()));
                 }
 
                 // Create returnvector of CollectionOverviewsDb
@@ -419,7 +420,7 @@ impl Database {
                             // Create key value boxed request
                             let mut ckv_query = ogkv::object_group_key_value.into_boxed();
                             // Create vector with "matching" collections
-                            let found_objs: Option<Vec<uuid::Uuid>>;
+                            let found_objs: Option<Vec<diesel_ulid::DieselUlid>>;
                             // Is "and"
                             if l_query.1 {
                                 // Add each key / value to label query
@@ -453,7 +454,7 @@ impl Database {
                                 found_objs = ckv_query
                                     .select(ogkv::object_group_id)
                                     .distinct()
-                                    .load::<uuid::Uuid>(conn)
+                                    .load::<diesel_ulid::DieselUlid>(conn)
                                     .optional()?;
                             }
                             // Add to query if something was found otherwise return Only
@@ -511,7 +512,7 @@ impl Database {
     ) -> Result<GetObjectGroupHistoryResponse, ArunaError> {
         use crate::database::schema::object_groups::dsl::*;
 
-        let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
+        let grp_id = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         //Insert all defined object_groups into the database
         let overviews = self
@@ -539,9 +540,9 @@ impl Database {
                         base_request.filter(crate::database::schema::object_groups::id.ge(l_uid));
                 }
 
-                let all: Vec<uuid::Uuid> = base_request
+                let all: Vec<diesel_ulid::DieselUlid> = base_request
                     .select(crate::database::schema::object_groups::id)
-                    .load::<uuid::Uuid>(conn)?;
+                    .load::<diesel_ulid::DieselUlid>(conn)?;
                 Ok(all
                     .iter()
                     .filter_map(|s_obj_grp| query_object_group(*s_obj_grp, conn).ok())
@@ -568,8 +569,8 @@ impl Database {
     ) -> Result<GetObjectGroupObjectsResponse, ArunaError> {
         use crate::database::schema::object_group_objects::dsl::*;
 
-        let grp_id = uuid::Uuid::parse_str(&request.group_id)?;
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let grp_id = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
+        let col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         let (pagesize, last_uuid) = parse_page_request(request.page_request, 20)?;
         //Insert all defined object_groups into the database
         let overviews = self
@@ -635,7 +636,7 @@ impl Database {
         use crate::database::schema::object_groups::dsl::*;
 
         // Parse id of object group to be deleted
-        let object_group_uuid = Uuid::parse_str(&request.group_id)?;
+        let object_group_uuid = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
 
         // Deletion transaction
         self.pg_connection.get()?.transaction::<_, Error, _>(|conn| {
@@ -646,7 +647,7 @@ impl Database {
                 let og_shared_revision_id = object_groups
                     .filter(crate::database::schema::object_groups::id.eq(object_group_uuid))
                     .select(crate::database::schema::object_groups::shared_revision_id)
-                    .first::<uuid::Uuid>(conn)?;
+                    .first::<diesel_ulid::DieselUlid>(conn)?;
 
                 object_groups
                     .filter(crate::database::schema::object_groups::shared_revision_id.eq(&og_shared_revision_id))
@@ -761,7 +762,7 @@ impl Database {
         use crate::database::schema::object_group_key_value::dsl::*;
 
         // Parse id of object group to be deleted
-        let object_group_uuid = Uuid::parse_str(&request.group_id)?;
+        let object_group_uuid = diesel_ulid::DieselUlid::from_str(&request.group_id)?;
 
         // Deletion transaction
         let updated_ogroup = self
@@ -791,7 +792,7 @@ impl Database {
 /* ----------------- Section for object specific helper functions ------------------- */
 
 pub fn query_object_group(
-    ogroup_id: uuid::Uuid,
+    ogroup_id: diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectGroupDb>, diesel::result::Error> {
     use crate::database::schema::object_group_stats::dsl::*;
@@ -832,16 +833,16 @@ pub fn query_object_group(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `creator_id`: `&uuid::Uuid` - UUID of the user that initialized the change.
-/// * `objectgroups` `&Vec<uuid::Uuid>` - UUIDs of all object_groups that should be bumped to a new revision
+/// * `creator_id`: `&diesel_ulid::DieselUlid` - UUID of the user that initialized the change.
+/// * `objectgroups` `&Vec<diesel_ulid::DieselUlid>` - UUIDs of all object_groups that should be bumped to a new revision
 ///
 /// ## Resturns:
 ///
 /// `Result<Vec<ObjectGroup>, diesel::result::Error>` - List with new updated object_groups
 ///
 pub fn bump_revisisions(
-    objectgroups: &Vec<uuid::Uuid>,
-    creator_id: &uuid::Uuid,
+    objectgroups: &Vec<diesel_ulid::DieselUlid>,
+    creator_id: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ObjectGroup>, diesel::result::Error> {
     use crate::database::schema::collection_object_groups::dsl as collobjgrps;
@@ -865,7 +866,7 @@ pub fn bump_revisisions(
         .iter()
         .map(|old| {
             // Create a new uuid
-            let new_uuid = uuid::Uuid::new_v4();
+            let new_uuid = diesel_ulid::DieselUlid::generate();
             // Insert the mapping old vs. new uuid in the mappings hashmap
             mappings.insert(old.id, new_uuid);
             // Query the "latest" version first
@@ -897,7 +898,7 @@ pub fn bump_revisisions(
         .iter()
         .map(|old| {
             Ok(ObjectGroupKeyValue {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 object_group_id: *mappings
                     .get(&old.object_group_id)
                     .ok_or(diesel::result::Error::NotFound)?,
@@ -917,7 +918,7 @@ pub fn bump_revisisions(
         .iter()
         .map(|old| {
             Ok(ObjectGroupObject {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 object_group_id: *mappings
                     .get(&old.object_group_id)
                     .ok_or(diesel::result::Error::NotFound)?,
@@ -931,7 +932,7 @@ pub fn bump_revisisions(
         .iter()
         .map(|old| {
             Ok(CollectionObjectGroup {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 collection_id: old.collection_id,
                 object_group_id: *mappings
                     .get(&old.object_group_id)
@@ -973,7 +974,7 @@ pub fn bump_revisisions(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `ref_object_group_id`: `uuid::Uuid` - The Uuid for which the latest object_group revision should be found
+/// * `ref_object_group_id`: `diesel_ulid::DieselUlid` - The Uuid for which the latest object_group revision should be found
 ///
 /// ## Resturns:
 ///
@@ -982,13 +983,13 @@ pub fn bump_revisisions(
 ///
 pub fn get_latest_objgrp(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_group_id: uuid::Uuid,
+    ref_object_group_id: diesel_ulid::DieselUlid,
 ) -> Result<ObjectGroup, diesel::result::Error> {
     use crate::database::schema::object_groups::dsl as objgrps;
     let shared_id = objgrps::object_groups
         .filter(objgrps::id.eq(ref_object_group_id))
         .select(objgrps::shared_revision_id)
-        .first::<uuid::Uuid>(conn)?;
+        .first::<diesel_ulid::DieselUlid>(conn)?;
 
     let latest_object_grp = objgrps::object_groups
         .filter(objgrps::shared_revision_id.eq(shared_id))

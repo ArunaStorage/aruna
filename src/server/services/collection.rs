@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::database::connection::Database;
@@ -44,8 +45,8 @@ impl CollectionService for CollectionServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the uuid
-        let project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize the request
         let creator_id = self
@@ -98,7 +99,7 @@ impl CollectionService for CollectionServiceImpl {
         self.authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::READ,
             )
@@ -157,7 +158,7 @@ impl CollectionService for CollectionServiceImpl {
         self.authz
             .project_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().project_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::READ,
             )
@@ -213,7 +214,7 @@ impl CollectionService for CollectionServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::WRITE,
             )
@@ -265,7 +266,7 @@ impl CollectionService for CollectionServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::WRITE,
             )
@@ -321,7 +322,7 @@ impl CollectionService for CollectionServiceImpl {
             self.authz
                 .project_authorize_by_collectionid(
                     request.metadata(),
-                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                         .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                     UserRights::ADMIN,
                 )
@@ -330,7 +331,7 @@ impl CollectionService for CollectionServiceImpl {
             self.authz
                 .collection_authorize(
                     request.metadata(),
-                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                         .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                     UserRights::WRITE,
                 )

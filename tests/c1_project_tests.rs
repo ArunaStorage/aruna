@@ -17,6 +17,7 @@ use rand::seq::IteratorRandom;
 use rand::Rng;
 use serial_test::serial;
 use std::io::{Error, ErrorKind};
+use std::str::FromStr;
 
 use crate::common::functions::{create_collection, TCreateCollection};
 
@@ -25,7 +26,7 @@ use crate::common::functions::{create_collection, TCreateCollection};
 #[serial(db)]
 fn create_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let request = CreateProjectRequest {
         name: "create-project-test-project".to_string(),
@@ -33,9 +34,9 @@ fn create_project_test() {
     };
 
     let response = db.create_project(request, creator).unwrap();
-    let id = uuid::Uuid::parse_str(&response.project_id).unwrap();
+    let id = diesel_ulid::DieselUlid::from_str(&response.project_id).unwrap();
 
-    assert!(!id.is_nil())
+    assert!(!id.to_string().is_empty())
 }
 
 #[test]
@@ -51,12 +52,11 @@ fn get_project_test() {
 #[serial(db)]
 fn update_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
-    let _created_project = common::functions::create_project(None);
-    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
+    let project_id = common::functions::create_project(None).id;
 
-    assert!(!project_id.is_nil());
+    assert!(!project_id.is_empty());
 
     // Update empty project metadata
     let mut updated_name = "updated-project-name".to_string();
@@ -70,13 +70,13 @@ fn update_project_test() {
     let update_response = db.update_project(update_request.clone(), creator).unwrap();
     let updated_project = update_response.project.unwrap();
 
-    assert_eq!(project_id.to_string(), updated_project.id);
+    assert_eq!(project_id, updated_project.id);
     assert_eq!(updated_name, updated_project.name);
     assert_eq!(updated_description, updated_project.description);
 
     // Create random collection in project
     let _random_collection = common::functions::create_collection(TCreateCollection {
-        project_id: project_id.to_string(),
+        project_id: project_id,
         creator_id: Some(creator.to_string()),
         ..Default::default()
     });
@@ -95,11 +95,11 @@ fn update_project_test() {
 #[serial(db)]
 fn destroy_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let _created_project = common::functions::create_project(None);
-    let project_id = uuid::Uuid::parse_str(&_created_project.id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&_created_project.id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Destroy project
     let destroy_request = DestroyProjectRequest {
@@ -129,12 +129,12 @@ fn destroy_empty_project_test() {
 #[serial(db)]
 fn destroy_non_empty_project_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let created_project = common::functions::create_project(None);
     // Validate creation
-    let project_id = uuid::Uuid::parse_str(&created_project.id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&created_project.id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Create collection in project
     create_collection(TCreateCollection {
@@ -154,7 +154,7 @@ fn destroy_non_empty_project_test() {
 #[serial(db)]
 fn add_remove_project_user_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     // Register and activate some random users
     let mut rnd_user_ids: Vec<String> = Vec::new();
@@ -187,8 +187,8 @@ fn add_remove_project_user_test() {
     let create_response = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
-    let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&create_response.project_id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Add several users to project
     let mut rng = rand::thread_rng();
@@ -243,7 +243,7 @@ fn add_remove_project_user_test() {
 #[serial(db)]
 fn edit_project_user_permissions_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     // Register and activate a random user
     let register_user_request = RegisterUserRequest {
@@ -272,8 +272,8 @@ fn edit_project_user_permissions_test() {
     let create_response = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
-    let project_id = uuid::Uuid::parse_str(&create_response.project_id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&create_response.project_id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Add user to project as admin
     let admin_permission = ProjectPermission {
@@ -290,7 +290,7 @@ fn edit_project_user_permissions_test() {
 
     // Validate users project permission
     let get_user_response = db
-        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
+        .get_user(diesel_ulid::DieselUlid::from_str(user_id.as_str()).unwrap())
         .unwrap();
     assert!(get_user_response
         .project_permissions
@@ -313,7 +313,7 @@ fn edit_project_user_permissions_test() {
 
     // Validate users updated project permission
     let get_user_response = db
-        .get_user(uuid::Uuid::parse_str(user_id.as_str()).unwrap())
+        .get_user(diesel_ulid::DieselUlid::from_str(user_id.as_str()).unwrap())
         .unwrap();
     assert!(get_user_response
         .project_permissions
