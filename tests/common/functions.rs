@@ -243,7 +243,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     let project_ulid = if tccol.project_id.is_empty() {
         get_regular_project_ulid()
     } else {
-        diesel_ulid::DieselUlid::from_str(&tccol.project_id.as_str()).unwrap()
+        diesel_ulid::DieselUlid::from_str(tccol.project_id.as_str()).unwrap()
     };
 
     // Create CollectionTest object containing the Request and expected values

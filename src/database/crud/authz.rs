@@ -332,7 +332,10 @@ impl Database {
         }
     }
 
-    pub fn get_oidc_user(&self, oidc_id: &str) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
+    pub fn get_oidc_user(
+        &self,
+        oidc_id: &str,
+    ) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error;
 

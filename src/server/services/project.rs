@@ -1,7 +1,6 @@
 use super::authz::Authz;
 use std::str::FromStr;
 
-
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
@@ -66,8 +65,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize the request
         let _user_id = self
@@ -104,8 +103,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let _user_id = self
@@ -168,8 +167,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let _user_id = self
@@ -206,8 +205,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self
@@ -244,8 +243,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self
@@ -281,8 +280,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let _admin_user = self
@@ -320,8 +319,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let project_uuid =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let project_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         self.authz
@@ -362,8 +361,8 @@ impl ProjectService for ProjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the project Uuid
-        let parsed_project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user
         let user_id = self

@@ -358,7 +358,10 @@ impl Authz {
 
     /// This is a wrapper that runs the authorize function with an `admin` context
     /// a convenience function if this request is `admin` scoped
-    pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+    pub async fn admin_authorize(
+        &self,
+        metadata: &MetadataMap,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
@@ -509,7 +512,9 @@ impl Authz {
                 _ => AuthorizationError::PERMISSIONDENIED,
             })?;
 
-        Ok(diesel_ulid::DieselUlid::from_str(token_data.claims.sub.as_str())?)
+        Ok(diesel_ulid::DieselUlid::from_str(
+            token_data.claims.sub.as_str(),
+        )?)
     }
 
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {

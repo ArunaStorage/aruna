@@ -1359,7 +1359,10 @@ impl From<CollectionVersion> for Version {
 
 /// Function that converts a gRPC version to a database collection version
 /// This function needs a uuid to correctly map
-fn from_grpc_version(grpc_version: Version, version_id: diesel_ulid::DieselUlid) -> CollectionVersion {
+fn from_grpc_version(
+    grpc_version: Version,
+    version_id: diesel_ulid::DieselUlid,
+) -> CollectionVersion {
     CollectionVersion {
         id: version_id,
         major: grpc_version.major.into(),

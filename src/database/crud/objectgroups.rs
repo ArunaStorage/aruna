@@ -394,7 +394,8 @@ impl Database {
                 if let Some(valid_ids) = ids {
                     base_request = base_request.filter(ogrps::id.eq_any(valid_ids));
                 } else {
-                    base_request = base_request.filter(ogrps::id.eq_any(Vec::<diesel_ulid::DieselUlid>::new()));
+                    base_request = base_request
+                        .filter(ogrps::id.eq_any(Vec::<diesel_ulid::DieselUlid>::new()));
                 }
 
                 // Create returnvector of CollectionOverviewsDb

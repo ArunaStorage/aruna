@@ -217,8 +217,8 @@ impl UserService for UserServiceImpl {
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
 
             if !request.get_ref().collection_id.is_empty() {
-                let col_id =
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(|_| {
+                let col_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse collection_id".to_string())
                     })?;
                 self.authz
@@ -233,8 +233,8 @@ impl UserService for UserServiceImpl {
             }
 
             if !request.get_ref().project_id.is_empty() {
-                let proj_id =
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(|_| {
+                let proj_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+                    .map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse project_id".to_string())
                     })?;
                 self.authz
@@ -412,8 +412,8 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the request body and get the user_id
-            let parsed_body_uid =
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid = diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id)
+                .map_err(ArunaError::from)?;
 
             // Delete all tokens for this user and return response (empty)
             let response = Response::new(
@@ -574,8 +574,8 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the user_id from the request body
-            let parsed_body_uid =
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid = diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id)
+                .map_err(ArunaError::from)?;
 
             // Get all projects for a user and return the list as gRPC response
             let response = Response::new(

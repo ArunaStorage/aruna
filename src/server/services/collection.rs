@@ -45,8 +45,8 @@ impl CollectionService for CollectionServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the uuid
-        let project_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize the request
         let creator_id = self

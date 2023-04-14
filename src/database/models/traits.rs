@@ -8,5 +8,10 @@ pub trait IsKeyValue {
 }
 
 pub trait ToDbKeyValue {
-    fn new_kv<T>(key: &str, value: &str, belongs_to: diesel_ulid::DieselUlid, kv_type: KeyValueType) -> Self;
+    fn new_kv<T>(
+        key: &str,
+        value: &str,
+        belongs_to: diesel_ulid::DieselUlid,
+        kv_type: KeyValueType,
+    ) -> Self;
 }

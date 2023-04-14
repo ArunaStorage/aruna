@@ -56,7 +56,7 @@ fn update_project_test() {
 
     let project_id = common::functions::create_project(None).id;
 
-    assert!(!project_id.to_string().is_empty());
+    assert!(!project_id.is_empty());
 
     // Update empty project metadata
     let mut updated_name = "updated-project-name".to_string();
@@ -70,13 +70,13 @@ fn update_project_test() {
     let update_response = db.update_project(update_request.clone(), creator).unwrap();
     let updated_project = update_response.project.unwrap();
 
-    assert_eq!(project_id.to_string(), updated_project.id);
+    assert_eq!(project_id, updated_project.id);
     assert_eq!(updated_name, updated_project.name);
     assert_eq!(updated_description, updated_project.description);
 
     // Create random collection in project
     let _random_collection = common::functions::create_collection(TCreateCollection {
-        project_id: project_id.to_string(),
+        project_id: project_id,
         creator_id: Some(creator.to_string()),
         ..Default::default()
     });

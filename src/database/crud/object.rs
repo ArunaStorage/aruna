@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::str::FromStr;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::str::FromStr;
 
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
@@ -409,7 +409,8 @@ impl Database {
 
                 use crate::database::schema::encryption_keys::dsl as keys_dsl;
                 if let Some(proto_location) = &request.location {
-                    let endpoint_uuid = diesel_ulid::DieselUlid::from_str(proto_location.endpoint_id.as_str())?;
+                    let endpoint_uuid =
+                        diesel_ulid::DieselUlid::from_str(proto_location.endpoint_id.as_str())?;
 
                     let final_location = ObjectLocation {
                         id: diesel_ulid::DieselUlid::generate(),
@@ -1429,7 +1430,8 @@ impl Database {
         // Extract (and automagically validate) uuids from request
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
-        let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
+        let target_collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
         self.pg_connection
@@ -1679,7 +1681,8 @@ impl Database {
         // Extract (and automagically validate) uuids from request
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
-        let target_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
+        let target_collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
         let cloned_object = self
@@ -2308,11 +2311,11 @@ impl Database {
             .split_once('/')
             .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-        let access_key =
-            diesel_ulid::DieselUlid::from_str(request.access_key.as_str()).map_err(ArunaError::from)?;
+        let access_key = diesel_ulid::DieselUlid::from_str(request.access_key.as_str())
+            .map_err(ArunaError::from)?;
 
-        let endpoint_uuid =
-            diesel_ulid::DieselUlid::from_str(request.endpoint_id.as_str()).map_err(ArunaError::from)?;
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(request.endpoint_id.as_str())
+            .map_err(ArunaError::from)?;
 
         let response = self
             .pg_connection
@@ -2473,12 +2476,12 @@ impl Database {
             s3bucket
         };
 
-        let result = self
-            .pg_connection
-            .get()?
-            .transaction::<(diesel_ulid::DieselUlid, Option<diesel_ulid::DieselUlid>), ArunaError, _>(|conn| {
-                get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())
-            })?;
+        let result = self.pg_connection.get()?.transaction::<(
+            diesel_ulid::DieselUlid,
+            Option<diesel_ulid::DieselUlid>,
+        ), ArunaError, _>(|conn| {
+            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())
+        })?;
 
         Ok(result)
     }
@@ -3433,17 +3436,18 @@ pub fn get_project_collection_ids_of_bucket_path(
         .first::<diesel_ulid::DieselUlid>(conn)?;
 
     // Fetch version id if version is not None
-    let version_uuid_option: Option<diesel_ulid::DieselUlid> = if let Some(coll_version) = path_version {
-        collection_version
-            .filter(version_dsl::major.eq(coll_version.major as i64))
-            .filter(version_dsl::minor.eq(coll_version.minor as i64))
-            .filter(version_dsl::patch.eq(coll_version.patch as i64))
-            .select(version_dsl::id)
-            .first::<diesel_ulid::DieselUlid>(conn)
-            .optional()?
-    } else {
-        None
-    };
+    let version_uuid_option: Option<diesel_ulid::DieselUlid> =
+        if let Some(coll_version) = path_version {
+            collection_version
+                .filter(version_dsl::major.eq(coll_version.major as i64))
+                .filter(version_dsl::minor.eq(coll_version.minor as i64))
+                .filter(version_dsl::patch.eq(coll_version.patch as i64))
+                .select(version_dsl::id)
+                .first::<diesel_ulid::DieselUlid>(conn)
+                .optional()?
+        } else {
+            None
+        };
 
     // Fetch collection by its unique combination of project_id, name and version
     let mut base_request = collections
@@ -3923,7 +3927,8 @@ pub fn delete_multiple_objects(
     // Get all object_ids for object_revisions
     // And extract the list of original_database_objects
     let mut original_database_objects = Vec::new();
-    let mut object_id_shared_rev_id: HashMap<diesel_ulid::DieselUlid, diesel_ulid::DieselUlid> = HashMap::new();
+    let mut object_id_shared_rev_id: HashMap<diesel_ulid::DieselUlid, diesel_ulid::DieselUlid> =
+        HashMap::new();
 
     let object_revision_ids = object_revisions
         .iter()
@@ -4091,7 +4096,10 @@ pub fn delete_multiple_objects(
     }
 
     // Extract object_ids from references, ordered by collection_id
-    let mut references_per_collection: HashMap<diesel_ulid::DieselUlid, Vec<diesel_ulid::DieselUlid>> = HashMap::new();
+    let mut references_per_collection: HashMap<
+        diesel_ulid::DieselUlid,
+        Vec<diesel_ulid::DieselUlid>,
+    > = HashMap::new();
 
     for ref_to_delete in references_to_delete.clone() {
         if let Some(references_per_coll) =
@@ -4160,8 +4168,10 @@ pub fn delete_multiple_objects(
         .values(&update_labels)
         .execute(conn)?;
 
-    let mut shared_revisions_per_collection: HashMap<diesel_ulid::DieselUlid, HashMap<diesel_ulid::DieselUlid, i32>> =
-        HashMap::new();
+    let mut shared_revisions_per_collection: HashMap<
+        diesel_ulid::DieselUlid,
+        HashMap<diesel_ulid::DieselUlid, i32>,
+    > = HashMap::new();
     let mut shared_revision_per_collection_to_delete: HashMap<
         diesel_ulid::DieselUlid,
         HashMap<diesel_ulid::DieselUlid, i32>,

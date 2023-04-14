@@ -9,6 +9,7 @@
 //! - Destroy / Delete Project
 //!
 use super::utils::*;
+use crate::database;
 use crate::database::connection::Database;
 use crate::database::models::auth::{Project, User, UserPermission};
 use crate::database::models::collection::Collection;
@@ -25,12 +26,11 @@ use aruna_rust_api::api::storage::services::v1::{
     RemoveUserFromProjectRequest, RemoveUserFromProjectResponse, UpdateProjectRequest,
     UpdateProjectResponse, UserWithProjectPermissions,
 };
-use std::str::FromStr;
-use crate::database;
 use chrono::Utc;
 use diesel::result::Error;
 use diesel::sql_types::Uuid;
 use diesel::{delete, insert_into, prelude::*, sql_query, update};
+use std::str::FromStr;
 
 impl Database {
     /// Creates a new project in the database. Adds the creating user to the project with admin permissions.
@@ -285,59 +285,57 @@ impl Database {
         use diesel::result::Error as dError;
 
         // Execute db query
-        let project_infos =
-            self.pg_connection
-                .get()?
-                .transaction::<Vec<(Project, Vec<diesel_ulid::DieselUlid>, Vec<diesel_ulid::DieselUlid>)>, dError, _>(
-                    |conn| {
-                        // Query project from database
-                        let project_infos = projects.load::<Project>(conn).optional()?;
+        let project_infos = self.pg_connection.get()?.transaction::<Vec<(
+            Project,
+            Vec<diesel_ulid::DieselUlid>,
+            Vec<diesel_ulid::DieselUlid>,
+        )>, dError, _>(|conn| {
+            // Query project from database
+            let project_infos = projects.load::<Project>(conn).optional()?;
 
-                        // Check if project_info is some
-                        match project_infos {
-                            // If is_some
-                            Some(p_infos) => {
-                                // Query all collection_ids
-                                let all_colls = collections.load::<Collection>(conn).optional()?;
-                                // Query all user_ids
-                                let usrs =
-                                    user_permissions.load::<UserPermission>(conn).optional()?;
+            // Check if project_info is some
+            match project_infos {
+                // If is_some
+                Some(p_infos) => {
+                    // Query all collection_ids
+                    let all_colls = collections.load::<Collection>(conn).optional()?;
+                    // Query all user_ids
+                    let usrs = user_permissions.load::<UserPermission>(conn).optional()?;
 
-                                Ok(p_infos
-                                    .iter()
-                                    .map(|project| {
-                                        let pcols_ids = if let Some(acoll) = &all_colls {
-                                            let mut retvec = Vec::new();
-                                            for col in acoll {
-                                                if col.project_id == project.id {
-                                                    retvec.push(col.id);
-                                                }
-                                            }
-                                            retvec
-                                        } else {
-                                            Vec::new()
-                                        };
+                    Ok(p_infos
+                        .iter()
+                        .map(|project| {
+                            let pcols_ids = if let Some(acoll) = &all_colls {
+                                let mut retvec = Vec::new();
+                                for col in acoll {
+                                    if col.project_id == project.id {
+                                        retvec.push(col.id);
+                                    }
+                                }
+                                retvec
+                            } else {
+                                Vec::new()
+                            };
 
-                                        let userperm = if let Some(uperm) = &usrs {
-                                            let mut retvec = Vec::new();
-                                            for perm in uperm {
-                                                if perm.project_id == project.id {
-                                                    retvec.push(perm.user_id);
-                                                }
-                                            }
-                                            retvec
-                                        } else {
-                                            Vec::new()
-                                        };
-                                        (project.clone(), pcols_ids, userperm)
-                                    })
-                                    .collect::<Vec<_>>())
-                            }
-                            // If is_none return none
-                            None => Ok(Vec::new()),
-                        }
-                    },
-                )?;
+                            let userperm = if let Some(uperm) = &usrs {
+                                let mut retvec = Vec::new();
+                                for perm in uperm {
+                                    if perm.project_id == project.id {
+                                        retvec.push(perm.user_id);
+                                    }
+                                }
+                                retvec
+                            } else {
+                                Vec::new()
+                            };
+                            (project.clone(), pcols_ids, userperm)
+                        })
+                        .collect::<Vec<_>>())
+                }
+                // If is_none return none
+                None => Ok(Vec::new()),
+            }
+        })?;
 
         // Map result to Project_overview
         let map_projects = project_infos
@@ -457,57 +455,55 @@ impl Database {
         let p_id = diesel_ulid::DieselUlid::from_str(&request.project_id)?;
 
         // Execute db query
-        let project_info =
-            self.pg_connection
-                .get()?
-                .transaction::<Option<(Project, Vec<diesel_ulid::DieselUlid>, Vec<diesel_ulid::DieselUlid>)>, ArunaError, _>(
-                    |conn| {
-                        // Fetch current project info if present in database
-                        let current_project: Option<Project> = projects
-                            .filter(projects_dsl::id.eq(&p_id))
-                            .first::<Project>(conn)
-                            .optional()?;
+        let project_info = self.pg_connection.get()?.transaction::<Option<(
+            Project,
+            Vec<diesel_ulid::DieselUlid>,
+            Vec<diesel_ulid::DieselUlid>,
+        )>, ArunaError, _>(|conn| {
+            // Fetch current project info if present in database
+            let current_project: Option<Project> = projects
+                .filter(projects_dsl::id.eq(&p_id))
+                .first::<Project>(conn)
+                .optional()?;
 
-                        // Check if project_info is some
-                        match current_project {
-                            // If is_some -> Update
-                            Some(p_info) => {
-                                // Query collections of project
-                                let project_collections = collections
-                                    .filter(collections_dsl::project_id.eq(p_id))
-                                    .select(collections_dsl::id)
-                                    .load::<diesel_ulid::DieselUlid>(conn)?;
+            // Check if project_info is some
+            match current_project {
+                // If is_some -> Update
+                Some(p_info) => {
+                    // Query collections of project
+                    let project_collections = collections
+                        .filter(collections_dsl::project_id.eq(p_id))
+                        .select(collections_dsl::id)
+                        .load::<diesel_ulid::DieselUlid>(conn)?;
 
-                                // Name update is only allowed for empty projects to ensure path consistency
-                                if p_info.name != request.name && !project_collections.is_empty() {
-                                    return Err(ArunaError::InvalidRequest(
-                                        "Name update only allowed for empty projects".to_string(),
-                                    ));
-                                }
+                    // Name update is only allowed for empty projects to ensure path consistency
+                    if p_info.name != request.name && !project_collections.is_empty() {
+                        return Err(ArunaError::InvalidRequest(
+                            "Name update only allowed for empty projects".to_string(),
+                        ));
+                    }
 
-                                // Update project with provided name and description
-                                let updated_project =
-                                    update(projects.filter(projects_dsl::id.eq(p_id)))
-                                        .set((
-                                            projects_dsl::name.eq(&request.name),
-                                            projects_dsl::description.eq(&request.description),
-                                            projects_dsl::created_by.eq(&req_user_id),
-                                        ))
-                                        .get_result::<Project>(conn)?;
+                    // Update project with provided name and description
+                    let updated_project = update(projects.filter(projects_dsl::id.eq(p_id)))
+                        .set((
+                            projects_dsl::name.eq(&request.name),
+                            projects_dsl::description.eq(&request.description),
+                            projects_dsl::created_by.eq(&req_user_id),
+                        ))
+                        .get_result::<Project>(conn)?;
 
-                                // Query user_ids -> Should not be optional, every project should have at least one user_permission
-                                let project_users = user_permissions
-                                    .filter(permissions_dsl::project_id.eq(p_id))
-                                    .select(permissions_dsl::user_id)
-                                    .load::<diesel_ulid::DieselUlid>(conn)?;
+                    // Query user_ids -> Should not be optional, every project should have at least one user_permission
+                    let project_users = user_permissions
+                        .filter(permissions_dsl::project_id.eq(p_id))
+                        .select(permissions_dsl::user_id)
+                        .load::<diesel_ulid::DieselUlid>(conn)?;
 
-                                Ok(Some((updated_project, project_collections, project_users)))
-                            }
-                            // If is_none return none
-                            None => Ok(None),
-                        }
-                    },
-                )?;
+                    Ok(Some((updated_project, project_collections, project_users)))
+                }
+                // If is_none return none
+                None => Ok(None),
+            }
+        })?;
 
         // Map result to Project_overview
         let map_project = match project_info {

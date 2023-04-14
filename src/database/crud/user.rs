@@ -18,7 +18,6 @@ use crate::error::ArunaError;
 use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
-use std::str::FromStr;
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
     DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse,
@@ -30,6 +29,7 @@ use aruna_rust_api::api::storage::services::v1::{
 };
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::str::FromStr;
 
 use crate::database::schema::users::dsl::users;
 use chrono::Utc;
@@ -356,7 +356,10 @@ impl Database {
     ///
     /// * Result<ApiToken, ArunaError>: Token Response, this does not contain the signed Token only
     ///   all Database information
-    pub fn get_api_token_by_id(&self, token_id: &diesel_ulid::DieselUlid) -> Result<ApiToken, ArunaError> {
+    pub fn get_api_token_by_id(
+        &self,
+        token_id: &diesel_ulid::DieselUlid,
+    ) -> Result<ApiToken, ArunaError> {
         use crate::database::schema::api_tokens::dsl as tokens_dsl;
 
         // Fetch token info from database
@@ -529,7 +532,10 @@ impl Database {
     ///
     /// * Result<UserWhoAmIResponse, ArunaError>: Basic information about the requesting user, id, displayname etc.
     ///
-    pub fn get_user(&self, req_user_id: diesel_ulid::DieselUlid) -> Result<GetUserResponse, ArunaError> {
+    pub fn get_user(
+        &self,
+        req_user_id: diesel_ulid::DieselUlid,
+    ) -> Result<GetUserResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;

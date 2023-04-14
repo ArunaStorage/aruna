@@ -82,7 +82,11 @@ where
 ///
 /// * `Vec<T>` - A vector containing all key-value pairs in their database representation
 ///
-pub fn to_key_values<T>(labels: Vec<KeyValue>, hooks: Vec<KeyValue>, belongs_to: diesel_ulid::DieselUlid) -> Vec<T>
+pub fn to_key_values<T>(
+    labels: Vec<KeyValue>,
+    hooks: Vec<KeyValue>,
+    belongs_to: diesel_ulid::DieselUlid,
+) -> Vec<T>
 where
     T: ToDbKeyValue,
 {
@@ -675,7 +679,8 @@ mod tests {
             },
         ];
 
-        let db_pairs = to_key_values::<CollectionKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
+        let db_pairs =
+            to_key_values::<CollectionKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
 
         assert_eq!(4, db_pairs.len());
         assert_eq!("Key_01", db_pairs.get(0).unwrap().key);
@@ -758,7 +763,8 @@ mod tests {
             },
         ];
 
-        let db_pairs = to_key_values::<ObjectKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
+        let db_pairs =
+            to_key_values::<ObjectKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
 
         assert_eq!(4, db_pairs.len());
 

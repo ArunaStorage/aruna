@@ -162,7 +162,10 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
-    pub fn get_endpoint(&self, endpoint_uuid: &diesel_ulid::DieselUlid) -> Result<Endpoint, ArunaError> {
+    pub fn get_endpoint(
+        &self,
+        endpoint_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<Endpoint, ArunaError> {
         let endpoint = self
             .pg_connection
             .get()?

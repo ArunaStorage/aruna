@@ -1,9 +1,8 @@
 //! This file contains the gRPC implementation for the ObjectGroupService
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task;
 use tonic::Response;
-use std::str::FromStr;
-
 
 use super::authz::Authz;
 use crate::database::connection::Database;
@@ -27,8 +26,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -66,8 +65,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
@@ -105,8 +104,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -140,8 +139,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -177,8 +176,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -210,8 +209,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -245,8 +244,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -282,8 +281,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -321,7 +320,8 @@ impl ObjectGroupService for ObjectGroupServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
