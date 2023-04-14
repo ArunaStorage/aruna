@@ -274,7 +274,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             name: col_name.clone(),
             description: col_description.clone(),
             label_ontology: None,
-            project_id: project_ulid.to_string(), // ulid_uuid_str_conv(&tccol.project_id),
+            project_id: project_ulid.to_string(),
             labels: labels.clone(),
             hooks: hooks.clone(),
             dataclass: 1,
@@ -737,8 +737,4 @@ pub fn get_raw_db_object_group(
     .unwrap()
     .object_group
     .unwrap()
-}
-
-pub fn ulid_uuid_str_conv(uuid: &str) -> String {
-    diesel_ulid::DieselUlid::from(uuid::Uuid::parse_str(uuid).unwrap()).to_string()
 }

@@ -204,12 +204,8 @@ async fn create_api_token_grpc_test() {
     // Broken test with collection and project
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: common::functions::ulid_uuid_str_conv(
-                "bd62af97-6bf9-40b4-929a-686b417b8be7",
-            ),
-            collection_id: common::functions::ulid_uuid_str_conv(
-                "06f2c757-4c69-43f8-af82-7bd3e321ad9e",
-            ),
+            project_id: diesel_ulid::DieselUlid::generate().to_string(),
+            collection_id: diesel_ulid::DieselUlid::generate().to_string(),
             name: "test_token_broken".to_string(),
             expires_at: None,
             permission: 0,
