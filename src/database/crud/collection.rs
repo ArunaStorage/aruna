@@ -564,7 +564,13 @@ impl Database {
                     // Updates must increase the semver
                     // Updates for "historic" versions are not allowed
                     if let Some(v) = &old_overview.coll_version {
-                        if Version::from(v.clone()) >= request.version.clone().unwrap() {
+                        if Version::from(v.clone())
+                            >= request.version.clone().ok_or_else(|| {
+                                ArunaError::InvalidRequest(
+                                    "Unable to determine old version -> None".to_string(),
+                                )
+                            })?
+                        {
                             return Err(ArunaError::InvalidRequest(
                                 "New version must be greater than old one".to_string(),
                             ));
@@ -576,7 +582,11 @@ impl Database {
                     .version
                     .clone()
                     .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
-                    .unwrap();
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(
+                            "Unable to determine old version -> None".to_string(),
+                        )
+                    })?;
                 // Create new collection database struct
                 let new_coll = Collection {
                     id: diesel_ulid::DieselUlid::generate(),
@@ -1103,7 +1113,9 @@ fn pin_collection_to_version(
             id: diesel_ulid::DieselUlid::generate(),
             object_group_id: *object_group_mappings
                 .get(&obj_grp_kv.object_group_id)
-                .unwrap(),
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest("Unable to query object_group_id".to_string())
+                })?,
             key: obj_grp_kv.key,
             value: obj_grp_kv.value,
             key_value_type: obj_grp_kv.key_value_type,
@@ -1115,8 +1127,14 @@ fn pin_collection_to_version(
             id: diesel_ulid::DieselUlid::generate(),
             object_group_id: *object_group_mappings
                 .get(&association.object_group_id)
-                .unwrap(),
-            object_id: *object_mapping_table.get(&association.object_id).unwrap(),
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest("Unable to query object_group_id".to_string())
+                })?,
+            object_id: *object_mapping_table
+                .get(&association.object_id)
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest("Unable to query object_id".to_string())
+                })?,
             is_meta: association.is_meta,
         });
     }
@@ -1313,7 +1331,11 @@ fn check_label_ontology(
                             if kv.object_id == obj
                                 && required_labels
                                     .clone()
-                                    .unwrap()
+                                    .ok_or_else(|| {
+                                        ArunaError::InvalidRequest(
+                                            "Unable to query label_ontology".to_string(),
+                                        )
+                                    })?
                                     .required_label_keys
                                     .contains(&kv.key)
                             {
@@ -1322,7 +1344,15 @@ fn check_label_ontology(
                         }
 
                         if matched.len()
-                            != required_labels.as_ref().unwrap().required_label_keys.len()
+                            != required_labels
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    ArunaError::InvalidRequest(
+                                        "Unable to query required_labels".to_string(),
+                                    )
+                                })?
+                                .required_label_keys
+                                .len()
                         {
                             return Err(ArunaError::InvalidRequest(format!(
                                 "Missing required label(s) for {:#?}",
