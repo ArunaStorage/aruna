@@ -379,7 +379,7 @@ VALUES (
 
 INSERT INTO projects (id, name, description, flag, created_by)
 VALUES (
-        '12345678-1111-1111-1111-111111111122',
+        '01878104-d69f-d72b-d013-80f1f6d106c3',
         'test_project',
         'test_regular_description',
         0,
@@ -395,13 +395,14 @@ VALUES (
         '12345678-1234-1234-1234-111111111111'
     );
 
-INSERT INTO collections (id, shared_version_id, name, created_by, project_id) VALUES(
-    '40aa84c5-6c94-4f51-9d5e-607067a4dd07',
-    '3089111f-07fe-4fef-91a6-2bc0a5c4aeec',
-    'test',
-    '12345678-1234-1234-1234-111111111111',
-    '12345678-1111-1111-1111-111111111133'
-);
+INSERT INTO collections (id, shared_version_id, name, created_by, project_id) 
+VALUES (
+        '01878104-d710-ff64-1e71-ef7ccf12fda0',
+        '3089111f-07fe-4fef-91a6-2bc0a5c4aeec',
+        'test',
+        '12345678-1234-1234-1234-111111111111',
+        '12345678-1111-1111-1111-111111111133'
+    );
 
 INSERT INTO user_permissions (id, user_id, user_right, project_id)
 VALUES (

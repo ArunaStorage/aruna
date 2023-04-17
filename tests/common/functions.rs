@@ -73,49 +73,37 @@ pub fn compare_it<T: Eq + Hash>(
 /// Returns the ULID of the admin user used in the test environment
 #[allow(dead_code)]
 pub fn get_admin_user_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("0J6HB7G4HM28T14D0H248H248H").unwrap()
 }
 
 /// Returns the ULID of the regular user used in the test environment
 #[allow(dead_code)]
 pub fn get_regular_user_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("ee4e1d0b-abab-4979-a33e-dc28ed199b17").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("7E9REGQAXB95WT6FPW53PHK6RQ").unwrap()
 }
 
 /// Returns the ULID of the admin project used in the test environment
 #[allow(dead_code)]
 pub fn get_admin_project_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111111").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("0J6HB7G48H248H248H248H248H").unwrap()
 }
 
 /// Returns the ULID of the default regular project available in the test environment
 #[allow(dead_code)]
 pub fn get_regular_project_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("12345678-1111-1111-1111-111111111122").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("01GY0G9NMZTWNX04W0Y7VD21P3").unwrap()
 }
 
 /// Returns the ULID of the default regular collection available in the test environment
 #[allow(dead_code)]
 pub fn get_default_collection_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("40aa84c5-6c94-4f51-9d5e-607067a4dd07").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("01GY0G9NRGZXJ1WWFFFK7H5ZD0").unwrap()
 }
 
 /// Returns the ULID of the default data proxy endpoint available in the test environment
 #[allow(dead_code)]
 pub fn get_default_endpoint_ulid() -> DieselUlid {
-    diesel_ulid::DieselUlid::from(
-        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap(),
-    )
+    diesel_ulid::DieselUlid::from_str("0J6HB7GSK6CSK6CSMSK6CSK6CS").unwrap()
 }
 
 #[allow(dead_code)]
