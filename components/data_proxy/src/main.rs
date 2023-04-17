@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures::try_join;
@@ -53,7 +53,7 @@ async fn main() {
             storage_backend.clone(),
             aruna_server.to_string(),
             ServiceSettings {
-                endpoint_id: uuid::Uuid::parse_str(&endpoint_id).unwrap(),
+                endpoint_id: rusty_ulid::Ulid::from_str(&endpoint_id).unwrap(),
                 ..Default::default()
             },
         )
