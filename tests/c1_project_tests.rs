@@ -76,7 +76,7 @@ fn update_project_test() {
 
     // Create random collection in project
     let _random_collection = common::functions::create_collection(TCreateCollection {
-        project_id: project_id,
+        project_id,
         creator_id: Some(creator.to_string()),
         ..Default::default()
     });

@@ -126,7 +126,6 @@ impl Database {
                     .execute(conn)?;
 
                 if let Some(request_perm) = &request.project_perms {
-
                     match map_permissions(request_perm.permission()) {
                         Some(user_right) => {
                             let user_perm = UserPermission {
