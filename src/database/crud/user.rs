@@ -102,20 +102,55 @@ impl Database {
         &self,
         request: ActivateUserRequest,
     ) -> Result<ActivateUserResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::user_permissions;
         use crate::database::schema::users::dsl::*;
-        use diesel::result::Error;
 
         let user_id = diesel_ulid::DieselUlid::from_str(&request.user_id)?;
+
+        // Map grpc_perm because it is an Option by default
+        /*
+        let grpc_perm = request.project_perms.ok_or_else(|| {
+            ArunaError::InvalidRequest(
+                "Project permissions are required to activate a user".to_string(),
+            )
+        })?;
+        */
 
         // Update the user
         self.pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<_, ArunaError, _>(|conn| {
                 update(users)
-                    .filter(id.eq(user_id))
+                    .filter(id.eq(&user_id))
                     .set(active.eq(true))
                     .execute(conn)?;
-                Ok(())
+
+                if let Some(request_perm) = &request.project_perms {
+
+                    match map_permissions(request_perm.permission()) {
+                        Some(user_right) => {
+                            let user_perm = UserPermission {
+                                id: diesel_ulid::DieselUlid::generate(),
+                                user_id,
+                                user_right,
+                                project_id: diesel_ulid::DieselUlid::from_str(
+                                    &request_perm.project_id,
+                                )?,
+                            };
+
+                            insert_into(user_permissions)
+                                .values(&user_perm)
+                                .execute(conn)?;
+
+                            Ok(())
+                        }
+                        None => Err(ArunaError::InvalidRequest(
+                            "Unspecified permission is not allowed".to_string(),
+                        )),
+                    }
+                } else {
+                    Ok(())
+                }
             })?;
 
         // Create successfull response
