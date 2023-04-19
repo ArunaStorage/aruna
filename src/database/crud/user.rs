@@ -259,7 +259,7 @@ impl Database {
             user_right: user_right_db,
             secretkey: secret_key.to_string(),
             used_at: Utc::now().naive_local(),
-            is_session: false,
+            is_session: request.is_session,
         };
 
         use crate::database::schema::api_tokens::dsl::*;
