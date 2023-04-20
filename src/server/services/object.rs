@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -6,20 +7,22 @@ use tonic::transport::Channel;
 use tonic::{Code, Request, Response, Status};
 
 use crate::database::connection::Database;
-use crate::database::models::enums::{Resources, UserRights};
+use crate::database::crud::utils::grpc_to_db_object_status;
+use crate::database::models::auth::ApiToken;
+use crate::database::models::enums::{ObjectStatus, Resources, UserRights};
 use crate::database::models::object::Endpoint;
 use crate::error::ArunaError;
-use crate::server::services::authz::{Authz, Context};
+use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
 use aruna_rust_api::api::internal::v1::{
-    CreatePresignedDownloadRequest, CreatePresignedUploadUrlRequest, FinishPresignedUploadRequest,
-    InitPresignedUploadRequest, Location, PartETag, Range,
+    FinishMultipartUploadRequest, InitMultipartUploadRequest, Location, PartETag,
 };
-use aruna_rust_api::api::storage::models::v1::{Object, Status as ProtoStatus};
+use aruna_rust_api::api::storage::models::v1::{LabelOrIdQuery, Status as ProtoStatus};
 use aruna_rust_api::api::storage::{
     services::v1::object_service_server::ObjectService, services::v1::*,
 };
+use http::Method;
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
@@ -37,7 +40,7 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn try_connect_default_endpoint(
+    async fn _try_connect_default_endpoint(
         &self,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Evaluate endpoint url
@@ -76,9 +79,9 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the specific data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn _try_connect_endpoint(
+    async fn try_connect_endpoint(
         &self,
-        _endpoint_uuid: uuid::Uuid,
+        _endpoint_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
         // Get endpoint from database
         /*
@@ -117,12 +120,12 @@ impl ObjectServiceImpl {
     /// * On success returns the open connection to the internal data proxy with its corresponding location.
     /// * On failure returns an `ArunaError::DataProxyError`.
     ///
-    async fn try_connect_object_endpoint(
+    async fn _try_connect_object_endpoint(
         &self,
-        object_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
         // Get primary location with its endpoint from database
-        let (location, endpoint) = self
+        let (location, endpoint, encryption_key) = self
             .database
             .get_primary_object_location_with_endpoint(object_uuid)?;
 
@@ -143,6 +146,14 @@ impl ObjectServiceImpl {
                     r#type: endpoint.endpoint_type as i32,
                     bucket: location.bucket,
                     path: location.path,
+                    endpoint_id: self.default_endpoint.id.to_string(),
+                    is_compressed: location.is_compressed,
+                    is_encrypted: location.is_encrypted,
+                    encryption_key: if let Some(key) = encryption_key {
+                        key.encryption_key
+                    } else {
+                        "".to_string()
+                    }, // ...
                 };
                 Ok((dp, proto_location))
             }
@@ -165,65 +176,75 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
-        let new_object_uuid = uuid::Uuid::new_v4();
-        // Connect to default data proxy endpoint
-        let mut data_proxy = self.try_connect_default_endpoint().await?;
-
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        // Generate upload_id for object through (currently only default) storage endpoint
-        let location = Location {
-            r#type: self.default_endpoint.endpoint_type as i32,
-            bucket: collection_id.to_string(),
-            path: new_object_uuid.to_string(),
-        };
+        // Generate uuid for staging object
+        let new_object_uuid = diesel_ulid::DieselUlid::generate();
 
-        let upload_id = data_proxy
-            .init_presigned_upload(InitPresignedUploadRequest {
-                location: Some(location.clone()),
-                multipart: inner_request.multipart,
-            })
-            .await?
-            .into_inner()
-            .upload_id;
+        // Evaluate endpoint id
+        let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
+            self.default_endpoint.id
+        } else {
+            diesel_ulid::DieselUlid::from_str(&inner_request.preferred_endpoint_id)
+                .map_err(ArunaError::from)?
+        };
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let endpoint_id = self.default_endpoint.id;
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.create_object(
-                    &inner_request,
-                    &creator_id,
-                    &location,
-                    upload_id,
-                    endpoint_id,
-                    new_object_uuid,
-                )
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let inner_request_clone = inner_request.clone();
+        let mut response = task::spawn_blocking(move || {
+            database_clone.create_object(
+                &inner_request_clone,
+                &creator_id,
+                new_object_uuid,
+                &endpoint_uuid,
+            )
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Fill upload id of response
+        response.upload_id = if inner_request.multipart {
+            // Connect to default data proxy endpoint
+            let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
+
+            // Init multipart upload
+            let response = data_proxy
+                .init_multipart_upload(InitMultipartUploadRequest {
+                    object_id: new_object_uuid.to_string(),
+                    collection_id: collection_uuid.to_string(),
+                    path: "".to_string(), // TODO: For now this is unused -> might be used later
+                })
+                .await?
+                .into_inner();
+
+            response.upload_id
+        } else {
+            new_object_uuid.to_string()
+        };
+
+        let grpc_response = tonic::Response::new(response);
 
         // Return gRPC response after everything succeeded
         log::info!("Sending InitializeNewObjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        return Ok(response);
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 
+    ///ToDo: Rust Doc
     async fn get_upload_url(
         &self,
         request: Request<GetUploadUrlRequest>,
@@ -232,71 +253,143 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to upload object data in this collection
-        let object_id =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
-        let _creator_id = self
+        let api_token = self
             .authz
-            .collection_authorize(
+            .authorize_verbose(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
-                UserRights::APPEND, // User needs at least append permission to create an object
+                &Context {
+                    user_right: UserRights::APPEND,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        // Check object status == INITIALIZING before data proxy requests
-        let database_clone = self.database.clone();
-        let proto_object_url = task::spawn_blocking(move || {
-            database_clone.get_object_by_id(&object_id, &collection_id)
-        })
-        .await
-        .map_err(ArunaError::from)??;
-
-        if let Some(object_info) = proto_object_url.object {
-            if object_info.status != ProtoStatus::Initializing as i32 {
-                return Err(tonic::Status::invalid_argument(format!(
-                    "object {object_id} is not in staging phase."
-                )));
-            }
-        }
-
-        // Try to connect to one of the objects data proxy endpoints (currently only primary location endpoint)
-        let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_id).await?;
-
-        let part_number: i64 = if inner_request.multipart && inner_request.part_number < 1 {
+        // Validate part number if multipart upload
+        let part_number: i32 = if inner_request.multipart && inner_request.part_number < 1 {
             return Err(tonic::Status::invalid_argument(
-                "Invalid part number, must be greater or equal 1",
+                "Invalid multipart upload part number, must be greater or equal 1",
             ));
         } else if !inner_request.multipart {
             1
         } else {
-            inner_request.part_number as i64
+            inner_request.part_number
         };
 
-        // Get upload url through data proxy
-        let upload_url = data_proxy
-            .create_presigned_upload_url(CreatePresignedUploadUrlRequest {
-                multipart: inner_request.multipart,
-                part_number,
-                location: Some(location),
-                upload_id: inner_request.upload_id, //Note: Can be moved, only used here
-            })
-            .await?
-            .into_inner()
-            .url;
+        // Check object status == INITIALIZING before url creation
+        let database_clone = self.database.clone();
+        let endpoint_clone = self.default_endpoint.clone();
+        let response = task::spawn_blocking(move || {
+            let proto_object_url =
+                database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
 
-        let response = Response::new(GetUploadUrlResponse {
-            url: Some(Url { url: upload_url }),
-        });
+            let object_data = match &proto_object_url.object {
+                Some(p) => p,
+                None => {
+                    return Err(Status::invalid_argument("object not found"));
+                }
+            };
+            if grpc_to_db_object_status(&object_data.status) != ObjectStatus::INITIALIZING {
+                return Err(Status::new(
+                    Code::InvalidArgument,
+                    "Upload urls can only be generated for objects in staging phase",
+                ));
+            }
+
+            // Create presigned upload url
+            let mut endpoint_option: Option<String> = None;
+            let mut s3bucket_option: Option<String> = None;
+            let mut s3key_option: Option<String> = None;
+            if let Some(object_info) = proto_object_url.object {
+                if object_info.status != ProtoStatus::Initializing as i32 {
+                    return Err(tonic::Status::invalid_argument(format!(
+                        "object {object_uuid} is not in staging phase."
+                    )));
+                }
+
+                for label in object_info.labels {
+                    if label.key == *"app.aruna-storage.org/new_path" {
+                        s3key_option = Some(label.value.to_string());
+                    } else if label.key == *"app.aruna-storage.org/bucket" {
+                        s3bucket_option = Some(label.value.to_string());
+                    } else if label.key == *"app.aruna-storage.org/endpoint_id" {
+                        endpoint_option = Some(label.value.to_string());
+                    }
+
+                    if s3bucket_option.is_some()
+                        && s3key_option.is_some()
+                        && endpoint_option.is_some()
+                    {
+                        break;
+                    }
+                }
+            }
+            let s3key = s3key_option
+                .ok_or_else(|| {
+                    Status::new(Code::Internal, "Staging object has no internal path label")
+                })?
+                .replacen('/', "", 1);
+
+            let s3bucket = s3bucket_option.ok_or_else(|| {
+                Status::new(
+                    Code::Internal,
+                    "Staging object has no internal bucket label",
+                )
+            })?;
+
+            let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
+                let ep_uuid =
+                    diesel_ulid::DieselUlid::from_str(&endpoint_uuid).map_err(ArunaError::from)?;
+                database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
+            } else {
+                endpoint_clone.proxy_hostname.to_string()
+            };
+
+            Ok(GetUploadUrlResponse {
+                url: Some(Url {
+                    url: sign_url(
+                        Method::PUT,
+                        &api_token.id.to_string(),
+                        &api_token.secretkey,
+                        endpoint_proxy_hostname.starts_with("https://"),
+                        inner_request.multipart,
+                        part_number,
+                        &inner_request.upload_id,
+                        &s3bucket,
+                        &s3key,
+                        endpoint_proxy_hostname.as_str(), // Will be "sanitized" in the sign_url(...) function
+                        604800, // Default 1 week until requests support custom duration
+                    )
+                    .map_err(|err| {
+                        tonic::Status::new(Code::Internal, format!("Url signing failed: {err}"))
+                    })?,
+                }),
+            })
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Self sign upload url
+        let grpc_response = Response::new(response);
 
         log::info!("Sending GetUploadUrlResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     async fn finish_object_staging(
@@ -306,26 +399,88 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received FinishObjectStagingRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(|_| Status::invalid_argument("Unable to parse object id"))?;
+
         // Parse the provided collection id (string) to UUID
-        let collection_id = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-            .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
+        let collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
         // Authorize the request
         let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await?;
 
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Fetch staging object to get temp path from init
+        let staging_object = self
+            .database
+            .get_object_by_id(&object_uuid, &collection_uuid)?
+            .object
+            .ok_or(ArunaError::InvalidRequest(format!(
+                "Could not find object {object_uuid} in collection {collection_uuid}"
+            )))?;
+
+        // Check if object status is still INITIALIZING
+        if grpc_to_db_object_status(&staging_object.status) != ObjectStatus::INITIALIZING {
+            return Err(tonic::Status::invalid_argument(
+                "Cannot finish object which is not in staging phase",
+            ));
+        }
+
+        // Process internal labels
+        let mut upload_path = "".to_string();
+        let mut endpoint_label_value = "".to_string();
+        for label in staging_object.labels {
+            if label.key == *"app.aruna-storage.org/new_path" {
+                if upload_path.is_empty() {
+                    upload_path = label.value;
+                } else {
+                    upload_path = upload_path + &label.value;
+
+                    if !endpoint_label_value.is_empty() {
+                        break;
+                    }
+                }
+            } else if label.key == *"app.aruna-storage.org/bucket" {
+                if upload_path.is_empty() {
+                    upload_path = label.value;
+                } else {
+                    upload_path = label.value + &upload_path;
+
+                    if !endpoint_label_value.is_empty() {
+                        break;
+                    }
+                }
+            } else if label.key == *"app.aruna-storage.org/endpoint" {
+                endpoint_label_value = label.value;
+            }
+        }
+        if upload_path.is_empty() {
+            return Err(tonic::Status::internal(
+                "No temp upload path for object available",
+            ));
+        }
+        if endpoint_label_value.is_empty() {
+            endpoint_label_value = self.default_endpoint.id.to_string();
+        }
+
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(&endpoint_label_value)
+            .map_err(|_| Status::invalid_argument("Unable to parse provided endpoint id"))?;
+
         // Only finish the upload if no_upload == false
         // This will otherwise skip the data proxy finish routine
-        if !request.get_ref().no_upload {
+        if !inner_request.no_upload {
             // Create the finished parts vec from request
-            let finished_parts = request
-                .get_ref()
+            let finished_parts = inner_request
                 .completed_parts
                 .iter()
                 .map(|part| PartETag {
@@ -336,41 +491,36 @@ impl ObjectService for ObjectServiceImpl {
 
             // If finished parts is not empty --> multipart upload
             if !finished_parts.is_empty() {
-                // Create multipart upload finish request for data proxy
-                let finished_presigned = FinishPresignedUploadRequest {
-                    upload_id: request.get_ref().upload_id.to_string(),
-                    bucket: collection_id.to_string(),
-                    key: request.get_ref().object_id.to_string(),
+                let finish_multipart_request = FinishMultipartUploadRequest {
+                    upload_id: inner_request.upload_id.to_string(),
+                    collection_id: collection_uuid.to_string(),
+                    object_id: object_uuid.to_string(),
+                    path: format!("s3://{upload_path}"),
                     part_etags: finished_parts,
-                    multipart: true, //multipart: *is_empty,
                 };
 
-                // Get the data_proxy
-                let (mut data_proxy, _location) = self
-                    .try_connect_object_endpoint(
-                        &uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(|_| {
-                            Status::invalid_argument("Unable to parse object_id to uuid")
-                        })?,
-                    )
-                    .await?;
+                // Connect to the data proxy where the user (hopefully) uploaded the data
+                let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
                 // Execute the proxy request and get the result
                 let proxy_result = data_proxy
-                    .finish_presigned_upload(finished_presigned)
-                    .await?
-                    .into_inner();
+                    .finish_multipart_upload(finish_multipart_request)
+                    .await;
 
                 // Only proceed when proxy did not fail
-                if !proxy_result.ok {
-                    return Err(Status::aborted("Proxy failed to finish object"));
+                if proxy_result.is_err() {
+                    return Err(Status::aborted(
+                        "Proxy failed to finish object multipart upload.",
+                    ));
                 }
             }
         }
 
         let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
         let response = Response::new(
             task::spawn_blocking(move || {
-                database_clone.finish_object_staging(&request.into_inner(), &creator_id)
+                database_clone.finish_object_staging(&inner_request_clone, &creator_id)
             })
             .await
             .map_err(ArunaError::from)??,
@@ -389,57 +539,62 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         let creator_id = self
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
+                collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::WRITE, // User needs at least append permission to create an object
             )
             .await?;
 
-        let new_object_uuid = uuid::Uuid::new_v4();
+        let new_object_uuid = diesel_ulid::DieselUlid::generate();
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
 
-        let (location, upload_id) = if inner_request.reupload {
-            // Connect to default data proxy endpoint
-            let mut data_proxy = self.try_connect_default_endpoint().await?;
-
-            // Generate upload_id for object through (currently only default) storage endpoint
-            let location = Location {
-                r#type: self.default_endpoint.endpoint_type as i32,
-                bucket: collection_id.to_string(),
-                path: new_object_uuid.to_string(),
-            };
-
-            let upload_id = data_proxy
-                .init_presigned_upload(InitPresignedUploadRequest {
-                    location: Some(location.clone()),
-                    multipart: inner_request.multi_part,
-                })
-                .await?
-                .into_inner()
-                .upload_id;
-            (Some(location), Some(upload_id))
+        // Evaluate endpoint id
+        let endpoint_uuid = if inner_request.preferred_endpoint_id.is_empty() {
+            self.default_endpoint.id
         } else {
-            (None, None)
+            diesel_ulid::DieselUlid::from_str(&inner_request.preferred_endpoint_id)
+                .map_err(ArunaError::from)?
+        };
+
+        let upload_id = if inner_request.reupload {
+            if inner_request.multi_part {
+                // Connect to default data proxy endpoint
+                let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
+
+                // Init multipart upload
+                let response = data_proxy
+                    .init_multipart_upload(InitMultipartUploadRequest {
+                        collection_id: collection_uuid.to_string(),
+                        object_id: new_object_uuid.to_string(),
+                        path: String::new(), // TODO: Empty for now
+                    })
+                    .await?
+                    .into_inner();
+
+                Some(response.upload_id)
+            } else {
+                Some(new_object_uuid.to_string())
+            }
+        } else {
+            None
         };
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let endpoint_id = self.default_endpoint.id;
         let mut response = task::spawn_blocking(move || {
             database_clone.update_object(
-                &inner_request,
-                &location,
+                inner_request,
                 &creator_id,
-                endpoint_id,
                 new_object_uuid,
+                &endpoint_uuid,
             )
         })
         .await
@@ -479,10 +634,10 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received CreateObjectReferenceRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let src_collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        let dst_collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let src_collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        let dst_collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         // Need WRITE permission for writeable == true; READ else
         let needed_permission = match request.get_ref().writeable {
@@ -520,8 +675,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         self.authz
             .collection_authorize(
@@ -553,8 +708,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize "ORIGIN" TODO: Include project_id to use project_authorize
         let creator_uuid = self
@@ -567,7 +722,8 @@ impl ObjectService for ObjectServiceImpl {
             .await?;
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         // Authorize "TARGET"
         self.authz
             .collection_authorize(
@@ -600,9 +756,10 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received DeleteObjectsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user: uuid::Uuid = if request.get_ref().force {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-                .map_err(ArunaError::from)?;
+        let user: diesel_ulid::DieselUlid = if request.get_ref().force {
+            let target_collection_uuid =
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
                 .project_authorize_by_collectionid(
@@ -612,8 +769,9 @@ impl ObjectService for ObjectServiceImpl {
                 )
                 .await?
         } else {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-                .map_err(ArunaError::from)?;
+            let target_collection_uuid =
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
                 .collection_authorize(
@@ -645,9 +803,10 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received DeleteObjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user: uuid::Uuid = if request.get_ref().force {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-                .map_err(ArunaError::from)?;
+        let user: diesel_ulid::DieselUlid = if request.get_ref().force {
+            let target_collection_uuid =
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
                 .project_authorize_by_collectionid(
@@ -657,8 +816,9 @@ impl ObjectService for ObjectServiceImpl {
                 )
                 .await?
         } else {
-            let target_collection_uuid = uuid::Uuid::parse_str(&request.get_ref().collection_id)
-                .map_err(ArunaError::from)?;
+            let target_collection_uuid =
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(ArunaError::from)?;
             // Authorize "TARGET"
             self.authz
                 .collection_authorize(
@@ -705,72 +865,66 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Check if user is authorized to create objects in this collection
-        let object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
-        let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
-        let _creator_id = self
+        let api_token = self
             .authz
-            .collection_authorize(
+            .authorize_verbose(
                 request.metadata(),
-                collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::READ,
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
-        // Consume request and extract inner body
-        let inner_request = request.into_inner(); // Consumes the gRPC request
+        // Consume gRPC request
+        let inner_request = request.into_inner();
 
         // Get object and its location
         let database_clone = self.database.clone();
-        let mut proto_object_url = task::spawn_blocking(move || {
-            database_clone.get_object_by_id(&object_uuid, &collection_uuid)
+        let proto_object = task::spawn_blocking(move || {
+            let mut proto_object =
+                database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
+
+            let object_data = match &proto_object.object {
+                Some(p) => p,
+                None => {
+                    return Err(Status::invalid_argument("object not found"));
+                }
+            };
+
+            // Generate presigned url if desired and object is eligible
+            if inner_request.with_url
+                && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
+            {
+                proto_object.url = get_object_download_url(
+                    database_clone,
+                    &object_uuid,
+                    &collection_uuid,
+                    &api_token,
+                )?;
+            }
+
+            Ok(proto_object)
         })
         .await
         .map_err(ArunaError::from)??;
 
-        let object_data = match proto_object_url.object.clone() {
-            Some(p) => p,
-            None => {
-                return Err(tonic::Status::invalid_argument("object not found"));
-            }
+        let response = GetObjectByIdResponse {
+            object: Some(proto_object),
         };
-
-        // Only request url from data proxy if:
-        //  - object_data.status == ObjectStatus::AVAILABLE
-        //  - request.with_url   == true
-        let response =
-            match inner_request.with_url && object_data.status == ProtoStatus::Available as i32 {
-                true => {
-                    // Establish connection to data proxy endpoint
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&object_uuid).await?;
-
-                    let data_proxy_request = CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_data.filename.clone(),
-                        range: Some(Range {
-                            start: 0,
-                            end: object_data.content_len,
-                        }),
-                    };
-
-                    proto_object_url.url = data_proxy
-                        .create_presigned_download(data_proxy_request)
-                        .await?
-                        .into_inner()
-                        .url;
-
-                    GetObjectByIdResponse {
-                        object: Some(proto_object_url),
-                    }
-                }
-                false => GetObjectByIdResponse {
-                    object: Some(proto_object_url),
-                },
-            };
 
         let grpc_response = Response::new(response);
         log::info!("Sending GetObjectByIdResponse back to client.");
@@ -785,64 +939,76 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received GetObjectsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        // Validate format of provided uuids
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
+        // Check if user is authorized to fetch objects from collection
+        let api_token = self
+            .authz
+            .authorize_verbose(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
-                UserRights::READ, // User needs at least append permission to create an object
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
-        let req_clone = request.get_ref().clone();
-        // Create Object in database
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Fetch objects from database and create presigned download urls if
+        let req_clone = inner_request.clone();
         let database_clone = self.database.clone();
-        let response = task::spawn_blocking(move || database_clone.get_objects(req_clone))
-            .await
-            .map_err(ArunaError::from)??;
+        let response = task::spawn_blocking(move || {
+            let proto_objects_option = database_clone.get_objects(req_clone)?;
 
-        let result = if let Some(object_with_urls) = response {
-            for mut object_add_url in object_with_urls.clone() {
-                let object_info = if let Some(info) = object_add_url.object {
-                    info
-                } else {
-                    Object::default()
-                };
+            if let Some(proto_objects) = proto_objects_option {
+                let mut finished_proto_objects = Vec::new();
+                for mut proto_object in proto_objects {
+                    let object_data = match &proto_object.object {
+                        Some(p) => p,
+                        None => {
+                            return Err(Status::invalid_argument("object not found"));
+                        }
+                    };
+                    let object_uuid = diesel_ulid::DieselUlid::from_str(&object_data.id)
+                        .map_err(ArunaError::from)?;
 
-                if request.get_ref().with_url && object_info.status == ProtoStatus::Available as i32
-                {
-                    // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self
-                        .try_connect_object_endpoint(
-                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
-                        )
-                        .await?;
-                    // Get download url from data proxy endpoint
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(CreatePresignedDownloadRequest {
-                            location: Some(location),
-                            is_public: false,
-                            filename: object_info.filename.clone(),
-                            range: Some(Range {
-                                start: 0,
-                                end: object_info.content_len,
-                            }),
-                        })
-                        .await?
-                        .into_inner()
-                        .url;
-                };
+                    if inner_request.with_url
+                        && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
+                    {
+                        proto_object.url = get_object_download_url(
+                            database_clone.clone(),
+                            &object_uuid,
+                            &collection_uuid,
+                            &api_token,
+                        )?;
+                    }
+
+                    finished_proto_objects.push(proto_object)
+                }
+                Ok(GetObjectsResponse {
+                    objects: finished_proto_objects,
+                })
+            } else {
+                Ok(GetObjectsResponse { objects: vec![] })
             }
-            object_with_urls
-        } else {
-            Vec::new()
-        };
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
-        let grpc_response = Response::new(GetObjectsResponse { objects: result });
+        let grpc_response = Response::new(response);
 
         log::info!("Sending GetObjectsResponse back to client.");
         log::debug!("{}", format_grpc_response(&grpc_response));
@@ -856,62 +1022,77 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received GetObjectRevisionsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // Check if user is authorized to create objects in this collection
-        let collection_id =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        // Validate format of provided uuids
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        let _object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
+        // Check if user is authorized to fetch revisions of specific object
+        let api_token = self
+            .authz
+            .authorize_verbose(
                 request.metadata(),
-                collection_id, // This is the collection uuid in which this object should be created
-                UserRights::READ, // User needs at least append permission to create an object
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
-        let req_clone = request.get_ref().clone();
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
         // Create Object in database
+        let req_clone = inner_request.clone();
         let database_clone = self.database.clone();
-        let response = task::spawn_blocking(move || database_clone.get_object_revisions(req_clone))
-            .await
-            .map_err(ArunaError::from)??;
+        let response = task::spawn_blocking(move || {
+            // Fetch all revisions from database
+            let object_revisions = database_clone.get_object_revisions(req_clone)?;
 
-        let result = {
-            for mut object_add_url in response.clone() {
-                let object_info = if let Some(info) = object_add_url.object {
-                    info
-                } else {
-                    Object::default()
+            // Create presigned download urls for elligible objects
+            let mut finished_proto_objects = Vec::new();
+            for mut proto_object in object_revisions {
+                let object_data = match &proto_object.object {
+                    Some(p) => p,
+                    None => {
+                        return Err(Status::invalid_argument("object not found"));
+                    }
                 };
+                let proto_object_uuid =
+                    diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
 
-                if request.get_ref().with_url && object_info.status == ProtoStatus::Available as i32
+                if inner_request.with_url
+                    && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
                 {
-                    // Connect to one of the objects data proxy endpoints
-                    let (mut data_proxy, location) = self
-                        .try_connect_object_endpoint(
-                            &uuid::Uuid::parse_str(&object_info.id).map_err(ArunaError::from)?,
-                        )
-                        .await?;
-                    // Get download url from data proxy endpoint
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(CreatePresignedDownloadRequest {
-                            location: Some(location),
-                            is_public: false,
-                            filename: object_info.filename.clone(),
-                            range: Some(Range {
-                                start: 0,
-                                end: object_info.content_len,
-                            }),
-                        })
-                        .await?
-                        .into_inner()
-                        .url;
-                };
+                    proto_object.url = get_object_download_url(
+                        database_clone.clone(),
+                        &proto_object_uuid,
+                        &collection_uuid,
+                        &api_token,
+                    )?;
+                }
+
+                finished_proto_objects.push(proto_object)
             }
-            response
-        };
+
+            Ok(GetObjectRevisionsResponse {
+                objects: finished_proto_objects,
+            })
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         // Return gRPC response after everything succeeded
-        let grpc_response = Response::new(GetObjectRevisionsResponse { objects: result });
+        let grpc_response = Response::new(response);
 
         log::info!("Sending GetObjectRevisionsResponse back to client.");
         log::debug!("{}", format_grpc_response(&grpc_response));
@@ -925,18 +1106,31 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received GetLatestObjectRevisionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        let object_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().object_id).map_err(ArunaError::from)?;
+        // Validate format of provided uuids
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        let _object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(ArunaError::from)?;
 
-        self.authz
-            .collection_authorize(
+        // Check if user is authorized to fetch latest object revision
+        let api_token = self
+            .authz
+            .authorize_verbose(
                 request.metadata(),
-                target_collection_uuid, // This is the collection uuid in which this object should be created
-                UserRights::READ,       // User needs at least append permission to create an object
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Consume tonic gRPC request
         let inner_request = request.into_inner();
@@ -944,53 +1138,41 @@ impl ObjectService for ObjectServiceImpl {
         // Fetch latest Object revision from database
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
-        let mut object_add_url = task::spawn_blocking(move || {
-            database_clone.get_latest_object_revision(inner_request_clone)
+        let proto_object = task::spawn_blocking(move || {
+            let mut proto_object =
+                database_clone.get_latest_object_revision(inner_request_clone)?;
+
+            let object_data = match &proto_object.object {
+                Some(p) => p,
+                None => {
+                    return Err(Status::invalid_argument("object not found"));
+                }
+            };
+
+            let proto_object_uuid =
+                diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
+
+            if inner_request.with_url
+                && grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE
+            {
+                proto_object.url = get_object_download_url(
+                    database_clone.clone(),
+                    &proto_object_uuid,
+                    &collection_uuid,
+                    &api_token,
+                )?;
+
+                Ok(proto_object)
+            } else {
+                Ok(proto_object)
+            }
         })
         .await
         .map_err(ArunaError::from)??;
 
-        // Extract object meta info
-        let object_info = if let Some(info) = object_add_url.object.clone() {
-            info
-        } else {
-            Object::default()
+        let response = GetLatestObjectRevisionResponse {
+            object: Some(proto_object),
         };
-
-        // Only request url from data proxy if:
-        //  - object_info.status == ObjectStatus::AVAILABLE
-        //  - request.with_url   == true
-        let response =
-            match inner_request.with_url && object_info.status == ProtoStatus::Available as i32 {
-                true => {
-                    // Establish connection to data proxy endpoint
-                    let (mut data_proxy, location) =
-                        self.try_connect_object_endpoint(&object_uuid).await?;
-
-                    let data_proxy_request = CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_info.filename.clone(),
-                        range: Some(Range {
-                            start: 0,
-                            end: object_info.content_len,
-                        }),
-                    };
-
-                    object_add_url.url = data_proxy
-                        .create_presigned_download(data_proxy_request)
-                        .await?
-                        .into_inner()
-                        .url;
-
-                    GetLatestObjectRevisionResponse {
-                        object: Some(object_add_url),
-                    }
-                }
-                false => GetLatestObjectRevisionResponse {
-                    object: Some(object_add_url),
-                },
-            };
 
         // Return gRPC response after everything succeeded
         let grpc_response = Response::new(response);
@@ -1007,7 +1189,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1038,7 +1221,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1069,7 +1253,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1101,14 +1286,18 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Validate uuid format of collection id provided in the request
-        let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+            .map_err(ArunaError::from)?;
+
+        let metadata = request.metadata().clone();
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
-                request.metadata(),
+            .authorize_verbose(
+                &metadata,
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
                     resource_type: Resources::COLLECTION, // Creating a new object needs at least collection level permissions
@@ -1118,58 +1307,46 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
-        // Extract request body
-        let inner_request = request.into_inner(); // Consumes the gRPC request
-
-        // Validate uuid format of object id provided in the request
-        let object_uuid =
-            uuid::Uuid::parse_str(inner_request.object_id.as_str()).map_err(ArunaError::from)?;
-
-        // Get
+        // Get object with maybe url
         let database_clone = self.database.clone();
-        let proto_object_url = task::spawn_blocking(move || {
-            database_clone.get_object_by_id(&object_uuid, &collection_uuid)
+        let object_with_maybe_url = task::spawn_blocking(move || {
+            let mut proto_object =
+                database_clone.get_object_by_id(&object_uuid, &collection_uuid)?;
+
+            let object_data = match &proto_object.object {
+                Some(p) => p,
+                None => {
+                    return Err(Status::invalid_argument("object not found"));
+                }
+            };
+
+            // Generate presigned download url if object is eligible
+            if grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE {
+                proto_object.url = get_object_download_url(
+                    database_clone.clone(),
+                    &object_uuid,
+                    &collection_uuid,
+                    &api_token,
+                )?;
+
+                Ok(proto_object)
+            } else {
+                Ok(proto_object)
+            }
         })
         .await
         .map_err(ArunaError::from)??;
 
-        let object_data = match proto_object_url.object.clone() {
-            Some(p) => p,
-            None => {
-                return Err(Status::invalid_argument("object not found"));
-            }
-        };
-
-        // Check object status == AVAILABLE before data proxy requests
-        if object_data.status != ProtoStatus::Available as i32 {
-            return Err(tonic::Status::unavailable(format!(
-                "object {object_uuid} is currently not available."
-            )));
-        }
-
-        // Connect to one of the objects data proxy endpoints
-        let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_uuid).await?;
-
-        // Get download url from data proxy endpoint
-        let download_url = data_proxy
-            .create_presigned_download(CreatePresignedDownloadRequest {
-                location: Some(location),
-                is_public: false,
-                filename: object_data.filename,
-                range: Some(Range {
-                    start: 0,
-                    end: object_data.content_len,
-                }),
-            })
-            .await?
-            .into_inner()
-            .url;
-
-        // Return gRPC response after everything succeeded
         let response = Response::new(GetDownloadUrlResponse {
-            url: Some(Url { url: download_url }),
+            url: Some(Url {
+                url: object_with_maybe_url.url,
+            }),
         });
 
         log::info!("Sending GetDownloadUrlResponse back to client.");
@@ -1185,13 +1362,13 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Validate uuid format of collection id provided in the request
-        let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
+            .authorize_verbose(
                 request.metadata(),
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
@@ -1202,57 +1379,65 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
-        let mapped_uuids = inner_request
-            .objects
-            .iter()
-            .map(|obj_str| uuid::Uuid::parse_str(obj_str))
-            .collect::<Result<Vec<uuid::Uuid>, _>>()
-            .map_err(ArunaError::from)?;
 
-        let mut urls: Vec<String> = Vec::new();
+        let database_clone = self.database.clone();
+        let urls: Vec<String> = task::spawn_blocking(move || {
+            let mut download_urls: Vec<String> = Vec::new();
 
-        for object_uuid in mapped_uuids {
-            let (mut data_proxy, location) = self.try_connect_object_endpoint(&object_uuid).await?;
-
-            let object_data = match self
-                .database
-                .get_object_by_id(&object_uuid, &collection_uuid)?
-                .object
-            {
-                Some(proto_object) => proto_object,
-                None => {
-                    return Err(Status::invalid_argument("object not found"));
-                }
+            // Get objects to check their status
+            let proto_objects = if let Some(proto_objects) =
+                database_clone.get_objects(GetObjectsRequest {
+                    collection_id: collection_uuid.to_string(),
+                    page_request: None,
+                    label_id_filter: Some(LabelOrIdQuery {
+                        labels: None,
+                        ids: inner_request.objects,
+                    }),
+                    with_url: true,
+                })? {
+                proto_objects
+            } else {
+                vec![]
             };
 
-            // Check object status == AVAILABLE before data proxy requests
-            if object_data.status != ProtoStatus::Available as i32 {
-                return Err(tonic::Status::unavailable(format!(
-                    "object {object_uuid} is currently not available."
-                )));
+            for proto_object in proto_objects {
+                let object_data = match &proto_object.object {
+                    Some(p) => p,
+                    None => {
+                        return Err(Status::invalid_argument("object not found"));
+                    }
+                };
+                let proto_object_uuid =
+                    diesel_ulid::DieselUlid::from_str(&object_data.id).map_err(ArunaError::from)?;
+
+                // Generate presigned download url if object is eligible
+                let download_url =
+                    if grpc_to_db_object_status(&object_data.status) == ObjectStatus::AVAILABLE {
+                        get_object_download_url(
+                            database_clone.clone(),
+                            &proto_object_uuid,
+                            &collection_uuid,
+                            &api_token,
+                        )?
+                    } else {
+                        "".to_string()
+                    };
+
+                download_urls.push(download_url);
             }
 
-            // Get download url from data proxy endpoint
-            urls.push(
-                data_proxy
-                    .create_presigned_download(CreatePresignedDownloadRequest {
-                        location: Some(location),
-                        is_public: false,
-                        filename: object_data.filename,
-                        range: Some(Range {
-                            start: 0,
-                            end: object_data.content_len,
-                        }),
-                    })
-                    .await?
-                    .into_inner()
-                    .url,
-            );
-        }
+            Ok(download_urls)
+        })
+        .await
+        .map_err(ArunaError::from)??;
 
         let mapped_urls = urls
             .iter()
@@ -1277,13 +1462,13 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Validate uuid format of collection id provided in the request
-        let collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize user action
-        let _creator_id = self
+        let api_token = self
             .authz
-            .authorize(
+            .authorize_verbose(
                 request.metadata(),
                 &(Context {
                     user_right: UserRights::READ, // User needs at least append permission to create an object
@@ -1294,76 +1479,72 @@ impl ObjectService for ObjectServiceImpl {
                     personal: false,
                 }),
             )
-            .await?;
+            .await?
+            .1
+            .ok_or_else(|| {
+                ArunaError::InvalidRequest("Request is missing api token".to_string())
+            })?;
 
         // Extract request body
         let inner_request = request.into_inner(); // Consumes the gRPC request
         let mapped_uuids = inner_request
             .objects
             .iter()
-            .map(|obj_str| uuid::Uuid::parse_str(obj_str))
-            .collect::<Result<Vec<uuid::Uuid>, _>>()
+            .map(|obj_str| diesel_ulid::DieselUlid::from_str(obj_str))
+            .collect::<Result<Vec<diesel_ulid::DieselUlid>, _>>()
             .map_err(ArunaError::from)?;
 
         let (tx, rx) = mpsc::channel(4);
-        let db_clone = self.database.clone();
-
+        let database_clone = self.database.clone();
         tokio::spawn(async move {
             for object_uuid in mapped_uuids {
-                let try_connect =
-                    try_connect_object_endpoint_moveable(db_clone.clone(), &object_uuid).await;
+                match database_clone.get_object_by_id(&object_uuid, &collection_uuid) {
+                    Ok(object_with_url) => {
+                        if let Some(object_data) = object_with_url.object {
+                            // Parse object id of proto object
+                            let proto_object_uuid =
+                                diesel_ulid::DieselUlid::from_str(&object_data.id)
+                                    .map_err(ArunaError::from)?;
 
-                if let Ok((mut data_proxy, location)) = try_connect {
-                    match db_clone.get_object_by_id(&object_uuid, &collection_uuid) {
-                        Ok(object_with_url) => {
-                            if let Some(object_data) = object_with_url.object {
-                                // Check object status == AVAILABLE before data proxy requests
-                                if object_data.status != ProtoStatus::Available as i32 {
-                                    tx.send(Err(tonic::Status::unavailable(format!(
-                                        "object {object_uuid} is currently not available."
-                                    ))))
-                                    .await
-                                    .unwrap();
-                                }
-
-                                tx.send(Ok(CreateDownloadLinksStreamResponse {
-                                    url: Some(Url {
-                                        url: data_proxy
-                                            .create_presigned_download(
-                                                CreatePresignedDownloadRequest {
-                                                    location: Some(location),
-                                                    is_public: false,
-                                                    filename: object_data.filename,
-                                                    range: Some(Range {
-                                                        start: 0,
-                                                        end: object_data.content_len,
-                                                    }),
-                                                },
-                                            )
-                                            .await
-                                            .unwrap()
-                                            .into_inner()
-                                            .url,
-                                    }),
-                                }))
-                                .await
-                                .unwrap();
+                            // Create presigned download url if object is eligible
+                            let download_url = if grpc_to_db_object_status(&object_data.status)
+                                == ObjectStatus::AVAILABLE
+                            {
+                                get_object_download_url(
+                                    database_clone.clone(),
+                                    &proto_object_uuid,
+                                    &collection_uuid,
+                                    &api_token,
+                                )?
                             } else {
-                                tx.send(Err(Status::invalid_argument(
-                                    ArunaError::DieselError(diesel::result::Error::NotFound)
-                                        .to_string(),
-                                )))
-                                .await
-                                .unwrap();
-                            }
-                        }
-                        Err(e) => {
-                            tx.send(Err(Status::invalid_argument(e.to_string())))
-                                .await
-                                .unwrap();
+                                "".to_string()
+                            };
+
+                            tx.send(Ok(CreateDownloadLinksStreamResponse {
+                                url: Some(Url { url: download_url }),
+                            }))
+                            .await
+                            .map_err(|err| ArunaError::InvalidRequest(err.to_string()))?;
+                        } else {
+                            tx.send(Err(Status::invalid_argument(
+                                ArunaError::DieselError(diesel::result::Error::NotFound)
+                                    .to_string(),
+                            )))
+                            .await
+                            .map_err(|err| ArunaError::InvalidRequest(err.to_string()))?;
                         }
                     }
+                    Err(e) => {
+                        tx.send(Err(Status::invalid_argument(e.to_string())))
+                            .await
+                            .map_err(|err| ArunaError::InvalidRequest(err.to_string()))?;
+                    }
                 }
+            }
+
+            match 1 {
+                1 => Ok(()),
+                _ => Err(ArunaError::InvalidRequest("Won't happen.".to_string())),
             }
         });
 
@@ -1389,7 +1570,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1425,7 +1607,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1461,7 +1644,9 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
+
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1497,7 +1682,8 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                .map_err(ArunaError::from)?;
         self.authz
             .collection_authorize(
                 request.metadata(),
@@ -1534,25 +1720,114 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received GetObjectsByPathRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let target_collection_uuid =
-            uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(ArunaError::from)?;
-        self.authz
-            .collection_authorize(
-                request.metadata(),
-                target_collection_uuid, // This is the collection uuid context for the object
-                UserRights::READ,       // User needs at least read permission to get a path
-            )
-            .await?;
+        // Save gRPC request metadata for later
+        let metadata = request.metadata().clone();
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        let database_clone = self.database.clone();
+        let inner_request_clone = inner_request.clone();
+        let (_, coll_id) = task::spawn_blocking(move || {
+            database_clone.get_project_collection_ids_by_path(&inner_request_clone.path, false)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        match coll_id {
+            None => {
+                return Err(Status::from(ArunaError::InvalidRequest(
+                    "Collection from path does not exist".to_string(),
+                )));
+            }
+            Some(target_collection_uuid) => {
+                self.authz
+                    .collection_authorize(
+                        &metadata,
+                        target_collection_uuid, // This is the collection uuid context for the object
+                        UserRights::READ,       // User needs at least read permission to get a path
+                    )
+                    .await?;
+            }
+        }
 
         // Create Objectpaths in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.get_objects_by_path(request.into_inner()))
+            task::spawn_blocking(move || database_clone.get_objects_by_path(inner_request))
                 .await
                 .map_err(ArunaError::from)??,
         );
         // Return gRPC response after everything succeeded
         log::info!("Sending GetObjectsByPathResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
+    }
+
+    /// Fetches the project and collection ids associated with the provided path.
+    ///
+    /// Status: BETA
+    ///
+    /// ## Arguments
+    ///
+    /// `request` - A gRPC request containing the fully-qualified object path.
+    ///
+    /// ## Results
+    ///
+    /// `GetProjectCollectionIDsByPathResponse` - A gRPC response containing at least the project id
+    /// and the collection id if the collection exists. Returns an error if the project does not exist as well.
+    ///
+    async fn get_project_collection_ids_by_path(
+        &self,
+        request: Request<GetProjectCollectionIdsByPathRequest>,
+    ) -> Result<Response<GetProjectCollectionIdsByPathResponse>, Status> {
+        log::info!("Received GetProjectCollectionIDsByPathRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Save gRPC request metadata for later usage
+        let grpc_metadata = request.metadata().clone();
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Create Objectpaths in database
+        let database_clone = self.database.clone();
+        let (project_uuid, collection_uuid_option) = task::spawn_blocking(move || {
+            database_clone.get_project_collection_ids_by_path(&inner_request.path, false)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Validate permissions with fetched ids
+        if let Some(collection_uuid) = collection_uuid_option {
+            self.authz
+                .collection_authorize(
+                    &grpc_metadata,
+                    collection_uuid, // This is the collection uuid context for the object
+                    UserRights::READ, // User needs at least read permission to get ids
+                )
+                .await?;
+        } else {
+            self.authz
+                .project_authorize(
+                    &grpc_metadata,
+                    project_uuid,     // This is the project uuid context for the object
+                    UserRights::READ, // User needs at least read permission to get ids
+                )
+                .await?;
+        }
+
+        // Create gRPC response
+        let response = tonic::Response::new(GetProjectCollectionIdsByPathResponse {
+            project_id: project_uuid.to_string(),
+            collection_id: match collection_uuid_option {
+                None => "".to_string(),
+                Some(collection_uuid) => collection_uuid.to_string(),
+            },
+        });
+
+        // Return gRPC response after everything succeeded
+        log::info!("Sending GetProjectCollectionIDsByPathResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
@@ -1562,10 +1837,11 @@ impl ObjectService for ObjectServiceImpl {
 // That can be transferred to
 pub async fn try_connect_object_endpoint_moveable(
     database: Arc<Database>,
-    object_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
 ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
     // Get primary location with its endpoint from database
-    let (location, endpoint) = database.get_primary_object_location_with_endpoint(object_uuid)?;
+    let (location, endpoint, encryption_key) =
+        database.get_primary_object_location_with_endpoint(object_uuid)?;
 
     // Evaluate endpoint url
     let endpoint_url = match &endpoint.is_public {
@@ -1582,6 +1858,14 @@ pub async fn try_connect_object_endpoint_moveable(
                 r#type: endpoint.endpoint_type as i32,
                 bucket: location.bucket,
                 path: location.path,
+                endpoint_id: location.endpoint_id.to_string(),
+                is_compressed: location.is_compressed,
+                is_encrypted: location.is_encrypted,
+                encryption_key: if let Some(key) = encryption_key {
+                    key.encryption_key
+                } else {
+                    "".to_string()
+                }, // ...
             };
             Ok((dp, proto_location))
         }
@@ -1590,4 +1874,63 @@ pub async fn try_connect_object_endpoint_moveable(
             "Could not connect to objects primary data proxy endpoint",
         ))),
     }
+}
+
+/// Helper function to encapsulate the creation of presigned download urls
+fn get_object_download_url(
+    database: Arc<Database>,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
+    api_token: &ApiToken,
+) -> Result<String, ArunaError> {
+    let result =
+        database.get_primary_object_location_with_endpoint_and_paths(object_uuid, collection_uuid);
+
+    let (_, endpoint, _, paths) = match result {
+        Ok((loc, endp, key_opt, paths)) => (loc, endp, key_opt, paths),
+        Err(_) => {
+            return Err(ArunaError::InvalidRequest(
+                "Cannot create download url for object without uploaded data".to_string(),
+            ))
+        }
+    };
+
+    let active_paths = paths.iter().filter(|path| path.active).collect::<Vec<_>>();
+    let (object_bucket, object_key) = if let Some(latest_active_path) = active_paths.first() {
+        (
+            latest_active_path.bucket.to_string(),
+            if latest_active_path.path.starts_with('/') {
+                latest_active_path.path[1..].to_string()
+            } else {
+                latest_active_path.path.to_string()
+            },
+        )
+    } else {
+        let latest_inactive_path = if let Some(latest_inactive_path) = paths.first() {
+            latest_inactive_path
+        } else {
+            return Err(ArunaError::InvalidRequest(
+                "Object has location but no path. This is an internal error.".to_string(),
+            ));
+        };
+
+        (
+            latest_inactive_path.bucket.to_string(),
+            if latest_inactive_path.path.starts_with('/') {
+                latest_inactive_path.path[1..].to_string()
+            } else {
+                latest_inactive_path.path.to_string()
+            },
+        )
+    };
+
+    Ok(sign_download_url(
+        &api_token.id.to_string(),
+        &api_token.secretkey,
+        endpoint.proxy_hostname.starts_with("https://"),
+        &object_bucket,
+        &object_key,
+        &endpoint.proxy_hostname, // Will be "sanitized" in the sign_url(...) function
+    )
+    .map_err(|err| tonic::Status::new(Code::Internal, format!("Url signing failed: {err}")))?)
 }

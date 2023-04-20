@@ -9,6 +9,7 @@ use aruna_rust_api::api::storage::services::v1::{
     GetUserPermissionsForProjectRequest, GetUserRequest, RemoveUserFromProjectRequest,
     UpdateProjectRequest,
 };
+use aruna_server::config::ArunaServerConfig;
 use aruna_server::server::services::collection::CollectionServiceImpl;
 use aruna_server::{
     database::{self},
@@ -17,6 +18,7 @@ use aruna_server::{
     server::services::user::UserServiceImpl,
 };
 use serial_test::serial;
+use std::str::FromStr;
 use std::sync::Arc;
 
 mod common;
@@ -29,13 +31,13 @@ async fn create_project_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Create gPC Request for project creation
     let create_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateProjectRequest {
-            name: "Test-Project".to_string(),
+            name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -49,12 +51,12 @@ async fn create_project_grpc_test() {
         .into_inner();
 
     // Validate project id format
-    uuid::Uuid::parse_str(create_project_response.project_id.as_str()).unwrap();
+    diesel_ulid::DieselUlid::from_str(create_project_response.project_id.as_str()).unwrap();
 
     // Create gPC Request for failing project creation
     let create_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(CreateProjectRequest {
-            name: "Test Project".to_string(),
+            name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
         }),
         common::oidc::REGULARTOKEN,
@@ -75,7 +77,7 @@ async fn get_projects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Fast track project creation
@@ -165,7 +167,7 @@ async fn update_project_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Fast track project creation
@@ -175,7 +177,7 @@ async fn update_project_grpc_test() {
     let update_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateProjectRequest {
             project_id: orig_project.id.to_string(),
-            name: "Updated-Project".to_string(),
+            name: "updated-project".to_string(),
             description: "This project was updated in update_project_grpc_test().".to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -190,7 +192,7 @@ async fn update_project_grpc_test() {
     let updated_project = update_project_response.project.unwrap();
 
     assert_eq!(orig_project.id, updated_project.id);
-    assert_eq!(updated_project.name, "Updated-Project".to_string());
+    assert_eq!(updated_project.name, "updated-project".to_string());
     assert_eq!(
         updated_project.description,
         "This project was updated in update_project_grpc_test().".to_string()
@@ -200,7 +202,7 @@ async fn update_project_grpc_test() {
     let update_project_request = common::grpc_helpers::add_token(
         tonic::Request::new(UpdateProjectRequest {
             project_id: orig_project.id.to_string(),
-            name: "Updated Project".to_string(),
+            name: "updated-project".to_string(),
             description: "This update should have been failed...".to_string(),
         }),
         common::oidc::REGULARTOKEN,
@@ -219,7 +221,7 @@ async fn destroy_project_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
     let collection_service = CollectionServiceImpl::new(db, authz).await;
 
@@ -297,8 +299,8 @@ async fn add_remove_project_user_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
-    let user_service = UserServiceImpl::new(db.clone(), authz.clone()).await;
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
+    let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Fast track project creation
@@ -309,7 +311,7 @@ async fn add_remove_project_user_grpc_test() {
         tonic::Request::new(AddUserToProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: uuid::Uuid::new_v4().to_string(), // Random id
+                user_id: diesel_ulid::DieselUlid::generate().to_string(), // Random id
                 project_id: project_id.to_string(),
                 permission: Permission::Read as i32,
                 service_account: false,
@@ -488,8 +490,8 @@ async fn edit_project_user_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
-    let user_service = UserServiceImpl::new(db.clone(), authz.clone()).await;
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
+    let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Fast track project creation
@@ -552,7 +554,7 @@ async fn edit_project_user_grpc_test() {
         tonic::Request::new(EditUserPermissionsForProjectRequest {
             project_id: project_id.to_string(),
             user_permission: Some(ProjectPermission {
-                user_id: uuid::Uuid::new_v4().to_string(),
+                user_id: diesel_ulid::DieselUlid::generate().to_string(),
                 project_id: project_id.to_string(),
                 permission: Permission::Admin as i32,
                 service_account: false,

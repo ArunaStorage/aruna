@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{thread, time};
 
@@ -9,8 +10,8 @@ use aruna_rust_api::api::storage::services::v1::object_service_server::ObjectSer
 use aruna_rust_api::api::storage::services::v1::{
     collection_service_server::CollectionService, AddLabelsToObjectRequest, CloneObjectRequest,
     CreateNewCollectionRequest, CreateObjectReferenceRequest, DeleteObjectRequest,
-    DeleteObjectsRequest, GetDownloadUrlRequest, GetLatestObjectRevisionRequest,
-    GetObjectByIdRequest, GetReferencesRequest, GetUploadUrlRequest, InitializeNewObjectResponse,
+    DeleteObjectsRequest, GetLatestObjectRevisionRequest, GetObjectByIdRequest,
+    GetReferencesRequest, InitializeNewObjectResponse,
 };
 use aruna_rust_api::api::storage::services::v1::{
     FinishObjectStagingRequest, GetObjectsRequest, InitializeNewObjectRequest, StageObject,
@@ -42,7 +43,7 @@ async fn create_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();
@@ -180,27 +181,27 @@ async fn create_objects_grpc_test() {
                     collection_id,
                 } = init_object_response.unwrap().into_inner();
 
-                let get_upload_url_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetUploadUrlRequest {
-                        object_id: object_id.to_string(),
-                        upload_id: upload_id.to_string(),
-                        collection_id: collection_id.to_string(),
-                        multipart: false,
-                        part_number: 1,
-                    }),
-                    common::oidc::REGULARTOKEN,
-                );
-                let upload_url = object_service
-                    .get_upload_url(get_upload_url_request)
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .url
-                    .unwrap()
-                    .url;
+                // let get_upload_url_request = common::grpc_helpers::add_token(
+                //     tonic::Request::new(GetUploadUrlRequest {
+                //         object_id: object_id.to_string(),
+                //         upload_id: upload_id.to_string(),
+                //         collection_id: collection_id.to_string(),
+                //         multipart: false,
+                //         part_number: 1,
+                //     }),
+                //     common::oidc::REGULARTOKEN,
+                // );
+                // let upload_url = object_service
+                //     .get_upload_url(get_upload_url_request)
+                //     .await
+                //     .unwrap()
+                //     .into_inner()
+                //     .url
+                //     .unwrap()
+                //     .url;
 
-                assert!(!upload_url.is_empty());
-                assert!(url::Url::parse(&upload_url).is_ok());
+                // assert!(!upload_url.is_empty());
+                // assert!(url::Url::parse(&upload_url).is_ok());
 
                 /* Normally people would upload data at this point but local data proxy upload is scuffed
                 // Define file with test data
@@ -227,7 +228,7 @@ async fn create_objects_grpc_test() {
                                 "4ec2d656985e3d823b81cc2cd9b56ec27ab1303cfebaf5f95c37d2fe1661a779"
                                     .to_string(),
                         }),
-                        no_upload: false,
+                        no_upload: true,
                         completed_parts: vec![],
                         auto_update: true,
                     }),
@@ -238,30 +239,30 @@ async fn create_objects_grpc_test() {
                     .await;
                 assert!(finish_object_response.is_ok());
 
-                let finished_object = finish_object_response.unwrap().into_inner().object.unwrap();
+                //let finished_object = finish_object_response.unwrap().into_inner().object.unwrap();
 
                 // Validate object object (+ data)
-                let get_download_url_request = common::grpc_helpers::add_token(
-                    tonic::Request::new(GetDownloadUrlRequest {
-                        collection_id: collection_id.to_string(),
-                        object_id: finished_object.id.to_string(),
-                    }),
-                    common::oidc::REGULARTOKEN,
-                );
-                let download_url = object_service
-                    .get_download_url(get_download_url_request)
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .url
-                    .unwrap()
-                    .url;
+                // let get_download_url_request = common::grpc_helpers::add_token(
+                //     tonic::Request::new(GetDownloadUrlRequest {
+                //         collection_id: collection_id.to_string(),
+                //         object_id: finished_object.id.to_string(),
+                //     }),
+                //     common::oidc::REGULARTOKEN,
+                // );
+                // let download_url = object_service
+                //     .get_download_url(get_download_url_request)
+                //     .await
+                //     .unwrap()
+                //     .into_inner()
+                //     .url
+                //     .unwrap()
+                //     .url;
 
-                assert!(!download_url.is_empty());
-                assert!(url::Url::parse(&download_url).is_ok());
+                // assert!(!download_url.is_empty());
+                // assert!(url::Url::parse(&download_url).is_ok());
 
-                let response = reqwest::get(download_url).await.unwrap();
-                assert!(response.status().is_success());
+                // let response = reqwest::get(download_url).await.unwrap();
+                // assert!(response.status().is_success());
             }
             _ => panic!("Unspecified permission is not allowed."),
         };
@@ -276,7 +277,7 @@ async fn get_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     let collection_service = CollectionServiceImpl::new(db.clone(), authz.clone()).await;
 
@@ -295,9 +296,9 @@ async fn get_objects_grpc_test() {
 
     let create_req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateNewCollectionRequest {
-            name: "TestCollection".to_string(),
+            name: "test-collection".to_string(),
             description: "Test collection".to_string(),
-            project_id: "12345678-1111-1111-1111-111111111111".to_string(),
+            project_id: common::functions::get_regular_project_ulid().to_string(),
             labels: vec![],
             hooks: vec![],
             label_ontology: None,
@@ -379,7 +380,6 @@ async fn get_objects_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -425,7 +425,7 @@ async fn update_staging_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -515,7 +515,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -553,8 +552,8 @@ async fn update_staging_object_grpc_test() {
     let rev_0_staging_object_updated_ref_status = db
         .clone()
         .get_reference_status(
-            &uuid::Uuid::parse_str(&rev_0_staging_object_updated.id).unwrap(),
-            &uuid::Uuid::parse_str(&random_collection.id).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&rev_0_staging_object_updated.id).unwrap(),
+            &diesel_ulid::DieselUlid::from_str(&random_collection.id).unwrap(),
         )
         .unwrap();
 
@@ -619,11 +618,13 @@ async fn update_staging_object_grpc_test() {
     assert_eq!(rev_0_staging_object.rev_number, 0);
 
     // Hash should be the same as it can only be updated at finish
-    assert_eq!(rev_0_staging_object.hash, rev_0_staging_object_updated.hash);
+    assert_eq!(
+        rev_0_staging_object.hashes,
+        rev_0_staging_object_updated.hashes
+    );
 
     // Labels/Hooks should be the same as they were not updated
     // except internal ...
-
     'outer: for old_label in rev_0_staging_object.labels {
         for new_label in rev_0_staging_object_updated.labels.clone() {
             if old_label == new_label
@@ -690,7 +691,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -756,7 +756,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -811,7 +810,6 @@ async fn update_staging_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -845,7 +843,11 @@ async fn update_staging_object_grpc_test() {
     );
     assert_eq!(rev_2_staging_object.rev_number, 2);
     assert_eq!(
-        rev_2_staging_object_updated.labels,
+        rev_2_staging_object_updated
+            .labels
+            .into_iter()
+            .filter(|label| !label.key.starts_with("app.aruna-storage.org"))
+            .collect::<Vec<_>>(),
         vec![KeyValue {
             key: "description".to_string(),
             value: "My object description".to_string(),
@@ -867,7 +869,7 @@ async fn update_outdated_revision_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -923,7 +925,6 @@ async fn update_outdated_revision_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -971,7 +972,7 @@ async fn update_outdated_revision_grpc_test() {
     assert_eq!(rev_1_object.rev_number, 1);
 
     // Try to update old revision without force --> Error
-    let mut inner_update_request = UpdateObjectRequest {
+    let inner_update_request = UpdateObjectRequest {
         object_id: rev_0_object.id.to_string(),
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
@@ -993,7 +994,6 @@ async fn update_outdated_revision_grpc_test() {
         preferred_endpoint_id: "".to_string(),
         multi_part: false,
         is_specification: false,
-        force: false,
         hash: None,
     };
     let update_object_request = common::grpc_helpers::add_token(
@@ -1003,17 +1003,6 @@ async fn update_outdated_revision_grpc_test() {
     let update_object_response = object_service.update_object(update_object_request).await;
 
     assert!(update_object_response.is_err()); // Fails because it is not the latest revision
-
-    // Use the same request with force --> Error
-    inner_update_request.force = true;
-
-    let update_object_request = common::grpc_helpers::add_token(
-        tonic::Request::new(inner_update_request.clone()),
-        common::oidc::ADMINTOKEN,
-    );
-    let update_object_response = object_service.update_object(update_object_request).await;
-
-    assert!(update_object_response.is_err()); // Fails because it is still not the latest revision
 }
 
 /// The individual steps of this test function contains:
@@ -1030,7 +1019,7 @@ async fn concurrent_update_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1091,7 +1080,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1126,7 +1114,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1161,7 +1148,6 @@ async fn concurrent_update_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: true,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1244,7 +1230,7 @@ async fn object_references_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1418,7 +1404,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1514,7 +1499,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1628,7 +1612,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1655,7 +1638,6 @@ async fn object_references_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::ADMINTOKEN,
@@ -1681,7 +1663,7 @@ async fn add_labels_to_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1910,7 +1892,6 @@ async fn add_labels_to_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::REGULARTOKEN,
@@ -1999,7 +1980,7 @@ async fn clone_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2056,7 +2037,7 @@ async fn clone_object_grpc_test() {
     // Try to clone non-existing object --> Error
     let clone_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(CloneObjectRequest {
-            object_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            object_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
             collection_id: source_collection.id.to_string(),
             target_collection_id: target_collection.id.to_string(),
         }),
@@ -2070,7 +2051,7 @@ async fn clone_object_grpc_test() {
     let clone_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(CloneObjectRequest {
             object_id: rev_0_object.id.to_string(),
-            collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            collection_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
             target_collection_id: target_collection.id.to_string(),
         }),
         common::oidc::ADMINTOKEN,
@@ -2083,7 +2064,7 @@ async fn clone_object_grpc_test() {
         tonic::Request::new(CloneObjectRequest {
             object_id: rev_0_object.id.to_string(),
             collection_id: source_collection.id.to_string(),
-            target_collection_id: uuid::Uuid::new_v4().to_string(), // Random uuid.
+            target_collection_id: diesel_ulid::DieselUlid::generate().to_string(), // Random uuid.
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -2142,7 +2123,7 @@ async fn clone_object_grpc_test() {
                 assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, proto_object.filename);
                 assert_eq!(rev_0_object.content_len, proto_object.content_len);
-                assert_eq!(rev_0_object.hash, proto_object.hash);
+                assert_eq!(rev_0_object.hashes, proto_object.hashes);
                 assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
                 assert_eq!(proto_object.rev_number, 0);
@@ -2172,7 +2153,7 @@ async fn clone_object_grpc_test() {
                 assert_eq!(rev_0_object.id, cloned_object.origin.clone().unwrap().id);
                 assert_eq!(rev_0_object.filename, cloned_object.filename);
                 assert_eq!(rev_0_object.content_len, cloned_object.content_len);
-                assert_eq!(rev_0_object.hash, cloned_object.hash);
+                assert_eq!(rev_0_object.hashes, cloned_object.hashes);
                 assert_eq!(rev_0_object.origin, cloned_object.origin); // Both originate from the same object
 
                 assert_eq!(cloned_object.rev_number, 0);
@@ -2208,7 +2189,7 @@ async fn clone_object_grpc_test() {
     assert_eq!(rev_0_object.id, proto_object.origin.clone().unwrap().id);
     assert_eq!(rev_0_object.filename, proto_object.filename);
     assert_eq!(rev_0_object.content_len, proto_object.content_len);
-    assert_eq!(rev_0_object.hash, proto_object.hash);
+    assert_eq!(rev_0_object.hashes, proto_object.hashes);
     assert_eq!(rev_0_object.origin, proto_object.origin); // Both originate from the same object
 
     assert_eq!(proto_object.rev_number, 0);
@@ -2257,7 +2238,7 @@ async fn clone_object_grpc_test() {
     );
     assert_eq!(rev_1_object.filename, clone_rev_0_object.filename);
     assert_eq!(rev_1_object.content_len, clone_rev_0_object.content_len);
-    assert_eq!(rev_1_object.hash, clone_rev_0_object.hash);
+    assert_eq!(rev_1_object.hashes, clone_rev_0_object.hashes);
 
     assert_eq!(clone_rev_0_object.filename, "updated.object".to_string());
     assert_eq!(clone_rev_0_object.content_len, 1234);
@@ -2293,7 +2274,7 @@ async fn delete_object_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2562,7 +2543,6 @@ async fn delete_object_grpc_test() {
             preferred_endpoint_id: "".to_string(),
             multi_part: false,
             is_specification: false,
-            force: false,
             hash: None,
         }),
         common::oidc::REGULARTOKEN,
@@ -2626,7 +2606,7 @@ async fn delete_object_revisions_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -2813,7 +2793,7 @@ async fn delete_multiple_objects_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();

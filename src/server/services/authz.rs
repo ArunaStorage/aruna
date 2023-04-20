@@ -1,21 +1,30 @@
+use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
-use crate::database::models::auth::PubKey;
+use crate::database::models::auth::{ApiToken, PubKey};
 use crate::database::models::enums::{Resources, UserRights};
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
+
+use anyhow::Result;
 use chrono::prelude::*;
 use dotenv::dotenv;
+use http::Method;
 use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
 };
 use openssl::pkey::PKey;
+use reqsign::credential::{Credential, CredentialLoad};
+use reqsign::{AwsCredentialLoader, AwsV4Signer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use time::Duration;
 use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
+use url::Url;
 
 /// This is the main struct for the Authz handling
 ///
@@ -79,7 +88,7 @@ impl KeyCloakResponse {
 pub struct Context {
     pub user_right: UserRights,
     pub resource_type: Resources,
-    pub resource_id: uuid::Uuid,
+    pub resource_id: diesel_ulid::DieselUlid,
     // These requests need admin rights
     // For this the user needs to be part of a projects with the admin flag 1
     pub admin: bool,
@@ -93,6 +102,27 @@ pub struct Context {
     // All other fields will be ignored, this should only be used for
     // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
+}
+
+#[derive(Debug)]
+pub struct CustomLoader {
+    pub access_key: String,
+    pub secret_key: String,
+}
+
+impl CustomLoader {
+    pub fn new(access_key: &str, secret_key: &str) -> Self {
+        CustomLoader {
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+        }
+    }
+}
+
+impl CredentialLoad for CustomLoader {
+    fn load_credential(&self) -> Result<Option<Credential>> {
+        Ok(Some(Credential::new(&self.access_key, &self.secret_key)))
+    }
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -109,10 +139,10 @@ impl Authz {
     ///
     /// * `Authz` an instance of this struct.
     ///
-    pub async fn new(db: Arc<Database>) -> Authz {
+    pub async fn new(db: Arc<Database>, config: ArunaServerConfig) -> Authz {
         dotenv().ok();
         // Get the realinfo from config, this is used to query the pubkey from oidc
-        let realminfo = env::var("OAUTH_REALMINFO").expect("OAUTH_REALMINFO must be set");
+        let realminfo = config.config.oauth_realminfo;
         // Query the required signing key environment variable
         let signing_key_result = env::var("SIGNING_KEY");
         // Check if the signing key is set, if yes continue with this key
@@ -144,8 +174,16 @@ impl Authz {
         let pub_key_string = String::from_utf8_lossy(&pubkey).to_string();
         // Query the database for this pubkey, either return the queried id or add this pubkey as new key to the database
         let serial = db
-            .get_or_add_pub_key(pub_key_string)
+            .get_or_add_pub_key(pub_key_string, None)
             .expect("Error in get or add signing key");
+
+        // Add endpoint keys
+
+        db.get_or_add_pub_key(
+            config.config.default_endpoint.endpoint_pubkey,
+            Some(config.config.default_endpoint.endpoint_serial),
+        )
+        .expect("Error in get or add signing key");
 
         // Query databse for all existing pubkeys
         let keys = db.get_pub_keys().expect("Unable to query signing pubkeys");
@@ -230,7 +268,7 @@ impl Authz {
         &self,
         metadata: &MetadataMap,
         context: &Context,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let oidc_user = self.check_if_oidc(metadata).await?;
 
         match oidc_user {
@@ -244,8 +282,56 @@ impl Authz {
                 }
             }
             None => {
-                let token = self.validate_and_query_token(metadata).await?;
-                self.db.get_checked_user_id_from_token(&token, context)
+                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+                Ok(self
+                    .db
+                    .get_checked_user_id_from_token(&token_uuid, context)?
+                    .0)
+            }
+        }
+    }
+
+    /// The `authorize_verbose` method is used to check if the supplied user token has enough permissions
+    /// to fullfill the gRPC request the `db.get_checked_user_id_from_token()` method will check if the token and its
+    /// associated permissions permissions are sufficient enough to execute the request.
+    ///
+    /// ## Arguments
+    ///
+    /// - Metadata of the request containing a token
+    /// - Context that specifies which ressource is accessed and which permissions are requested
+    ///
+    /// ## Return
+    ///
+    /// This returns an Result<(UUID, Option<ApiToken>)> or an Error.
+    /// If it returns an Error the authorization failed otherwise.
+    /// The uuid is the user_id of the user that owns the token.
+    /// This user_id will for example be used to specify the "created_by" field in the database.
+    /// The ApiToken only additionally returns if no OIDC token was used for authorization.
+    ///
+    pub async fn authorize_verbose(
+        &self,
+        metadata: &MetadataMap,
+        context: &Context,
+    ) -> Result<(diesel_ulid::DieselUlid, Option<ApiToken>), ArunaError> {
+        let oidc_user = self.check_if_oidc(metadata).await?;
+
+        match oidc_user {
+            Some(u) => {
+                if context.personal {
+                    Ok((u, None))
+                } else {
+                    Err(ArunaError::AuthorizationError(
+                        AuthorizationError::PERMISSIONDENIED,
+                    ))
+                }
+            }
+            None => {
+                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+                let (creator_uuid, api_token) = self
+                    .db
+                    .get_checked_user_id_from_token(&token_uuid, context)?;
+
+                Ok((creator_uuid, Some(api_token)))
             }
         }
     }
@@ -255,13 +341,13 @@ impl Authz {
     pub async fn personal_authorize(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
-                resource_id: uuid::Uuid::default(),
+                resource_id: diesel_ulid::DieselUlid::default(),
                 admin: false,
                 personal: true,
                 oidc_context: false,
@@ -272,13 +358,16 @@ impl Authz {
 
     /// This is a wrapper that runs the authorize function with an `admin` context
     /// a convenience function if this request is `admin` scoped
-    pub async fn admin_authorize(&self, metadata: &MetadataMap) -> Result<uuid::Uuid, ArunaError> {
+    pub async fn admin_authorize(
+        &self,
+        metadata: &MetadataMap,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
                 user_right: UserRights::READ,
                 resource_type: Resources::PROJECT,
-                resource_id: uuid::Uuid::default(),
+                resource_id: diesel_ulid::DieselUlid::default(),
                 admin: true,
                 personal: false,
                 oidc_context: false,
@@ -292,9 +381,9 @@ impl Authz {
     pub async fn collection_authorize(
         &self,
         metadata: &MetadataMap,
-        collection_id: uuid::Uuid,
+        collection_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
@@ -314,9 +403,9 @@ impl Authz {
     pub async fn project_authorize(
         &self,
         metadata: &MetadataMap,
-        project_id: uuid::Uuid,
+        project_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
             &(Context {
@@ -337,9 +426,9 @@ impl Authz {
     pub async fn project_authorize_by_collectionid(
         &self,
         metadata: &MetadataMap,
-        collection_id: uuid::Uuid,
+        collection_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let project_id = self.db.get_project_id_by_collection_id(collection_id)?;
         self.authorize(
             metadata,
@@ -358,7 +447,7 @@ impl Authz {
     pub async fn check_if_oidc(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<Option<uuid::Uuid>, ArunaError> {
+    ) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
         // If this token is OIDC
         if Authz::is_oidc_from_metadata(metadata).await? {
             let subject = self.validate_oidc_only(metadata).await?;
@@ -375,13 +464,19 @@ impl Authz {
         }
     }
 
-    pub async fn validate_and_query_token(
+    pub async fn validate_and_query_token_from_md(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         let token_string = get_token_from_md(metadata)?;
+        self.validate_and_query_token(&token_string).await
+    }
 
-        let header = decode_header(&token_string)?;
+    pub async fn validate_and_query_token(
+        &self,
+        token_secret: &str,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+        let header = decode_header(token_secret)?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
 
@@ -409,13 +504,17 @@ impl Authz {
                 .ok_or(AuthorizationError::PERMISSIONDENIED)
         })?;
 
-        let token_data = decode::<Claims>(&token_string, key, &Validation::new(Algorithm::EdDSA))
+        let token_data = decode::<Claims>(token_secret, key, &Validation::new(Algorithm::EdDSA))
             .map_err(|e| match e.into_kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthorizationError::TOKENEXPIRED,
-            _ => AuthorizationError::PERMISSIONDENIED,
-        })?;
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    AuthorizationError::TOKENEXPIRED
+                }
+                _ => AuthorizationError::PERMISSIONDENIED,
+            })?;
 
-        Ok(uuid::Uuid::parse_str(token_data.claims.sub.as_str())?)
+        Ok(diesel_ulid::DieselUlid::from_str(
+            token_data.claims.sub.as_str(),
+        )?)
     }
 
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {
@@ -505,7 +604,112 @@ impl Authz {
     }
 }
 
-fn get_token_from_md(md: &MetadataMap) -> Result<String, ArunaError> {
+/// Creates a fully customized presigned S3 url.
+///
+/// ## Arguments:
+///
+/// * `method: http::Method` - Http method the request is valid for
+/// * `access_key: &String` - Secret key id
+/// * `secret_key: &String` - Secret key for access
+/// * `ssl: bool` - Flag if the endpoint is accessible via ssl
+/// * `multipart: bool` - Flag if the request is for a specific multipart part upload
+/// * `part_number: i32` - Specific part number if multipart: true
+/// * `upload_id: &String` - Multipart upload id if multipart: true
+/// * `bucket: &String` - Bucket name
+/// * `key: &String` - Full path of object in bucket
+/// * `endpoint: &String` - Full path of object in bucket
+/// * `duration: i64` - Full path of object in bucket
+/// *
+///
+/// ## Returns:
+///
+/// * `` -
+///
+#[allow(clippy::too_many_arguments)]
+pub fn sign_url(
+    method: http::Method,
+    access_key: &str,
+    secret_key: &str,
+    ssl: bool,
+    multipart: bool,
+    part_number: i32,
+    upload_id: &str,
+    bucket: &str,
+    key: &str,
+    endpoint: &str,
+    duration: i64,
+) -> Result<String> {
+    // Signer will load region and credentials from environment by default.
+    let cloder = reqsign::AwsConfigLoader::with_loaded();
+    cloder.set_region("RegionOne");
+
+    let signer = AwsV4Signer::builder()
+        .config_loader(cloder.clone())
+        .credential_loader(
+            AwsCredentialLoader::new(cloder).with_customed_credential_loader(Arc::new(
+                CustomLoader::new(access_key, secret_key),
+            )),
+        )
+        .service("s3")
+        .build()?;
+
+    // Set protocol depending if ssl
+    let protocol = if ssl { "https://" } else { "http://" };
+
+    // Remove http:// or https:// from beginning of endpoint url if present
+    let endpoint_sanitized = if let Some(stripped) = endpoint.strip_prefix("https://") {
+        stripped.to_string()
+    } else if let Some(stripped) = endpoint.strip_prefix("http://") {
+        stripped.to_string()
+    } else {
+        endpoint.to_string()
+    };
+
+    // Construct request
+    let url = if multipart {
+        Url::parse(&format!(
+            "{}{}.{}/{}?partNumber={}&uploadId={}",
+            protocol, bucket, endpoint_sanitized, key, part_number, upload_id
+        ))?
+    } else {
+        Url::parse(&format!(
+            "{}{}.{}/{}",
+            protocol, bucket, endpoint_sanitized, key
+        ))?
+    };
+
+    let mut req = reqwest::Request::new(method, url);
+
+    // Signing request with Signer
+    signer.sign_query(&mut req, Duration::seconds(duration))?;
+    Ok(req.url().to_string())
+}
+
+/// Convenience wrapper function for sign_url(...) to reduce unused parameters for download url.
+pub fn sign_download_url(
+    access_key: &str,
+    secret_key: &str,
+    ssl: bool,
+    bucket: &str,
+    key: &str,
+    endpoint: &str,
+) -> Result<String> {
+    sign_url(
+        Method::GET,
+        access_key,
+        secret_key,
+        ssl,
+        false,
+        0,
+        "",
+        bucket,
+        key,
+        endpoint,
+        604800, //Note: Default 1 week until requests allow custom duration
+    )
+}
+
+pub fn get_token_from_md(md: &MetadataMap) -> Result<String, ArunaError> {
     let token_string = md
         .get("Authorization")
         .ok_or(ArunaError::GrpcNotFoundError(

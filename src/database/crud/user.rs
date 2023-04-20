@@ -11,21 +11,27 @@
 use super::utils::*;
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, Project as ProjectDB, User, UserPermission};
+use crate::database::models::enums::UserRights;
+use crate::database::schema::api_tokens::dsl::api_tokens;
+use crate::error::ArunaError;
+
 use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
-    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetApiTokenRequest,
-    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetNotActivatedUsersRequest,
-    GetNotActivatedUsersResponse, GetUserProjectsRequest, GetUserProjectsResponse, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
-    UpdateUserDisplayNameResponse, UserProject,
+    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse,
+    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
+    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetUserProjectsRequest,
+    GetUserProjectsResponse, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UpdateUserEmailRequest,
+    UpdateUserEmailResponse, UserProject, UserWithPerms,
 };
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use std::str::FromStr;
 
-use crate::database::models::enums::UserRights;
-use crate::error::ArunaError;
-
+use crate::database::schema::users::dsl::users;
 use chrono::Utc;
 use diesel::{delete, insert_into};
 use diesel::{prelude::*, sql_query, sql_types::Uuid, update};
@@ -57,17 +63,19 @@ impl Database {
 
         // Create a new DB user object
         let db_user = User {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             display_name: request.display_name,
             external_id: ext_id,
             active: false,
+            is_service_account: false,
+            email: request.email,
         };
 
         // Insert the user and return the user_id
         let user_id = self
             .pg_connection
             .get()?
-            .transaction::<uuid::Uuid, Error, _>(|conn| {
+            .transaction::<diesel_ulid::DieselUlid, Error, _>(|conn| {
                 insert_into(users)
                     .values(&db_user)
                     .returning(id)
@@ -79,6 +87,7 @@ impl Database {
             user_id: user_id.to_string(),
         })
     }
+
     /// Activates a registered user, only activated users can create new api tokens.
     ///
     /// ## Arguments
@@ -93,24 +102,86 @@ impl Database {
         &self,
         request: ActivateUserRequest,
     ) -> Result<ActivateUserResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::user_permissions;
         use crate::database::schema::users::dsl::*;
-        use diesel::result::Error;
 
-        let user_id = uuid::Uuid::parse_str(&request.user_id)?;
+        let user_id = diesel_ulid::DieselUlid::from_str(&request.user_id)?;
+
+        // Map grpc_perm because it is an Option by default
+        /*
+        let grpc_perm = request.project_perms.ok_or_else(|| {
+            ArunaError::InvalidRequest(
+                "Project permissions are required to activate a user".to_string(),
+            )
+        })?;
+        */
 
         // Update the user
         self.pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<_, ArunaError, _>(|conn| {
                 update(users)
-                    .filter(id.eq(user_id))
+                    .filter(id.eq(&user_id))
                     .set(active.eq(true))
                     .execute(conn)?;
-                Ok(())
+
+                if let Some(request_perm) = &request.project_perms {
+                    match map_permissions(request_perm.permission()) {
+                        Some(user_right) => {
+                            let user_perm = UserPermission {
+                                id: diesel_ulid::DieselUlid::generate(),
+                                user_id,
+                                user_right,
+                                project_id: diesel_ulid::DieselUlid::from_str(
+                                    &request_perm.project_id,
+                                )?,
+                            };
+
+                            insert_into(user_permissions)
+                                .values(&user_perm)
+                                .execute(conn)?;
+
+                            Ok(())
+                        }
+                        None => Err(ArunaError::InvalidRequest(
+                            "Unspecified permission is not allowed".to_string(),
+                        )),
+                    }
+                } else {
+                    Ok(())
+                }
             })?;
 
         // Create successfull response
         Ok(ActivateUserResponse {})
+    }
+
+    /// Deactivates a registered user.
+    ///
+    /// ## Arguments
+    ///
+    /// * user_uuid: &diesel_ulid::DieselUlid`: the user id that should be deactivated
+    ///
+    /// ## Returns
+    ///
+    /// * `Result<(), ArunaError>`: Ok() result return indicates success
+    ///
+    pub fn deactivate_user(&self, user_uuid: &diesel_ulid::DieselUlid) -> Result<(), ArunaError> {
+        use crate::database::schema::users::dsl::*;
+
+        // Update the user
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                update(users)
+                    .filter(id.eq(user_uuid))
+                    .set(active.eq(false))
+                    .execute(conn)?;
+                Ok(())
+            })?;
+
+        // Create successful response
+        Ok(())
     }
 
     /// Creates a new API Token. This request can be made either with an already existing
@@ -132,11 +203,11 @@ impl Database {
     pub fn create_api_token(
         &self,
         request: CreateApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
         pubkey_id: i64,
-    ) -> Result<Token, ArunaError> {
+    ) -> Result<(Token, String, String), ArunaError> {
         // Generate a new UUID for the token
-        let new_uid = uuid::Uuid::new_v4();
+        let new_uid = diesel_ulid::DieselUlid::generate();
 
         // Get the expiry_time
         let expiry_time = request.expires_at.clone();
@@ -149,9 +220,9 @@ impl Database {
         };
 
         // Parse the optional project_id -> only used for scoped tokens
-        let parsed_project_id = uuid::Uuid::parse_str(&request.project_id).ok();
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.project_id).ok();
         // Parse the optional collection_id -> only used for scoped tokens
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id).ok();
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id).ok();
         // Parse the permissions, should already be validated by the request
         let user_right_db: Option<UserRights> = map_permissions(request.permission());
         // Create a token_type variable for the response
@@ -168,6 +239,13 @@ impl Database {
             }
         }
 
+        // Create random access_key
+        let secret_key: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+
         // Create the new DB APIToken
         let new_token = ApiToken {
             id: new_uid,
@@ -179,6 +257,9 @@ impl Database {
             project_id: parsed_project_id,
             collection_id: parsed_collection_id,
             user_right: user_right_db,
+            secretkey: secret_key.to_string(),
+            used_at: Utc::now().naive_local(),
+            is_session: request.is_session,
         };
 
         use crate::database::schema::api_tokens::dsl::*;
@@ -199,16 +280,22 @@ impl Database {
         };
 
         // Create the response
-        Ok(Token {
-            id: api_token.id.to_string(),
-            name: api_token.name.unwrap_or_default(),
-            token_type: token_type as i32,
-            created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
-            expires_at: expires_at_time,
-            collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
-            project_id: option_to_string(api_token.project_id).unwrap_or_default(),
-            permission: map_permissions_rev(api_token.user_right),
-        })
+        Ok((
+            Token {
+                id: api_token.id.to_string(),
+                name: api_token.name.unwrap_or_default(),
+                token_type: token_type as i32,
+                created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
+                expires_at: expires_at_time,
+                collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
+                project_id: option_to_string(api_token.project_id).unwrap_or_default(),
+                permission: map_permissions_rev(api_token.user_right),
+                is_session: api_token.is_session,
+                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
+            },
+            api_token.id.to_string(),
+            secret_key,
+        ))
     }
 
     /// Gets a specific API Token by id from the user. Users can get the ID either from their signed token or
@@ -227,14 +314,14 @@ impl Database {
     pub fn get_api_token(
         &self,
         request: GetApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<GetApiTokenResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
 
         // Parse the token_id from the request
         let token_id = if !request.token_id.is_empty() {
-            Some(uuid::Uuid::parse_str(&request.token_id)?)
+            Some(diesel_ulid::DieselUlid::from_str(&request.token_id)?)
         } else {
             None
         };
@@ -287,8 +374,39 @@ impl Database {
                 collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
                 project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                 permission: map_permissions_rev(api_token.user_right),
+                is_session: api_token.is_session,
+                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
             }),
         })
+    }
+
+    /// Gets a specific API Token by its unique id.
+    ///
+    /// ## Arguments
+    ///
+    /// * token_id: &diesel_ulid::DieselUlid: Unique api token id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<ApiToken, ArunaError>: Token Response, this does not contain the signed Token only
+    ///   all Database information
+    pub fn get_api_token_by_id(
+        &self,
+        token_id: &diesel_ulid::DieselUlid,
+    ) -> Result<ApiToken, ArunaError> {
+        use crate::database::schema::api_tokens::dsl as tokens_dsl;
+
+        // Fetch token info from database
+        let api_token = self
+            .pg_connection
+            .get()?
+            .transaction::<ApiToken, ArunaError, _>(|conn| {
+                Ok(api_tokens
+                    .filter(tokens_dsl::id.eq(token_id))
+                    .first::<ApiToken>(conn)?)
+            })?;
+
+        Ok(api_token)
     }
 
     /// Gets all API Tokens from a user.
@@ -307,7 +425,7 @@ impl Database {
     pub fn get_api_tokens(
         &self,
         _request: GetApiTokensRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<GetApiTokensResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
@@ -356,6 +474,8 @@ impl Database {
                     collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
                     project_id: option_to_string(api_token.project_id).unwrap_or_default(),
                     permission: map_permissions_rev(api_token.user_right),
+                    is_session: api_token.is_session,
+                    used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
                 })
             })
             .collect::<Result<Vec<_>, ArunaError>>()?;
@@ -378,13 +498,13 @@ impl Database {
     pub fn delete_api_token(
         &self,
         request: DeleteApiTokenRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteApiTokenResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
 
         // Get token_id from request
-        let token_id_request = uuid::Uuid::parse_str(&request.token_id)?;
+        let token_id_request = diesel_ulid::DieselUlid::from_str(&request.token_id)?;
 
         // Execute db delete
         self.pg_connection
@@ -417,7 +537,7 @@ impl Database {
     pub fn delete_api_tokens(
         &self,
         _request: DeleteApiTokensRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteApiTokensResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use diesel::result::Error as dError;
@@ -446,7 +566,10 @@ impl Database {
     ///
     /// * Result<UserWhoAmIResponse, ArunaError>: Basic information about the requesting user, id, displayname etc.
     ///
-    pub fn get_user(&self, req_user_id: uuid::Uuid) -> Result<GetUserResponse, ArunaError> {
+    pub fn get_user(
+        &self,
+        req_user_id: diesel_ulid::DieselUlid,
+    ) -> Result<GetUserResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
@@ -494,26 +617,101 @@ impl Database {
                 external_id: u.external_id,
                 active: u.active,
                 is_admin,
+                is_service_account: u.is_service_account,
+                email: u.email,
             }),
             project_permissions: perm
                 .iter()
                 .map(|elem| ProjectPermission {
-                    user_id: user_info
-                        .clone()
-                        .unwrap_or_else(|| User {
-                            id: uuid::Uuid::default(),
-                            external_id: String::default(),
-                            display_name: String::default(),
-                            active: false,
-                        })
-                        .id
-                        .to_string(),
+                    user_id: user_info.clone().unwrap_or_default().id.to_string(),
                     project_id: elem.project_id.to_string(),
                     permission: map_permissions_rev(Some(elem.user_right)),
                     // TODO: check for service account
                     service_account: false,
                 })
                 .collect::<Vec<_>>(),
+        })
+    }
+
+    /// Request that returns personal user information of all registered users.
+    ///
+    /// ## Arguments
+    ///
+    /// * include_permissions: &bool: Flag if permissions shall be included in response
+    ///
+    /// ## Returns
+    ///
+    /// * Result<GetAllUsersResponse, ArunaError>: Response contains vector with user information of all users
+    ///
+    pub fn get_all_users(
+        &self,
+        include_permissions: bool,
+    ) -> Result<GetAllUsersResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+
+        // Query the user information
+        let user_infos = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<UserWithPerms>, ArunaError, _>(|conn| {
+                let db_users: Vec<User> = users.load::<User>(conn)?;
+
+                let mut users_with_permissions = Vec::new();
+                for user in db_users {
+                    let admin_user_perm = sql_query(
+                        "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id
+                           FROM user_permissions AS uperm
+                           JOIN projects AS p
+                           ON p.id = uperm.project_id
+                           WHERE uperm.user_id = $1
+                           AND p.flag & 1 = 1
+                           LIMIT 1",
+                    )
+                    .bind::<Uuid, _>(user.id)
+                    .get_result::<UserPermission>(conn)
+                    .optional()?;
+
+                    let proto_user = gRPCUser {
+                        id: user.id.to_string(),
+                        external_id: user.external_id.to_string(),
+                        display_name: user.display_name.to_string(),
+                        active: user.active,
+                        is_admin: admin_user_perm.is_some(),
+                        is_service_account: user.is_service_account,
+                        email: user.email.to_string(),
+                    };
+
+                    if include_permissions {
+                        let all_user_permissions = user_permissions
+                            .filter(crate::database::schema::user_permissions::user_id.eq(&user.id))
+                            .load::<UserPermission>(conn)?;
+
+                        users_with_permissions.push(UserWithPerms {
+                            user: Some(proto_user),
+                            project_perms: all_user_permissions
+                                .iter()
+                                .map(|perm| ProjectPermission {
+                                    user_id: perm.user_id.to_string(),
+                                    project_id: perm.project_id.to_string(),
+                                    permission: map_permissions_rev(Some(perm.user_right)),
+                                    service_account: user.is_service_account,
+                                })
+                                .collect::<Vec<_>>(),
+                        })
+                    } else {
+                        users_with_permissions.push(UserWithPerms {
+                            user: Some(proto_user),
+                            project_perms: vec![],
+                        })
+                    }
+                }
+
+                Ok(users_with_permissions)
+            })?;
+
+        // Convert information to gRPC format
+        Ok(GetAllUsersResponse {
+            user_with_perms: user_infos,
         })
     }
 
@@ -531,7 +729,7 @@ impl Database {
     pub fn update_user_display_name(
         &self,
         request: UpdateUserDisplayNameRequest,
-        user_id: uuid::Uuid,
+        user_id: diesel_ulid::DieselUlid,
     ) -> Result<UpdateUserDisplayNameResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
@@ -567,6 +765,66 @@ impl Database {
                 external_id: user.external_id,
                 active: user.active,
                 is_admin,
+                is_service_account: user.is_service_account,
+                email: user.email,
+            }),
+        })
+    }
+
+    /// Updates the email for the requesting user.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateUserDisplayNameRequest: Contains the new email
+    /// * user_id: String: User id validated by personal aruna_token
+    ///
+    /// ## Returns
+    ///
+    /// * Result<UpdateUserDisplayNameResponse, ArunaError>:
+    /// Basic information about the (updated) requesting user, id, displayname, etc.
+    ///
+    pub fn update_user_email(
+        &self,
+        request: UpdateUserEmailRequest,
+        user_uuid: diesel_ulid::DieselUlid,
+    ) -> Result<UpdateUserEmailResponse, ArunaError> {
+        use crate::database::schema::users::dsl::*;
+
+        // Update user display_name in Database return "new" name
+        let (user, is_admin) = self
+            .pg_connection
+            .get()?
+            .transaction::<(User, bool), ArunaError, _>(|conn| {
+                let admin_user_perm = sql_query(
+                    "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id
+                       FROM user_permissions AS uperm
+                       JOIN projects AS p
+                       ON p.id = uperm.project_id
+                       WHERE uperm.user_id = $1
+                       AND p.flag & 1 = 1
+                       LIMIT 1",
+                )
+                .bind::<Uuid, _>(user_uuid)
+                .get_result::<UserPermission>(conn)
+                .optional()?;
+
+                let update_ret = update(users.filter(id.eq(&user_uuid)))
+                    .set(email.eq(&request.new_email))
+                    .get_result(conn)?;
+
+                Ok((update_ret, admin_user_perm.is_some()))
+            })?;
+
+        // Parse to gRPC format and return
+        Ok(UpdateUserEmailResponse {
+            user: Some(gRPCUser {
+                id: user.id.to_string(),
+                display_name: user.display_name,
+                external_id: user.external_id,
+                active: user.active,
+                is_admin,
+                is_service_account: user.is_service_account,
+                email: user.email,
             }),
         })
     }
@@ -585,7 +843,7 @@ impl Database {
     pub fn get_user_projects(
         &self,
         _request: GetUserProjectsRequest,
-        user_grpc_id: uuid::Uuid,
+        user_grpc_id: diesel_ulid::DieselUlid,
     ) -> Result<GetUserProjectsResponse, ArunaError> {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
@@ -633,7 +891,7 @@ impl Database {
     pub fn get_not_activated_users(
         &self,
         _request: GetNotActivatedUsersRequest,
-        _user_grpc_id: uuid::Uuid,
+        _user_grpc_id: diesel_ulid::DieselUlid,
     ) -> Result<GetNotActivatedUsersResponse, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error as dError;
@@ -659,6 +917,8 @@ impl Database {
                     display_name: us.display_name.to_string(),
                     active: us.active,
                     is_admin: us.active,
+                    is_service_account: us.is_service_account,
+                    email: us.email.to_string(),
                 })
                 .collect::<Vec<_>>(),
             None => Vec::new(),

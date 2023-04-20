@@ -9,7 +9,8 @@ CREATE TYPE OBJECT_STATUS AS ENUM (
     'UNAVAILABLE',
     'ERROR',
     'DELETED', -- Permanently deleted objects that are preserved for history reasons
-    'TRASH' -- Objects that should be cleaned up and removed
+    'TRASH', -- Objects that should be cleaned up and removed
+    'FINALIZING'
 );
 CREATE TYPE ENDPOINT_TYPE AS ENUM ('S3', 'FILE');
 CREATE TYPE DATACLASS AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL', 'PROTECTED');
@@ -32,6 +33,15 @@ CREATE TYPE HASH_TYPE AS ENUM (
     'MURMUR3A32',
     'XXHASH32'
 );
+
+CREATE TYPE ENDPOINT_STATUS AS ENUM (
+    'INITIALIZING',
+    'AVAILABLE',
+    'DEGRADED',
+    'UNAVAILABLE',
+    'MAINTENANCE'
+);
+
 /* ----- Authentication -------------------------------------------- */
 -- Table with different identity providers
 -- Currently not used
@@ -45,7 +55,9 @@ CREATE TABLE users (
     id UUID PRIMARY KEY,
     external_id TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
-    active BOOL NOT NULL DEFAULT FALSE -- Users must be activated by an administrator
+    email VARCHAR(511) DEFAULT '',
+    active BOOL NOT NULL DEFAULT FALSE, -- Users must be activated by an administrator
+    is_service_account BOOL NOT NULL DEFAULT FALSE
 );
 -- Join table to map users to multiple identity providers
 -- Currently not used
@@ -158,7 +170,8 @@ CREATE TABLE endpoints (
     proxy_hostname VARCHAR(255) NOT NULL,
     internal_hostname VARCHAR(255) NOT NULL,
     documentation_path TEXT DEFAULT NULL,
-    is_public BOOL NOT NULL DEFAULT TRUE
+    is_public BOOL NOT NULL DEFAULT TRUE,
+    status ENDPOINT_STATUS NOT NULL DEFAULT 'AVAILABLE'
 );
 -- Table with object locations which describe
 CREATE TABLE object_locations (
@@ -169,6 +182,8 @@ CREATE TABLE object_locations (
     -- Referencing the internal ID NOT the object_id 
     object_id UUID NOT NULL,
     is_primary BOOL NOT NULL DEFAULT TRUE,
+    is_compressed BOOL NOT NULL DEFAULT TRUE,
+    is_encrypted BOOL NOT NULL DEFAULT TRUE,
     -- TRUE if TRUE otherwise NULL
     UNIQUE (object_id, is_primary),
     FOREIGN KEY (object_id) REFERENCES objects(id)
@@ -203,6 +218,7 @@ CREATE TABLE object_groups (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
     PRIMARY KEY (id),
+    is_service_account BOOL NOT NULL DEFAULT FALSE,
     UNIQUE(shared_revision_id, revision_number),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -268,6 +284,9 @@ CREATE TABLE api_tokens (
     -- IF collection_id and project_id is NULL, the token is a global personal token of creator_user_id
     collection_id UUID,
     user_right USER_RIGHTS,
+    secretkey VARCHAR(255) NOT NULL DEFAULT '-',
+    used_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    is_session BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (pub_key) REFERENCES pub_keys(id),
@@ -295,6 +314,17 @@ CREATE TABLE paths (
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
     UNIQUE (bucket, path)
 );
+
+CREATE TABLE encryption_keys (
+    id UUID PRIMARY KEY,
+    hash TEXT,
+    object_id UUID NOT NULL,
+    endpoint_id UUID NOT NULL,
+    is_temporary BOOL NOT NULL DEFAULT FALSE,
+    encryption_key TEXT NOT NULL,
+    FOREIGN KEY (object_id) REFERENCES objects(id),
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id)
+);
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
 CREATE MATERIALIZED VIEW collection_stats AS
@@ -320,19 +350,21 @@ FROM object_groups AS objgrp
 GROUP BY objgrp.id;
 -- Insert initial data
 -- ADMIN
-INSERT INTO users (id, external_id, display_name, active)
+INSERT INTO users (id, external_id, display_name, email, active)
 VALUES (
         '12345678-1234-1234-1234-111111111111',
         'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
         'admin',
+        '',
         TRUE
     );
 -- REGULAR_USER
-INSERT INTO users (id, external_id, display_name, active)
+INSERT INTO users (id, external_id, display_name, email, active)
 VALUES (
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
         '39893781-320e-4dbf-be39-c06d8b28e897',
         'regular_user',
+        '',
         TRUE
     );
 
@@ -347,12 +379,31 @@ VALUES (
 
 INSERT INTO projects (id, name, description, flag, created_by)
 VALUES (
-        '12345678-1111-1111-1111-111111111122',
+        '01878104-d69f-d72b-d013-80f1f6d106c3',
         'test_project',
         'test_regular_description',
         0,
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17'
     );
+
+INSERT INTO projects (id, name, description, flag, created_by)
+VALUES (
+        '12345678-1111-1111-1111-111111111133',
+        'test',
+        'test_proj',
+        0,
+        '12345678-1234-1234-1234-111111111111'
+    );
+
+INSERT INTO collections (id, shared_version_id, name, created_by, project_id) 
+VALUES (
+        '01878104-d710-ff64-1e71-ef7ccf12fda0',
+        '3089111f-07fe-4fef-91a6-2bc0a5c4aeec',
+        'test',
+        '12345678-1234-1234-1234-111111111111',
+        '12345678-1111-1111-1111-111111111133'
+    );
+
 INSERT INTO user_permissions (id, user_id, user_right, project_id)
 VALUES (
         '12345678-9999-9999-9999-999999999999',
@@ -366,17 +417,21 @@ INSERT INTO pub_keys (
         pubkey
     )
 VALUES('1',E'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----\n');
-INSERT INTO api_tokens (id, creator_user_id, pub_key)
+INSERT INTO api_tokens (id, creator_user_id, pub_key, secretkey, expires_at)
 VALUES (
         '12345678-8888-8888-8888-999999999999',
         '12345678-1234-1234-1234-111111111111',
-        '1'
+        '1',
+        '1234',
+        '2100-03-28 09:26:53.197386'
     );
-INSERT INTO api_tokens (id, creator_user_id, pub_key)
+INSERT INTO api_tokens (id, creator_user_id, pub_key, secretkey, expires_at)
 VALUES (
         'e4b36f63-a633-48a8-9748-7f82058e8e3b',
         'ee4e1d0b-abab-4979-a33e-dc28ed199b17',
-        '1'
+        '1',
+        '12345',
+        '2100-03-28 09:26:53.197386'
     );
 INSERT INTO endpoints (
         id,
@@ -389,6 +444,6 @@ VALUES (
         '12345678-6666-6666-6666-999999999999',
         'S3',
         'demo_endpoint',
-        'https://proxy.example.com',
+        'http://localhost:1337',
         'http://localhost:8081'
     );

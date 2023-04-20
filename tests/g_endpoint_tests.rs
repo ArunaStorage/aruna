@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::models::v1::EndpointType as ProtoEndpointType;
 use aruna_rust_api::api::storage::services::v1::AddEndpointRequest;
 use aruna_server::config::DefaultEndpoint;
@@ -20,6 +22,8 @@ fn init_default_endpoint_test() {
         endpoint_name: "Default_Endpoint".to_string(),
         endpoint_host: "internal_server_name".to_string(),
         endpoint_proxy: "data_proxy.example.com".to_string(),
+        endpoint_serial: 10,
+        endpoint_pubkey: "".to_string(),
         endpoint_public: true,
         endpoint_docu: None,
     };
@@ -78,21 +82,27 @@ fn add_endpoint_test() {
         internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
         documentation_path: "/somewhere/else/docu.pdf".to_string(),
         is_public: true,
+        pubkey: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----".to_string(),
     };
 
     // Validate endpoint creation
-    let Endpoint {
-        id,
-        endpoint_type,
-        name,
-        proxy_hostname,
-        internal_hostname,
-        documentation_path,
-        is_public,
-    } = db.add_endpoint(&add_request).unwrap();
+    let (
+        Endpoint {
+            id,
+            endpoint_type,
+            name,
+            proxy_hostname,
+            internal_hostname,
+            documentation_path,
+            is_public,
+            status: _,
+        },
+        pubkey_serial,
+    ) = db.add_endpoint(&add_request).unwrap();
 
-    let _endpoint_uuid = uuid::Uuid::parse_str(id.to_string().as_str());
+    let _endpoint_uuid = diesel_ulid::DieselUlid::from_str(id.to_string().as_str());
 
+    assert!(pubkey_serial > 0);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, add_request.name);
     assert_eq!(proxy_hostname, add_request.proxy_hostname);
@@ -106,7 +116,7 @@ fn add_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Get Endpoint by its uuid
     let Endpoint {
@@ -117,13 +127,14 @@ fn get_endpoint_test() {
         internal_hostname,
         documentation_path,
         is_public,
+        status: _,
     } = db.get_endpoint(&endpoint_uuid).unwrap();
 
     // Validate returned endpoint
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "https://proxy.example.com");
+    assert_eq!(proxy_hostname, "http://localhost:1337");
     assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
@@ -134,7 +145,7 @@ fn get_endpoint_test() {
 #[serial(db)]
 fn get_endpoint_by_name_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
     let endpoint_name = "demo_endpoint";
 
     // Get Endpoint by its uuid
@@ -146,13 +157,14 @@ fn get_endpoint_by_name_test() {
         internal_hostname,
         documentation_path,
         is_public,
+        status: _,
     } = db.get_endpoint_by_name(endpoint_name).unwrap();
 
     // Validate returned endpoint
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "https://proxy.example.com");
+    assert_eq!(proxy_hostname, "http://localhost:1337");
     assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);

@@ -21,7 +21,7 @@ async fn storage_info_status_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
 
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let config = ArunaServerConfig::new();
     let infoservice = StorageInfoServiceImpl::new(db, authz, config.config.loc_version).await;
 
@@ -47,7 +47,7 @@ async fn storage_info_version_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
 
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let config = ArunaServerConfig::new();
     let infoservice = StorageInfoServiceImpl::new(db, authz, config.config.loc_version).await;
 

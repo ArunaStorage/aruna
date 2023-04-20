@@ -6,6 +6,10 @@ pub mod sql_types {
     pub struct Dataclass;
 
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "endpoint_status"))]
+    pub struct EndpointStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "endpoint_type"))]
     pub struct EndpointType;
 
@@ -56,6 +60,9 @@ diesel::table! {
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
         user_right -> Nullable<UserRights>,
+        secretkey -> Varchar,
+        used_at -> Timestamp,
+        is_session -> Bool,
     }
 }
 
@@ -124,8 +131,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    encryption_keys (id) {
+        id -> Uuid,
+        hash -> Nullable<Text>,
+        object_id -> Uuid,
+        endpoint_id -> Uuid,
+        is_temporary -> Bool,
+        encryption_key -> Text,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::EndpointType;
+    use super::sql_types::EndpointStatus;
 
     endpoints (id) {
         id -> Uuid,
@@ -135,6 +154,7 @@ diesel::table! {
         internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,
         is_public -> Bool,
+        status -> EndpointStatus,
     }
 }
 
@@ -238,6 +258,8 @@ diesel::table! {
         endpoint_id -> Uuid,
         object_id -> Uuid,
         is_primary -> Bool,
+        is_compressed -> Bool,
+        is_encrypted -> Bool,
     }
 }
 
@@ -328,6 +350,8 @@ diesel::table! {
         external_id -> Text,
         display_name -> Text,
         active -> Bool,
+        is_service_account -> Bool,
+        email -> Varchar,
     }
 }
 
@@ -362,6 +386,8 @@ diesel::joinable!(collection_objects -> objects (object_id));
 diesel::joinable!(collections -> collection_version (version_id));
 diesel::joinable!(collections -> projects (project_id));
 diesel::joinable!(collections -> users (created_by));
+diesel::joinable!(encryption_keys -> endpoints (endpoint_id));
+diesel::joinable!(encryption_keys -> objects (object_id));
 diesel::joinable!(external_user_ids -> identity_providers (idp_id));
 diesel::joinable!(external_user_ids -> users (user_id));
 diesel::joinable!(hashes -> objects (object_id));
@@ -387,6 +413,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     collection_objects,
     collection_version,
     collections,
+    encryption_keys,
     endpoints,
     external_user_ids,
     hashes,

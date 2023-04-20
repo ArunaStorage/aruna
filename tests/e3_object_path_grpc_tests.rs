@@ -30,7 +30,7 @@ async fn create_object_with_path_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -146,7 +146,7 @@ async fn create_object_with_path_grpc_test() {
                 hash: "4ec2d656985e3d823b81cc2cd9b56ec27ab1303cfebaf5f95c37d2fe1661a779"
                     .to_string(),
             }),
-            no_upload: false,
+            no_upload: true,
             completed_parts: vec![],
             auto_update: true,
         }),
@@ -200,7 +200,7 @@ async fn create_additional_object_path_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -245,8 +245,6 @@ async fn create_additional_object_path_grpc_test() {
     let object_meta = TCreateObject {
         creator_id: Some(user_id.clone()),
         collection_id: random_collection.id.to_string(),
-        num_labels: 0,
-        num_hooks: 0,
         ..Default::default()
     };
     let random_object = common::functions::create_object(&object_meta);
@@ -289,7 +287,7 @@ async fn create_additional_object_path_grpc_test() {
             tonic::Request::new(CreateObjectPathRequest {
                 collection_id: random_collection.id.to_string(),
                 object_id: random_object.id.to_string(),
-                sub_path: format!("/{:?}/", permission).to_string(),
+                sub_path: format!("/{:?}/", permission).to_lowercase(),
             }),
             common::oidc::REGULARTOKEN,
         );
@@ -301,12 +299,11 @@ async fn create_additional_object_path_grpc_test() {
                 assert!(create_path_response.is_err())
             }
             Permission::Modify | Permission::Admin => {
-                assert!(create_path_response.is_ok());
-
                 // Validate path creation/existence
+                let permission_name = format!("{:?}", *permission).to_lowercase();
                 let fq_path = format!(
-                    "{}/{:?}/{}",
-                    static_path_part, *permission, random_object.filename
+                    "{}/{}/{}",
+                    static_path_part, permission_name, random_object.filename
                 )
                 .to_string();
                 let response_path = create_path_response
@@ -370,7 +367,7 @@ async fn create_object_path_with_reference_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -561,7 +558,7 @@ async fn get_object_path_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -627,10 +624,13 @@ async fn get_object_path_grpc_test() {
         "//path/".to_string(),       // Empty path parts are not allowed
         "//path//".to_string(),      // Empty path parts are not allowed
         "path//path".to_string(),    // Empty path parts are not allowed
-        "$%&/path/".to_string(),     // Only ^(/?[\w~\-.]+)*/?$ allowed; no special characters
-        "custom\\path/".to_string(), // Only ^(/?[\w~\-.]+)*/?$ allowed; no backslashes
-        "some path".to_string(),     // Only ^(/?[\w~\-.]+)*/?$ allowed; no whitespace
-        "some|path".to_string(),     // Only ^(/?[\w~\-.]+)*/?$ allowed; no pipe
+        "LOUD/PATH/".to_string(),    // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no upper case characters
+        "$%&/path/".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no special characters
+        "custom\\path/".to_string(), // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no backslashes
+        "some path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no whitespaces
+        "some|path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no pipes
+        "some.path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no points
+        "some,path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no commas
     ]
     .iter()
     {
@@ -657,16 +657,16 @@ async fn get_object_path_grpc_test() {
     // Requests with valid paths in different formats
     for valid_path in vec![
         "".to_string(), // Duplicate of existing default path are ignored
-        "single_part".to_string(),
+        "single-part".to_string(),
         "multi/part".to_string(),
         "/slash/front".to_string(),
         "slash/back/".to_string(),
         "/slash/both/".to_string(),
-        "/my.custom/path/".to_string(),
-        "/my.custom-path/".to_string(),
-        "~my.custom-path~/".to_string(),
-        "~my.custom/_path~/.ver4.rc-3".to_string(),
-        "~my.custom/_path~/.ver4.rc-3/Final-For-Real".to_string(),
+        "/my-custom/path/".to_string(),
+        "my-custom-path/".to_string(),
+        "my-custom-path/final".to_string(),
+        "my-custom-path/final-really".to_string(),
+        "my-custom-path/final-really/ver4".to_string(),
     ]
     .iter()
     {
@@ -742,7 +742,7 @@ async fn get_object_paths_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1038,7 +1038,7 @@ async fn set_object_path_visibility_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1096,11 +1096,11 @@ async fn set_object_path_visibility_grpc_test() {
     };
 
     for valid_path in vec![
-        "path_01".to_string(),
-        "path_02".to_string(),
-        "path_03".to_string(),
-        "path_04".to_string(),
-        "path_05".to_string(),
+        "path-01".to_string(),
+        "path-02".to_string(),
+        "path-03".to_string(),
+        "path-04".to_string(),
+        "path-05".to_string(),
     ]
     .iter()
     {
@@ -1128,9 +1128,9 @@ async fn set_object_path_visibility_grpc_test() {
     };
 
     for set_visibility_path in vec![
-        "path_02".to_string(),
-        "path_03".to_string(),
-        "path_04".to_string(),
+        "path-02".to_string(),
+        "path-03".to_string(),
+        "path-04".to_string(),
     ]
     .iter()
     {
@@ -1164,7 +1164,7 @@ async fn set_object_path_visibility_grpc_test() {
     }
 
     // Set visibility of one path_03 to active again
-    let fq_path = format!("{static_path_part}/path_03/{}", random_object.filename);
+    let fq_path = format!("{static_path_part}/path-03/{}", random_object.filename);
     inner_set_visibility_request.path = fq_path.to_string();
     inner_set_visibility_request.visibility = true;
 
@@ -1205,9 +1205,9 @@ async fn set_object_path_visibility_grpc_test() {
     assert_eq!(active_paths.len(), 4); // Contains only the three active paths + the default
 
     for active_path in vec![
-        "path_01".to_string(),
-        "path_03".to_string(),
-        "path_05".to_string(),
+        "path-01".to_string(),
+        "path-03".to_string(),
+        "path-05".to_string(),
     ]
     .iter()
     {
@@ -1237,15 +1237,15 @@ async fn set_object_path_visibility_grpc_test() {
         .into_inner();
 
     let all_paths = get_paths_response.object_paths;
-    for path in vec!["path_01", "path_02", "path_03", "path_04", "path_05"].iter() {
+    for path in vec!["path-01", "path-02", "path-03", "path-04", "path-05"].iter() {
         let mut proto_path = Path {
             path: format!("{static_path_part}/{path}/{}", random_object.filename).to_string(),
             visibility: true,
         };
 
         proto_path.visibility = match *path {
-            "path_01" | "path_03" | "path_05" => true,
-            "path_02" | "path_04" => false,
+            "path-01" | "path-03" | "path-05" => true,
+            "path-02" | "path-04" => false,
             _ => panic!("Received sub path which should not exist."),
         };
 
@@ -1267,7 +1267,7 @@ async fn get_object_by_path_grpc_test() {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read test config relative to binary
     let config = ArunaServerConfig::new();
@@ -1324,7 +1324,7 @@ async fn get_object_by_path_grpc_test() {
         tonic::Request::new(CreateObjectPathRequest {
             collection_id: random_collection.id.to_string(),
             object_id: rev_0_object.id.to_string(),
-            sub_path: "rev_0/custom/".to_string(),
+            sub_path: "rev-0/custom/".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1365,7 +1365,6 @@ async fn get_object_by_path_grpc_test() {
         {
             let get_object_by_path_request = common::grpc_helpers::add_token(
                 tonic::Request::new(GetObjectsByPathRequest {
-                    collection_id: random_collection.id.to_string(),
                     path: object_path.to_string(),
                     with_revisions: false, // Also only one revision exists.
                 }),
@@ -1407,7 +1406,7 @@ async fn get_object_by_path_grpc_test() {
         tonic::Request::new(CreateObjectPathRequest {
             collection_id: random_collection.id.to_string(),
             object_id: rev_1_object.id.to_string(),
-            sub_path: "rev_1/custom/".to_string(),
+            sub_path: "rev-1/custom/".to_string(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1429,7 +1428,6 @@ async fn get_object_by_path_grpc_test() {
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
-                collection_id: random_collection.id.to_string(),
                 path: object_path.to_string(),
                 with_revisions: false,
             }),
@@ -1458,7 +1456,6 @@ async fn get_object_by_path_grpc_test() {
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
-                collection_id: random_collection.id.to_string(),
                 path: object_path.to_string(),
                 with_revisions: true,
             }),

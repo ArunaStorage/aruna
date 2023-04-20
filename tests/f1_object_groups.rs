@@ -22,8 +22,8 @@ use serial_test::serial;
 #[allow(clippy::needless_collect)]
 fn create_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -145,8 +145,8 @@ fn create_object_group_test() {
 #[allow(clippy::needless_collect)]
 fn update_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -324,8 +324,8 @@ fn update_object_group_test() {
 #[serial(db)]
 fn delete_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -487,8 +487,8 @@ fn delete_object_group_test() {
 #[serial(db)]
 fn object_group_staging_object_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);

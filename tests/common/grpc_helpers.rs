@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use aruna_rust_api::api::storage::models::v1::{
@@ -54,8 +55,8 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
-    let userservice = UserServiceImpl::new(db, authz).await;
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
+    let userservice = UserServiceImpl::new(db, authz, None).await;
 
     let tokname = if create_token.name.is_empty() {
         format!("token_{}", super::functions::rand_string(5))
@@ -88,6 +89,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
                 }),
             }),
             permission: create_token.permission,
+            is_session: false,
         }),
         &token,
     );
@@ -106,8 +108,8 @@ pub async fn get_token_user_id(token: &str) -> String {
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
-    let user_service = UserServiceImpl::new(db, authz).await;
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
+    let user_service = UserServiceImpl::new(db, authz, None).await;
 
     // Fetch user information associated with token
     let get_user_request = add_token(
@@ -137,12 +139,12 @@ pub async fn add_project_permission(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Validate format of provided ids
-    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
-    let user_id = uuid::Uuid::parse_str(user_uuid).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(user_uuid).unwrap();
 
     // Edit permissions through gRPC request
     let add_perm_request = add_token(
@@ -193,12 +195,12 @@ pub async fn edit_project_permission(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db, authz).await;
 
     // Validate format of provided ids
-    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
-    let user_id = uuid::Uuid::parse_str(user_uuid).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(user_uuid).unwrap();
 
     // Edit permissions through gRPC request
     let edit_perm_request = add_token(
@@ -250,13 +252,13 @@ pub async fn try_get_collection(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init collection service
     let collection_service = CollectionServiceImpl::new(db, authz).await;
 
     // Validate format of provided ids
-    let collection_id = uuid::Uuid::parse_str(collection_uuid.as_str()).unwrap();
+    let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();
 
     // Get collection with gRPC request
     let get_collection_request = add_token(
@@ -287,7 +289,7 @@ pub async fn try_get_object(
     let db = Arc::new(database::connection::Database::new(
         "postgres://root:test123@localhost:26257/test",
     ));
-    let authz = Arc::new(Authz::new(db.clone()).await);
+    let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();
@@ -302,8 +304,8 @@ pub async fn try_get_object(
     let object_service = ObjectServiceImpl::new(db, authz, default_endpoint).await;
 
     // Validate format of provided ids
-    let collection_id = uuid::Uuid::parse_str(collection_uuid.as_str()).unwrap();
-    let object_id = uuid::Uuid::parse_str(object_uuid.as_str()).unwrap();
+    let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();
+    let object_id = diesel_ulid::DieselUlid::from_str(object_uuid.as_str()).unwrap();
 
     // Get object with gRPC request
     let get_object_request = add_token(

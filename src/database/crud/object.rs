@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::str::FromStr;
 
-use chrono::Local;
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
@@ -13,16 +13,21 @@ use r2d2::PooledConnection;
 use crate::database::models::auth::Project;
 use crate::database::models::collection::Collection;
 use crate::database::models::collection::CollectionVersion;
-use crate::database::models::object::Path;
+use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
-use aruna_rust_api::api::internal::v1::{Location as ProtoLocation, LocationType};
+
+use aruna_rust_api::api::internal::v1::{
+    FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
+    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
+    LocationType,
+};
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
     CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
     GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesRequest,
-    GetReferencesResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
-    SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
+    GetReferencesResponse, InitializeNewObjectResponse, ObjectReference, ObjectWithUrl,
+    Path as ProtoPath, SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -35,10 +40,12 @@ use aruna_rust_api::api::storage::{
         FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
         GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
         GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
-        InitializeNewObjectResponse, SetObjectPathVisibilityRequest,
-        SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
+        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
     },
 };
+
+use rand::distributions::{Alphanumeric, DistString};
 
 use crate::database;
 use crate::database::connection::Database;
@@ -49,18 +56,21 @@ use crate::database::crud::utils::{
 };
 use crate::database::models::collection::CollectionObject;
 use crate::database::models::enums::{
-    HashType, KeyValueType, ObjectStatus, ReferenceStatus, SourceType,
+    Dataclass, HashType, KeyValueType, ObjectStatus, ReferenceStatus, Resources, SourceType,
+    UserRights,
 };
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
 
+use crate::database::schema::encryption_keys::dsl::encryption_keys;
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
     collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
     object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
     projects::dsl::*, sources::dsl::*,
 };
+use crate::server::services::authz::Context;
 
 use super::objectgroups::bump_revisisions;
 use super::utils::*;
@@ -71,7 +81,7 @@ pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
     pub hooks: Vec<KeyValue>,
-    pub hash: ApiHash,
+    pub hashes: Vec<ApiHash>,
     pub source: Option<Source>,
     pub latest: bool,
     pub update: bool,
@@ -82,7 +92,7 @@ impl PartialEq for ObjectDto {
         self.object == other.object
             && self.labels == other.labels
             && self.hooks == other.hooks
-            && self.hash == other.hash
+            && self.hashes == other.hashes
             && self.source == other.source
             && self.latest == other.latest
             && self.update == other.update
@@ -116,16 +126,19 @@ impl TryFrom<ObjectDto> for ProtoObject {
         // Transform NaiveDateTime to Timestamp
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
-        // Transform db Hash to proto Hash
-        let proto_hash = ProtoHash {
-            //alg: object_dto.hash.hash_type as i32,
-            alg: match object_dto.hash.hash_type {
-                HashType::MD5 => Hashalgorithm::Md5 as i32,
-                HashType::SHA256 => Hashalgorithm::Sha256 as i32,
-                _ => Hashalgorithm::Unspecified as i32,
-            },
-            hash: object_dto.hash.hash,
-        };
+        let proto_hashes = object_dto
+            .hashes
+            .iter()
+            .map(|h| ProtoHash {
+                //alg: object_dto.hash.hash_type as i32,
+                alg: match h.hash_type {
+                    HashType::MD5 => Hashalgorithm::Md5 as i32,
+                    HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+                    _ => Hashalgorithm::Unspecified as i32,
+                },
+                hash: h.hash.to_string(),
+            })
+            .collect::<Vec<ProtoHash>>();
 
         // Construct proto Object
         Ok(ProtoObject {
@@ -140,11 +153,11 @@ impl TryFrom<ObjectDto> for ProtoObject {
                 id: object_dto.object.origin_id.to_string(),
             }),
             data_class: db_to_grpc_dataclass(&object_dto.object.dataclass) as i32,
-            hash: Some(proto_hash),
             rev_number: object_dto.object.revision_number,
             source: proto_source,
             latest: object_dto.latest,
             auto_update: object_dto.update,
+            hashes: proto_hashes,
         })
     }
 }
@@ -174,143 +187,37 @@ impl Database {
     pub fn create_object(
         &self,
         request: &InitializeNewObjectRequest,
-        creator: &uuid::Uuid,
-        location: &ProtoLocation,
-        upload_id: String,
-        default_endpoint: uuid::Uuid,
-        object_uuid: uuid::Uuid,
+        creator_uuid: &diesel_ulid::DieselUlid,
+        object_uuid: diesel_ulid::DieselUlid,
+        endpoint_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<InitializeNewObjectResponse, ArunaError> {
         // Check if StageObject is available
         let staging_object = request.object.clone().ok_or(GrpcNotFoundError::STAGEOBJ)?;
 
-        //Define source object from updated request; None if empty
-        let source: Option<Source> = match &staging_object.source {
-            Some(source) => Some(Source {
-                id: uuid::Uuid::new_v4(),
-                link: source.identifier.clone(),
-                source_type: SourceType::from_i32(source.source_type)?,
-            }),
-            _ => None,
-        };
+        let collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.collection_id).map_err(ArunaError::from)?;
 
-        // Check if preferred endpoint is specified
-        let endpoint_uuid = match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
-            Ok(ep_id) => ep_id,
-            Err(_) => default_endpoint,
-        };
-
-        // Define object in database representation
-        let object = Object {
-            id: object_uuid,
-            shared_revision_id: uuid::Uuid::new_v4(),
-            revision_number: 0,
-            filename: staging_object.filename.clone(),
-            created_at: Local::now().naive_local(),
-            created_by: *creator,
-            content_len: staging_object.content_len,
-            object_status: ObjectStatus::INITIALIZING,
-            dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
-            source_id: source.as_ref().map(|src| src.id),
-            origin_id: object_uuid,
-        };
-
-        // Define the join table entry collection <--> object
-        let collection_object = CollectionObject {
-            id: uuid::Uuid::new_v4(),
-            collection_id: uuid::Uuid::parse_str(&request.collection_id)?,
-            is_latest: false, // Will be checked on finish
-            reference_status: ReferenceStatus::STAGING,
-            object_id: object.id,
-            auto_update: false, //Note: Finally set with FinishObjectStagingRequest
-            is_specification: request.is_specification,
-            writeable: true, //Note: Original object is initially always writeable
-        };
-
-        // Define the initial object location
-        let object_location = ObjectLocation {
-            id: uuid::Uuid::new_v4(),
-            bucket: location.bucket.clone(),
-            path: location.path.clone(),
-            endpoint_id: endpoint_uuid,
-            object_id: object.id,
-            is_primary: true,
-        };
-
-        // Define the hash placeholder for the object
-        let empty_hash = ApiHash {
-            id: uuid::Uuid::new_v4(),
-            hash: "".to_string(), //Note: Empty hash will be updated later
-            object_id: object.id,
-            hash_type: HashType::SHA256, //Note: Default. Will be updated later
-        };
-
-        // Convert the object's labels and hooks to their database representation
-        let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
-            staging_object.labels,
-            staging_object.hooks,
-            object_uuid,
-        );
-
-        // Validate key_values
-        if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
-            return Err(ArunaError::InvalidRequest(
-                "labels or hooks are invalid".to_string(),
-            ));
-        };
-
-        // Create and validate path
-
-        // Insert all defined objects into the database
-        self.pg_connection
+        // Insert staging object with all its needed assets into database
+        let created_object = self
+            .pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
-                let (s3bucket, s3path) = construct_path_string(
-                    &collection_object.collection_id,
-                    &object.filename,
-                    &staging_object.sub_path,
+            .transaction::<Object, ArunaError, _>(|conn| {
+                create_staging_object(
                     conn,
-                )?;
-
-                key_value_pairs.push(ObjectKeyValue {
-                    id: uuid::Uuid::new_v4(),
-                    object_id: object.id,
-                    key: "app.aruna-storage.org/new_path".to_string(),
-                    value: s3path,
-                    key_value_type: KeyValueType::LABEL,
-                });
-
-                key_value_pairs.push(ObjectKeyValue {
-                    id: uuid::Uuid::new_v4(),
-                    object_id: object.id,
-                    key: "app.aruna-storage.org/bucket".to_string(),
-                    value: s3bucket,
-                    key_value_type: KeyValueType::LABEL,
-                });
-
-                if let Some(sour) = source {
-                    diesel::insert_into(sources).values(&sour).execute(conn)?;
-                }
-                diesel::insert_into(objects).values(&object).execute(conn)?;
-                diesel::insert_into(object_locations)
-                    .values(&object_location)
-                    .execute(conn)?;
-                diesel::insert_into(hashes)
-                    .values(&empty_hash)
-                    .execute(conn)?;
-                diesel::insert_into(object_key_value)
-                    .values(&key_value_pairs)
-                    .execute(conn)?;
-                diesel::insert_into(collection_objects)
-                    .values(&collection_object)
-                    .execute(conn)?;
-
-                Ok(())
+                    staging_object,
+                    &object_uuid,
+                    request.hash.clone(),
+                    &collection_uuid,
+                    creator_uuid,
+                    request.is_specification,
+                    Some(endpoint_uuid),
+                )
             })?;
 
-        // Return already complete gRPC response
+        // Return response which is missing the upload id which will be created by upload init
         Ok(InitializeNewObjectResponse {
-            object_id: object.id.to_string(),
-            upload_id,
+            object_id: created_object.id.to_string(),
+            upload_id: "".to_string(), //Note: Filled later
             collection_id: request.collection_id.clone(),
         })
     }
@@ -319,16 +226,17 @@ impl Database {
     pub fn finish_object_staging(
         &self,
         request: &FinishObjectStagingRequest,
-        user_id: &uuid::Uuid,
+        _user_id: &diesel_ulid::DieselUlid,
     ) -> Result<FinishObjectStagingResponse, ArunaError> {
-        let req_object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
-        let req_coll_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Insert all defined objects into the database
         let object_dto = self
             .pg_connection
             .get()?
             .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+                // Check if object is latest!
                 let latest = get_latest_obj(conn, req_object_uuid)?;
                 let is_still_latest = latest.id == req_object_uuid;
 
@@ -338,47 +246,17 @@ impl Database {
                     )));
                 }
 
-                // Update the object itself to be available
-                let returned_obj = diesel::update(
-                    objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                )
-                .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                .get_result::<Object>(conn)?;
+                // What can we do here ?
+                // - Set auto update ?
+                // - Set or check expected hashes
+                // - Finalize EMPTY object ?
 
-                // Get fq_path from label
-                let path_label = object_key_value
-                    .filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
-                    .filter(
-                        database::schema::object_key_value::key
-                            .eq("app.aruna-storage.org/new_path"),
-                    )
-                    .first::<ObjectKeyValue>(conn)
-                    .optional()?;
-
-                if let Some(p_lbl) = path_label {
-                    let bucket_label = object_key_value
-                        .filter(database::schema::object_key_value::object_id.eq(req_object_uuid))
-                        .filter(
-                            database::schema::object_key_value::key
-                                .eq("app.aruna-storage.org/bucket"),
-                        )
-                        .first::<ObjectKeyValue>(conn)?;
-                    create_path_db(
-                        &bucket_label.value,
-                        &p_lbl.value,
-                        &returned_obj.shared_revision_id,
-                        &req_coll_uuid,
-                        conn,
-                    )?;
-                    // Delete the path label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(p_lbl.id))
-                        .execute(conn)?;
-                    // Delete the bucket label afterwards
-                    delete(object_key_value)
-                        .filter(database::schema::object_key_value::id.eq(bucket_label.id))
-                        .execute(conn)?;
-                };
+                // // Update the object itself to be available
+                // let returned_obj = diesel::update(
+                //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                // )
+                // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                // .get_result::<Object>(conn)?;
 
                 // Update hash if (re-)upload and request contains hash
                 if !request.no_upload && request.hash.is_some() {
@@ -388,7 +266,7 @@ impl Database {
                                 "Missing hash after re-upload.".to_string(),
                             ));
                         }
-                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&returned_obj))
+                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
                             .set((
                                 database::schema::hashes::hash.eq(&req_hash.hash),
                                 database::schema::hashes::hash_type
@@ -402,264 +280,66 @@ impl Database {
                 // This indicates an "updated" object and not a new one
                 // Finishing updates need extra steps to update all references
                 // In other collections / objectgroups
-                let orig_id = returned_obj.origin_id;
-                // origin_id != object_id => Update
-                if orig_id != returned_obj.id {
-                    // Get all revisions of the object it could be that an older version still has "auto_update" set
-                    let all_revisions = get_all_revisions(conn, &req_object_uuid)?;
 
-                    // Filter out the UUIDs
-                    let all_rev_ids = all_revisions.iter().map(|full| full.id).collect::<Vec<_>>();
-
-                    // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
-                    // Set all auto_updates and is_latest to be false
-                    let auto_updating_coll_obj: Vec<CollectionObject> = collection_objects
-                        .filter(
-                            database::schema::collection_objects::object_id.eq_any(&all_rev_ids),
-                        )
-                        .filter(database::schema::collection_objects::auto_update.eq(true))
-                        .load::<CollectionObject>(conn)
-                        .optional()?
-                        .unwrap_or_default();
-
-                    // Filter collection_object references to object's collection
-                    let auto_update_collection_references = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.collection_id == req_coll_uuid)
-                        .collect::<Vec<_>>();
-
-                    let (auto_update_collection_reference, auto_update_collection_reference_id): (
-                        Option<CollectionObject>,
-                        uuid::Uuid,
-                    ) = match auto_update_collection_references.len() {
-                        0 => (None, uuid::Uuid::default()),
-                        1 => (
-                            Some(auto_update_collection_references[0].clone()),
-                            auto_update_collection_references[0].clone().id,
-                        ),
-                        _ => {
-                            return Err(ArunaError::InvalidRequest(
-                                "More than one revision with auto_update == true".to_string(),
-                            ));
-                        }
-                    };
-
-                    // object ids inside references
-                    let auto_updating_obj_id = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.id != auto_update_collection_reference_id)
-                        .map(|elem| elem.object_id)
-                        .collect::<Vec<_>>();
-
-                    // collection_object ids
-                    let auto_updating_coll_obj_id = auto_updating_coll_obj
-                        .iter()
-                        .filter(|elem| elem.id != auto_update_collection_reference_id)
-                        .map(|elem| elem.id)
-                        .collect::<Vec<_>>();
-
-                    // Only proceed if the list () is not empty, if it is empty no updates need to be performed
-                    // Update ObjectGroups and Objects reference in other collections
-                    if !auto_updating_coll_obj_id.is_empty() {
-                        // Query the affected object_groups
-                        let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
-                            .filter(
-                                database::schema::object_group_objects::object_id
-                                    .eq_any(&auto_updating_obj_id),
-                            )
-                            .select(database::schema::object_group_objects::object_group_id)
-                            .load::<uuid::Uuid>(conn)
-                            .optional()?;
-
-                        match affected_object_groups {
-                            None => {}
-                            Some(obj_grp_ids) => {
-                                // Bump all revisions for object_groups
-                                let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
-                                let new_group_ids =
-                                    new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
-
-                                // Update object_group references
-                                update(object_group_objects)
-                                    .filter(
-                                        database::schema::object_group_objects::object_group_id
-                                            .eq_any(&new_group_ids),
-                                    )
-                                    .filter(
-                                        database::schema::object_group_objects::object_id
-                                            .eq(orig_id),
-                                    )
-                                    .set(
-                                        database::schema::object_group_objects::object_id
-                                            .eq(req_object_uuid),
-                                    )
-                                    .execute(conn)?;
-                            }
-                        }
-
-                        // Update Collection_Objects to use the new object_id
-                        update(
-                            collection_objects.filter(
-                                database::schema::collection_objects::id
-                                    .eq_any(&auto_updating_coll_obj_id),
-                            ),
-                        )
-                        .set((database::schema::collection_objects::object_id.eq(req_object_uuid),))
-                        .execute(conn)?;
-                    }
-
-                    // Query the affected object_groups
-                    let affected_object_groups: Option<Vec<uuid::Uuid>> = object_group_objects
-                        .filter(
-                            database::schema::object_group_objects::object_id
-                                .eq(&returned_obj.origin_id),
-                        )
-                        .select(database::schema::object_group_objects::object_group_id)
-                        .load::<uuid::Uuid>(conn)
-                        .optional()?;
-
-                    match affected_object_groups {
-                        None => {}
-                        Some(obj_grp_ids) => {
-                            // Bump all revisions for object_groups
-                            let new_ogroups = bump_revisisions(&obj_grp_ids, user_id, conn)?;
-                            let new_group_ids =
-                                new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
-
-                            // Update object_group references
-                            update(object_group_objects)
-                                .filter(
-                                    database::schema::object_group_objects::object_group_id
-                                        .eq_any(&new_group_ids),
-                                )
-                                .filter(
-                                    database::schema::object_group_objects::object_id.eq(orig_id),
-                                )
-                                .set(
-                                    database::schema::object_group_objects::object_id
-                                        .eq(req_object_uuid),
-                                )
-                                .execute(conn)?;
-                        }
-                    }
-
-                    // Update inside collection of update object
-                    match auto_update_collection_reference {
-                        None => {
-                            // Update latest staging object reference
-                            update(collection_objects)
-                                .filter(
-                                    database::schema::collection_objects::object_id
-                                        .eq(&req_object_uuid),
-                                )
-                                .filter(
-                                    database::schema::collection_objects::collection_id
-                                        .eq(&req_coll_uuid),
-                                )
-                                .filter(
-                                    database::schema::collection_objects::reference_status
-                                        .eq(&ReferenceStatus::STAGING),
-                                )
-                                .set((
-                                    database::schema::collection_objects::object_id
-                                        .eq(req_object_uuid),
-                                    database::schema::collection_objects::is_latest
-                                        .eq(is_still_latest),
-                                    database::schema::collection_objects::reference_status
-                                        .eq(ReferenceStatus::OK),
-                                    database::schema::collection_objects::auto_update
-                                        .eq(request.auto_update),
-                                ))
-                                .execute(conn)?;
-                        }
-                        Some(reference) => {
-                            if is_still_latest {
-                                // Object is still latest revision on finish --> Normal case
-                                // Delete staging reference
-                                delete(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id
-                                            .eq(&req_object_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status
-                                            .eq(&ReferenceStatus::STAGING),
-                                    )
-                                    .execute(conn)?;
-
-                                // Update latest staging object reference
-                                update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::id.eq(&reference.id),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .set((
-                                        database::schema::collection_objects::object_id
-                                            .eq(req_object_uuid),
-                                        database::schema::collection_objects::is_latest
-                                            .eq(is_still_latest),
-                                        database::schema::collection_objects::reference_status
-                                            .eq(ReferenceStatus::OK),
-                                        database::schema::collection_objects::auto_update
-                                            .eq(request.auto_update && is_still_latest),
-                                    ))
-                                    .execute(conn)?;
-                            } else {
-                                //Note: This case should not exist anymore without concurrent object updates.
-                                //      The staging object should always be latest with a STAGING reference!
-                                /*
-                                // Update staging reference of outdated object with is_latest == false and auto_update == false
-                                update(collection_objects)
-                                    .filter(
-                                        database::schema::collection_objects::object_id
-                                            .eq(&req_object_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::collection_id
-                                            .eq(&req_coll_uuid),
-                                    )
-                                    .filter(
-                                        database::schema::collection_objects::reference_status
-                                            .eq(&ReferenceStatus::STAGING),
-                                    )
-                                    .set((
-                                        database::schema::collection_objects::object_id
-                                            .eq(req_object_uuid),
-                                        database::schema::collection_objects::is_latest
-                                            .eq(is_still_latest),
-                                        database::schema::collection_objects::reference_status
-                                            .eq(ReferenceStatus::OK),
-                                        database::schema::collection_objects::auto_update
-                                            .eq(request.auto_update),
-                                    ))
-                                    .execute(conn)?;
-                                */
-                            }
-                        }
-                    }
-                // origin_id == object_id => Initialize
-                } else {
-                    // Update the collection objects
-                    // - Status
-                    // - is_latest
-                    // - auto_update
-                    diesel::update(collection_objects)
-                        .filter(database::schema::collection_objects::object_id.eq(req_object_uuid))
+                if latest.object_status != ObjectStatus::AVAILABLE {
+                    update(objects)
+                        .filter(database::schema::objects::id.eq(&req_object_uuid))
                         .set((
-                            database::schema::collection_objects::is_latest.eq(is_still_latest),
-                            database::schema::collection_objects::reference_status
-                                .eq(ReferenceStatus::OK),
-                            database::schema::collection_objects::auto_update
-                                .eq(request.auto_update),
+                            database::schema::objects::object_status.eq(ObjectStatus::FINALIZING),
                         ))
                         .execute(conn)?;
+                }
+
+                // Special treatment if only metadata was updated
+                if request.no_upload {
+                    // Only on update without upload
+                    if latest.origin_id != req_object_uuid {
+                        // Clone object locations of old object with new object id as data stays the same.
+                        let mut cloned_locations = Vec::new();
+                        for old_location in object_locations
+                            .filter(
+                                database::schema::object_locations::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<ObjectLocation>(conn)?
+                        {
+                            cloned_locations.push(ObjectLocation {
+                                id: diesel_ulid::DieselUlid::generate(),
+                                bucket: old_location.bucket,
+                                path: old_location.path,
+                                endpoint_id: old_location.endpoint_id,
+                                object_id: req_object_uuid,
+                                is_primary: old_location.is_primary,
+                                is_encrypted: old_location.is_encrypted,
+                                is_compressed: old_location.is_compressed,
+                            });
+                        }
+                        insert_into(object_locations)
+                            .values(&cloned_locations)
+                            .execute(conn)?;
+
+                        // Clone encryption keys of old object for specific data hashes
+                        let mut cloned_keys = Vec::new();
+                        for old_key in encryption_keys
+                            .filter(
+                                database::schema::encryption_keys::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<EncryptionKey>(conn)?
+                        {
+                            cloned_keys.push(EncryptionKey {
+                                id: diesel_ulid::DieselUlid::generate(),
+                                hash: old_key.hash,
+                                object_id: req_object_uuid,
+                                endpoint_id: old_key.endpoint_id,
+                                is_temporary: old_key.is_temporary,
+                                encryption_key: old_key.encryption_key,
+                            });
+                        }
+                        insert_into(encryption_keys)
+                            .values(&cloned_keys)
+                            .execute(conn)?;
+                    }
+
+                    set_object_available(conn, &latest, &req_coll_uuid, None)?;
                 }
 
                 Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
@@ -671,242 +351,251 @@ impl Database {
         Ok(FinishObjectStagingResponse { object: mapped })
     }
 
-    ///ToDo: Rust Doc
-    pub fn update_object(
+    /// Finalizes the object by updating the location, validating the hashes and setting the object
+    ///status to `Available`.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<FinalizeObjectRequest>` -
+    ///   A gRPC request which contains the final object location and the calculated hashes of the objects data.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<FinalizeObjectResponse, ArunaError>` - An empty FinalizeObjectResponse signals success.
+    ///
+    /// ## Behaviour:
+    ///
+    /// Updates the sole existing object location with the provided data of the final location the
+    /// object has been moved to. Also validates/creates the provided hashes depending if the individual hash
+    /// already exists in the database. Finally the objects status is set to `Available`.
+    pub fn finalize_object(
         &self,
-        request: &UpdateObjectRequest,
-        location: &Option<ProtoLocation>,
-        creator_uuid: &uuid::Uuid,
-        default_endpoint: uuid::Uuid,
-        new_obj_id: uuid::Uuid,
-    ) -> Result<UpdateObjectResponse, ArunaError> {
-        if let Some(sobj) = &request.object {
-            let parsed_old_id = uuid::Uuid::parse_str(&request.object_id)?;
-            let parsed_col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        request: &FinalizeObjectRequest,
+    ) -> Result<FinalizeObjectResponse, ArunaError> {
+        // Check format of provided ids
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
-            let updated_object = self.pg_connection
-                .get()?
-                .transaction::<Object, ArunaError, _>(|conn| {
-                    // Get all references of all revisions of the object
-                    let all_revision_references = get_all_references(conn, &parsed_old_id, &true)?;
+        // Extract SHA256 hash from provided hashes for easier usage
+        let mut sha256_hash = "".to_string();
+        for proto_hash in &request.hashes {
+            if proto_hash.alg == Hashalgorithm::Sha256 as i32 {
+                sha256_hash = proto_hash.hash.clone();
+                break;
+            }
+        }
 
-                    // Filter references for staging objects and collection specific, writeable references
-                    let mut staging_references = Vec::new();
-                    let mut object_references = Vec::new();
-                    for object_reference in all_revision_references {
-                        if object_reference.reference_status == ReferenceStatus::STAGING {
-                            staging_references.push(object_reference);
-                        } else if object_reference.writeable && object_reference.collection_id == parsed_col_id {
-                            object_references.push(object_reference);
-                        }
-                    }
+        // Validate SHA256 hash is provided with the request
+        if sha256_hash.is_empty() {
+            return Err(ArunaError::InvalidRequest(format!(
+                "No SHA256 hash provided to finalize object {object_uuid}"
+            )));
+        }
 
-                    if staging_references.len() > 1 {
-                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} has more than one staging object. This has to be resolved manually.")))
-                    } else if let Some(staging_reference) = staging_references.first() {
-                        return if staging_reference.object_id == parsed_old_id {
-                            update_object_in_place(conn, &parsed_old_id, creator_uuid, &parsed_col_id, sobj)
-                        } else {
-                            Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} already has a staging object. Concurrent updates are prohibited.")))
-                        }
-                    }
+        // Start transaction to update object assets
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                // Check if object is latest!
+                let latest = get_latest_obj(conn, object_uuid)?;
+                let is_still_latest = latest.id == object_uuid;
 
-                    if object_references.is_empty() {
-                        return Err(ArunaError::InvalidRequest(format!("Object {parsed_old_id} does not have a writeable reference in collection {parsed_col_id}")));
-                    }
+                if !is_still_latest {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Object {object_uuid} is not latest revision."
+                    )));
+                }
 
-                    // Get latest revision of the Object to be updated
-                    let latest = get_latest_obj(conn, parsed_old_id)?;
+                use crate::database::schema::encryption_keys::dsl as keys_dsl;
+                if let Some(proto_location) = &request.location {
+                    let endpoint_uuid =
+                        diesel_ulid::DieselUlid::from_str(proto_location.endpoint_id.as_str())?;
 
-                    // Check if update is performed on latest object revision
-                    if latest.id != parsed_old_id {
-                        return Err(ArunaError::InvalidRequest(format!("Updates only allowed on the latest revision: {}", latest.id), ));
-                    }
-
-                    // Define source object from updated request; None if empty
-                    let source: Option<Source> = match &sobj.source {
-                        Some(source) => Some(Source {
-                            id: uuid::Uuid::new_v4(),
-                            link: source.identifier.clone(),
-                            source_type: SourceType::from_i32(source.source_type)?,
-                        }),
-                        _ => None,
+                    let final_location = ObjectLocation {
+                        id: diesel_ulid::DieselUlid::generate(),
+                        bucket: proto_location.bucket.clone(),
+                        path: proto_location.path.clone(),
+                        endpoint_id: endpoint_uuid,
+                        object_id: object_uuid,
+                        is_primary: true, // First location of object, so primary.
+                        is_encrypted: proto_location.is_encrypted,
+                        is_compressed: proto_location.is_compressed,
                     };
 
-                    // Define new Object with updated values
-                    let new_object = Object {
-                        id: new_obj_id,
-                        shared_revision_id: latest.shared_revision_id,
-                        revision_number: latest.revision_number + 1,
-                        filename: sobj.filename.to_string(),
-                        created_at: chrono::Utc::now().naive_utc(),
-                        created_by: *creator_uuid,
-                        content_len: sobj.content_len,
-                        object_status: ObjectStatus::INITIALIZING, // Is a staging object
-                        dataclass: grpc_to_db_dataclass(&sobj.dataclass),
-                        source_id: source.as_ref().map(|source| source.id),
-                        origin_id: parsed_old_id,
-                    };
-
-                    // Define new object hash depending if update contains data re-upload
-                    let new_hash = if request.reupload {
-                        // Create new empty hash record which will be updated on object finish
-                        ApiHash {
-                            id: uuid::Uuid::new_v4(),
-                            hash: "".to_string(),
-                            object_id: new_object.id,
-                            hash_type: HashType::MD5, // Default hash type
-                        }
-                    } else {
-                        // Without re-upload just clone hash of object to be updated
-                        let mut old_hash: ApiHash = hashes
-                            .filter(database::schema::hashes::object_id.eq(parsed_old_id))
-                            .first::<ApiHash>(conn)?;
-
-                        old_hash.id = uuid::Uuid::new_v4();
-                        old_hash.object_id = new_obj_id;
-                        old_hash
-                    };
-
-
-                    // Define temporary STAGING join table entry collection <-->  staging object
-                    let collection_object = CollectionObject {
-                        id: uuid::Uuid::new_v4(),
-                        collection_id: parsed_col_id,
-                        is_latest: false, // Will be checked on finish
-                        reference_status: ReferenceStatus::STAGING,
-                        object_id: new_obj_id,
-                        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
-                        is_specification: request.is_specification,
-                        writeable: true,
-                    };
-
-                    // Convert the object's labels and hooks to their database representation
-                    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
-                    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
-                        sobj.labels.clone(),
-                        sobj.hooks.clone(),
-                        new_obj_id,
-                    );
-
-                    // Validate key_values
-                    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
-                        return Err(ArunaError::InvalidRequest(
-                            "labels or hooks are invalid".to_string(),
-                        ));
-                    };
-
-                    // Get full qualified path
-                    let (s3bucket, s3path) = construct_path_string(
-                        &collection_object.collection_id,
-                        &new_object.filename,
-                        &sobj.sub_path,
-                        conn,
-                    )?;
-
-                    // Check if path already exists
-                    let exists = paths
-                        .filter(database::schema::paths::path.eq(&s3path))
-                        .filter(database::schema::paths::bucket.eq(&s3bucket))
-                        .first::<Path>(conn)
-                        .optional()?;
-
-                    // If it already exists
-                    if let Some(existing) = exists {
-                        // Check if the existing is not associated with the current shared_revision_id -> Error
-                        // else -> do nothing
-                        if existing.shared_revision_id != new_object.shared_revision_id {
-                            return Err(ArunaError::InvalidRequest("Invalid path, already exists for different object hierarchy".to_string()))
-                        }
-                    // If path not exists -> Add label
-                    } else {
-                        key_value_pairs.push(ObjectKeyValue {
-                            id: uuid::Uuid::new_v4(),
-                            object_id: new_obj_id,
-                            key: "app.aruna-storage.org/new_path".to_string(),
-                            value: s3path,
-                            key_value_type: KeyValueType::LABEL,
-                        });
-
-                        key_value_pairs.push(ObjectKeyValue {
-                            id: uuid::Uuid::new_v4(),
-                            object_id: new_obj_id,
-                            key: "app.aruna-storage.org/bucket".to_string(),
-                            value: s3bucket,
-                            key_value_type: KeyValueType::LABEL,
-                        });
-                    }
-
-                    // Insert entities which are always created on update
-                    diesel::insert_into(objects)
-                        .values(&new_object)
-                        .execute(conn)?;
-                    diesel::insert_into(hashes)
-                        .values(&new_hash)
-                        .execute(conn)?;
-                    diesel::insert_into(object_key_value)
-                        .values(&key_value_pairs)
-                        .execute(conn)?;
-                    diesel::insert_into(collection_objects)
-                        .values(&collection_object)
-                        .execute(conn)?;
-
-                    // Insert Source only if it exists in request
-                    if source.is_some() {
-                        diesel::insert_into(sources).values(&source).execute(conn)?;
-                    }
-
-                    // Insert updated object location and hash if data re-upload
-                    if request.reupload {
-                        if let Some(loc) = location {
-                            // Check if preferred endpoint is specified
-                            let endpoint_uuid =
-                                match uuid::Uuid::parse_str(&request.preferred_endpoint_id) {
-                                    Ok(ep_id) => ep_id,
-                                    Err(_) => default_endpoint,
-                                };
-                            let object_location = ObjectLocation {
-                                id: uuid::Uuid::new_v4(),
-                                bucket: loc.bucket.clone(),
-                                path: loc.path.clone(),
+                    if let Some(enc_key) = encryption_keys
+                        .filter(keys_dsl::hash.eq(&sha256_hash))
+                        .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                        .first::<EncryptionKey>(conn)
+                        .optional()?
+                    {
+                        if enc_key.object_id != object_uuid {
+                            let encryption_key_insert = EncryptionKey {
+                                id: diesel_ulid::DieselUlid::generate(),
+                                hash: Some(sha256_hash.to_string()),
+                                object_id: object_uuid,
                                 endpoint_id: endpoint_uuid,
-                                object_id: new_obj_id,
-                                is_primary: true,
+                                is_temporary: false,
+                                encryption_key: enc_key.encryption_key,
                             };
 
-                            diesel::insert_into(object_locations)
-                                .values(&object_location)
+                            diesel::insert_into(encryption_keys)
+                                .values(&encryption_key_insert)
                                 .execute(conn)?;
                         }
                     } else {
-                        // Clone old location for new Object
-                        let old_object = objects
-                            .filter(database::schema::objects::id.eq(&parsed_old_id))
-                            .first::<Object>(conn)?;
-                        let old_location: ObjectLocation =
-                            ObjectLocation::belonging_to(&old_object)
-                                .first::<ObjectLocation>(conn)?;
-
-                        let new_location = ObjectLocation {
-                            id: uuid::Uuid::new_v4(),
-                            bucket: old_location.bucket,
-                            path: old_location.path,
-                            endpoint_id: old_location.endpoint_id,
-                            object_id: new_obj_id,
-                            is_primary: old_location.is_primary,
+                        let encryption_key_insert = EncryptionKey {
+                            id: diesel_ulid::DieselUlid::generate(),
+                            hash: Some(sha256_hash.to_string()),
+                            object_id: object_uuid,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: proto_location.encryption_key.to_string(),
                         };
 
-                        diesel::insert_into(object_locations)
-                            .values(&new_location)
+                        diesel::insert_into(encryption_keys)
+                            .values(&encryption_key_insert)
                             .execute(conn)?;
                     }
 
-                    Ok(new_object)
+                    // Delete all temporary encryption keys associated with this object_id
+                    delete(encryption_keys)
+                        .filter(database::schema::encryption_keys::object_id.eq(&object_uuid))
+                        .filter(database::schema::encryption_keys::is_temporary.eq(true))
+                        .execute(conn)?;
+
+                    insert_into(object_locations)
+                        .values(&final_location)
+                        .execute(conn)?;
+                } else {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Request contains no valid location to finalize object {}",
+                        object_uuid
+                    )));
+                }
+
+                let db_hashes = hashes
+                    .filter(database::schema::hashes::object_id.eq(&object_uuid))
+                    .load::<ApiHash>(conn)?;
+
+                // Validate all data proxy calculated hashes against existing
+                let mut hashes_insert = Vec::new();
+                for proto_hash in &request.hashes {
+                    for db_hash in &db_hashes {
+                        if grpc_to_db_hash_type(&proto_hash.alg)? == db_hash.hash_type {
+                            if proto_hash.hash == db_hash.hash || db_hash.hash.is_empty() {
+                                break;
+                            } else {
+                                return Err(ArunaError::InvalidRequest(format!(
+                                    "Provided hash: {:#?} != Calculated hash: {:#?}",
+                                    db_hash, proto_hash
+                                )));
+                            }
+                        }
+                    }
+
+                    // Store hash for database insert after loop
+                    hashes_insert.push(Db_Hash {
+                        id: diesel_ulid::DieselUlid::generate(),
+                        hash: proto_hash.hash.to_string(),
+                        object_id: object_uuid,
+                        hash_type: grpc_to_db_hash_type(&proto_hash.alg)?,
+                    });
+                }
+
+                // Delete all existing hashes -> Will be inserted by proxy hashes
+                delete(hashes)
+                    .filter(database::schema::hashes::object_id.eq(&object_uuid))
+                    .execute(conn)?;
+
+                // Insert all object hashes which do not already exist
+                insert_into(hashes).values(hashes_insert).execute(conn)?;
+
+                if latest.object_status != ObjectStatus::AVAILABLE {
+                    set_object_available(
+                        conn,
+                        &latest,
+                        &collection_uuid,
+                        Some(request.content_length),
+                    )?;
+                }
+                Ok(())
+            });
+
+        // Check if finalize succeeded. If not, set object status to ERROR and add internal label with truncated error message
+        match result {
+            Ok(_) => Ok(FinalizeObjectResponse {}),
+            Err(err) => {
+                self.pg_connection
+                    .get()?
+                    .transaction::<_, ArunaError, _>(|conn| {
+                        use crate::database::schema::objects::dsl as object_dsl;
+
+                        // Set object status to ERROR
+                        update(objects)
+                            .filter(object_dsl::id.eq(&object_uuid))
+                            .set(object_dsl::object_status.eq(ObjectStatus::ERROR))
+                            .execute(conn)?;
+
+                        // Truncate error message to at most 255 characters
+                        let mut error_msg = err.to_string();
+                        error_msg.truncate(255);
+
+                        // Add label with error message
+                        let error_label = ObjectKeyValue {
+                            id: diesel_ulid::DieselUlid::generate(),
+                            object_id: object_uuid,
+                            key: "app.aruna-storage.org/error".to_string(),
+                            value: error_msg,
+                            key_value_type: KeyValueType::LABEL,
+                        };
+
+                        insert_into(object_key_value)
+                            .values(error_label)
+                            .execute(conn)?;
+
+                        Ok(())
+                    })?;
+
+                Err(err)
+            }
+        }
+    }
+
+    ///ToDo: Rust Doc
+    pub fn update_object(
+        &self,
+        request: UpdateObjectRequest,
+        creator_uuid: &diesel_ulid::DieselUlid,
+        new_obj_id: diesel_ulid::DieselUlid,
+        endpoint_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<UpdateObjectResponse, ArunaError> {
+        if let Some(sobj) = request.object {
+            let parsed_old_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+            let parsed_col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+
+            let staging_object = self
+                .pg_connection
+                .get()?
+                .transaction::<Object, ArunaError, _>(|conn| {
+                    let staging_object = update_object_init(
+                        conn,
+                        sobj,
+                        parsed_old_id,
+                        new_obj_id,
+                        parsed_col_id,
+                        creator_uuid,
+                        Some(endpoint_uuid),
+                        request.reupload,
+                        request.is_specification,
+                    )?;
+
+                    Ok(staging_object)
                 })?;
 
             Ok(UpdateObjectResponse {
-                object_id: updated_object.id.to_string(),
-                staging_id: updated_object.id.to_string(),
+                object_id: staging_object.id.to_string(),
+                staging_id: staging_object.id.to_string(),
                 collection_id: parsed_col_id.to_string(),
             })
         } else {
@@ -929,8 +618,8 @@ impl Database {
     ///
     pub fn get_object(&self, request: &GetObjectByIdRequest) -> Result<ObjectWithUrl, ArunaError> {
         // Check if id in request has valid format
-        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
-        let collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Read object from database
         let (object_dto, obj_paths) =
@@ -940,7 +629,11 @@ impl Database {
                     // Use the helper function to execute the request
                     let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
                     let proto_paths = if let Some(obj) = object.clone() {
-                        get_paths_proto(&obj.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &obj.object.shared_revision_id,
+                            Some(&collection_uuid),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -978,8 +671,8 @@ impl Database {
     ///
     pub fn get_object_by_id(
         &self,
-        object_uuid: &uuid::Uuid,
-        collection_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
+        collection_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<ObjectWithUrl, ArunaError> {
         // Read object and paths from database
         let (object_dto, obj_paths) =
@@ -997,7 +690,11 @@ impl Database {
                     let object_dto_option = get_object_ignore_coll(object_uuid, conn)?;
 
                     let proto_paths = if let Some(object_dto) = object_dto_option.clone() {
-                        get_paths_proto(&object_dto.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &object_dto.object.shared_revision_id,
+                            Some(collection_uuid),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -1024,21 +721,44 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn get_primary_object_location(
         &self,
-        object_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<ProtoLocation, ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::object_locations::dsl as locations_dsl;
+
         let location = self
             .pg_connection
             .get()?
             .transaction::<ProtoLocation, Error, _>(|conn| {
                 let location: ObjectLocation = object_locations
-                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
-                    .filter(database::schema::object_locations::is_primary.eq(true))
+                    .filter(locations_dsl::object_id.eq(&object_uuid))
+                    .filter(locations_dsl::is_primary.eq(true))
                     .first::<ObjectLocation>(conn)?;
 
+                // Only query encryption key if object location is encrypted
+                let encryption_key: Option<String> = if location.is_encrypted {
+                    encryption_keys
+                        .filter(keys_dsl::object_id.eq(&object_uuid))
+                        .filter(keys_dsl::endpoint_id.eq(&location.endpoint_id))
+                        .select(keys_dsl::encryption_key)
+                        .first::<String>(conn)
+                        .optional()?
+                } else {
+                    None
+                };
+
                 Ok(ProtoLocation {
-                    r#type: LocationType::S3 as i32, //ToDo: How to get LocationType?
+                    r#type: LocationType::S3 as i32, //ToDo: How to get LocationType? Query Endpoint...
                     bucket: location.bucket,
                     path: location.path,
+                    endpoint_id: location.endpoint_id.to_string(),
+                    is_compressed: location.is_compressed,
+                    is_encrypted: location.is_encrypted,
+                    encryption_key: if let Some(enc_key) = encryption_key {
+                        enc_key
+                    } else {
+                        "".to_string()
+                    },
                 })
             })?;
 
@@ -1048,31 +768,248 @@ impl Database {
     ///ToDo: Rust Doc
     pub fn get_primary_object_location_with_endpoint(
         &self,
-        object_uuid: &uuid::Uuid,
-    ) -> Result<(ObjectLocation, Endpoint), ArunaError> {
-        let location = self
-            .pg_connection
-            .get()?
-            .transaction::<(ObjectLocation, Endpoint), Error, _>(|conn| {
-                let location: ObjectLocation = object_locations
-                    .filter(database::schema::object_locations::object_id.eq(&object_uuid))
-                    .filter(database::schema::object_locations::is_primary.eq(true))
-                    .first::<ObjectLocation>(conn)?;
+        object_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
 
-                let endpoint: Endpoint = endpoints
-                    .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
-                    .first::<Endpoint>(conn)?;
+        let location_info =
+            self.pg_connection
+                .get()?
+                .transaction::<(ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError, _>(
+                    |conn| {
+                        let location: ObjectLocation = object_locations
+                            .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                            .filter(database::schema::object_locations::is_primary.eq(true))
+                            .first::<ObjectLocation>(conn)?;
 
-                Ok((location, endpoint))
-            })?;
+                        let endpoint: Endpoint = endpoints
+                            .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                            .first::<Endpoint>(conn)?;
 
-        Ok(location)
+                        // Only query encryption key if object location is encrypted
+                        let encryption_key = if location.is_encrypted {
+                            encryption_keys
+                                .filter(keys_dsl::object_id.eq(&object_uuid))
+                                .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                                .first::<EncryptionKey>(conn)
+                                .optional()?
+                        } else {
+                            None
+                        };
+
+                        if location.is_encrypted && encryption_key.is_none() {
+                            return Err(ArunaError::InvalidRequest("".to_string()));
+                        }
+
+                        Ok((location, endpoint, encryption_key))
+                    },
+                )?;
+
+        Ok(location_info)
+    }
+
+    /// Get the full location info of the provided object as database objects:
+    ///
+    /// * Primary object location
+    /// * Endpoint associated with the primary location
+    /// * Optional encryption key if the location is encrypted
+    /// * A vector of all active paths associated with the provided collection
+    ///
+    /// ## Arguments:
+    ///
+    /// * `object_uuid: &diesel_ulid::DieselUlid` - Unique object identifier for staging object
+    /// * `collection_uuid: &diesel_ulid::DieselUlid` - Unique collection identifier
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError>` -
+    ///     * Primary object location
+    ///     * Endpoint associated with the primary location
+    ///     * Optional encryption key if the location is encrypted
+    ///     * A vector of all active paths associated with the provided collection
+    ///
+    /// ## Behaviour:
+    ///
+    /// If the object is empty (i.e. no data was uploaded in any revision) this function will
+    /// fail as the object has no location and path in the database.
+    ///
+    pub fn get_primary_object_location_with_endpoint_and_paths(
+        &self,
+        object_uuid: &diesel_ulid::DieselUlid,
+        collection_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::objects::dsl as objects_dsl;
+        use crate::database::schema::paths::dsl as paths_dsl;
+
+        let location_info = self.pg_connection.get()?.transaction::<(
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+            Vec<Path>,
+        ), ArunaError, _>(|conn| {
+            // Fetch shared_revision_id of provided object
+            let shared_revision_uuid = objects
+                .filter(objects_dsl::id.eq(object_uuid))
+                .select(objects_dsl::shared_revision_id)
+                .first::<diesel_ulid::DieselUlid>(conn)?;
+
+            // Fetch all paths associated with the shared_revision_id
+            let all_paths = paths
+                .filter(paths_dsl::collection_id.eq(&collection_uuid))
+                .filter(paths_dsl::shared_revision_id.eq(&shared_revision_uuid))
+                .order_by(paths_dsl::created_at.desc())
+                .load::<Path>(conn)?;
+
+            // Fetch primary location of the object
+            let location: ObjectLocation = object_locations
+                .filter(database::schema::object_locations::object_id.eq(&object_uuid))
+                .filter(database::schema::object_locations::is_primary.eq(true))
+                .first::<ObjectLocation>(conn)?;
+
+            // Fetch endpoint info associated with the primary location
+            let endpoint: Endpoint = endpoints
+                .filter(database::schema::endpoints::id.eq(&location.endpoint_id))
+                .first::<Endpoint>(conn)?;
+
+            // Only query encryption key if object location is encrypted
+            let encryption_key = if location.is_encrypted {
+                encryption_keys
+                    .filter(keys_dsl::object_id.eq(&object_uuid))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+            } else {
+                None
+            };
+
+            if location.is_encrypted && encryption_key.is_none() {
+                return Err(ArunaError::InvalidRequest("".to_string()));
+            }
+
+            Ok((location, endpoint, encryption_key, all_paths))
+        })?;
+
+        Ok(location_info)
+    }
+
+    /// Get an object with its location for a specific endpoint. The data specific
+    /// encryption/decryption key will be returned also if available.
+    ///
+    /// ## Arguments:
+    ///
+    ///
+    ///
+    /// ## Returns:
+    ///
+    ///
+    pub fn get_object_with_location_info(
+        &self,
+        object_path: &String,
+        object_revision: i64,
+        endpoint_uuid: &diesel_ulid::DieselUlid,
+        token_uuid: diesel_ulid::DieselUlid,
+    ) -> Result<(ProtoObject, ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+        use crate::database::schema::endpoints::dsl as endpoints_dsl;
+        use crate::database::schema::object_locations::dsl as locations_dsl;
+
+        let location_info = self.pg_connection.get()?.transaction::<(
+            ProtoObject,
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+        ), ArunaError, _>(|conn| {
+            let (s3bucket, _) = object_path[5..]
+                .split_once('/')
+                .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+            let (_, collection_uuid_option) =
+                get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+            let collection_uuid = collection_uuid_option.ok_or(ArunaError::InvalidRequest(
+                format!("Collection in path {} does not exist.", object_path),
+            ))?;
+
+            // Check permissions
+            self.get_checked_user_id_from_token(
+                &token_uuid,
+                &Context {
+                    user_right: UserRights::READ,
+                    resource_type: Resources::COLLECTION,
+                    resource_id: collection_uuid,
+                    admin: false,
+                    personal: false,
+                    oidc_context: false,
+                },
+            )?;
+
+            let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest(format!(
+                        "Could not find object for path {object_path}"
+                    ))
+                })?;
+            let proto_object: ProtoObject =
+                if let Some(object_dto) = get_object_ignore_coll(&db_object.id, conn)? {
+                    object_dto.try_into()?
+                } else {
+                    return Err(ArunaError::InvalidRequest(format!(
+                        "Could not find object {}",
+                        db_object.id
+                    )));
+                };
+            let location: ObjectLocation = object_locations
+                .filter(locations_dsl::object_id.eq(&db_object.id))
+                .filter(locations_dsl::endpoint_id.eq(&endpoint_uuid))
+                .first::<ObjectLocation>(conn)?;
+
+            let endpoint: Endpoint = endpoints
+                .filter(endpoints_dsl::id.eq(&location.endpoint_id))
+                .first::<Endpoint>(conn)?;
+
+            let sha_hash = proto_object
+                .hashes
+                .iter()
+                .find(|e| e.alg == Hashalgorithm::Sha256 as i32);
+
+            // Only query encryption key if object location is encrypted
+            let encryption_key = if location.is_encrypted {
+                match encryption_keys
+                    .filter(keys_dsl::object_id.eq(&db_object.id))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+                {
+                    Some(k) => Some(k),
+                    None => match sha_hash {
+                        Some(h) => encryption_keys
+                            .filter(keys_dsl::hash.eq(&h.hash))
+                            .filter(keys_dsl::endpoint_id.eq(&endpoint.id))
+                            .first::<EncryptionKey>(conn)
+                            .optional()?,
+                        None => None,
+                    },
+                }
+            } else {
+                None
+            };
+
+            if location.is_encrypted && encryption_key.is_none() {
+                return Err(ArunaError::InvalidRequest(
+                    "No encryption key found for encrypted location.".to_string(),
+                ));
+            }
+
+            Ok((proto_object, location, endpoint, encryption_key))
+        })?;
+
+        Ok(location_info)
     }
 
     /// ToDo: Rust Doc
     pub fn get_object_locations(
         &self,
-        object_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<Vec<ObjectLocation>, ArunaError> {
         let locations = self
             .pg_connection
@@ -1089,13 +1026,159 @@ impl Database {
         Ok(locations)
     }
 
+    /// Get the encryption key associated with the object, its hash and the specific endpoint.
+    /// If the key does not exist a new one will be created.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `Request<GetEncryptionKeyRequest>` -
+    ///   A gRPC request which contains the information needed to query a specific encryption key.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Option<EncryptionKey>, ArunaError>` - Contains the object data encryption/decryption key if found; None else.
+    ///
+    /// ## Behaviour:
+    ///
+    /// The encryption key is only fetched for objects with the data class 'Public' or 'Private'. An error is thrown for
+    /// objects with the data class 'Confidential' or 'Protected' as they have to provide their encryption/decryption
+    /// keys within the request header.
+    pub fn get_or_create_encryption_key(
+        &self,
+        request: &GetOrCreateEncryptionKeyRequest,
+    ) -> Result<(Option<EncryptionKey>, bool), ArunaError> {
+        use crate::database::schema::encryption_keys::dsl as keys_dsl;
+
+        // Parse endpoint id from request
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(&request.endpoint_id)?;
+
+        let key_info = self
+            .pg_connection
+            .get()?
+            .transaction::<(Option<EncryptionKey>, bool), ArunaError, _>(|conn| {
+                // Path -> Fetch Object
+                //      Object != PUBLIC | PRIVATE --> return None
+                //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
+                let req_object = get_object_revision_by_path(conn, &request.path, -1, None)?
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(format!(
+                            "Could not find object for path {}",
+                            request.path
+                        ))
+                    })?;
+
+                // First check for matching object_ids afterwards check
+                let (encryption_key, created) = if let Some(is_key) = match encryption_keys
+                    .filter(keys_dsl::object_id.eq(&req_object.id))
+                    .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                    .first::<EncryptionKey>(conn)
+                    .optional()?
+                {
+                    Some(k) => Some(k),
+                    None => {
+                        if !request.hash.is_empty() {
+                            match encryption_keys
+                                .filter(keys_dsl::hash.eq(&request.hash))
+                                .filter(keys_dsl::endpoint_id.eq(&endpoint_uuid))
+                                .first::<EncryptionKey>(conn)
+                                .optional()?
+                            {
+                                Some(kk) => {
+                                    let encryption_key_insert = EncryptionKey {
+                                        id: diesel_ulid::DieselUlid::generate(),
+                                        hash: Some(request.hash.clone()),
+                                        object_id: req_object.id,
+                                        endpoint_id: endpoint_uuid,
+                                        is_temporary: false,
+                                        encryption_key: kk.encryption_key,
+                                    };
+
+                                    insert_into(encryption_keys)
+                                        .values(&encryption_key_insert)
+                                        .execute(conn)?;
+
+                                    Some(encryption_key_insert)
+                                }
+                                None => None,
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                } {
+                    match req_object.dataclass {
+                        Dataclass::PUBLIC | Dataclass::PRIVATE => (Some(is_key), false),
+                        _ => {
+                            let encryption_key_insert = if request.hash.is_empty() {
+                                EncryptionKey {
+                                    id: diesel_ulid::DieselUlid::generate(),
+                                    hash: None,
+                                    object_id: req_object.id,
+                                    endpoint_id: endpoint_uuid,
+                                    is_temporary: true,
+                                    encryption_key: Alphanumeric
+                                        .sample_string(&mut rand::thread_rng(), 32),
+                                }
+                            } else {
+                                EncryptionKey {
+                                    id: diesel_ulid::DieselUlid::generate(),
+                                    hash: Some(request.hash.to_string()),
+                                    object_id: req_object.id,
+                                    endpoint_id: endpoint_uuid,
+                                    is_temporary: false,
+                                    encryption_key: Alphanumeric
+                                        .sample_string(&mut rand::thread_rng(), 32),
+                                }
+                            };
+
+                            insert_into(encryption_keys)
+                                .values(&encryption_key_insert)
+                                .execute(conn)?;
+
+                            (Some(encryption_key_insert), true)
+                        }
+                    }
+                } else {
+                    let encryption_key_insert = if request.hash.is_empty() {
+                        EncryptionKey {
+                            id: diesel_ulid::DieselUlid::generate(),
+                            hash: None,
+                            object_id: req_object.id,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: true,
+                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                        }
+                    } else {
+                        EncryptionKey {
+                            id: diesel_ulid::DieselUlid::generate(),
+                            hash: Some(request.hash.to_string()),
+                            object_id: req_object.id,
+                            endpoint_id: endpoint_uuid,
+                            is_temporary: false,
+                            encryption_key: Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+                        }
+                    };
+
+                    insert_into(encryption_keys)
+                        .values(&encryption_key_insert)
+                        .execute(conn)?;
+
+                    (Some(encryption_key_insert), true)
+                };
+
+                Ok((encryption_key, created))
+            })?;
+
+        Ok(key_info)
+    }
+
     ///ToDo: Rust Doc
     pub fn get_latest_object_revision(
         &self,
         request: GetLatestObjectRevisionRequest,
     ) -> Result<ObjectWithUrl, ArunaError> {
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         let (object_dto, obj_paths) =
             self.pg_connection
@@ -1105,7 +1188,11 @@ impl Database {
                     let obj = get_object(&lat_obj.id, &parsed_collection_id, false, conn)?;
 
                     let proto_paths = if let Some(obj) = obj.clone() {
-                        get_paths_proto(&obj.object.shared_revision_id, conn)?
+                        get_paths_proto(
+                            &obj.object.shared_revision_id,
+                            Some(&parsed_collection_id),
+                            conn,
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -1134,8 +1221,8 @@ impl Database {
         &self,
         request: GetObjectRevisionsRequest,
     ) -> Result<Vec<ObjectWithUrl>, ArunaError> {
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         let all_revs = self
             .pg_connection
@@ -1150,7 +1237,7 @@ impl Database {
                     .filter(database::schema::collection_objects::object_id.eq_any(&all_ids))
                     .filter(
                         database::schema::collection_objects::collection_id
-                            .eq(parsed_collection_id),
+                            .eq(&parsed_collection_id),
                     )
                     .first::<CollectionObject>(conn)
                     .optional()?;
@@ -1158,10 +1245,14 @@ impl Database {
                 // Query and return all revisions
                 Ok(if issomewherereferenced.is_some() {
                     let obj_paths = if let Some(first_obj) = all.first() {
-                        get_paths_proto(&first_obj.shared_revision_id, conn)?
-                            .iter()
-                            .map(|e| e.path.to_string())
-                            .collect::<Vec<String>>()
+                        get_paths_proto(
+                            &first_obj.shared_revision_id,
+                            Some(&parsed_collection_id),
+                            conn,
+                        )?
+                        .iter()
+                        .map(|e| e.path.to_string())
+                        .collect::<Vec<String>>()
                     } else {
                         Vec::new()
                     };
@@ -1197,7 +1288,7 @@ impl Database {
         let parsed_query = parse_query(request.label_id_filter)?;
         // Collection context
 
-        let query_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let query_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Execute request
         use crate::database::schema::collection_objects::dsl as colobj;
@@ -1231,7 +1322,7 @@ impl Database {
                             // Create key value boxed request
                             let mut ckv_query = okv::object_key_value.into_boxed();
                             // Create vector with "matching" collections
-                            let found_objs: Option<Vec<uuid::Uuid>>;
+                            let found_objs: Option<Vec<diesel_ulid::DieselUlid>>;
                             // Is "and"
                             if l_query.1 {
                                 // Add each key / value to label query
@@ -1265,7 +1356,7 @@ impl Database {
                                 found_objs = ckv_query
                                     .select(okv::object_id)
                                     .distinct()
-                                    .load::<uuid::Uuid>(conn)
+                                    .load::<diesel_ulid::DieselUlid>(conn)
                                     .optional()?;
                             }
                             // Add to query if something was found otherwise return Only
@@ -1293,11 +1384,14 @@ impl Database {
                         if let Some(obj) =
                             get_object(&s_obj.object_id, &query_collection_id, false, conn)?
                         {
-                            let proto_paths =
-                                get_paths_proto(&obj.object.shared_revision_id, conn)?
-                                    .iter()
-                                    .map(|p| p.path.clone())
-                                    .collect::<Vec<String>>();
+                            let proto_paths = get_paths_proto(
+                                &obj.object.shared_revision_id,
+                                Some(&query_collection_id),
+                                conn,
+                            )?
+                            .iter()
+                            .map(|p| p.path.clone())
+                            .collect::<Vec<String>>();
                             return_vec.push(ObjectWithUrl {
                                 object: Some(obj.try_into()?),
                                 url: "".to_string(),
@@ -1334,9 +1428,10 @@ impl Database {
         request: CreateObjectReferenceRequest,
     ) -> Result<CreateObjectReferenceResponse, ArunaError> {
         // Extract (and automagically validate) uuids from request
-        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
-        let source_collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
-        let target_collection_uuid = uuid::Uuid::parse_str(&request.target_collection_id)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let target_collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
         self.pg_connection
@@ -1391,7 +1486,7 @@ impl Database {
                     }
 
                     CollectionObject {
-                        id: uuid::Uuid::new_v4(),
+                        id: diesel_ulid::DieselUlid::generate(),
                         collection_id: target_collection_uuid,
                         object_id: object_uuid,
                         is_latest: object_reference.is_latest,
@@ -1423,7 +1518,7 @@ impl Database {
                     };
 
                     CollectionObject {
-                        id: uuid::Uuid::new_v4(),
+                        id: diesel_ulid::DieselUlid::generate(),
                         collection_id: target_collection_uuid,
                         object_id: object_uuid,
                         is_latest: is_latest_revision,
@@ -1483,7 +1578,7 @@ impl Database {
         request: &GetReferencesRequest,
     ) -> Result<GetReferencesResponse, ArunaError> {
         // Extract (and automagically validate) uuids from request
-        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
         // Transaction time
         let references = self
@@ -1504,7 +1599,7 @@ impl Database {
                     let mapped = all_revisions
                         .iter()
                         .map(|elem| (elem.id, elem.revision_number))
-                        .collect::<HashMap<uuid::Uuid, i64>>();
+                        .collect::<HashMap<diesel_ulid::DieselUlid, i64>>();
 
                     let reved_references: Vec<CollectionObject> =
                         CollectionObject::belonging_to(&all_revisions)
@@ -1547,8 +1642,8 @@ impl Database {
     /// ToDo: Rust Doc
     pub fn get_reference_status(
         &self,
-        object_uuid: &uuid::Uuid,
-        collection_uuid: &uuid::Uuid,
+        object_uuid: &diesel_ulid::DieselUlid,
+        collection_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<ReferenceStatus, ArunaError> {
         // Read specific object reference for collection from database
         let object_reference = self
@@ -1581,12 +1676,13 @@ impl Database {
     pub fn clone_object(
         &self,
         request: &CloneObjectRequest,
-        creator_uuid: &uuid::Uuid,
+        creator_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<CloneObjectResponse, ArunaError> {
         // Extract (and automagically validate) uuids from request
-        let object_uuid = uuid::Uuid::parse_str(&request.object_id)?;
-        let source_collection_uuid = uuid::Uuid::parse_str(&request.collection_id)?;
-        let target_collection_uuid = uuid::Uuid::parse_str(&request.target_collection_id)?;
+        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let target_collection_uuid =
+            diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
         let cloned_object = self
@@ -1628,7 +1724,7 @@ impl Database {
     pub fn delete_object(
         &self,
         request: DeleteObjectRequest,
-        creator_id: uuid::Uuid,
+        creator_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteObjectResponse, ArunaError> {
         //ToDo: - Set status of all affected objects to UNAVAILABLE
         //ToDo: - What do with borrowed child objects?
@@ -1674,8 +1770,8 @@ impl Database {
          *            - Update all object_groups with references to the specific object/revision
          */
 
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
         self.pg_connection
             .get()?
@@ -1698,7 +1794,7 @@ impl Database {
     pub fn delete_objects(
         &self,
         request: DeleteObjectsRequest,
-        creator_id: uuid::Uuid,
+        creator_id: diesel_ulid::DieselUlid,
     ) -> Result<DeleteObjectsResponse, ArunaError> {
         //writeable = w+ or w-
         //history   = h+ or h-
@@ -1730,13 +1826,13 @@ impl Database {
          *            - Update all object_groups with references to the specific object/revision
          */
 
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Parse objectids
         let parsed_object_ids = request
             .object_ids
             .iter()
-            .map(|objid| uuid::Uuid::parse_str(objid))
+            .map(|objid| diesel_ulid::DieselUlid::from_str(objid))
             .collect::<Result<Vec<_>, _>>()?;
 
         self.pg_connection
@@ -1761,8 +1857,8 @@ impl Database {
         &self,
         request: AddLabelsToObjectRequest,
     ) -> Result<AddLabelsToObjectResponse, ArunaError> {
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Transaction time
         let updated_objects = self
@@ -1818,8 +1914,8 @@ impl Database {
         &self,
         request: SetHooksOfObjectRequest,
     ) -> Result<SetHooksOfObjectResponse, ArunaError> {
-        let parsed_object_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let parsed_collection_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         // Transaction time
         let updated_objects = self
             .pg_connection
@@ -1836,7 +1932,7 @@ impl Database {
                     .hooks
                     .iter()
                     .map(|elem| ObjectKeyValue {
-                        id: uuid::Uuid::new_v4(),
+                        id: diesel_ulid::DieselUlid::generate(),
                         object_id: parsed_object_id,
                         key: elem.key.to_string(),
                         value: elem.value.to_string(),
@@ -1864,26 +1960,31 @@ impl Database {
         request: GetObjectPathRequest,
     ) -> Result<GetObjectPathResponse, ArunaError> {
         // Parse collection and object id
-        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let obj_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
+        let col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         let db_paths = self
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                use crate::database::schema::paths::dsl as paths_dsl;
+
                 // Get the object to aquire shared revision
                 let get_obj = objects
                     .filter(database::schema::objects::id.eq(obj_id))
                     .first::<Object>(conn)?;
 
-                // Get all paths
-                let obj_paths = paths
-                    .filter(database::schema::paths::collection_id.eq(col_id))
-                    .filter(
-                        database::schema::paths::shared_revision_id.eq(&get_obj.shared_revision_id),
-                    )
-                    .load::<Path>(conn)
-                    .optional()?;
+                // Get all paths depending on include_inactive parameter
+                let mut path_query = paths
+                    .filter(paths_dsl::collection_id.eq(col_id))
+                    .filter(paths_dsl::shared_revision_id.eq(&get_obj.shared_revision_id))
+                    .into_boxed();
+
+                if !request.include_inactive {
+                    path_query = path_query.filter(paths_dsl::active.eq(&true))
+                }
+
+                let obj_paths = path_query.order_by(paths_dsl::created_at.desc()).load::<Path>(conn).optional()?;
 
                 // Filter paths for active / not active, map to protopath
                 match obj_paths {
@@ -1912,15 +2013,19 @@ impl Database {
         request: GetObjectPathsRequest,
     ) -> Result<GetObjectPathsResponse, ArunaError> {
         // Parse collection and object id
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         let db_paths = self
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
+                use crate::database::schema::paths::dsl as paths_dsl;
+
                 // Get all paths for collection
                 let obj_paths = paths
-                    .filter(database::schema::paths::collection_id.eq(col_id))
+                    .filter(paths_dsl::collection_id.eq(col_id))
+                    .order_by(paths_dsl::shared_revision_id)
+                    .order_by(paths_dsl::created_at.desc())
                     .load::<Path>(conn)
                     .optional()?;
 
@@ -1951,13 +2056,13 @@ impl Database {
         request: CreateObjectPathRequest,
     ) -> Result<CreateObjectPathResponse, ArunaError> {
         // Parse collection and object id
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-        let obj_id = uuid::Uuid::parse_str(&request.object_id)?;
+        let col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+        let obj_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
         let db_path = self
             .pg_connection
             .get()?
-            .transaction::<Option<ProtoPath>, Error, _>(|conn| {
+            .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
                 // Get the object to aquire shared revision
                 let get_obj = objects
                     .filter(database::schema::objects::id.eq(obj_id))
@@ -1974,7 +2079,7 @@ impl Database {
                     conn,
                 )?;
                 // Query path
-                paths
+                Ok(paths
                     .filter(database::schema::paths::path.eq(&s3path))
                     .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)
@@ -1984,10 +2089,45 @@ impl Database {
                             path: format!("s3://{}{}", elem.bucket, elem.path),
                             visibility: elem.active,
                         })
-                    })
+                    })?)
             })?;
 
         Ok(CreateObjectPathResponse { path: db_path })
+    }
+
+    /// Generates the default path of an object for the specific collection.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `` -
+    /// * `` -
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<String, ArunaError>` - The
+    ///
+    pub fn generate_object_path(
+        &self,
+        object_uuid: &diesel_ulid::DieselUlid,
+        collection_uuid: &diesel_ulid::DieselUlid,
+    ) -> Result<(String, String), ArunaError> {
+        use crate::database::schema::objects::dsl as objects_dsl;
+
+        let (object_bucket, object_key) = self
+            .pg_connection
+            .get()?
+            .transaction::<(String, String), ArunaError, _>(|conn| {
+                // Fetch object filename
+                let file_name = objects
+                    .filter(objects_dsl::id.eq(object_uuid))
+                    .select(objects_dsl::filename)
+                    .first::<String>(conn)?;
+
+                // Generate default path
+                construct_path_string(collection_uuid, file_name.as_str(), "", conn)
+            })?;
+
+        Ok((object_bucket, object_key))
     }
 
     /// ToDo: Rust Doc
@@ -1996,7 +2136,7 @@ impl Database {
         request: SetObjectPathVisibilityRequest,
     ) -> Result<SetObjectPathVisibilityResponse, ArunaError> {
         // Parse collection and object id
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
+        let col_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         let db_path = self
             .pg_connection
@@ -2044,9 +2184,6 @@ impl Database {
         &self,
         request: GetObjectsByPathRequest,
     ) -> Result<GetObjectsByPathResponse, ArunaError> {
-        // Parse collection and object id
-        let col_id = uuid::Uuid::parse_str(&request.collection_id)?;
-
         let db_objects = self
             .pg_connection
             .get()?
@@ -2061,10 +2198,19 @@ impl Database {
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let get_path = paths
+                let get_path: Path = paths
                     .filter(database::schema::paths::path.eq(format!("/{s3path}")))
                     .filter(database::schema::paths::bucket.eq(&s3bucket))
                     .first::<Path>(conn)?;
+
+                let (_, maybe_collection) =
+                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+                // Only proceed if collection exists
+                let col_id = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
+                    "Collection in path {} does not exist.",
+                    request.path
+                )))?;
 
                 if get_path.collection_id != col_id {
                     return Err(ArunaError::InvalidRequest(format!(
@@ -2085,7 +2231,7 @@ impl Database {
                 let obj_ids = raw_objects
                     .iter()
                     .map(|e| e.id)
-                    .collect::<Vec<uuid::Uuid>>();
+                    .collect::<Vec<diesel_ulid::DieselUlid>>();
 
                 let refs = collection_objects
                     .filter(database::schema::collection_objects::collection_id.eq(&col_id))
@@ -2128,16 +2274,616 @@ impl Database {
 
         Ok(GetObjectsByPathResponse { object: db_objects })
     }
+
+    /// Fetch the latest revision of an object via its unique path or create a staging object if
+    /// the object already exists.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `GetOrCreateObjectByPathRequest` -
+    ///   The request containing the information needed to fetch or create/update an object.
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<GetOrCreateObjectByPathResponse, Status>` -
+    /// The response contains the id of the fetched/created object, the collection id, the objects data class and
+    /// if already available the objects hash(es).
+    ///
+    /// ## Behaviour:
+    ///
+    /// - If the object exists and no staging object is provided, the found object id will be returned.
+    /// - If the object exists and a staging object is provided, an object update will be initiated and the staging object id returned.
+    /// - If no object exists and a staging object is provided, an object creation will be initiated and the staging object id returned.
+    /// - If no object exists and no staging object is provided, an error will be returned for an invalid request.
+    ///
+    pub fn get_or_create_object_by_path(
+        &self,
+        request: GetOrCreateObjectByPathRequest,
+    ) -> Result<GetOrCreateObjectByPathResponse, ArunaError> {
+        // Parse request and path
+        if !request.path.starts_with("s3://") {
+            return Err(ArunaError::InvalidRequest(
+                "Path does not start with s3://".to_string(),
+            ));
+        }
+
+        let (s3bucket, _) = request.path[5..]
+            .split_once('/')
+            .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+        let access_key = diesel_ulid::DieselUlid::from_str(request.access_key.as_str())
+            .map_err(ArunaError::from)?;
+
+        let endpoint_uuid = diesel_ulid::DieselUlid::from_str(request.endpoint_id.as_str())
+            .map_err(ArunaError::from)?;
+
+        let response = self
+            .pg_connection
+            .get()?
+            .transaction::<GetOrCreateObjectByPathResponse, ArunaError, _>(|conn| {
+                // Fetch collection id to check permissions of request
+                let (_, maybe_collection) =
+                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+                // Only proceed if collection exists
+                let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(
+                    format!("Collection in path {} does not exist.", request.path),
+                ))?;
+
+                // Fetch object to check if it exists
+                let get_object =
+                    get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid))?;
+
+                // Check permissions
+                let (creator_uuid, _) = self.get_checked_user_id_from_token(
+                    &access_key,
+                    &Context {
+                        user_right: if get_object.is_some() && request.object.is_none() {
+                            UserRights::READ
+                        } else {
+                            UserRights::APPEND
+                        },
+                        resource_type: Resources::COLLECTION,
+                        resource_id: collection_uuid,
+                        admin: false,
+                        personal: false,
+                        oidc_context: false,
+                    },
+                )?;
+
+                // - If object already exists and no staging object provided -> return
+                // - If object already exists and staging object provided    -> update
+                // - If object does not exist and staging object provided    -> init
+                // - Else error.
+                match get_object {
+                    Some(fetched_object) => {
+                        if let Some(staging_object) = request.object {
+                            if fetched_object.object_status == ObjectStatus::INITIALIZING {
+                                Ok(GetOrCreateObjectByPathResponse {
+                                    object_id: fetched_object.id.to_string(),
+                                    collection_id: collection_uuid.to_string(),
+                                    dataclass: db_to_grpc_dataclass(&fetched_object.dataclass)
+                                        as i32,
+                                    hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                    revision_number: fetched_object.revision_number,
+                                    created: false,
+                                })
+                            } else if fetched_object.object_status != ObjectStatus::AVAILABLE {
+                                Err(ArunaError::InvalidRequest(format!(
+                                    "Cannot update object with status {:?}",
+                                    fetched_object.object_status
+                                )))
+                            } else {
+                                let staging_object_uuid = diesel_ulid::DieselUlid::generate();
+                                let created_object = update_object_init(
+                                    conn,
+                                    staging_object,
+                                    fetched_object.id,
+                                    staging_object_uuid,
+                                    collection_uuid,
+                                    &creator_uuid,
+                                    Some(&endpoint_uuid),
+                                    true,
+                                    false,
+                                )?;
+
+                                Ok(GetOrCreateObjectByPathResponse {
+                                    object_id: created_object.id.to_string(),
+                                    collection_id: collection_uuid.to_string(),
+                                    dataclass: db_to_grpc_dataclass(&created_object.dataclass)
+                                        as i32,
+                                    hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                    revision_number: created_object.revision_number,
+                                    created: false,
+                                })
+                            }
+                        } else {
+                            Ok(GetOrCreateObjectByPathResponse {
+                                object_id: fetched_object.id.to_string(),
+                                collection_id: collection_uuid.to_string(),
+                                dataclass: db_to_grpc_dataclass(&fetched_object.dataclass) as i32,
+                                hashes: get_object_hashes(conn, &fetched_object.id)?,
+                                revision_number: fetched_object.revision_number,
+                                created: false,
+                            })
+                        }
+                    }
+                    None => {
+                        if let Some(staging_object) = request.object {
+                            let staging_object_id = diesel_ulid::DieselUlid::generate();
+                            let created_object = create_staging_object(
+                                conn,
+                                staging_object,
+                                &staging_object_id,
+                                None,
+                                &collection_uuid,
+                                &creator_uuid,
+                                false,
+                                Some(&endpoint_uuid),
+                            )?;
+
+                            Ok(GetOrCreateObjectByPathResponse {
+                                object_id: created_object.id.to_string(),
+                                collection_id: collection_uuid.to_string(),
+                                dataclass: db_to_grpc_dataclass(&created_object.dataclass) as i32,
+                                hashes: get_object_hashes(conn, &created_object.id)?,
+                                revision_number: 0,
+                                created: false,
+                            })
+                        } else {
+                            Err(ArunaError::InvalidRequest(
+                                "No staging object provided in request for creation.".to_string(),
+                            ))
+                        }
+                    }
+                }
+            })?;
+
+        Ok(response)
+    }
+
+    /// Parses the object path and fetches the project and collection id from the database.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `request_path: &String` - The S3 object path
+    /// * `bucket_only: bool` - Marker if the provided path is only the bucket part
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<(diesel_ulid::DieselUlid, Option<diesel_ulid::DieselUlid>), ArunaError>` -
+    /// The response contains the at least the project id and if present also the collection id.
+    /// If the project does not exist an error is returned.
+    ///
+    pub fn get_project_collection_ids_by_path(
+        &self,
+        request_path: &str,
+        bucket_only: bool,
+    ) -> Result<(diesel_ulid::DieselUlid, Option<diesel_ulid::DieselUlid>), ArunaError> {
+        let s3bucket = if bucket_only {
+            request_path
+        } else {
+            if !request_path.starts_with("s3://") {
+                return Err(ArunaError::InvalidRequest(
+                    "Path does not start with s3://".to_string(),
+                ));
+            }
+
+            let (s3bucket, _) = request_path[5..]
+                .split_once('/')
+                .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+            s3bucket
+        };
+
+        let result = self.pg_connection.get()?.transaction::<(
+            diesel_ulid::DieselUlid,
+            Option<diesel_ulid::DieselUlid>,
+        ), ArunaError, _>(|conn| {
+            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())
+        })?;
+
+        Ok(result)
+    }
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
+/// Creates a staging object with the provided meta information.
+///
+/// Warning: This function does not check permissions.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Open database connection
+/// * `staging_object: StageObject` - Staging object meta information
+/// * `object_uuid: &diesel_ulid::DieselUlid` - Unique object identifier for staging object
+/// * `object_hash: Option<ProtoHash>` - Optional initial object hash
+/// * `collection_uuid: &diesel_ulid::DieselUlid` - Unique collection identifier
+/// * `creator_uuid: &diesel_ulid::DieselUlid` - Unique user identifier
+/// * `is_collection_specification: bool` - Mark object as collection specification
+///
+/// ## Returns:
+///
+/// * `Result<Object, ArunaError>` - The created staging object
+///
+#[allow(clippy::too_many_arguments)]
+pub fn create_staging_object(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    staging_object: StageObject,
+    object_uuid: &diesel_ulid::DieselUlid,
+    object_hash: Option<ProtoHash>,
+    collection_uuid: &diesel_ulid::DieselUlid,
+    creator_uuid: &diesel_ulid::DieselUlid,
+    is_collection_specification: bool,
+    endpoint_uuid: Option<&diesel_ulid::DieselUlid>,
+) -> Result<Object, ArunaError> {
+    //Define source object from updated request; None if empty
+    let source: Option<Source> = match &staging_object.source {
+        Some(source) => Some(Source {
+            id: diesel_ulid::DieselUlid::generate(),
+            link: source.identifier.clone(),
+            source_type: SourceType::from_i32(source.source_type)?,
+        }),
+        _ => None,
+    };
+
+    // Define object in database representation
+    let object = Object {
+        id: *object_uuid,
+        shared_revision_id: diesel_ulid::DieselUlid::generate(),
+        revision_number: 0,
+        filename: staging_object.filename.clone(),
+        created_at: chrono::Utc::now().naive_utc(),
+        created_by: *creator_uuid,
+        content_len: staging_object.content_len,
+        object_status: ObjectStatus::INITIALIZING,
+        dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
+        source_id: source.as_ref().map(|src| src.id),
+        origin_id: *object_uuid,
+    };
+
+    // Define the join table entry collection <--> object
+    let collection_object = CollectionObject {
+        id: diesel_ulid::DieselUlid::generate(),
+        collection_id: *collection_uuid,
+        is_latest: false, // Will be checked on finish
+        reference_status: ReferenceStatus::STAGING,
+        object_id: object.id,
+        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+        is_specification: is_collection_specification,
+        writeable: true, //Note: Original object is initially always writeable
+    };
+
+    // Define the hash placeholder for the object
+    let db_hash = if let Some(proto_hash) = object_hash {
+        ApiHash {
+            id: diesel_ulid::DieselUlid::generate(),
+            hash: proto_hash.hash,
+            object_id: object.id,
+            hash_type: grpc_to_db_hash_type(&proto_hash.alg)?,
+        }
+    } else {
+        ApiHash {
+            id: diesel_ulid::DieselUlid::generate(),
+            hash: "".to_string(), //Note: Empty hash will be updated later
+            object_id: object.id,
+            hash_type: HashType::SHA256, //Note: Default. Will be updated later
+        }
+    };
+
+    // Convert the object's labels and hooks to their database representation
+    let mut key_value_pairs =
+        to_key_values::<ObjectKeyValue>(staging_object.labels, staging_object.hooks, *object_uuid);
+
+    // Validate key_values
+    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
+        return Err(ArunaError::InvalidRequest(
+            "labels or hooks are invalid".to_string(),
+        ));
+    };
+
+    // Create and validate path
+    let (s3bucket, s3path) = construct_path_string(
+        &collection_object.collection_id,
+        &object.filename,
+        &staging_object.sub_path,
+        conn,
+    )?;
+
+    // Check if path already exists
+    let exists = paths
+        .filter(database::schema::paths::path.eq(&s3path))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)
+        .optional()?;
+
+    // If it already exists
+    if let Some(existing) = exists {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        if existing.shared_revision_id != object.shared_revision_id {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path, already exists for different object hierarchy".to_string(),
+            ));
+        }
+    }
+
+    // If path not exists -> Add labels
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: object.id,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: object.id,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    if let Some(endpoint) = endpoint_uuid {
+        key_value_pairs.push(ObjectKeyValue {
+            id: diesel_ulid::DieselUlid::generate(),
+            object_id: object.id,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
+
+    if let Some(sour) = source {
+        diesel::insert_into(sources).values(&sour).execute(conn)?;
+    }
+    diesel::insert_into(objects).values(&object).execute(conn)?;
+    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
+    diesel::insert_into(object_key_value)
+        .values(&key_value_pairs)
+        .execute(conn)?;
+    diesel::insert_into(collection_objects)
+        .values(&collection_object)
+        .execute(conn)?;
+
+    Ok(object)
+}
+
+/// Creates a staging object with the provided meta information.
+///
+/// Warning: This function does not check permissions.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Open database connection
+/// * `staging_object: StageObject` - Staging object meta information
+/// * `object_uuid: &diesel_ulid::DieselUlid` - Unique object identifier for staging object
+/// * `collection_uuid: &diesel_ulid::DieselUlid` - Unique collection identifier
+/// * `creator_uuid: &diesel_ulid::DieselUlid` - Unique user identifier
+///
+/// ## Returns:
+///
+/// * `Result<Object, ArunaError>` - The created staging object
+///
+#[allow(clippy::too_many_arguments)]
+pub fn update_object_init(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    staging_object: StageObject,
+    current_object_uuid: diesel_ulid::DieselUlid,
+    staging_object_uuid: diesel_ulid::DieselUlid,
+    collection_uuid: diesel_ulid::DieselUlid,
+    creator_uuid: &diesel_ulid::DieselUlid,
+    endpoint_uuid: Option<&diesel_ulid::DieselUlid>,
+    reupload: bool,
+    is_collection_specification: bool,
+) -> Result<Object, ArunaError> {
+    // Get all references of all revisions of the object
+    let all_revision_references = get_all_references(conn, &current_object_uuid, &true)?;
+
+    // Filter references for staging objects and collection specific, writeable references
+    let mut staging_references = Vec::new();
+    let mut object_references = Vec::new();
+    for object_reference in all_revision_references {
+        if object_reference.reference_status == ReferenceStatus::STAGING {
+            staging_references.push(object_reference);
+        } else if object_reference.writeable && object_reference.collection_id == collection_uuid {
+            object_references.push(object_reference);
+        }
+    }
+
+    if staging_references.len() > 1 {
+        return Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} has more than one staging object. This has to be resolved manually.")));
+    } else if let Some(staging_reference) = staging_references.first() {
+        return if staging_reference.object_id == current_object_uuid {
+            update_object_in_place(
+                conn,
+                &current_object_uuid,
+                creator_uuid,
+                &collection_uuid,
+                endpoint_uuid,
+                &staging_object,
+            )
+        } else {
+            Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} already has a staging object. Concurrent updates are prohibited.")))
+        };
+    }
+
+    if object_references.is_empty() {
+        return Err(ArunaError::InvalidRequest(format!("Object {current_object_uuid} does not have a writeable reference in collection {collection_uuid}")));
+    }
+
+    // Get latest revision of the Object to be updated
+    let latest = get_latest_obj(conn, current_object_uuid)?;
+
+    // Check if update is performed on latest object revision
+    if latest.id != current_object_uuid {
+        return Err(ArunaError::InvalidRequest(format!(
+            "Updates only allowed on the latest revision: {}",
+            latest.id
+        )));
+    }
+
+    // Define source object from updated request; None if empty
+    let source: Option<Source> = match &staging_object.source {
+        Some(source) => Some(Source {
+            id: diesel_ulid::DieselUlid::generate(),
+            link: source.identifier.to_string(),
+            source_type: SourceType::from_i32(source.source_type)?,
+        }),
+        _ => None,
+    };
+
+    // Define new Object with updated values
+    let new_object = Object {
+        id: staging_object_uuid,
+        shared_revision_id: latest.shared_revision_id,
+        revision_number: latest.revision_number + 1,
+        filename: staging_object.filename.to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        created_by: *creator_uuid,
+        content_len: staging_object.content_len,
+        object_status: ObjectStatus::INITIALIZING, // Is a staging object
+        dataclass: grpc_to_db_dataclass(&staging_object.dataclass),
+        source_id: source.as_ref().map(|source| source.id),
+        origin_id: current_object_uuid,
+    };
+
+    // Define new object hashes depending if update contains data re-upload
+    let mut new_hashes = Vec::new();
+    if reupload {
+        // Create new empty hash record which will be updated on object finish/finalize
+        for db_hash_type in &[HashType::MD5, HashType::SHA256] {
+            new_hashes.push(ApiHash {
+                id: diesel_ulid::DieselUlid::generate(),
+                hash: "".to_string(),
+                object_id: new_object.id,
+                hash_type: *db_hash_type,
+            })
+        }
+    } else {
+        // Without re-upload just clone hashes of current object
+        for mut old_hash in hashes
+            .filter(database::schema::hashes::object_id.eq(current_object_uuid))
+            .load::<ApiHash>(conn)?
+        {
+            old_hash.id = diesel_ulid::DieselUlid::generate();
+            old_hash.object_id = staging_object_uuid;
+
+            new_hashes.push(old_hash);
+        }
+    };
+
+    // Define temporary STAGING join table entry collection <-->  staging object
+    let collection_object = CollectionObject {
+        id: diesel_ulid::DieselUlid::generate(),
+        collection_id: collection_uuid,
+        is_latest: false, // Will be checked on finish
+        reference_status: ReferenceStatus::STAGING,
+        object_id: staging_object_uuid,
+        auto_update: false, //Note: Finally set with FinishObjectStagingRequest
+        is_specification: is_collection_specification,
+        writeable: true,
+    };
+
+    // Convert the object's labels and hooks to their database representation
+    // Clone could be removed if the to_object_key_values method takes borrowed vec instead of moved / owned reference
+    let mut key_value_pairs = to_key_values::<ObjectKeyValue>(
+        staging_object.labels.clone(),
+        staging_object.hooks.clone(),
+        staging_object_uuid,
+    );
+
+    // Validate key_values
+    if !validate_key_values::<ObjectKeyValue>(key_value_pairs.clone()) {
+        return Err(ArunaError::InvalidRequest(
+            "labels or hooks are invalid".to_string(),
+        ));
+    };
+
+    // Get full qualified path
+    let (s3bucket, s3path) = construct_path_string(
+        &collection_object.collection_id,
+        &new_object.filename,
+        &staging_object.sub_path,
+        conn,
+    )?;
+
+    // Check if path already exists
+    let exists = paths
+        .filter(database::schema::paths::path.eq(&s3path))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)
+        .optional()?;
+
+    // If it already exists
+    if let Some(existing) = exists {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        if existing.shared_revision_id != new_object.shared_revision_id {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path, already exists for different object hierarchy".to_string(),
+            ));
+        }
+        // If path not exists -> Add label
+    }
+
+    // Always add internal path labels
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: staging_object_uuid,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: staging_object_uuid,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    if let Some(endpoint) = endpoint_uuid {
+        key_value_pairs.push(ObjectKeyValue {
+            id: diesel_ulid::DieselUlid::generate(),
+            object_id: staging_object_uuid,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
+            key_value_type: KeyValueType::LABEL,
+        });
+    }
+
+    // Insert entities which are always created on update
+    diesel::insert_into(objects)
+        .values(&new_object)
+        .execute(conn)?;
+    diesel::insert_into(hashes)
+        .values(&new_hashes)
+        .execute(conn)?;
+    diesel::insert_into(object_key_value)
+        .values(&key_value_pairs)
+        .execute(conn)?;
+    diesel::insert_into(collection_objects)
+        .values(&collection_object)
+        .execute(conn)?;
+
+    // Insert Source only if it exists in request
+    if source.is_some() {
+        diesel::insert_into(sources).values(&source).execute(conn)?;
+    }
+
+    Ok(new_object)
+}
+
 /// This functions checks if the specific object has any reference in the provided collection.
 ///
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_uuid: &uuid::Uuid` - Unique object identifier
-/// * `collection_uuid: &uuid::Uuid` - Unique collection identifier
+/// * `object_uuid: &diesel_ulid::DieselUlid` - Unique object identifier
+/// * `collection_uuid: &diesel_ulid::DieselUlid` - Unique collection identifier
 /// * `with_revisions: bool` - Flag if object revisions shall be included
 ///
 /// ## Returns:
@@ -2146,8 +2892,8 @@ impl Database {
 ///
 pub fn object_exists_in_collection(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    object_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     with_revisions: bool,
 ) -> Result<bool, ArunaError> {
     // Get references depending on the with_revisions parameter
@@ -2201,7 +2947,7 @@ pub fn object_exists_in_collection(
                         .single_value()
                 ))
                 .select(database::schema::objects::id)
-                .load::<uuid::Uuid>(conn)?;
+                .load::<diesel_ulid::DieselUlid>(conn)?;
 
             // Select all references associated with the object ids in the specified collection
             collection_objects
@@ -2229,7 +2975,7 @@ pub fn object_exists_in_collection(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_uuid: &uuid::Uuid` - Unique object identifier
+/// * `object_uuid: &diesel_ulid::DieselUlid` - Unique object identifier
 /// * `stage_object: &StageObject` - Stage object from the init/update request
 ///
 /// ## Returns:
@@ -2239,9 +2985,10 @@ pub fn object_exists_in_collection(
 ///
 pub fn update_object_in_place(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    object_uuid: &uuid::Uuid,
-    user_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    user_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
+    endpoint_uuid: Option<&diesel_ulid::DieselUlid>,
     stage_object: &StageObject,
 ) -> Result<Object, ArunaError> {
     // Get mutable object record from database
@@ -2263,7 +3010,7 @@ pub fn update_object_in_place(
         } else {
             // Insert new Source
             let new_source = Source {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 link: stage_source.identifier.clone(),
                 source_type: SourceType::from_i32(stage_source.source_type)
                     .map_err(|_| Error::RollbackTransaction)?,
@@ -2318,20 +3065,30 @@ pub fn update_object_in_place(
                 "Invalid path, already exists for different object hierarchy".to_string(),
             ));
         }
-    // If path not exists -> Add label
-    } else {
+    }
+
+    // Always add internal labels back to provided staging object labels
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: *object_uuid,
+        key: "app.aruna-storage.org/new_path".to_string(),
+        value: s3path,
+        key_value_type: KeyValueType::LABEL,
+    });
+    key_value_pairs.push(ObjectKeyValue {
+        id: diesel_ulid::DieselUlid::generate(),
+        object_id: *object_uuid,
+        key: "app.aruna-storage.org/bucket".to_string(),
+        value: s3bucket,
+        key_value_type: KeyValueType::LABEL,
+    });
+
+    if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             object_id: *object_uuid,
-            key: "app.aruna-storage.org/new_path".to_string(),
-            value: s3path,
-            key_value_type: KeyValueType::LABEL,
-        });
-        key_value_pairs.push(ObjectKeyValue {
-            id: uuid::Uuid::new_v4(),
-            object_id: *object_uuid,
-            key: "app.aruna-storage.org/bucket".to_string(),
-            value: s3bucket,
+            key: "app.aruna-storage.org/endpoint_id".to_string(),
+            value: endpoint.to_string(),
             key_value_type: KeyValueType::LABEL,
         });
     }
@@ -2366,9 +3123,9 @@ pub fn update_object_in_place(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_uuid: uuid::Uuid` - Unique object identifier
-/// * `source_collection_uuid: uuid::Uuid` - Unique source collection identifier
-/// * `target_collection_uuid: uuid::Uuid` - Unique target collection identifier
+/// * `object_uuid: diesel_ulid::DieselUlid` - Unique object identifier
+/// * `source_collection_uuid: diesel_ulid::DieselUlid` - Unique source collection identifier
+/// * `target_collection_uuid: diesel_ulid::DieselUlid` - Unique target collection identifier
 ///
 /// ## Resturns:
 ///
@@ -2377,11 +3134,11 @@ pub fn update_object_in_place(
 ///
 pub fn clone_object(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    creator_uuid: &uuid::Uuid,
-    object_uuid: uuid::Uuid,
-    source_collection_uuid: uuid::Uuid,
-    target_collection_uuid: uuid::Uuid,
-) -> Result<(ProtoObject, uuid::Uuid), Error> {
+    creator_uuid: &diesel_ulid::DieselUlid,
+    object_uuid: diesel_ulid::DieselUlid,
+    source_collection_uuid: diesel_ulid::DieselUlid,
+    target_collection_uuid: diesel_ulid::DieselUlid,
+) -> Result<(ProtoObject, diesel_ulid::DieselUlid), Error> {
     // Get original object, collection_object reference, key_values, hash and source
     let mut db_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -2396,8 +3153,8 @@ pub fn clone_object(
     let mut db_object_key_values: Vec<ObjectKeyValue> =
         ObjectKeyValue::belonging_to(&db_object).load::<ObjectKeyValue>(conn)?;
 
-    // Get object hash
-    let mut db_hash: ApiHash = ApiHash::belonging_to(&db_object).first::<ApiHash>(conn)?;
+    // Get object hashes
+    let mut db_hashes: Vec<ApiHash> = ApiHash::belonging_to(&db_object).load::<ApiHash>(conn)?;
 
     // Get object source
     let db_source: Option<Source> = match &db_object.source_id {
@@ -2415,31 +3172,33 @@ pub fn clone_object(
         .load::<ObjectLocation>(conn)?;
 
     // Modify object
-    db_object.id = uuid::Uuid::new_v4();
-    db_object.shared_revision_id = uuid::Uuid::new_v4();
+    db_object.id = diesel_ulid::DieselUlid::generate();
+    db_object.shared_revision_id = diesel_ulid::DieselUlid::generate();
     db_object.revision_number = 0;
     db_object.origin_id = object_uuid;
     db_object.created_by = *creator_uuid;
-    db_object.created_at = Local::now().naive_local();
+    db_object.created_at = chrono::Utc::now().naive_utc();
 
-    // Modify hash
-    db_hash.id = uuid::Uuid::new_v4();
-    db_hash.object_id = db_object.id;
+    // Modify hashes
+    for db_hash in &mut db_hashes {
+        db_hash.id = diesel_ulid::DieselUlid::generate();
+        db_hash.object_id = db_object.id;
+    }
 
     // Modify collection_object reference
-    db_collection_object.id = uuid::Uuid::new_v4();
+    db_collection_object.id = diesel_ulid::DieselUlid::generate();
     db_collection_object.collection_id = target_collection_uuid;
     db_collection_object.object_id = db_object.id;
 
     // Modify object_key_values
     for kv in &mut db_object_key_values {
-        kv.id = uuid::Uuid::new_v4();
+        kv.id = diesel_ulid::DieselUlid::generate();
         kv.object_id = db_object.id;
     }
 
     // Modify object locations
     for location in &mut db_locations {
-        location.id = uuid::Uuid::new_v4();
+        location.id = diesel_ulid::DieselUlid::generate();
         location.object_id = db_object.id;
     }
 
@@ -2450,7 +3209,7 @@ pub fn clone_object(
         .values(&db_locations)
         .execute(conn)?;
     // Insert cloned hash
-    insert_into(hashes).values(&db_hash).execute(conn)?;
+    insert_into(hashes).values(&db_hashes).execute(conn)?;
     // Insert cloned key_Values
     insert_into(object_key_value)
         .values(&db_object_key_values)
@@ -2487,14 +3246,17 @@ pub fn clone_object(
                 id: db_object.origin_id.to_string(),
             }),
             data_class: db_object.dataclass as i32,
-            hash: Some(ProtoHash {
-                alg: db_to_grpc_hash_type(&db_hash.hash_type),
-                hash: db_hash.hash,
-            }),
             rev_number: db_object.revision_number,
             source: proto_source,
             latest: db_collection_object.is_latest,
             auto_update: db_collection_object.auto_update,
+            hashes: db_hashes
+                .iter()
+                .map(|db_hash| ProtoHash {
+                    alg: db_to_grpc_hash_type(&db_hash.hash_type),
+                    hash: db_hash.hash.to_string(),
+                })
+                .collect::<Vec<_>>(),
         },
         db_object.shared_revision_id,
     ))
@@ -2506,7 +3268,7 @@ pub fn clone_object(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `ref_object_id`: `uuid::Uuid` - The Uuid for which the latest Object revision should be found
+/// * `ref_object_id`: `diesel_ulid::DieselUlid` - The Uuid for which the latest Object revision should be found
 ///
 /// ## Returns:
 ///
@@ -2515,12 +3277,12 @@ pub fn clone_object(
 ///
 pub fn get_latest_obj(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_id: uuid::Uuid,
+    ref_object_id: diesel_ulid::DieselUlid,
 ) -> Result<Object, ArunaError> {
     let shared_id = objects
         .filter(database::schema::objects::id.eq(ref_object_id))
         .select(database::schema::objects::shared_revision_id)
-        .first::<uuid::Uuid>(conn)?;
+        .first::<diesel_ulid::DieselUlid>(conn)?;
 
     let latest_object = objects
         .filter(
@@ -2535,11 +3297,184 @@ pub fn get_latest_obj(
     Ok(latest_object)
 }
 
+/// This is a helper method that queries the "latest" object revision based on the path of the object.
+/// If returned object.id == ref_object_id -> the current object is "latest"
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `object_path`: `&String` - The fully-qualified S3 object path
+/// * `check_collection: Option<diesel_ulid::DieselUlid>` - Validates the collection id if provided
+///
+/// ## Returns:
+///
+/// `Result<Object, ArunaError>` - The latest database object revision or error if the request failed.
+pub fn get_object_revision_by_path(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_path: &String,
+    object_revision: i64,
+    check_collection: Option<diesel_ulid::DieselUlid>,
+) -> Result<Option<Object>, ArunaError> {
+    if !object_path.starts_with("s3://") {
+        return Err(ArunaError::InvalidRequest(
+            "Path does not start with s3://".to_string(),
+        ));
+    }
+
+    // Split of "s3://"
+    let (s3bucket, s3path) = object_path[5..]
+        .split_once('/')
+        .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
+
+    let get_path: Option<Path> = paths
+        .filter(database::schema::paths::path.eq(format!("/{s3path}")))
+        .filter(database::schema::paths::bucket.eq(&s3bucket))
+        .first::<Path>(conn)
+        .optional()?;
+
+    // Validate that provided collection id and path collection id matches
+    if let Some(collection_validation) = check_collection {
+        let (_, maybe_collection) =
+            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+
+        // Only proceed if collection exists
+        let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
+            "Collection in path {object_path} does not exist."
+        )))?;
+
+        if collection_validation != collection_uuid {
+            return Err(ArunaError::InvalidRequest(format!(
+                "Path is not part of collection: {collection_validation}"
+            )));
+        }
+    }
+
+    match get_path {
+        Some(p) => {
+            // Query the existing path
+            let base_request = objects
+                .filter(database::schema::objects::shared_revision_id.eq(p.shared_revision_id))
+                .into_boxed();
+
+            let base_request = if object_revision < 0 {
+                base_request // Get the latest revision
+            } else {
+                base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
+            };
+
+            Ok(base_request
+                .order_by(database::schema::objects::revision_number.desc())
+                .first::<Object>(conn)
+                .optional()?)
+        }
+        None => {
+            // Try to query the temp path from labels
+
+            // Get fq_path from label
+            let path_label = object_key_value
+                .filter(database::schema::object_key_value::value.eq(format!("/{s3path}")))
+                .filter(
+                    database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"),
+                )
+                .first::<ObjectKeyValue>(conn)
+                .optional()?;
+
+            let mut target_object_id: Option<diesel_ulid::DieselUlid> = None;
+
+            if let Some(p_lbl) = path_label {
+                target_object_id = object_key_value
+                    .filter(database::schema::object_key_value::object_id.eq(&p_lbl.object_id))
+                    .filter(
+                        database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"),
+                    )
+                    .filter(database::schema::object_key_value::value.eq(s3bucket))
+                    .first::<ObjectKeyValue>(conn)
+                    .optional()?
+                    .map(|e| e.object_id);
+            }
+
+            match target_object_id {
+                Some(ob_id) => Ok(objects
+                    .filter(database::schema::objects::id.eq(ob_id))
+                    .first::<Object>(conn)
+                    .optional()?),
+                None => Ok(None),
+            }
+        }
+    }
+}
+
+/// This is a helper method that queries the project id and collection id based
+/// on the names and version in the provided bucket part of an object path.
+///
+/// ## Arguments:
+///
+/// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
+/// * `bucket_path`: `String` - Bucket part of an S3 object path, e.g. `latest.project-name.collection-name`
+///
+/// ## Returns:
+///
+/// `Result<(diesel_ulid::DieselUlid, Option<diesel_ulid::DieselUlid>), ArunaError>` -
+/// The Ok Result contains the project id and the collection id if the collection exists in the project.
+/// If no project exists with the provided name an Error will be returned.
+///
+pub fn get_project_collection_ids_of_bucket_path(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    bucket_path: String,
+) -> Result<(diesel_ulid::DieselUlid, Option<diesel_ulid::DieselUlid>), ArunaError> {
+    use crate::database::schema::collection_version::dsl as version_dsl;
+    use crate::database::schema::collections::dsl as collection_dsl;
+    use crate::database::schema::projects::dsl as project_dsl;
+
+    // Parse bucket string
+    let (project_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
+
+    // Fetch project by its unique name
+    let project_uuid = projects
+        .filter(project_dsl::name.eq(&project_name))
+        .select(project_dsl::id)
+        .first::<diesel_ulid::DieselUlid>(conn)?;
+
+    // Fetch version id if version is not None
+    let version_uuid_option: Option<diesel_ulid::DieselUlid> =
+        if let Some(coll_version) = path_version {
+            collection_version
+                .filter(version_dsl::major.eq(coll_version.major as i64))
+                .filter(version_dsl::minor.eq(coll_version.minor as i64))
+                .filter(version_dsl::patch.eq(coll_version.patch as i64))
+                .select(version_dsl::id)
+                .first::<diesel_ulid::DieselUlid>(conn)
+                .optional()?
+        } else {
+            None
+        };
+
+    // Fetch collection by its unique combination of project_id, name and version
+    let mut base_request = collections
+        .filter(collection_dsl::project_id.eq(&project_uuid))
+        .filter(collection_dsl::name.eq(&collection_name))
+        .into_boxed();
+
+    // Cannot directly filter for nullable value with Option
+    if let Some(version_uuid) = version_uuid_option {
+        base_request = base_request.filter(collection_dsl::version_id.eq(version_uuid));
+    } else {
+        base_request = base_request.filter(collection_dsl::version_id.is_null());
+    }
+
+    let collection_uuid_option: Option<diesel_ulid::DieselUlid> = base_request
+        .select(collection_dsl::id)
+        .first::<diesel_ulid::DieselUlid>(conn)
+        .optional()?;
+
+    Ok((project_uuid, collection_uuid_option))
+}
+
 ///
 ///
 pub fn delete_staging_object(
-    object_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), diesel::result::Error> {
     // Process so that the staging object can be correctly cleared by the cron job:
@@ -2610,11 +3545,11 @@ pub fn delete_staging_object(
 /// New deletion function with safety net to assure that object has a writeable reference at every time.
 #[deprecated(since = "1.0.0", note = "please use `delete_multiple_objects` instead")]
 pub fn _safe_delete_object(
-    object_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     with_force: bool,
     with_revisions: bool,
-    creator_id: uuid::Uuid,
+    creator_id: diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
     // Check if collection is versioned and return ArunaError if true and force == false.
@@ -2956,8 +3891,8 @@ pub fn _safe_delete_object(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_ids`: `Vec<uuid::Uuid>` - The Uuids of all objects that should be deleted
-/// * `coll_id`: uuid::Uuid - The collection where these ids should be deleted from
+/// * `object_ids`: `Vec<diesel_ulid::DieselUlid>` - The Uuids of all objects that should be deleted
+/// * `coll_id`: diesel_ulid::DieselUlid - The collection where these ids should be deleted from
 /// * `with_force`: bool - Are sideeffects allowed ?
 ///
 /// ## Returns:
@@ -2965,11 +3900,11 @@ pub fn _safe_delete_object(
 /// `Result<(), ArunaError>` - Will return empty Result or Error
 ///
 pub fn delete_multiple_objects(
-    original_object_ids: Vec<uuid::Uuid>,
-    coll_id: uuid::Uuid,
+    original_object_ids: Vec<diesel_ulid::DieselUlid>,
+    coll_id: diesel_ulid::DieselUlid,
     with_force: bool,
     with_revisions: bool,
-    creator_id: uuid::Uuid,
+    creator_id: diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
     if is_collection_versioned(conn, &coll_id)? {
@@ -2983,7 +3918,7 @@ pub fn delete_multiple_objects(
         let shared_ids = objects
             .filter(database::schema::objects::id.eq_any(&original_object_ids))
             .select(database::schema::objects::shared_revision_id)
-            .load::<uuid::Uuid>(conn)?;
+            .load::<diesel_ulid::DieselUlid>(conn)?;
         objects
             .filter(database::schema::objects::shared_revision_id.eq_any(&shared_ids))
             .load::<Object>(conn)?
@@ -2992,7 +3927,8 @@ pub fn delete_multiple_objects(
     // Get all object_ids for object_revisions
     // And extract the list of original_database_objects
     let mut original_database_objects = Vec::new();
-    let mut object_id_shared_rev_id: HashMap<uuid::Uuid, uuid::Uuid> = HashMap::new();
+    let mut object_id_shared_rev_id: HashMap<diesel_ulid::DieselUlid, diesel_ulid::DieselUlid> =
+        HashMap::new();
 
     let object_revision_ids = object_revisions
         .iter()
@@ -3003,7 +3939,7 @@ pub fn delete_multiple_objects(
             };
             obj_rev.id
         })
-        .collect::<Vec<uuid::Uuid>>();
+        .collect::<Vec<diesel_ulid::DieselUlid>>();
 
     // This will query all references and Error if no reference exists
     let references = collection_objects
@@ -3160,7 +4096,10 @@ pub fn delete_multiple_objects(
     }
 
     // Extract object_ids from references, ordered by collection_id
-    let mut references_per_collection: HashMap<uuid::Uuid, Vec<uuid::Uuid>> = HashMap::new();
+    let mut references_per_collection: HashMap<
+        diesel_ulid::DieselUlid,
+        Vec<diesel_ulid::DieselUlid>,
+    > = HashMap::new();
 
     for ref_to_delete in references_to_delete.clone() {
         if let Some(references_per_coll) =
@@ -3208,14 +4147,14 @@ pub fn delete_multiple_objects(
         let mut key_values = Vec::new();
         for obj_to_trash in object_ids_to_trash {
             key_values.push(ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 object_id: obj_to_trash,
                 key: "app.aruna-storage.org/deleted_at".to_string(),
-                value: Local::now().naive_local().to_string(),
+                value: chrono::Utc::now().naive_utc().to_string(),
                 key_value_type: KeyValueType::LABEL,
             });
             key_values.push(ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 object_id: obj_to_trash,
                 key: "app.aruna-storage.org/deleted_by".to_string(),
                 value: creator_id.to_string(),
@@ -3229,21 +4168,21 @@ pub fn delete_multiple_objects(
         .values(&update_labels)
         .execute(conn)?;
 
-    let mut shared_revisions_per_collection: HashMap<uuid::Uuid, HashMap<uuid::Uuid, i32>> =
-        HashMap::new();
+    let mut shared_revisions_per_collection: HashMap<
+        diesel_ulid::DieselUlid,
+        HashMap<diesel_ulid::DieselUlid, i32>,
+    > = HashMap::new();
     let mut shared_revision_per_collection_to_delete: HashMap<
-        uuid::Uuid,
-        HashMap<uuid::Uuid, i32>,
+        diesel_ulid::DieselUlid,
+        HashMap<diesel_ulid::DieselUlid, i32>,
     > = HashMap::new();
 
     let mut relevant_collections = references
         .iter()
         .map(|c| c.collection_id)
-        .collect::<Vec<uuid::Uuid>>();
+        .collect::<Vec<diesel_ulid::DieselUlid>>();
     relevant_collections.sort();
     relevant_collections.dedup();
-
-    //dbg!(references.clone(), object_id_shared_rev_id.clone());
 
     for rel_col in relevant_collections {
         for reference in references.clone() {
@@ -3323,7 +4262,7 @@ pub fn delete_multiple_objects(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `ref_object_id`: `uuid::Uuid` - the Uuid for the object the latest revisions should be determined for
+/// * `ref_object_id`: `diesel_ulid::DieselUlid` - the Uuid for the object the latest revisions should be determined for
 ///
 /// ## Resturns:
 ///
@@ -3332,12 +4271,12 @@ pub fn delete_multiple_objects(
 ///
 pub fn get_all_revisions(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_id: &uuid::Uuid,
+    ref_object_id: &diesel_ulid::DieselUlid,
 ) -> Result<Vec<Object>, diesel::result::Error> {
     let shared_id = objects
         .filter(database::schema::objects::id.eq(ref_object_id))
         .select(database::schema::objects::shared_revision_id)
-        .first::<uuid::Uuid>(conn)?;
+        .first::<diesel_ulid::DieselUlid>(conn)?;
 
     let all_revision_objects = objects
         .filter(database::schema::objects::shared_revision_id.eq(shared_id))
@@ -3352,7 +4291,7 @@ pub fn get_all_revisions(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `ref_object_id`: `uuid::Uuid` - the Uuid for the object the latest revisions should be determined for
+/// * `ref_object_id`: `diesel_ulid::DieselUlid` - the Uuid for the object the latest revisions should be determined for
 /// * `with_revisions`: `bool` - If true all references for all revisions of the provided object will be returned
 ///
 /// ## Resturns:
@@ -3362,7 +4301,7 @@ pub fn get_all_revisions(
 ///
 pub fn get_all_references(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_id: &uuid::Uuid,
+    ref_object_id: &diesel_ulid::DieselUlid,
     with_revisions: &bool,
 ) -> Result<Vec<CollectionObject>, diesel::result::Error> {
     if !with_revisions {
@@ -3418,8 +4357,8 @@ pub fn get_all_references(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
-/// * `collection_uuid` `&uuid::Uuid` - The Uuid of the requesting collection
+/// * `object_uuid`: `&diesel_ulid::DieselUlid` - The Uuid of the requested object
+/// * `collection_uuid` `&diesel_ulid::DieselUlid` - The Uuid of the requesting collection
 /// * `include_staging`: bool - Should non finished objects be included
 ///
 /// ## Resturns:
@@ -3428,8 +4367,8 @@ pub fn get_all_references(
 /// Database representation of an object
 ///
 pub fn get_object(
-    object_uuid: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     include_staging: bool,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectDto>, diesel::result::Error> {
@@ -3440,16 +4379,9 @@ pub fn get_object(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: Option<ApiHash> = ApiHash::belonging_to(&object)
-        .first::<ApiHash>(conn)
-        .optional()?;
-
-    let object_hash = object_hash.unwrap_or_else(|| ApiHash {
-        id: uuid::Uuid::default(),
-        hash: "".to_string(),
-        object_id: uuid::Uuid::default(),
-        hash_type: HashType::MD5,
-    });
+    let object_hashes = hashes
+        .filter(database::schema::hashes::object_id.eq(object_uuid))
+        .load::<Db_Hash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -3490,7 +4422,7 @@ pub fn get_object(
                 object,
                 labels,
                 hooks,
-                hash: object_hash,
+                hashes: object_hashes,
                 source,
                 latest,
                 update: colobj.auto_update,
@@ -3511,7 +4443,7 @@ pub fn get_object(
 /// ## Arguments:
 ///
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
-/// * `object_uuid`: `&uuid::Uuid` - The Uuid of the requested object
+/// * `object_uuid`: `&diesel_ulid::DieselUlid` - The Uuid of the requested object
 ///
 /// ## Resturns:
 ///
@@ -3519,7 +4451,7 @@ pub fn get_object(
 /// Database representation of an object
 ///
 pub fn get_object_ignore_coll(
-    object_uuid: &uuid::Uuid,
+    object_uuid: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectDto>, diesel::result::Error> {
     let object: Object = objects
@@ -3529,7 +4461,7 @@ pub fn get_object_ignore_coll(
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
 
-    let object_hash: ApiHash = ApiHash::belonging_to(&object).first::<ApiHash>(conn)?;
+    let object_hash: Vec<ApiHash> = ApiHash::belonging_to(&object).load::<ApiHash>(conn)?;
 
     let source: Option<Source> = match &object.source_id {
         None => None,
@@ -3554,7 +4486,7 @@ pub fn get_object_ignore_coll(
         object,
         labels,
         hooks,
-        hash: object_hash,
+        hashes: object_hash,
         source,
         latest,
         update: false, // Always false might not include any collection_info
@@ -3562,9 +4494,9 @@ pub fn get_object_ignore_coll(
 }
 
 fn delete_object_and_bump_objectgroups(
-    deletable_objects_uuids: &Vec<uuid::Uuid>,
-    target_collection: &uuid::Uuid,
-    creator_id: &uuid::Uuid,
+    deletable_objects_uuids: &Vec<diesel_ulid::DieselUlid>,
+    target_collection: &diesel_ulid::DieselUlid,
+    creator_id: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), diesel::result::Error> {
     // Remove object_group_object reference and update object_group
@@ -3584,9 +4516,9 @@ fn delete_object_and_bump_objectgroups(
 }
 
 fn delete_objectgroup_references_and_increase_revisions(
-    deletable_objects_uuids: &Vec<uuid::Uuid>,
-    target_collection: &uuid::Uuid,
-    creator_id: &uuid::Uuid,
+    deletable_objects_uuids: &Vec<diesel_ulid::DieselUlid>,
+    target_collection: &diesel_ulid::DieselUlid,
+    creator_id: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), diesel::result::Error> {
     // Remove object_group_object reference and update object_group
@@ -3631,8 +4563,8 @@ fn delete_objectgroup_references_and_increase_revisions(
 }
 
 pub fn check_if_obj_in_coll(
-    object_ids: &Vec<uuid::Uuid>,
-    collection_uuid: &uuid::Uuid,
+    object_ids: &Vec<diesel_ulid::DieselUlid>,
+    collection_uuid: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> bool {
     let result = collection_objects
@@ -3646,7 +4578,7 @@ pub fn check_if_obj_in_coll(
 }
 
 pub fn construct_path_string(
-    collection_uuid: &uuid::Uuid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     fname: &str,
     subpath: &str,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
@@ -3676,7 +4608,7 @@ pub fn construct_path_string(
             return Err(ArunaError::InvalidRequest(
             "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
                 .to_string(),
-        ));
+            ));
         }
 
         let modified_path = if subpath.starts_with('/') {
@@ -3702,17 +4634,17 @@ pub fn construct_path_string(
 pub fn create_path_db(
     s3bucket: &str,
     s3path: &str,
-    shared_rev_id: &uuid::Uuid,
-    collection_uuid: &uuid::Uuid,
+    shared_rev_id: &diesel_ulid::DieselUlid,
+    collection_uuid: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
     let path_obj = Path {
-        id: uuid::Uuid::new_v4(),
+        id: diesel_ulid::DieselUlid::generate(),
         bucket: s3bucket.into(),
         path: s3path.into(),
         shared_revision_id: *shared_rev_id,
         collection_id: *collection_uuid,
-        created_at: Local::now().naive_local(),
+        created_at: chrono::Utc::now().naive_utc(),
         active: true,
     };
 
@@ -3730,16 +4662,286 @@ pub fn create_path_db(
 }
 
 pub fn get_paths_proto(
-    shared_rev_id: &uuid::Uuid,
+    shared_rev_id: &diesel_ulid::DieselUlid,
+    maybe_collection_uuid: Option<&diesel_ulid::DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ProtoPath>, ArunaError> {
-    let p = paths
-        .filter(database::schema::paths::shared_revision_id.eq(shared_rev_id))
-        .load::<Path>(conn)?;
-    Ok(p.iter()
+    use crate::database::schema::paths::dsl as paths_dsl;
+
+    // Construct query to fetch paths from
+    let mut path_query = paths
+        .filter(paths_dsl::shared_revision_id.eq(shared_rev_id))
+        .filter(paths_dsl::active.eq(&true))
+        .order_by(paths_dsl::created_at.desc())
+        .into_boxed();
+
+    if let Some(collection_uuid) = maybe_collection_uuid {
+        path_query = path_query.filter(paths_dsl::collection_id.eq(collection_uuid))
+    }
+
+    let active_paths = path_query.load::<Path>(conn)?;
+
+    Ok(active_paths
+        .iter()
         .map(|pth| ProtoPath {
             path: format!("s3://{}{}", pth.bucket, pth.path),
             visibility: pth.active,
         })
         .collect::<Vec<_>>())
+}
+
+pub fn get_object_hashes(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object_uuid: &diesel_ulid::DieselUlid,
+) -> Result<Vec<ProtoHash>, ArunaError> {
+    Ok(hashes
+        .filter(database::schema::hashes::object_id.eq(&object_uuid))
+        .load::<Db_Hash>(conn)?
+        .into_iter()
+        .map(|e| ProtoHash {
+            alg: db_to_grpc_hash_type(&e.hash_type),
+            hash: e.hash.to_string(),
+        })
+        .collect::<Vec<_>>())
+}
+
+fn set_object_available(
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+    object: &Object,
+    coll_uuid: &diesel_ulid::DieselUlid,
+    measured_length: Option<i64>,
+) -> Result<(), ArunaError> {
+    let content_length = match measured_length {
+        Some(l) => l,
+        None => object.content_len,
+    };
+
+    // Update object status to AVAILABLE
+    let updated_obj = update(objects)
+        .filter(database::schema::objects::id.eq(object.id))
+        .set((
+            database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE),
+            database::schema::objects::content_len.eq(content_length),
+        ))
+        .get_result::<Object>(conn)?;
+
+    // Delete endpoint label as multipart finish is already running/done at this point
+    delete(object_key_value)
+        .filter(database::schema::object_key_value::object_id.eq(object.id))
+        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/endpoint_id"))
+        .execute(conn)?;
+
+    // Get fq_path from label
+    let path_label = object_key_value
+        .filter(database::schema::object_key_value::object_id.eq(object.id))
+        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"))
+        .first::<ObjectKeyValue>(conn)
+        .optional()?;
+
+    if let Some(p_lbl) = path_label {
+        let bucket_label = object_key_value
+            .filter(database::schema::object_key_value::object_id.eq(object.id))
+            .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"))
+            .first::<ObjectKeyValue>(conn)?;
+        create_path_db(
+            &bucket_label.value,
+            &p_lbl.value,
+            &updated_obj.shared_revision_id,
+            coll_uuid,
+            conn,
+        )?;
+        // Delete the path label afterwards
+        delete(object_key_value)
+            .filter(database::schema::object_key_value::id.eq(p_lbl.id))
+            .execute(conn)?;
+        // Delete the bucket label afterwards
+        delete(object_key_value)
+            .filter(database::schema::object_key_value::id.eq(bucket_label.id))
+            .execute(conn)?;
+    };
+
+    let orig_id = updated_obj.origin_id;
+    // origin_id != object_id => Update
+    if orig_id != object.id {
+        // Get all revisions of the object it could be that an older version still has "auto_update" set
+        let all_revisions = get_all_revisions(conn, &object.id)?;
+
+        // Filter out the UUIDs
+        let all_rev_ids = all_revisions.iter().map(|full| full.id).collect::<Vec<_>>();
+
+        // Get all CollectionObjects that contain any of the all_rev_ids and are auto_update == true
+        // Set all auto_updates and is_latest to be false
+        let auto_updating_coll_obj: Vec<CollectionObject> = collection_objects
+            .filter(database::schema::collection_objects::object_id.eq_any(&all_rev_ids))
+            .filter(database::schema::collection_objects::auto_update.eq(true))
+            .load::<CollectionObject>(conn)
+            .optional()?
+            .unwrap_or_default();
+
+        // Filter collection_object references to object's collection
+        let auto_update_collection_references = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.collection_id == *coll_uuid)
+            .collect::<Vec<_>>();
+
+        let (auto_update_collection_reference, auto_update_collection_reference_id): (
+            Option<CollectionObject>,
+            diesel_ulid::DieselUlid,
+        ) = match auto_update_collection_references.len() {
+            0 => (None, diesel_ulid::DieselUlid::default()),
+            1 => (
+                Some(auto_update_collection_references[0].clone()),
+                auto_update_collection_references[0].clone().id,
+            ),
+            _ => {
+                return Err(ArunaError::InvalidRequest(
+                    "More than one revision with auto_update == true".to_string(),
+                ));
+            }
+        };
+
+        // object ids inside references
+        let auto_updating_obj_id = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.id != auto_update_collection_reference_id)
+            .map(|elem| elem.object_id)
+            .collect::<Vec<_>>();
+
+        // collection_object ids
+        let auto_updating_coll_obj_id = auto_updating_coll_obj
+            .iter()
+            .filter(|elem| elem.id != auto_update_collection_reference_id)
+            .map(|elem| elem.id)
+            .collect::<Vec<_>>();
+
+        // Only proceed if the list () is not empty, if it is empty no updates need to be performed
+        // Update ObjectGroups and Objects reference in other collections
+        if !auto_updating_coll_obj_id.is_empty() {
+            // Query the affected object_groups
+            let affected_object_groups: Option<Vec<diesel_ulid::DieselUlid>> = object_group_objects
+                .filter(
+                    database::schema::object_group_objects::object_id.eq_any(&auto_updating_obj_id),
+                )
+                .select(database::schema::object_group_objects::object_group_id)
+                .load::<diesel_ulid::DieselUlid>(conn)
+                .optional()?;
+
+            match affected_object_groups {
+                None => {}
+                Some(obj_grp_ids) => {
+                    // Bump all revisions for object_groups
+                    let new_ogroups =
+                        bump_revisisions(&obj_grp_ids, &updated_obj.created_by, conn)?;
+                    let new_group_ids =
+                        new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                    // Update object_group references
+                    update(object_group_objects)
+                        .filter(
+                            database::schema::object_group_objects::object_group_id
+                                .eq_any(&new_group_ids),
+                        )
+                        .filter(database::schema::object_group_objects::object_id.eq(orig_id))
+                        .set(database::schema::object_group_objects::object_id.eq(&object.id))
+                        .execute(conn)?;
+                }
+            }
+
+            // Update Collection_Objects to use the new object_id
+            update(collection_objects.filter(
+                database::schema::collection_objects::id.eq_any(&auto_updating_coll_obj_id),
+            ))
+            .set((database::schema::collection_objects::object_id.eq(&object.id),))
+            .execute(conn)?;
+        }
+
+        // Query the affected object_groups
+        let affected_object_groups: Option<Vec<diesel_ulid::DieselUlid>> = object_group_objects
+            .filter(database::schema::object_group_objects::object_id.eq(&updated_obj.origin_id))
+            .select(database::schema::object_group_objects::object_group_id)
+            .load::<diesel_ulid::DieselUlid>(conn)
+            .optional()?;
+
+        match affected_object_groups {
+            None => {}
+            Some(obj_grp_ids) => {
+                // Bump all revisions for object_groups
+                let new_ogroups = bump_revisisions(&obj_grp_ids, &updated_obj.created_by, conn)?;
+                let new_group_ids = new_ogroups.iter().map(|group| group.id).collect::<Vec<_>>();
+
+                // Update object_group references
+                update(object_group_objects)
+                    .filter(
+                        database::schema::object_group_objects::object_group_id
+                            .eq_any(&new_group_ids),
+                    )
+                    .filter(database::schema::object_group_objects::object_id.eq(orig_id))
+                    .set(database::schema::object_group_objects::object_id.eq(&object.id))
+                    .execute(conn)?;
+            }
+        }
+
+        // Update inside collection of update object
+        match auto_update_collection_reference {
+            None => {
+                // Update latest staging object reference
+                update(collection_objects)
+                    .filter(database::schema::collection_objects::object_id.eq(&object.id))
+                    .filter(database::schema::collection_objects::collection_id.eq(&coll_uuid))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .set((
+                        database::schema::collection_objects::object_id.eq(&object.id),
+                        database::schema::collection_objects::is_latest.eq(true),
+                        database::schema::collection_objects::reference_status
+                            .eq(ReferenceStatus::OK),
+                        database::schema::collection_objects::auto_update.eq(true),
+                    ))
+                    .execute(conn)?;
+            }
+            Some(reference) => {
+                // Object is still latest revision on finish --> Normal case
+                // Delete staging reference
+                delete(collection_objects)
+                    .filter(database::schema::collection_objects::object_id.eq(object.id))
+                    .filter(database::schema::collection_objects::collection_id.eq(coll_uuid))
+                    .filter(
+                        database::schema::collection_objects::reference_status
+                            .eq(&ReferenceStatus::STAGING),
+                    )
+                    .execute(conn)?;
+
+                // Update latest staging object reference
+                update(collection_objects)
+                    .filter(database::schema::collection_objects::id.eq(&reference.id))
+                    .filter(database::schema::collection_objects::collection_id.eq(coll_uuid))
+                    .set((
+                        database::schema::collection_objects::object_id.eq(object.id),
+                        database::schema::collection_objects::is_latest.eq(true),
+                        database::schema::collection_objects::reference_status
+                            .eq(ReferenceStatus::OK),
+                        database::schema::collection_objects::auto_update.eq(true),
+                    ))
+                    .execute(conn)?;
+            }
+        }
+    // origin_id == object_id => Initialize
+    } else {
+        // Update the collection objects
+        // - Status
+        // - is_latest
+        // - auto_update
+        diesel::update(collection_objects)
+            .filter(database::schema::collection_objects::object_id.eq(object.id))
+            .set((
+                database::schema::collection_objects::is_latest.eq(true),
+                database::schema::collection_objects::reference_status.eq(ReferenceStatus::OK),
+                database::schema::collection_objects::auto_update.eq(true),
+            ))
+            .execute(conn)?;
+    }
+
+    Ok(())
 }

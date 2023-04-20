@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::database::connection::Database;
@@ -8,6 +9,7 @@ use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
 use tokio::task;
+use tonic::Request;
 use tonic::Response;
 
 use super::authz::Authz;
@@ -43,8 +45,8 @@ impl CollectionService for CollectionServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Parse the uuid
-        let project_id =
-            uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(ArunaError::from)?;
+        let project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
 
         // Authorize the request
         let creator_id = self
@@ -97,7 +99,7 @@ impl CollectionService for CollectionServiceImpl {
         self.authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::READ,
             )
@@ -156,7 +158,7 @@ impl CollectionService for CollectionServiceImpl {
         self.authz
             .project_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().project_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::READ,
             )
@@ -202,8 +204,8 @@ impl CollectionService for CollectionServiceImpl {
     ///
     async fn update_collection(
         &self,
-        request: tonic::Request<UpdateCollectionRequest>,
-    ) -> Result<tonic::Response<UpdateCollectionResponse>, tonic::Status> {
+        request: Request<UpdateCollectionRequest>,
+    ) -> Result<Response<UpdateCollectionResponse>, tonic::Status> {
         log::info!("Received UpdateCollectionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
@@ -212,7 +214,7 @@ impl CollectionService for CollectionServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::WRITE,
             )
@@ -264,7 +266,7 @@ impl CollectionService for CollectionServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::WRITE,
             )
@@ -320,7 +322,7 @@ impl CollectionService for CollectionServiceImpl {
             self.authz
                 .project_authorize_by_collectionid(
                     request.metadata(),
-                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                         .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                     UserRights::ADMIN,
                 )
@@ -329,7 +331,7 @@ impl CollectionService for CollectionServiceImpl {
             self.authz
                 .collection_authorize(
                     request.metadata(),
-                    uuid::Uuid::parse_str(&request.get_ref().collection_id)
+                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                         .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                     UserRights::WRITE,
                 )
