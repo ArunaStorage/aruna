@@ -1,22 +1,25 @@
-use std::sync::Arc;
-
-use data_server::server::DataServer;
+use std::{str::FromStr, sync::Arc};
 
 use backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures::try_join;
-use presign_handler::signer::PresignHandler;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
 
+use crate::data_server::{
+    data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
+};
+
 mod backends;
-mod data_middleware;
 mod data_server;
-mod presign_handler;
+mod helpers;
 mod service_server;
 
 #[tokio::main]
 async fn main() {
     dotenv::from_filename(".env").ok();
+
+    let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
+    let endpoint_id = dotenv::var("ENDPOINT_ID").unwrap();
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -40,35 +43,46 @@ async fn main() {
             return;
         }
     };
-    let s3_client_arc: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
+    let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
-    let signer = match PresignHandler::new() {
-        Ok(value) => value,
-        Err(err) => {
-            log::error!("{}", err);
-            return;
-        }
-    };
-    let signer_arc = Arc::new(signer);
+    let data_socket = format!("{hostname}:1337");
+    let aruna_server = "http://0.0.0.0:50052".to_string();
 
-    let data_socket = "0.0.0.0:8080".parse().unwrap();
-
-    let data_server = DataServer::new(s3_client_arc.clone(), signer_arc.clone(), data_socket)
+    let data_handler = Arc::new(
+        DataHandler::new(
+            storage_backend.clone(),
+            aruna_server.to_string(),
+            ServiceSettings {
+                endpoint_id: rusty_ulid::Ulid::from_str(&endpoint_id).unwrap(),
+                ..Default::default()
+            },
+        )
         .await
-        .unwrap();
+        .unwrap(),
+    );
 
-    let internal_proxy_server = InternalServerImpl::new(s3_client_arc.clone(), signer_arc)
-        .await
-        .unwrap();
-    let internal_proxy_socket = "0.0.0.0:8081".parse().unwrap();
+    let data_server = S3Server::new(
+        &data_socket,
+        aruna_server,
+        storage_backend.clone(),
+        data_handler.clone(),
+    )
+    .await
+    .unwrap();
+
+    let internal_proxy_server =
+        InternalServerImpl::new(storage_backend.clone(), data_handler.clone())
+            .await
+            .unwrap();
+    let internal_proxy_socket = "0.0.0.0:8081".to_string().parse().unwrap();
 
     let internal_proxy_server =
         ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
             .await
             .unwrap();
 
-    log::info!("Server started!");
-    let _end = match try_join!(data_server.serve(), internal_proxy_server.serve()) {
+    log::info!("Starting proxy and dataserver");
+    let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
         Ok(value) => value,
         Err(err) => {
             log::error!("{}", err);
