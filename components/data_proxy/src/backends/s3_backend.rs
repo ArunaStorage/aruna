@@ -4,9 +4,9 @@ use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
-    model::{CompletedMultipartUpload, CompletedPart},
-    types::ByteStream,
-    Client, Region,
+    types::{CompletedMultipartUpload, CompletedPart},
+    primitives::ByteStream,
+    Client, config::Region,
 };
 use std::env;
 use tokio_stream::StreamExt;
