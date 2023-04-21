@@ -10,17 +10,21 @@
 //! - Get all projects a user is member of
 //!
 use super::authz::Authz;
+use std::str::FromStr;
+
 use crate::database::connection::Database;
-use crate::database::crud::utils::map_permissions;
+use crate::database::crud::utils::{map_permissions, EMAIL_SCHEMA};
 use crate::error::ArunaError;
+use crate::server::mail_client::MailClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::*;
 use std::sync::Arc;
-use tonic::Response;
+use tokio::task;
+use tonic::{Request, Response};
 
 // This automatically creates the UserServiceImpl struct and ::new methods
-crate::impl_grpc_server!(UserServiceImpl);
+crate::impl_grpc_server!(UserServiceImpl, mail_client: Option<MailClient>);
 
 /// Trait created by tonic based on gRPC service definitions from .proto files
 /// .proto files defined in ArunaAPI repo
@@ -44,6 +48,13 @@ impl UserService for UserServiceImpl {
         log::info!("Received RegisterUserRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        // Validate email address format on registration
+        if !request.get_ref().email.is_empty()
+            && !EMAIL_SCHEMA.is_match(&request.get_ref().email.to_lowercase())
+        {
+            return Err(tonic::Status::invalid_argument("Invalid email format"));
+        }
+
         if Authz::is_oidc_from_metadata(request.metadata()).await? {
             // Get subject from OIDC context in metadata
             let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
@@ -62,6 +73,52 @@ impl UserService for UserServiceImpl {
                 "ArunaToken not allowed, use OIDC Token.",
             ))
         }
+    }
+
+    /// Deactivate user deactivates an activated user.
+    ///
+    ///  ## Arguments
+    ///
+    /// * request: DeactivateUserRequest: gRPC request, that contains the user_id
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<DeactivateUserResponse>, tonic::Status>: Empty response indicates success
+    ///
+    async fn deactivate_user(
+        &self,
+        request: tonic::Request<DeactivateUserRequest>,
+    ) -> Result<tonic::Response<DeactivateUserResponse>, tonic::Status> {
+        log::info!("Received DeactivateUserRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Check permissions
+        let token_user_uuid = self.authz.admin_authorize(request.metadata()).await?;
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Evaluate user id from request
+        let user_uuid = if inner_request.user_id.is_empty() {
+            token_user_uuid
+        } else {
+            diesel_ulid::DieselUlid::from_str(&inner_request.user_id).map_err(|_| {
+                ArunaError::InvalidRequest("Can not parse provided user id".to_string())
+            })?
+        };
+
+        // Deactivate user with user_uuid
+        let database_clone = self.database.clone();
+        task::spawn_blocking(move || database_clone.deactivate_user(&user_uuid))
+            .await
+            .map_err(ArunaError::from)??;
+
+        // Return gRPC response
+        let response = tonic::Response::new(DeactivateUserResponse {});
+
+        log::info!("Sending DeactivateUserResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 
     /// Activate user activates a not activated but registered user
@@ -128,7 +185,7 @@ impl UserService for UserServiceImpl {
             }
 
             // Create the API token in the database
-            let token_descr = self.database.create_api_token(
+            let (token_descr, access_key, secret_key) = self.database.create_api_token(
                 request.into_inner(),
                 user_id,
                 self.authz.get_decoding_serial().await,
@@ -147,6 +204,8 @@ impl UserService for UserServiceImpl {
             let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
+                s3_access_key: access_key,
+                s3_secret_key: secret_key,
             });
 
             log::info!("Sending CreateApiTokenResponse back to client.");
@@ -158,8 +217,8 @@ impl UserService for UserServiceImpl {
             let user_id = self.authz.personal_authorize(request.metadata()).await?;
 
             if !request.get_ref().collection_id.is_empty() {
-                let col_id =
-                    uuid::Uuid::parse_str(&request.get_ref().collection_id).map_err(|_| {
+                let col_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                    .map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse collection_id".to_string())
                     })?;
                 self.authz
@@ -174,8 +233,8 @@ impl UserService for UserServiceImpl {
             }
 
             if !request.get_ref().project_id.is_empty() {
-                let proj_id =
-                    uuid::Uuid::parse_str(&request.get_ref().project_id).map_err(|_| {
+                let proj_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+                    .map_err(|_| {
                         ArunaError::InvalidRequest("Can not parse project_id".to_string())
                     })?;
                 self.authz
@@ -190,7 +249,7 @@ impl UserService for UserServiceImpl {
             }
 
             // Create token in database and return the description
-            let token_descr = self.database.create_api_token(
+            let (token_descr, access_key, secret_key) = self.database.create_api_token(
                 request.into_inner(),
                 user_id,
                 self.authz.get_decoding_serial().await,
@@ -208,6 +267,8 @@ impl UserService for UserServiceImpl {
             let response = Response::new(CreateApiTokenResponse {
                 token: Some(token_descr),
                 token_secret,
+                s3_access_key: access_key,
+                s3_secret_key: secret_key,
             });
 
             log::info!("Sending CreateApiTokenResponse back to client.");
@@ -351,8 +412,8 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the request body and get the user_id
-            let parsed_body_uid =
-                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid = diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id)
+                .map_err(ArunaError::from)?;
 
             // Delete all tokens for this user and return response (empty)
             let response = Response::new(
@@ -388,7 +449,7 @@ impl UserService for UserServiceImpl {
             self.authz.personal_authorize(request.metadata()).await?
         } else {
             // Admin authorize if not personal user_id
-            let parsed_id = uuid::Uuid::parse_str(&request.get_ref().user_id)
+            let parsed_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id)
                 .map_err(|_| ArunaError::InvalidRequest("Unable to parse user_uuid".to_string()))?;
             self.authz.admin_authorize(request.metadata()).await?;
             parsed_id
@@ -435,6 +496,46 @@ impl UserService for UserServiceImpl {
         Ok(response)
     }
 
+    /// UpdateUserEmail request changes the email of the current user to a new value
+    /// The email is optional and can be empty if the user does not want to receive notifications via email.
+    ///
+    ///
+    /// ## Arguments
+    ///
+    /// * request: UpdateUserEmailRequest: Contains the new email address
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<UpdateUserEmailResponse>, tonic::Status>: UserInformation like, id, displayname, active status etc.
+    ///
+    async fn update_user_email(
+        &self,
+        request: Request<UpdateUserEmailRequest>,
+    ) -> Result<Response<UpdateUserEmailResponse>, tonic::Status> {
+        log::info!("Received UpdateUserEmailRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Validate email address format on update
+        if !request.get_ref().new_email.is_empty()
+            && !EMAIL_SCHEMA.is_match(&request.get_ref().new_email.to_lowercase())
+        {
+            return Err(tonic::Status::invalid_argument("Invalid email format"));
+        }
+
+        // Authenticate the user personally
+        let user_id = self.authz.personal_authorize(request.metadata()).await?;
+
+        // Update the display_name and return the new user_info
+        let response = Response::new(
+            self.database
+                .update_user_email(request.into_inner(), user_id)?,
+        );
+
+        log::info!("Sending UpdateUserEmailResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
+    }
+
     /// Requests a list of all projects a user is member of
     /// This request can either be executed personally or via an admin for another user
     ///
@@ -473,8 +574,8 @@ impl UserService for UserServiceImpl {
             self.authz.admin_authorize(request.metadata()).await?;
 
             // Parse the user_id from the request body
-            let parsed_body_uid =
-                uuid::Uuid::parse_str(&request.get_ref().user_id).map_err(ArunaError::from)?;
+            let parsed_body_uid = diesel_ulid::DieselUlid::from_str(&request.get_ref().user_id)
+                .map_err(ArunaError::from)?;
 
             // Get all projects for a user and return the list as gRPC response
             let response = Response::new(
@@ -517,5 +618,45 @@ impl UserService for UserServiceImpl {
         log::info!("Sending GetUsersUnregisteredResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
+    }
+
+    /// Fetches all users with permission informations.
+    ///
+    /// ## Arguments
+    ///
+    /// * request: GetAllUsersRequest: Contains flag if user permissions shall be included in response
+    ///
+    /// ## Returns
+    ///
+    /// * Result<tonic::Response<GetAllUsersResponse>, tonic::Status>:
+    /// UserInformation like, id, displayname, active status and user_permissions for each project etc. of all registered users
+    ///
+    async fn get_all_users(
+        &self,
+        request: tonic::Request<GetAllUsersRequest>,
+    ) -> Result<tonic::Response<GetAllUsersResponse>, tonic::Status> {
+        log::info!("Received GetAllUsersRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Check permissions
+        self.authz.admin_authorize(request.metadata()).await?;
+
+        // Consume gRPC request
+        let inner_request = request.into_inner();
+
+        // Deactivate user with user_uuid
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.get_all_users(inner_request.include_permissions)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Return gRPC response
+        let grpc_response = tonic::Response::new(response);
+
+        log::info!("Sending GetAllUsersResponse back to client.");
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        return Ok(grpc_response);
     }
 }

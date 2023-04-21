@@ -1,15 +1,29 @@
 use std::collections::HashMap;
 
 use chrono::{Datelike, Timelike};
-use uuid::Uuid;
+use std::str::FromStr;
 
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, KeyValue, LabelOrIdQuery, PageRequest, Status,
+    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, Status, Version,
 };
 
-use crate::database::models::enums::{Dataclass, KeyValueType, ObjectStatus, UserRights};
+use crate::database::models::enums::{Dataclass, HashType, KeyValueType, ObjectStatus, UserRights};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
-use crate::error::ArunaError;
+use crate::error::TypeConversionError::PROTOCONVERSION;
+use crate::error::{ArunaError, TypeConversionError};
+
+use regex::Regex;
+lazy_static! {
+    /// This unwrap should be okay if this Regex is covered and used in tests
+    /// Only two cases result in failure for Regex::new
+    /// 1. Invalid regex syntax
+    /// 2. Too large Regex
+    /// Both cases should be checked in tests and should result in safe behaviour because
+    /// the string is static.
+    pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$").unwrap();
+    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[a-z0-9\-]+)+/?$").unwrap();
+    pub static ref EMAIL_SCHEMA: Regex = Regex::new(r"^([a-z0-9_+]([a-z0-9_+.]*[a-z0-9_+])?)@([a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6})").unwrap();
+}
 
 /// Converts a chrono::NaiveDateTime to a prost_types::Timestamp
 /// This converts types with the `as` keyword. It should be safe
@@ -68,7 +82,11 @@ where
 ///
 /// * `Vec<T>` - A vector containing all key-value pairs in their database representation
 ///
-pub fn to_key_values<T>(labels: Vec<KeyValue>, hooks: Vec<KeyValue>, belongs_to: Uuid) -> Vec<T>
+pub fn to_key_values<T>(
+    labels: Vec<KeyValue>,
+    hooks: Vec<KeyValue>,
+    belongs_to: diesel_ulid::DieselUlid,
+) -> Vec<T>
 where
     T: ToDbKeyValue,
 {
@@ -134,6 +152,27 @@ where
     )
 }
 
+/// This is a generic validation function for all kinds of key_values
+///
+/// ## Arguments
+///
+/// * `key_values` - A vector containing DbKeyValues
+///
+/// ## Returns
+///
+/// * `bool` - true if validated, false if not
+/// * `Vec<KeyValue>` - A vector containing the hook key-value pairs
+///
+pub fn validate_key_values<T>(key_values: Vec<T>) -> bool
+where
+    T: IsKeyValue,
+{
+    // For now we only check if all keys do not contain the aruna substring -> this is a reserved name
+    key_values
+        .into_iter()
+        .all(|e| !e.get_key().to_lowercase().contains("aruna"))
+}
+
 /// This helper function maps gRPC permissions to
 /// associated DB user_rights, it is mainly used in the creation of new api_tokens
 ///
@@ -150,7 +189,7 @@ pub fn map_permissions(
 ) -> Option<UserRights> {
     match perm {
         aruna_rust_api::api::storage::models::v1::Permission::Unspecified => None,
-        aruna_rust_api::api::storage::models::v1::Permission::None => None,
+        aruna_rust_api::api::storage::models::v1::Permission::None => Some(UserRights::NONE),
         aruna_rust_api::api::storage::models::v1::Permission::Read => Some(UserRights::READ),
         aruna_rust_api::api::storage::models::v1::Permission::Append => Some(UserRights::APPEND),
         aruna_rust_api::api::storage::models::v1::Permission::Modify => Some(UserRights::WRITE),
@@ -189,6 +228,7 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
     //
     match right {
         Some(t) => match t {
+            UserRights::NONE => 1,
             UserRights::READ => 2,
             UserRights::APPEND => 3,
             UserRights::MODIFY => 4,
@@ -218,12 +258,12 @@ pub fn map_permissions_rev(right: Option<UserRights>) -> i32 {
 ///
 /// ## Returns
 ///
-/// * Result<(Option<i64>, Option<uuid::Uuid>)>: Pagesize, last_uuid, can error when the uuid_parsing fails.
+/// * Result<(Option<i64>, Option<diesel_ulid::DieselUlid>)>: Pagesize, last_uuid, can error when the uuid_parsing fails.
 ///
 pub fn parse_page_request(
     p_request: Option<PageRequest>,
     default_pagesize: i64,
-) -> Result<(Option<i64>, Option<uuid::Uuid>), ArunaError> {
+) -> Result<(Option<i64>, Option<diesel_ulid::DieselUlid>), ArunaError> {
     match p_request {
         // If the p_request is some
         Some(p_req) => {
@@ -240,7 +280,7 @@ pub fn parse_page_request(
                 }
                 // When the last_uuid is not empty
             } else {
-                let parsed_uuid = uuid::Uuid::parse_str(&p_req.last_uuid)?;
+                let parsed_uuid = diesel_ulid::DieselUlid::from_str(&p_req.last_uuid)?;
                 // when the pagesize is 0 == unspecified or < -1 --> use default
                 if p_req.page_size == 0 || p_req.page_size < -1 {
                     Ok((Some(default_pagesize), Some(parsed_uuid)))
@@ -266,7 +306,7 @@ pub enum ParsedQuery {
     // default is or
     LabelQuery((Vec<(String, Option<String>)>, bool)),
     // List of uuids to query, this should be always "or"
-    IdsQuery(Vec<uuid::Uuid>),
+    IdsQuery(Vec<diesel_ulid::DieselUlid>),
 }
 /// Function that parses the query to ParsedQuery enum.
 ///
@@ -323,7 +363,7 @@ pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQu
                 }
                 let mut parsed_uids = Vec::new();
                 for q_id in g_query.ids {
-                    parsed_uids.push(uuid::Uuid::parse_str(&q_id)?);
+                    parsed_uids.push(diesel_ulid::DieselUlid::from_str(&q_id)?);
                 }
                 Ok(Some(ParsedQuery::IdsQuery(parsed_uids)))
             }
@@ -349,12 +389,12 @@ pub fn parse_query(grpc_query: Option<LabelOrIdQuery>) -> Result<Option<ParsedQu
 ///
 /// ## Returns
 ///
-/// * Option<Vec<uuid::Uuid>: Vec with all uuids that match.
+/// * Option<Vec<diesel_ulid::DieselUlid>: Vec with all uuids that match.
 ///
 pub fn check_all_for_db_kv<T>(
     database_key_value: Option<Vec<T>>,
     targets: Vec<(String, Option<String>)>,
-) -> Option<Vec<uuid::Uuid>>
+) -> Option<Vec<diesel_ulid::DieselUlid>>
 where
     T: IsKeyValue,
 {
@@ -391,6 +431,66 @@ where
     } else {
         None
     }
+}
+
+/// Split the bucket part of an object path into its components.
+///
+/// ## Arguments
+///
+/// * `bucket_path`: `String` - Bucket part of an object path
+///
+/// ## Returns
+///
+/// * `Result<(String, String, Option<Version>)`: Tuple with project name, collection name and version if present; None if latest.
+///
+pub fn parse_bucket_path(
+    bucket_path: String,
+) -> Result<(String, String, Option<Version>), ArunaError> {
+    // Split path in parts. Should be consistent as only [a-z0-9\-] are allowed.
+    let mut bucket_parts: Vec<String> = bucket_path
+        .split('.')
+        .map(|part| part.to_string())
+        .collect();
+
+    // Extract project name from bucket path parts
+    let project_name = bucket_parts
+        .pop()
+        .ok_or(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )))?;
+
+    // Extract collection name from bucket path parts
+    let collection_name = bucket_parts
+        .pop()
+        .ok_or(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )))?;
+
+    // Extract version from bucket path parts
+    let collection_version = if bucket_parts.len() == 1 {
+        // Only (hopefully) "latest" left in parts
+        None
+    } else if bucket_parts.len() == 3 {
+        // major.minor.patch left in parts
+        Some(Version {
+            major: bucket_parts[0]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+            minor: bucket_parts[1]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+            patch: bucket_parts[2]
+                .parse::<i32>()
+                .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::STRINGTOINT))?,
+        })
+    } else {
+        // If something else is left throw error
+        return Err(ArunaError::InvalidRequest(format!(
+            "Format of path {bucket_path} is not valid."
+        )));
+    };
+
+    Ok((project_name, collection_name, collection_version))
 }
 
 pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
@@ -433,6 +533,28 @@ pub fn db_to_grpc_object_status(db_status: ObjectStatus) -> Status {
         ObjectStatus::ERROR => Status::Error,
         ObjectStatus::DELETED => Status::Unavailable,
         ObjectStatus::TRASH => Status::Trash,
+        ObjectStatus::FINALIZING => Status::Finalizing,
+    }
+}
+
+pub fn grpc_to_db_hash_type(grpc_hash_type: &i32) -> Result<HashType, ArunaError> {
+    match grpc_hash_type {
+        0 => Ok(HashType::MD5),
+        1 => Ok(HashType::MD5),
+        2 => Ok(HashType::SHA1),
+        3 => Ok(HashType::SHA256),
+        4 => Ok(HashType::SHA512),
+        5 => Ok(HashType::MURMUR3A32),
+        6 => Ok(HashType::XXHASH32),
+        _ => Err(ArunaError::TypeConversionError(PROTOCONVERSION)), // Unspecified is not good...
+    }
+}
+
+pub fn db_to_grpc_hash_type(db_hash_type: &HashType) -> i32 {
+    match db_hash_type {
+        HashType::MD5 => Hashalgorithm::Md5 as i32,
+        HashType::SHA256 => Hashalgorithm::Sha256 as i32,
+        _ => Hashalgorithm::Unspecified as i32,
     }
 }
 
@@ -447,8 +569,41 @@ mod tests {
     use std::any::type_name;
 
     #[test]
+    fn test_parse_bucket_path() {
+        let valid_path = "latest.collection-name.project-name".to_string();
+        assert_eq!(
+            parse_bucket_path(valid_path).unwrap(),
+            (
+                "project-name".to_string(),
+                "collection-name".to_string(),
+                None
+            )
+        );
+
+        let valid_path = "1.0.0.collection-name.project-name".to_string();
+        assert_eq!(
+            parse_bucket_path(valid_path).unwrap(),
+            (
+                "project-name".to_string(),
+                "collection-name".to_string(),
+                Some(Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                })
+            )
+        );
+
+        let invalid_path = "1.2.3.collection-name".to_string();
+        assert!(parse_bucket_path(invalid_path).is_err());
+
+        let invalid_path = "1.2.3.4.coll-name.proj-name".to_string();
+        assert!(parse_bucket_path(invalid_path).is_err());
+    }
+
+    #[test]
     fn test_option_to_string() {
-        let test_id = uuid::Uuid::new_v4();
+        let test_id = diesel_ulid::DieselUlid::generate();
 
         let as_option = Some(test_id);
 
@@ -462,6 +617,7 @@ mod tests {
     fn test_map_permissions_rev() {
         let tests = vec![
             (None, 0),
+            (Some(UserRights::NONE), 1),
             (Some(UserRights::READ), 2),
             (Some(UserRights::APPEND), 3),
             (Some(UserRights::MODIFY), 4),
@@ -478,22 +634,22 @@ mod tests {
     fn test_map_permissions() {
         for (index, perm) in vec![
             Permission::Unspecified,
+            Permission::None,
             Permission::Read,
             Permission::Append,
             Permission::Modify,
             Permission::Admin,
-            Permission::None,
         ]
         .iter()
         .enumerate()
         {
             match index {
                 0 => assert_eq!(map_permissions(*perm), None),
-                1 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
-                2 => assert_eq!(map_permissions(*perm), Some(UserRights::APPEND)),
-                3 => assert_eq!(map_permissions(*perm), Some(UserRights::WRITE)),
-                4 => assert_eq!(map_permissions(*perm), Some(UserRights::ADMIN)),
-                5 => assert_eq!(map_permissions(*perm), None),
+                1 => assert_eq!(map_permissions(*perm), Some(UserRights::NONE)),
+                2 => assert_eq!(map_permissions(*perm), Some(UserRights::READ)),
+                3 => assert_eq!(map_permissions(*perm), Some(UserRights::APPEND)),
+                4 => assert_eq!(map_permissions(*perm), Some(UserRights::WRITE)),
+                5 => assert_eq!(map_permissions(*perm), Some(UserRights::ADMIN)),
                 _ => panic!("map permissions test index out of bound"),
             }
         }
@@ -523,7 +679,8 @@ mod tests {
             },
         ];
 
-        let db_pairs = to_key_values::<CollectionKeyValue>(labels, hooks, uuid::Uuid::default());
+        let db_pairs =
+            to_key_values::<CollectionKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
 
         assert_eq!(4, db_pairs.len());
         assert_eq!("Key_01", db_pairs.get(0).unwrap().key);
@@ -540,29 +697,29 @@ mod tests {
     fn test_convert_from_collection_key_value() {
         let labels: Vec<CollectionKeyValue> = vec![
             CollectionKeyValue {
-                id: uuid::Uuid::new_v4(),
-                collection_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                collection_id: diesel_ulid::DieselUlid::generate(),
                 key: "label".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::LABEL,
             },
             CollectionKeyValue {
-                id: uuid::Uuid::new_v4(),
-                collection_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                collection_id: diesel_ulid::DieselUlid::generate(),
                 key: "label".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::LABEL,
             },
             CollectionKeyValue {
-                id: uuid::Uuid::new_v4(),
-                collection_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                collection_id: diesel_ulid::DieselUlid::generate(),
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
             },
             CollectionKeyValue {
-                id: uuid::Uuid::new_v4(),
-                collection_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                collection_id: diesel_ulid::DieselUlid::generate(),
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
@@ -606,7 +763,8 @@ mod tests {
             },
         ];
 
-        let db_pairs = to_key_values::<ObjectKeyValue>(labels, hooks, uuid::Uuid::default());
+        let db_pairs =
+            to_key_values::<ObjectKeyValue>(labels, hooks, diesel_ulid::DieselUlid::default());
 
         assert_eq!(4, db_pairs.len());
 
@@ -634,29 +792,29 @@ mod tests {
     fn test_convert_from_object_key_value() {
         let object_key_values: Vec<ObjectKeyValue> = vec![
             ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
-                object_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                object_id: diesel_ulid::DieselUlid::generate(),
                 key: "label".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::LABEL,
             },
             ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
-                object_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                object_id: diesel_ulid::DieselUlid::generate(),
                 key: "label".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::LABEL,
             },
             ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
-                object_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                object_id: diesel_ulid::DieselUlid::generate(),
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
             },
             ObjectKeyValue {
-                id: uuid::Uuid::new_v4(),
-                object_id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
+                object_id: diesel_ulid::DieselUlid::generate(),
                 key: "hook".to_string(),
                 value: "bar1".to_string(),
                 key_value_type: KeyValueType::HOOK,
@@ -707,7 +865,7 @@ mod tests {
         assert_eq!(result.0.unwrap(), 99); // Pagesize should be 99
 
         // Non zero pagesize and uuid
-        let test_uuid = uuid::Uuid::new_v4();
+        let test_uuid = diesel_ulid::DieselUlid::generate();
         let non_zero_psize = Some(PageRequest {
             last_uuid: test_uuid.to_string(),
             page_size: 99,
@@ -825,13 +983,13 @@ mod tests {
         // Id section
 
         let test_ids = vec![
-            uuid::Uuid::new_v4(),
-            uuid::Uuid::new_v4(),
-            uuid::Uuid::new_v4(),
+            diesel_ulid::DieselUlid::generate(),
+            diesel_ulid::DieselUlid::generate(),
+            diesel_ulid::DieselUlid::generate(),
         ];
         let test_ids_string = test_ids
             .iter()
-            .map(uuid::Uuid::to_string)
+            .map(diesel_ulid::DieselUlid::to_string)
             .collect::<Vec<String>>();
 
         // With ids
@@ -888,13 +1046,13 @@ mod tests {
 
         let mut coll_key_values = Vec::new();
 
-        let id_hit = uuid::Uuid::new_v4();
-        let id_non_hit = uuid::Uuid::new_v4();
+        let id_hit = diesel_ulid::DieselUlid::generate();
+        let id_non_hit = diesel_ulid::DieselUlid::generate();
 
         for (index, (k, v)) in test_kvs.iter().enumerate() {
             if index % 3 == 0 {
                 coll_key_values.push(CollectionKeyValue {
-                    id: uuid::Uuid::new_v4(),
+                    id: diesel_ulid::DieselUlid::generate(),
                     collection_id: id_non_hit,
                     key: k.to_string(),
                     value: v.to_string(),
@@ -903,7 +1061,7 @@ mod tests {
             }
 
             coll_key_values.push(CollectionKeyValue {
-                id: uuid::Uuid::new_v4(),
+                id: diesel_ulid::DieselUlid::generate(),
                 collection_id: id_hit,
                 key: k.to_string(),
                 value: v.to_string(),

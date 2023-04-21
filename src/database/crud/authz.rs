@@ -23,17 +23,23 @@ impl Database {
             .get()?
             .transaction::<Vec<PubKey>, dError, _>(|conn| pub_keys.load::<PubKey>(conn))?)
     }
+
     /// Method to query a specific pubkey and add it to the database if it not exists
     ///
     /// ## Arguments
     ///
     /// - pubkey String
+    /// - serial: Option<i64> // Filter for this exact serial
     ///
     /// ## Result
     ///
     /// * `Result<i64, ArunaError>` -> Returns the queried or inserted serial number
     ///
-    pub fn get_or_add_pub_key(&self, pub_key: String) -> Result<i64, ArunaError> {
+    pub fn get_or_add_pub_key(
+        &self,
+        pub_key: String,
+        serial: Option<i64>,
+    ) -> Result<i64, ArunaError> {
         use crate::database::schema::pub_keys::dsl::*;
         use diesel::result::Error as dError;
         let result = self
@@ -49,7 +55,7 @@ impl Database {
                 } else {
                     let new_pkey = PubKeyInsert {
                         pubkey: pub_key,
-                        id: None,
+                        id: serial,
                     };
 
                     Ok(insert_into(pub_keys)
@@ -71,7 +77,7 @@ impl Database {
     ///
     /// ## Result:
     ///
-    /// - `Result<uuid::Uuid, Error>` -> This will either return the user uuid or error
+    /// - `Result<diesel_ulid::DieselUlid, Error>` -> This will either return the user uuid or error
     ///
     /// ## Behaviour
     ///
@@ -117,19 +123,19 @@ impl Database {
     ///
     pub fn get_checked_user_id_from_token(
         &self,
-        ctx_token: &uuid::Uuid,
+        ctx_token: &diesel_ulid::DieselUlid,
         req_ctx: &Context,
-    ) -> Result<uuid::Uuid, ArunaError> {
+    ) -> Result<(diesel_ulid::DieselUlid, ApiToken), ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
         //use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
 
-        let creator_uid =
+        let (creator_uid, api_token) =
             self.pg_connection
                 .get()?
-                .transaction::<Option<uuid::Uuid>, dError, _>(|conn| {
+                .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
                         .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
@@ -157,7 +163,7 @@ impl Database {
                         // If an associated admin_user_perm is found, this can return a new context
                         // for the admin scope
                         if admin_user_perm.is_some() {
-                            return Ok(Some(api_token.creator_user_id));
+                            return Ok((Some(api_token.creator_user_id), api_token));
                         }
                     }
 
@@ -167,7 +173,7 @@ impl Database {
                     // Mostly used to modify tokens
                     if req_ctx.personal {
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
-                            return Ok(Some(api_token.creator_user_id));
+                            return Ok((Some(api_token.creator_user_id), api_token));
                         } else {
                             return Err(dError::NotFound);
                         }
@@ -192,7 +198,7 @@ impl Database {
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
                             // in case the response is None -> just continue
                             if collection_ctx.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -213,7 +219,7 @@ impl Database {
                                         .eq(api_token.project_id.unwrap_or_default()),
                                 )
                                 .select(crate::database::schema::collections::dsl::id)
-                                .first::<uuid::Uuid>(conn)
+                                .first::<diesel_ulid::DieselUlid>(conn)
                                 .optional()?;
 
                             let col_in_proj_context = option_uuid_helper(
@@ -225,7 +231,7 @@ impl Database {
                             );
 
                             if col_in_proj_context.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -241,9 +247,10 @@ impl Database {
                                         crate::database::schema::user_permissions::dsl::project_id,
                                     ),
                                 ))
+                                .filter(user_id.eq(&api_token.creator_user_id))
                                 .filter(
                                     crate::database::schema::collections::dsl::id
-                                        .eq(req_ctx.resource_id),
+                                        .eq(&req_ctx.resource_id),
                                 )
                                 .select(UserPermission::as_select())
                                 .first::<UserPermission>(conn)
@@ -259,7 +266,7 @@ impl Database {
                                 );
 
                                 if col_in_proj_ctx2.is_some() {
-                                    return Ok(Some(api_token.creator_user_id));
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
                         }
@@ -282,7 +289,7 @@ impl Database {
                             // If apitoken.collection_id == context_collection_id
                             // We can return early here -> The ApiToken is "scoped" to this specific collection
                             if project_ctx.is_some() {
-                                return Ok(Some(api_token.creator_user_id));
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
                         }
 
@@ -291,7 +298,7 @@ impl Database {
                         // This checks for the permissions in the user_permissions table which already contains a project_id
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
                             let user_permissions_option = user_permissions
-                                .filter(user_id.eq(api_token.creator_user_id))
+                                .filter(user_id.eq(&api_token.creator_user_id))
                                 .filter(
                                     crate::database::schema::user_permissions::dsl::project_id
                                         .eq(req_ctx.resource_id),
@@ -308,24 +315,27 @@ impl Database {
                                 );
 
                                 if col_in_proj_ctx.is_some() {
-                                    return Ok(Some(api_token.creator_user_id));
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
                         }
                     }
 
-                    Ok(None)
+                    Ok((None, api_token))
                 })?;
 
         match creator_uid {
-            Some(uid) => Ok(uid),
+            Some(uid) => Ok((uid, api_token)),
             None => Err(ArunaError::AuthorizationError(
                 AuthorizationError::PERMISSIONDENIED,
             )),
         }
     }
 
-    pub fn get_oidc_user(&self, oidc_id: &str) -> Result<Option<uuid::Uuid>, ArunaError> {
+    pub fn get_oidc_user(
+        &self,
+        oidc_id: &str,
+    ) -> Result<Option<diesel_ulid::DieselUlid>, ArunaError> {
         use crate::database::schema::users::dsl::*;
         use diesel::result::Error;
 
@@ -372,8 +382,8 @@ impl Database {
 /// or a failed check.
 ///
 fn option_uuid_helper(
-    id1: Option<uuid::Uuid>,
-    id2: Option<uuid::Uuid>,
+    id1: Option<diesel_ulid::DieselUlid>,
+    id2: Option<diesel_ulid::DieselUlid>,
     res_type: Resources,
     req_user_right: UserRights,
     actual_user_right: Option<UserRights>,
@@ -402,8 +412,8 @@ mod tests {
     use super::*;
     #[test]
     fn option_uuid_helper_test() {
-        let uuid_a = Some(uuid::Uuid::new_v4());
-        let uuid_b = Some(uuid::Uuid::new_v4());
+        let uuid_a = Some(diesel_ulid::DieselUlid::generate());
+        let uuid_b = Some(diesel_ulid::DieselUlid::generate());
 
         // This should return none because both uuids are different
         assert!(option_uuid_helper(

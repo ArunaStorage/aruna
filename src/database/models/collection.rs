@@ -5,12 +5,11 @@ use super::object_group::*;
 use super::traits::IsKeyValue;
 use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
-use uuid;
 
 #[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(table_name = collection_version)]
 pub struct CollectionVersion {
-    pub id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
     pub major: i64,
     pub minor: i64,
     pub patch: i64,
@@ -48,23 +47,23 @@ impl PartialOrd for CollectionVersion {
 #[diesel(belongs_to(CollectionVersion, foreign_key = version_id))]
 #[diesel(belongs_to(Project))]
 pub struct Collection {
-    pub id: uuid::Uuid,
-    pub shared_version_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub shared_version_id: diesel_ulid::DieselUlid,
     pub name: String,
     pub description: String,
     pub created_at: chrono::NaiveDateTime,
-    pub created_by: uuid::Uuid,
-    pub version_id: Option<uuid::Uuid>,
+    pub created_by: diesel_ulid::DieselUlid,
+    pub version_id: Option<diesel_ulid::DieselUlid>,
     pub dataclass: Option<Dataclass>,
-    pub project_id: uuid::Uuid,
+    pub project_id: diesel_ulid::DieselUlid,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(table_name = collection_key_value)]
 #[diesel(belongs_to(Collection))]
 pub struct CollectionKeyValue {
-    pub id: uuid::Uuid,
-    pub collection_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub collection_id: diesel_ulid::DieselUlid,
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
@@ -79,7 +78,7 @@ impl IsKeyValue for CollectionKeyValue {
         &self.value
     }
 
-    fn get_associated_uuid(&self) -> &uuid::Uuid {
+    fn get_associated_uuid(&self) -> &diesel_ulid::DieselUlid {
         &self.collection_id
     }
 
@@ -91,11 +90,11 @@ impl ToDbKeyValue for CollectionKeyValue {
     fn new_kv<CollectionKeyValue>(
         key: &str,
         value: &str,
-        belongs_to: uuid::Uuid,
+        belongs_to: diesel_ulid::DieselUlid,
         kv_type: KeyValueType,
     ) -> Self {
         Self {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             collection_id: belongs_to,
             key: key.to_string(),
             value: value.to_string(),
@@ -107,8 +106,8 @@ impl ToDbKeyValue for CollectionKeyValue {
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 pub struct RequiredLabel {
-    pub id: uuid::Uuid,
-    pub collection_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub collection_id: diesel_ulid::DieselUlid,
     pub label_key: String,
 }
 
@@ -119,9 +118,9 @@ pub struct RequiredLabel {
 #[diesel(belongs_to(Object))]
 #[diesel(table_name = collection_objects)]
 pub struct CollectionObject {
-    pub id: uuid::Uuid,
-    pub collection_id: uuid::Uuid,
-    pub object_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub collection_id: diesel_ulid::DieselUlid,
+    pub object_id: diesel_ulid::DieselUlid,
     pub is_latest: bool,
     pub auto_update: bool,
     pub is_specification: bool,
@@ -133,9 +132,9 @@ pub struct CollectionObject {
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct CollectionObjectGroup {
-    pub id: uuid::Uuid,
-    pub collection_id: uuid::Uuid,
-    pub object_group_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub collection_id: diesel_ulid::DieselUlid,
+    pub object_group_id: diesel_ulid::DieselUlid,
     pub writeable: bool,
 }
 
@@ -145,7 +144,7 @@ mod tests {
 
     #[test]
     fn collection_key_value_test() {
-        let test_kv_label_oid = uuid::Uuid::new_v4();
+        let test_kv_label_oid = diesel_ulid::DieselUlid::generate();
 
         let test_kv_label = CollectionKeyValue::new_kv::<CollectionKeyValue>(
             "test_key",
@@ -159,7 +158,7 @@ mod tests {
         assert_eq!(test_kv_label.get_value(), "test_value".to_string());
         assert_eq!(*test_kv_label.get_type(), KeyValueType::LABEL);
 
-        let test_kv_hook_oid = uuid::Uuid::new_v4();
+        let test_kv_hook_oid = diesel_ulid::DieselUlid::generate();
 
         let test_kv_hook = CollectionKeyValue::new_kv::<CollectionKeyValue>(
             "test_key_hook",
@@ -177,42 +176,42 @@ mod tests {
     #[test]
     fn collection_version_conversion_test() {
         let v1 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 1,
             minor: 0,
             patch: 0,
         };
 
         let v1_2 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 1,
             minor: 0,
             patch: 0,
         };
 
         let v0_1 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 0,
             minor: 1,
             patch: 0,
         };
 
         let v0_0_1 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 0,
             minor: 0,
             patch: 1,
         };
 
         let v0_0_2 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 0,
             minor: 0,
             patch: 2,
         };
 
         let v5_0_1 = CollectionVersion {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             major: 5,
             minor: 0,
             patch: 1,

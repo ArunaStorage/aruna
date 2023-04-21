@@ -22,8 +22,8 @@ use serial_test::serial;
 #[allow(clippy::needless_collect)]
 fn create_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -45,6 +45,7 @@ fn create_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0..4),
                     num_hooks: thread_rng().gen_range(0..4),
+                    ..Default::default()
                 }),
             )
             .id
@@ -144,8 +145,8 @@ fn create_object_group_test() {
 #[allow(clippy::needless_collect)]
 fn update_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -167,6 +168,7 @@ fn update_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0..4),
                     num_hooks: thread_rng().gen_range(0..4),
+                    ..Default::default()
                 }),
             )
             .id
@@ -322,8 +324,8 @@ fn update_object_group_test() {
 #[serial(db)]
 fn delete_object_group_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create random project
     let random_project = create_project(None);
@@ -345,6 +347,7 @@ fn delete_object_group_test() {
                     default_endpoint_id: Some(endpoint_id.to_string()),
                     num_labels: thread_rng().gen_range(0..4),
                     num_hooks: thread_rng().gen_range(0..4),
+                    ..Default::default()
                 }),
             )
             .id
@@ -400,6 +403,7 @@ fn delete_object_group_test() {
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_0.id.to_string(),
         collection_id: random_collection.id.to_string(),
+        with_revisions: false,
     })
     .unwrap();
 
@@ -435,6 +439,7 @@ fn delete_object_group_test() {
     db.delete_object_group(DeleteObjectGroupRequest {
         group_id: object_group_rev_1.id.to_string(),
         collection_id: random_collection.id.to_string(),
+        with_revisions: false,
     })
     .unwrap();
 
@@ -475,4 +480,74 @@ fn delete_object_group_test() {
             .unwrap();
         }
     }
+}
+
+#[test]
+#[ignore]
+#[serial(db)]
+fn object_group_staging_object_test() {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
+
+    // Create random project
+    let random_project = create_project(None);
+
+    // Create random collection
+    let random_collection = create_collection(TCreateCollection {
+        project_id: random_project.id,
+        col_override: None,
+        ..Default::default()
+    });
+
+    // Create 5 random objects
+    let mut object_ids = (0..5)
+        .map(|_| {
+            create_object(&TCreateObject {
+                creator_id: Some(creator.to_string()),
+                collection_id: random_collection.id.to_string(),
+                default_endpoint_id: Some(endpoint_id.to_string()),
+                ..Default::default()
+            })
+            .id
+        })
+        .collect::<Vec<_>>();
+
+    // Create staging object
+    let staging_object = common::functions::create_staging_object(&TCreateObject {
+        creator_id: Some(creator.to_string()),
+        collection_id: random_collection.id.to_string(),
+        default_endpoint_id: Some(endpoint_id.to_string()),
+        ..Default::default()
+    });
+
+    let mut polluted_object_ids = vec![staging_object.id];
+    polluted_object_ids.append(&mut object_ids);
+
+    // Try create object group with staging object in data objects
+    let mut create_request = CreateObjectGroupRequest {
+        name: "object_group_staging_object_test.fail".to_string(),
+        description: "Created within object_group_staging_object_test().".to_string(),
+        collection_id: random_collection.id,
+        object_ids: polluted_object_ids.clone(),
+        meta_object_ids: vec![],
+        labels: vec![],
+        hooks: vec![],
+    };
+
+    let create_response = db.create_object_group(&create_request, &creator);
+    assert!(create_response.is_err());
+
+    // Try create object group with staging object in meta objects
+    create_request.object_ids = vec![];
+    create_request.meta_object_ids = polluted_object_ids.clone();
+
+    let create_response = db.create_object_group(&create_request, &creator);
+    assert!(create_response.is_err());
+
+    // Try create object group with staging object in data and meta objects
+    create_request.object_ids = polluted_object_ids.clone();
+
+    let create_response = db.create_object_group(&create_request, &creator);
+    assert!(create_response.is_err());
 }

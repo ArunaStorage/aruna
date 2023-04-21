@@ -10,11 +10,8 @@ jobs:
       - uses: arduino/setup-protoc@v1
       - uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: stable
-      - name: Install tarpaulin
-        run: | 
-          cargo install cargo-tarpaulin
+          toolchain: nightly
+          override: true
       - uses: actions/checkout@v2
         with:
           submodules: recursive
@@ -24,10 +21,14 @@ jobs:
       - name: Load DB
         run: ./tests/sources/load.sh
         shell: bash
-      - name: Generate code coverage
-        run: |
-          cargo tarpaulin --ignored --verbose --all-features --run-types AllTargets --timeout 120 --out Xml
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v2
+      - uses: actions-rs/cargo@v1
         with:
-          fail_ci_if_error: true
+          command: test
+          args: --all-features --no-fail-fast -- --include-ignored --test-threads=1
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+      - uses: actions-rs/grcov@v0.1.5
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3

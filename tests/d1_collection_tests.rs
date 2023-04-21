@@ -1,12 +1,12 @@
 mod common;
-use aruna_rust_api::api::internal::v1::Location;
 use aruna_rust_api::api::storage::models::v1::{
-    collection_overview, DataClass, EndpointType, Hashalgorithm, KeyValue, LabelFilter,
-    LabelOntology, LabelOrIdQuery, PageRequest, Version,
+    collection_overview, collection_overview::Version::SemanticVersion, DataClass, Hashalgorithm,
+    KeyValue, LabelFilter, LabelOntology, LabelOrIdQuery, PageRequest, Version,
 };
+
 use aruna_rust_api::api::storage::services::v1::*;
 use aruna_server::database;
-use common::functions::{create_collection, TCreateCollection};
+use common::functions::{create_collection, TCreateCollection, TCreateObject};
 use serial_test::serial;
 use std::str::FromStr;
 
@@ -31,9 +31,9 @@ fn get_collection_by_id_test() {
     let created_project = common::functions::create_project(None);
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection".to_owned(),
+        name: "new-collection".to_owned(),
         description: "this_is_a_demo_collection".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "label_test_key".to_owned(),
@@ -70,7 +70,7 @@ fn get_collection_by_id_test() {
     // Collection should have the following name
     assert_eq!(
         q_col.collection.clone().unwrap().name,
-        "new_collection".to_string()
+        "new-collection".to_string()
     );
     // Collection should not have a version
     assert!(
@@ -112,13 +112,13 @@ fn get_collection_by_id_test() {
 #[serial(db)]
 fn get_collections_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let regular_project_ulid = common::functions::get_regular_project_ulid();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_1".to_owned(),
+        name: "new-collection-1".to_owned(),
         description: "this_is_a_demo_collection_1".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -141,9 +141,9 @@ fn get_collections_test() {
     let result_1 = db.create_new_collection(request, creator).unwrap();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_2".to_owned(),
+        name: "new-collection-2".to_owned(),
         description: "this_is_a_demo_collection_2".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -167,9 +167,9 @@ fn get_collections_test() {
     let res_2_id = result_2.collection_id;
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_3".to_owned(),
+        name: "new-collection-3".to_owned(),
         description: "this_is_a_demo_collection_3".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![
             KeyValue {
@@ -199,7 +199,7 @@ fn get_collections_test() {
 
     // 1. ID filter no page
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: None,
             ids: vec![res_2_id.clone()],
@@ -221,7 +221,7 @@ fn get_collections_test() {
 
     // 2. Label filter (2)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -250,7 +250,7 @@ fn get_collections_test() {
 
     // 2. Label filter (3)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -270,7 +270,7 @@ fn get_collections_test() {
 
     // 2. Label filter (4)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![
@@ -305,7 +305,7 @@ fn get_collections_test() {
 
     // 2. PageRequest (1)
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -336,7 +336,7 @@ fn get_collections_test() {
 
     // 2. PageRequest (2) -> next
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -382,7 +382,7 @@ fn get_collections_test() {
 
     // INVALID
     let q_col_req = GetCollectionsRequest {
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_or_id_filter: Some(LabelOrIdQuery {
             labels: Some(LabelFilter {
                 labels: vec![KeyValue {
@@ -411,8 +411,7 @@ fn get_collections_test() {
 #[serial(db)]
 fn update_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let created_project = common::functions::create_project(None);
     // Create collection in project
@@ -420,195 +419,160 @@ fn update_collection_test() {
         project_id: created_project.id,
         ..Default::default()
     });
-    let col_id = uuid::Uuid::from_str(&result.id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
-
-    // Add some objects and an objectgroup
-    let new_obj_1 = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
-            content_len: 5,
-            source: None,
-            dataclass: 2,
-            labels: vec![KeyValue {
-                key: "obj_1_key".to_string(),
-                value: "obj_1_value".to_string(),
-            }],
-            hooks: Vec::new(),
-        }),
-        collection_id: col_id.to_string(),
-        preferred_endpoint_id: endpoint_uuid.to_string(),
-        multipart: false,
-        is_specification: false,
-    };
-    let obj_1_id = uuid::Uuid::new_v4();
-
-    let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
-        .unwrap();
-    let f_obj_1_stage = FinishObjectStagingRequest {
-        object_id: obj_1_id.to_string(),
-        upload_id: "uid".to_string(),
-        collection_id: col_id.to_string(),
-        hash: None,
-        no_upload: false,
-        completed_parts: Vec::new(),
-        auto_update: true,
-    };
-
-    let _res_1 = db.finish_object_staging(&f_obj_1_stage, &creator).unwrap();
-
-    // Add some objects and an objectgroup
-    let new_obj_2 = InitializeNewObjectRequest {
-        object: Some(StageObject {
-            filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
-            content_len: 10,
-            source: None,
-            dataclass: 2,
-            labels: vec![KeyValue {
-                key: "obj_2_key".to_string(),
-                value: "obj_2_value".to_string(),
-            }],
-            hooks: Vec::new(),
-        }),
-        collection_id: col_id.to_string(),
-        preferred_endpoint_id: endpoint_uuid.to_string(),
-        multipart: false,
-        is_specification: false,
-    };
-
-    let obj_2_id = uuid::Uuid::new_v4();
-
-    let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
-        .unwrap();
-    let _f_obj_2_stage = FinishObjectStagingRequest {
-        object_id: obj_2_id.to_string(),
-        upload_id: "uid".to_string(),
-        collection_id: col_id.to_string(),
-        hash: None,
-        no_upload: false,
-        completed_parts: Vec::new(),
-        auto_update: true,
-    };
-
-    let _res_2 = db.finish_object_staging(&f_obj_1_stage, &creator).unwrap();
-
-    let obj_grp = CreateObjectGroupRequest {
-        name: "test_group_1".to_string(),
-        description: "test_group_2".to_string(),
-        collection_id: col_id.to_string(),
-        object_ids: vec![obj_1_id.to_string()],
-        meta_object_ids: Vec::new(),
-        labels: vec![KeyValue {
-            key: "obj_grp_key".to_string(),
-            value: "obj_grp_value".to_string(),
-        }],
-        hooks: Vec::new(),
-    };
-
-    let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
-
-    let normal_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key".to_owned(),
-            value: "test_value".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key".to_owned(),
-            value: "test_value".to_owned(),
-        }],
+    // Define mutable request to reuse for the individual updates
+    let mut update_request = UpdateCollectionRequest {
+        collection_id: result.id.to_string(),
+        name: "plain-updated-collection".to_string(),
+        description: "Some description.".to_string(),
+        labels: vec![],
+        hooks: vec![],
         label_ontology: None,
-        dataclass: 2,
+        dataclass: DataClass::Public as i32,
         version: None,
     };
 
-    let up_res = db.update_collection(normal_update, creator).unwrap();
+    // Update plain collection name, description and data class
+    let updated_collection = db
+        .update_collection(update_request.clone(), creator)
+        .unwrap()
+        .collection
+        .unwrap();
 
-    assert_eq!(up_res.collection.unwrap().id, col_id.to_string());
+    assert_eq!(updated_collection.id, result.id);
+    assert_eq!(updated_collection.name.as_str(), "plain-updated-collection");
+    assert_eq!(updated_collection.description.as_str(), "Some description.");
+    assert_eq!(updated_collection.labels, vec![]);
+    assert_eq!(updated_collection.hooks, vec![]);
+    assert_eq!(
+        updated_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
+    assert!(updated_collection.is_public);
 
-    let pin_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        label_ontology: Some(LabelOntology {
-            required_label_keys: vec!["test_key".to_string()],
-        }),
-        dataclass: 2,
-        version: Some(Version {
+    // Update plain collection labels/hooks
+    update_request.labels = vec![KeyValue {
+        key: "my_little_label".to_owned(),
+        value: "test_value".to_owned(),
+    }];
+    update_request.hooks = vec![KeyValue {
+        key: "my_little_hook".to_owned(),
+        value: "test_value".to_owned(),
+    }];
+
+    let updated_collection = db
+        .update_collection(update_request.clone(), creator)
+        .unwrap()
+        .collection
+        .unwrap();
+
+    assert_eq!(updated_collection.id, result.id);
+    assert_eq!(updated_collection.name.as_str(), "plain-updated-collection");
+    assert_eq!(updated_collection.description.as_str(), "Some description.");
+    assert_eq!(
+        updated_collection.labels,
+        vec![KeyValue {
+            key: "my_little_label".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        updated_collection.hooks,
+        vec![KeyValue {
+            key: "my_little_hook".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        updated_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
+    assert!(updated_collection.is_public);
+
+    // Add some objects
+    let _rand_object_01 = common::functions::create_object(&TCreateObject {
+        collection_id: updated_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    let _rand_object_02 = common::functions::create_object(&TCreateObject {
+        collection_id: updated_collection.id.to_string(),
+        ..Default::default()
+    });
+
+    // Update label ontology --> Error, as objects do not have required labels
+    update_request.label_ontology = Some(LabelOntology {
+        required_label_keys: vec!["dummy_label".to_owned()],
+    });
+
+    let error_collection = db.update_collection(update_request.clone(), creator);
+
+    assert!(error_collection.is_err());
+
+    // Try to update collection name --> Error, as name update is only allowed with empty collections
+    update_request.label_ontology = None;
+    update_request.name = "error-collection".to_string();
+
+    let error_collection = db.update_collection(update_request.clone(), creator);
+
+    assert!(error_collection.is_err());
+
+    //ToDo: Update collection with pin to version
+    update_request.name = "archived-collection".to_string();
+    update_request.version = Some(Version {
+        major: 1,
+        minor: 0,
+        patch: 0,
+    });
+    update_request.dataclass = DataClass::Private as i32;
+
+    let archived_collection = db
+        .update_collection(update_request, creator)
+        .unwrap()
+        .collection
+        .unwrap();
+
+    assert_ne!(archived_collection.id, updated_collection.id);
+    assert_eq!(archived_collection.name.as_str(), "archived-collection");
+    assert_eq!(
+        archived_collection.description.as_str(),
+        "Some description."
+    );
+    assert_eq!(
+        archived_collection.labels,
+        vec![KeyValue {
+            key: "my_little_label".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        archived_collection.hooks,
+        vec![KeyValue {
+            key: "my_little_hook".to_owned(),
+            value: "test_value".to_owned(),
+        }]
+    );
+    assert_eq!(
+        archived_collection.label_ontology,
+        Some(LabelOntology {
+            required_label_keys: vec![]
+        })
+    );
+    assert_eq!(
+        archived_collection.version,
+        Some(SemanticVersion(Version {
             major: 1,
-            minor: 1,
-            patch: 1,
-        }),
-    };
-
-    let pin_up_res = db.update_collection(pin_update, creator);
-    // Should fail because of label ontology
-    assert!(pin_up_res.is_err());
-
-    let pin_update = UpdateCollectionRequest {
-        collection_id: col_id.to_string(),
-        name: "new_name".to_string(),
-        description: "new_descrpt".to_string(),
-        labels: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        hooks: vec![KeyValue {
-            key: "test_key_2".to_owned(),
-            value: "test_value_2".to_owned(),
-        }],
-        label_ontology: None,
-        dataclass: 2,
-        version: Some(Version {
-            major: 1,
-            minor: 1,
-            patch: 1,
-        }),
-    };
-
-    let pin_up_res = db.update_collection(pin_update, creator).unwrap();
-
-    assert!(pin_up_res.collection.unwrap().id != col_id.to_string());
+            minor: 0,
+            patch: 0
+        }))
+    );
+    assert!(!archived_collection.is_public)
 }
 
 #[test]
@@ -616,13 +580,12 @@ fn update_collection_test() {
 #[serial(db)]
 fn pin_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_update".to_owned(),
-        description: "this_is_a_demo_collection_update".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        name: "pin-collection-test-collection-001".to_owned(),
+        description: "Collection created in update_collection_test()".to_owned(),
+        project_id: common::functions::get_regular_project_ulid().to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "test_key".to_owned(),
@@ -636,17 +599,16 @@ fn pin_collection_test() {
     };
 
     let result = db.create_new_collection(request, creator).unwrap();
-    let col_id = uuid::Uuid::from_str(&result.collection_id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Add some objects and an objectgroup
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            description: "test_obj_1_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -660,29 +622,19 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
-    let obj_1_id = uuid::Uuid::new_v4();
+    let obj_1_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
+        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -693,8 +645,7 @@ fn pin_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -708,30 +659,20 @@ fn pin_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
-    let obj_2_id = uuid::Uuid::new_v4();
+    let obj_2_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
+        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -771,13 +712,13 @@ fn pin_collection_test() {
 #[serial(db)]
 fn delete_collection_test() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let regular_project_ulid = common::functions::get_regular_project_ulid();
 
     let request = CreateNewCollectionRequest {
-        name: "new_collection_update_delete".to_owned(),
+        name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
@@ -793,9 +734,9 @@ fn delete_collection_test() {
     let result = db.create_new_collection(request, creator).unwrap();
 
     let ref_col_request = CreateNewCollectionRequest {
-        name: "new_collection_update_delete".to_owned(),
+        name: "new-collection-update-delete".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
-        project_id: "12345678-1111-1111-1111-111111111111".to_owned(),
+        project_id: regular_project_ulid.to_string(),
         label_ontology: None,
         labels: vec![KeyValue {
             key: "delete_test_key".to_owned(),
@@ -809,17 +750,16 @@ fn delete_collection_test() {
     };
 
     let result_2 = db.create_new_collection(ref_col_request, creator).unwrap();
-    let col_id = uuid::Uuid::from_str(&result.collection_id).unwrap();
-    assert!(!col_id.is_nil());
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    assert!(!col_id.to_string().is_empty());
 
-    let endpoint_uuid = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let endpoint_uuid = common::functions::get_default_endpoint_ulid();
 
     // Add some objects and an objectgroup
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1_del".to_string(),
-            description: "test_obj_1_descr_del".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -833,29 +773,19 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
-    let obj_1_id = uuid::Uuid::new_v4();
+    let obj_1_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_1 = db
-        .create_object(
-            &new_obj_1,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid".to_string(),
-            endpoint_uuid,
-            obj_1_id,
-        )
+        .create_object(&new_obj_1, &creator, obj_1_id, &endpoint_uuid)
         .unwrap();
     let f_obj_1_stage = FinishObjectStagingRequest {
         object_id: obj_1_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -868,14 +798,14 @@ fn delete_collection_test() {
         target_collection_id: result_2.collection_id,
         writeable: true,
         auto_update: true,
+        sub_path: "".to_string(),
     };
     let _obj_ref = db.create_object_reference(obj_ref_req);
     // Add some objects and an objectgroup
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            description: "test_obj_2_descr".to_string(),
-            collection_id: col_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -889,30 +819,20 @@ fn delete_collection_test() {
         preferred_endpoint_id: endpoint_uuid.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
-    let obj_2_id = uuid::Uuid::new_v4();
+    let obj_2_id = diesel_ulid::DieselUlid::generate();
 
     let _sobj_2 = db
-        .create_object(
-            &new_obj_2,
-            &creator,
-            &(Location {
-                r#type: 2,
-                bucket: "a".to_string(),
-                path: "b".to_string(),
-            }),
-            "uid_2".to_string(),
-            endpoint_uuid,
-            obj_2_id,
-        )
+        .create_object(&new_obj_2, &creator, obj_2_id, &endpoint_uuid)
         .unwrap();
     let _f_obj_2_stage = FinishObjectStagingRequest {
         object_id: obj_2_id.to_string(),
         upload_id: "uid".to_string(),
         collection_id: col_id.to_string(),
         hash: None,
-        no_upload: false,
+        no_upload: true,
         completed_parts: Vec::new(),
         auto_update: true,
     };
@@ -968,24 +888,26 @@ pub fn test_materialized_view_refreshs() {
 #[serial(db)]
 pub fn test_collection_materialized_views_stats() {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = common::functions::get_admin_user_ulid();
+    let endpoint_id = common::functions::get_default_endpoint_ulid();
 
     // Create fresh Project
     let create_project_request = CreateProjectRequest {
-        name: "Object creation test project".to_string(),
-        description: "Test project used in object creation test.".to_string(),
+        name: "test-collection-materialized-views-stats-project".to_string(),
+        description: "Collection created for test_collection_materialized_views_stats()"
+            .to_string(),
     };
 
     let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id = uuid::Uuid::parse_str(&create_project_response.project_id).unwrap();
+    let project_id =
+        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
 
-    assert!(!project_id.is_nil());
+    assert!(!project_id.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
-        name: "Object creation test project collection".to_string(),
-        description: "Test collection used in object creation test.".to_string(),
+        name: "test-collection-materialized-views-stats-collection".to_string(),
+        description: "Test collection used in materialized view stats test.".to_string(),
         label_ontology: None,
         project_id: project_id.to_string(),
         labels: vec![],
@@ -995,23 +917,17 @@ pub fn test_collection_materialized_views_stats() {
     let create_collection_response = db
         .create_new_collection(create_collection_request, creator)
         .unwrap();
-    let collection_id = uuid::Uuid::parse_str(&create_collection_response.collection_id).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
 
     // Create Object
-    let new_object_id = uuid::Uuid::new_v4();
-    let upload_id = uuid::Uuid::new_v4().to_string();
-
-    let location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: new_object_id.to_string(),
-    };
+    let new_object_id = diesel_ulid::DieselUlid::generate();
+    let upload_id = "".to_string();
 
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            description: "This is a mock file.".to_string(),
-            collection_id: collection_id.to_string(),
+            sub_path: "".to_string(),
             content_len: 1337,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -1028,17 +944,11 @@ pub fn test_collection_materialized_views_stats() {
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: None,
     };
 
     let init_object_response = db
-        .create_object(
-            &init_object_request,
-            &creator,
-            &location,
-            upload_id.clone(),
-            endpoint_id,
-            new_object_id,
-        )
+        .create_object(&init_object_request, &creator, new_object_id, &endpoint_id)
         .unwrap();
 
     assert_eq!(&init_object_response.object_id, &new_object_id.to_string());
@@ -1058,7 +968,7 @@ pub fn test_collection_materialized_views_stats() {
         upload_id,
         collection_id: collection_id.to_string(),
         hash: Some(finish_hash),
-        no_upload: false,
+        no_upload: true,
         completed_parts: vec![],
         auto_update: true,
     };

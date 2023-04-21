@@ -4,7 +4,6 @@ use super::object::*;
 use super::traits::IsKeyValue;
 use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
-use uuid;
 
 #[derive(
     Associations, Queryable, Insertable, Identifiable, Debug, Selectable, Clone, AsChangeset,
@@ -12,21 +11,21 @@ use uuid;
 #[diesel(belongs_to(User, foreign_key = created_by))]
 #[diesel(table_name = object_groups)]
 pub struct ObjectGroup {
-    pub id: uuid::Uuid,
-    pub shared_revision_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub shared_revision_id: diesel_ulid::DieselUlid,
     pub revision_number: i64,
     pub name: Option<String>,
     pub description: Option<String>,
     pub created_at: chrono::NaiveDateTime,
-    pub created_by: uuid::Uuid,
+    pub created_by: diesel_ulid::DieselUlid,
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = object_group_key_value)]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct ObjectGroupKeyValue {
-    pub id: uuid::Uuid,
-    pub object_group_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub object_group_id: diesel_ulid::DieselUlid,
     pub key: String,
     pub value: String,
     pub key_value_type: KeyValueType,
@@ -41,7 +40,7 @@ impl IsKeyValue for ObjectGroupKeyValue {
         &self.value
     }
 
-    fn get_associated_uuid(&self) -> &uuid::Uuid {
+    fn get_associated_uuid(&self) -> &diesel_ulid::DieselUlid {
         &self.object_group_id
     }
 
@@ -54,11 +53,11 @@ impl ToDbKeyValue for ObjectGroupKeyValue {
     fn new_kv<ObjectGroupKeyValue>(
         key: &str,
         value: &str,
-        belongs_to: uuid::Uuid,
+        belongs_to: diesel_ulid::DieselUlid,
         kv_type: KeyValueType,
     ) -> Self {
         Self {
-            id: uuid::Uuid::new_v4(),
+            id: diesel_ulid::DieselUlid::generate(),
             object_group_id: belongs_to,
             key: key.to_string(),
             value: value.to_string(),
@@ -72,9 +71,9 @@ impl ToDbKeyValue for ObjectGroupKeyValue {
 #[diesel(belongs_to(Object))]
 #[diesel(table_name = object_group_objects)]
 pub struct ObjectGroupObject {
-    pub id: uuid::Uuid,
-    pub object_id: uuid::Uuid,
-    pub object_group_id: uuid::Uuid,
+    pub id: diesel_ulid::DieselUlid,
+    pub object_id: diesel_ulid::DieselUlid,
+    pub object_group_id: diesel_ulid::DieselUlid,
     pub is_meta: bool,
 }
 
@@ -84,7 +83,7 @@ mod tests {
 
     #[test]
     fn object_group_is_key_value_test() {
-        let test_kv_label_oid = uuid::Uuid::new_v4();
+        let test_kv_label_oid = diesel_ulid::DieselUlid::generate();
 
         let test_kv_label = ObjectGroupKeyValue::new_kv::<ObjectGroupKeyValue>(
             "test_key",
@@ -98,7 +97,7 @@ mod tests {
         assert_eq!(test_kv_label.get_value(), "test_value".to_string());
         assert_eq!(*test_kv_label.get_type(), KeyValueType::LABEL);
 
-        let test_kv_hook_oid = uuid::Uuid::new_v4();
+        let test_kv_hook_oid = diesel_ulid::DieselUlid::generate();
 
         let test_kv_hook = ObjectGroupKeyValue::new_kv::<ObjectGroupKeyValue>(
             "test_key_hook",

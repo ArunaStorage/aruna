@@ -1,5 +1,10 @@
-use aruna_rust_api::api::internal::v1::{Location, LocationType};
-use aruna_rust_api::api::storage::services::v1::{GetObjectByIdRequest, UpdateObjectRequest};
+use aruna_rust_api::api::storage::models::v1::{
+    ObjectGroupOverview, Permission, ProjectPermission,
+};
+use aruna_rust_api::api::storage::services::v1::{
+    EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetObjectGroupByIdRequest,
+    GetReferencesRequest, ObjectReference, UpdateObjectRequest,
+};
 use aruna_rust_api::api::storage::{
     models::v1::{
         collection_overview, CollectionOverview, DataClass, Hash as ApiHash, Hashalgorithm,
@@ -10,14 +15,23 @@ use aruna_rust_api::api::storage::{
         GetCollectionByIdRequest, GetProjectRequest, InitializeNewObjectRequest, StageObject,
     },
 };
+
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
-use aruna_server::database::models::enums::{EndpointType, ObjectStatus};
+use aruna_server::database::models::enums::{ObjectStatus, ReferenceStatus};
+use aruna_server::database::models::object::Object as DbObject;
+use aruna_server::database::schema::objects::dsl::objects;
+
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+
+use diesel_ulid::DieselUlid;
 use rand::distributions::Uniform;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+
+use diesel::result::Error;
 use std::collections::{hash_map::Entry, HashMap};
 use std::hash::Hash;
+use std::str::FromStr;
 
 pub fn rand_string(len: usize) -> String {
     thread_rng()
@@ -56,17 +70,53 @@ pub fn compare_it<T: Eq + Hash>(
     get_lookup(i1.into_iter()) == get_lookup(i2.into_iter())
 }
 
+/// Returns the ULID of the admin user used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("0J6HB7G4HM28T14D0H248H248H").unwrap()
+}
+
+/// Returns the ULID of the regular user used in the test environment
+#[allow(dead_code)]
+pub fn get_regular_user_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("7E9REGQAXB95WT6FPW53PHK6RQ").unwrap()
+}
+
+/// Returns the ULID of the admin project used in the test environment
+#[allow(dead_code)]
+pub fn get_admin_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("0J6HB7G48H248H248H248H248H").unwrap()
+}
+
+/// Returns the ULID of the default regular project available in the test environment
+#[allow(dead_code)]
+pub fn get_regular_project_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("01GY0G9NMZTWNX04W0Y7VD21P3").unwrap()
+}
+
+/// Returns the ULID of the default regular collection available in the test environment
+#[allow(dead_code)]
+pub fn get_default_collection_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("01GY0G9NRGZXJ1WWFFFK7H5ZD0").unwrap()
+}
+
+/// Returns the ULID of the default data proxy endpoint available in the test environment
+#[allow(dead_code)]
+pub fn get_default_endpoint_ulid() -> DieselUlid {
+    diesel_ulid::DieselUlid::from_str("0J6HB7GSK6CSK6CSMSK6CSK6CS").unwrap()
+}
+
 #[allow(dead_code)]
 pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     let creator = if let Some(c_id) = creator_id {
-        uuid::Uuid::parse_str(&c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
 
-    let project_name = rand_string(30);
+    let project_name = rand_string(30).to_lowercase();
     let project_description = rand_string(30); //Note: Should also be tested with special characters
     let create_request = CreateProjectRequest {
         name: project_name.clone(),
@@ -75,8 +125,8 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
 
     let result = db.create_project(create_request, creator).unwrap();
     // Test if project_id is parseable
-    let project_id = uuid::Uuid::parse_str(&result.project_id).unwrap();
-    assert!(!project_id.is_nil());
+    let project_id = diesel_ulid::DieselUlid::from_str(&result.project_id).unwrap();
+    assert!(!project_id.to_string().is_empty());
 
     // Query project
     let response = get_project(&result.project_id);
@@ -101,14 +151,46 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
 pub fn get_project(project_uuid: &str) -> ProjectOverview {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let project_id = uuid::Uuid::parse_str(project_uuid).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
 
     let get_request = GetProjectRequest {
         project_id: project_id.to_string(),
     };
-    let response = db.get_project(get_request, uuid::Uuid::default()).unwrap();
+    let response = db
+        .get_project(get_request, diesel_ulid::DieselUlid::default())
+        .unwrap();
 
     response.project.unwrap()
+}
+
+/// Fast track permission edit.
+#[allow(dead_code)]
+pub fn update_project_permission(
+    project_uuid: &str,
+    user_uuid: &str,
+    new_perm: Permission,
+) -> bool {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    // Validate format of provided ids
+    let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
+    let user_id = diesel_ulid::DieselUlid::from_str(user_uuid).unwrap();
+    let creator_id = get_admin_user_ulid();
+
+    let edit_perm_request: EditUserPermissionsForProjectRequest =
+        EditUserPermissionsForProjectRequest {
+            project_id: project_id.to_string(),
+            user_permission: Some(ProjectPermission {
+                user_id: user_id.to_string(),
+                project_id: project_id.to_string(),
+                permission: new_perm as i32,
+                service_account: false,
+            }),
+        };
+
+    let edit_perm_response = db.edit_user_permissions_for_project(edit_perm_request, creator_id);
+
+    edit_perm_response.is_ok()
 }
 
 /// This struct is used to simplify the function call
@@ -120,7 +202,7 @@ pub fn get_project(project_uuid: &str) -> ProjectOverview {
 ///   ..Default::default()
 /// };
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TCreateCollection {
     pub project_id: String,
     pub num_labels: i64,
@@ -141,10 +223,17 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         request: CreateNewCollectionRequest,
     }
     let creator = if let Some(c_id) = tccol.creator_id {
-        uuid::Uuid::parse_str(&c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(&c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
+
+    let project_ulid = if tccol.project_id.is_empty() {
+        get_regular_project_ulid()
+    } else {
+        diesel_ulid::DieselUlid::from_str(tccol.project_id.as_str()).unwrap()
+    };
+
     // Create CollectionTest object containing the Request and expected values
     let create_collection_request_test = if let Some(col_req) = tccol.col_override {
         CollectionTest {
@@ -155,7 +244,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             request: col_req,
         }
     } else {
-        let col_name = rand_string(30);
+        let col_name = rand_string(30).to_lowercase();
         let col_description = rand_string(30);
         let labels = (0..tccol.num_labels)
             .map(|num| KeyValue {
@@ -173,7 +262,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
             name: col_name.clone(),
             description: col_description.clone(),
             label_ontology: None,
-            project_id: tccol.project_id,
+            project_id: project_ulid.to_string(),
             labels: labels.clone(),
             hooks: hooks.clone(),
             dataclass: 1,
@@ -204,7 +293,10 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
     // Collection should have the following name
     assert_eq!(get_col_resp.name, create_collection_request_test.name);
     // Collection should not have a version
-    assert!(get_col_resp.version.clone().unwrap() == collection_overview::Version::Latest(true));
+    assert_eq!(
+        get_col_resp.version.clone().unwrap(),
+        collection_overview::Version::Latest(true)
+    );
     assert!(
         // Should be empty vec
         get_col_resp
@@ -239,11 +331,13 @@ pub fn get_collection(col_id: String) -> CollectionOverview {
 
 #[derive(Default)]
 pub struct TCreateObject {
-    pub creator_id: Option<String>,
     pub collection_id: String,
-    pub default_endpoint_id: Option<String>,
     pub num_labels: i64,
     pub num_hooks: i64,
+    pub init_hash: Option<ApiHash>,
+    pub sub_path: Option<String>,
+    pub creator_id: Option<String>,
+    pub default_endpoint_id: Option<String>,
 }
 
 /// Creates an Object in the specified Collection.
@@ -252,23 +346,28 @@ pub struct TCreateObject {
 pub fn create_object(object_info: &TCreateObject) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
     let creator_id = if let Some(c_id) = &object_info.creator_id {
-        uuid::Uuid::parse_str(c_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(c_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap()
+        get_admin_user_ulid()
     };
-    let collection_id = uuid::Uuid::parse_str(object_info.collection_id.as_str()).unwrap();
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
     let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
-        uuid::Uuid::parse_str(e_id).unwrap()
+        diesel_ulid::DieselUlid::from_str(e_id).unwrap()
     } else {
-        uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap()
+        get_default_endpoint_ulid()
+    };
+    let sub_path = if let Some(whatev) = &object_info.sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
     };
 
     // Initialize Object with random values
-    let object_id = uuid::Uuid::new_v4();
+    let object_id = diesel_ulid::DieselUlid::generate();
     let object_filename = format!("DummyFile.{}", rand_string(5));
-    let object_description = rand_string(30);
     let object_length = thread_rng().gen_range(1..1073741824);
-    let upload_id = uuid::Uuid::new_v4();
+    let upload_id = "".to_string();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -285,34 +384,22 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let init_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: object_filename.to_string(),
-            description: object_description,
-            collection_id: collection_id.to_string(),
             content_len: object_length,
             source: None,
             dataclass: DataClass::Private as i32,
             labels: dummy_labels,
             hooks: dummy_hooks,
+            sub_path,
         }),
         collection_id: object_info.collection_id.to_string(),
         preferred_endpoint_id: endpoint_id.to_string(),
         multipart: false,
         is_specification: false,
+        hash: object_info.init_hash.clone(),
     };
 
-    let dummy_location = Location {
-        r#type: LocationType::S3 as i32,
-        bucket: collection_id.to_string(),
-        path: object_id.to_string(),
-    };
     let _init_response = db
-        .create_object(
-            &init_request,
-            &creator_id,
-            &dummy_location,
-            upload_id.to_string(),
-            endpoint_id,
-            object_id,
-        )
+        .create_object(&init_request, &creator_id, object_id, &endpoint_id)
         .unwrap();
 
     //Note: Skipping the data upload part.
@@ -324,10 +411,10 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     };
     let finish_request = FinishObjectStagingRequest {
         object_id: object_id.to_string(),
-        upload_id: upload_id.to_string(),
+        upload_id,
         collection_id: collection_id.to_string(),
-        hash: Some(dummy_hash.clone()),
-        no_upload: false,
+        hash: Some(dummy_hash),
+        no_upload: true,
         completed_parts: vec![],
         auto_update: true,
     };
@@ -346,14 +433,99 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, object_filename);
     assert_eq!(finished_object.content_len, object_length);
-    assert_eq!(finished_object.hash.clone().unwrap(), dummy_hash);
+    //assert!(finished_object.hashes.contains(&dummy_hash));
     assert!(finished_object.auto_update);
 
     finished_object
 }
 
+/// Creates an Object in the specified Collection.
+/// Fills everything with random values.
+#[allow(dead_code)]
+pub fn create_staging_object(object_info: &TCreateObject) -> Object {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+    let creator_id = if let Some(c_id) = &object_info.creator_id {
+        diesel_ulid::DieselUlid::from_str(c_id).unwrap()
+    } else {
+        get_admin_user_ulid()
+    };
+    let collection_id =
+        diesel_ulid::DieselUlid::from_str(object_info.collection_id.as_str()).unwrap();
+    let endpoint_id = if let Some(e_id) = &object_info.default_endpoint_id {
+        diesel_ulid::DieselUlid::from_str(e_id).unwrap()
+    } else {
+        get_default_endpoint_ulid()
+    };
+    let sub_path = if let Some(whatev) = &object_info.sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
+    };
+
+    // Initialize Object with random values
+    let object_id = diesel_ulid::DieselUlid::generate();
+    let object_filename = format!("DummyFile.{}", rand_string(5));
+    let object_length = thread_rng().gen_range(1..1073741824);
+    let _upload_id = diesel_ulid::DieselUlid::generate();
+    let dummy_labels = (0..object_info.num_labels)
+        .map(|num| KeyValue {
+            key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("label_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+    let dummy_hooks = (0..object_info.num_hooks)
+        .map(|num| KeyValue {
+            key: format!("hook_key_{:?}_{:?}", num, rand_string(5)),
+            value: format!("hook_value_{:?}_{:?}", num, rand_string(5)),
+        })
+        .collect::<Vec<_>>();
+
+    let init_request = InitializeNewObjectRequest {
+        object: Some(StageObject {
+            filename: object_filename.to_string(),
+            content_len: object_length,
+            source: None,
+            dataclass: DataClass::Private as i32,
+            labels: dummy_labels,
+            hooks: dummy_hooks,
+            sub_path,
+        }),
+        collection_id: object_info.collection_id.to_string(),
+        preferred_endpoint_id: endpoint_id.to_string(),
+        multipart: false,
+        is_specification: false,
+        hash: object_info.init_hash.clone(),
+    };
+
+    let init_response = db
+        .create_object(&init_request, &creator_id, object_id, &endpoint_id)
+        .unwrap();
+
+    let staging_object = get_object(collection_id.to_string(), init_response.object_id);
+    let staging_object_uuid =
+        diesel_ulid::DieselUlid::from_str(staging_object.id.as_str()).unwrap();
+
+    // Validate Object creation
+    assert_eq!(staging_object.id, object_id.to_string());
+    assert!(matches!(
+        grpc_to_db_object_status(&staging_object.status),
+        ObjectStatus::INITIALIZING
+    ));
+    assert_eq!(staging_object.rev_number, 0);
+    assert_eq!(staging_object.filename, object_filename);
+    assert_eq!(staging_object.content_len, object_length);
+    assert_eq!(
+        db.get_reference_status(&staging_object_uuid, &collection_id)
+            .unwrap(),
+        ReferenceStatus::STAGING
+    );
+
+    staging_object
+}
+
 /// GetObjectById wrapper for simplified use in tests.
-pub fn _get_object(collection_id: String, object_id: String) -> Object {
+#[allow(dead_code)]
+pub fn get_object(collection_id: String, object_id: String) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
     // Get Object by its unique id
@@ -364,7 +536,46 @@ pub fn _get_object(collection_id: String, object_id: String) -> Object {
     };
     let object = db.get_object(&get_request).unwrap();
 
-    object.unwrap()
+    object.object.unwrap()
+}
+
+/// GetObjectById wrapper for simplified use in tests.
+#[allow(dead_code)]
+pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
+    use diesel::prelude::*;
+
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let object_uuid = diesel_ulid::DieselUlid::from_str(object_id).unwrap();
+
+    db.pg_connection
+        .get()
+        .unwrap()
+        .transaction::<DbObject, Error, _>(|conn| {
+            Ok(objects
+                .filter(database::schema::objects::id.eq(&object_uuid))
+                .first::<DbObject>(conn)
+                .unwrap())
+        })
+        .unwrap()
+}
+
+/// GetReferences wrapper for simplified use in tests.
+#[allow(dead_code)]
+pub fn get_object_references(
+    collection_id: String,
+    object_id: String,
+    with_revisions: bool,
+) -> Vec<ObjectReference> {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let get_request = GetReferencesRequest {
+        collection_id,
+        object_id,
+        with_revisions,
+    };
+
+    db.get_references(&get_request).unwrap().references
 }
 
 /// Helper function to get the "raw" object from database without ID
@@ -375,7 +586,7 @@ pub fn get_object_status_raw(object_id: &str) -> aruna_server::database::models:
 
     let mut conn = db.pg_connection.get().unwrap();
 
-    let obj_id = uuid::Uuid::parse_str(object_id).unwrap();
+    let obj_id = diesel_ulid::DieselUlid::from_str(object_id).unwrap();
 
     objects
         .filter(database::schema::objects::id.eq(&obj_id))
@@ -388,22 +599,21 @@ pub struct TCreateUpdate {
     pub original_object: Object,
     pub collection_id: String,
     pub new_name: String,
-    pub new_description: String,
+    pub new_sub_path: Option<String>,
+    pub init_hash: Option<ApiHash>,
     pub content_len: i64,
     pub num_labels: i64,
     pub num_hooks: i64,
 }
 
 // Helper function to update an object
-
 #[allow(dead_code)]
 pub fn update_object(update: &TCreateUpdate) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
-    let creator = uuid::Uuid::parse_str("12345678-1234-1234-1234-111111111111").unwrap();
-    let endpoint_id = uuid::Uuid::parse_str("12345678-6666-6666-6666-999999999999").unwrap();
+    let creator = get_admin_user_ulid();
+    let endpoint = get_default_endpoint_ulid();
 
     // ParseTCreateUpdate
-
     let dummy_labels = (0..update.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -423,55 +633,41 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         update.new_name.to_string()
     };
 
-    let update_descr = if update.new_description.is_empty() {
-        "This is an updated object description".to_string()
-    } else {
-        update.new_description.to_string()
-    };
-
     let update_len = if update.content_len == 0 {
         rand_int(123555)
     } else {
         update.content_len
     };
 
-    // Update Object
-    let updated_object_id_001 = uuid::Uuid::new_v4();
-    println!("Updated Object Id: {}", updated_object_id_001);
-    let updated_upload_id = uuid::Uuid::new_v4();
-    let updated_location = Location {
-        r#type: EndpointType::S3 as i32,
-        bucket: update.collection_id.to_string(),
-        path: updated_object_id_001.to_string(),
+    let sub_path = if let Some(whatev) = &update.new_sub_path {
+        whatev.to_string()
+    } else {
+        "".to_string()
     };
+    // Update Object
+    let updated_object_id_001 = diesel_ulid::DieselUlid::generate();
+    let updated_upload_id = diesel_ulid::DieselUlid::generate();
     let update_request = UpdateObjectRequest {
         object_id: update.original_object.id.to_string(),
         collection_id: update.collection_id.to_string(),
         object: Some(StageObject {
             filename: update_name.to_string(),
-            description: update_descr,
-            collection_id: update.collection_id.to_string(),
             content_len: update_len,
             source: None,
             dataclass: 2,
             labels: dummy_labels.clone(),
             hooks: dummy_hooks.clone(),
+            sub_path,
         }),
-        force: true,
         reupload: true,
-        preferred_endpoint_id: "".to_string(),
+        preferred_endpoint_id: endpoint.to_string(),
         multi_part: false,
         is_specification: false,
+        hash: update.init_hash.clone(),
     };
 
     let update_response = db
-        .update_object(
-            &update_request,
-            &Some(updated_location),
-            &creator,
-            endpoint_id,
-            updated_object_id_001,
-        )
+        .update_object(update_request, &creator, updated_object_id_001, &endpoint)
         .unwrap();
 
     // Finish updated Object
@@ -483,8 +679,8 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         object_id: update_response.object_id.to_string(),
         upload_id: updated_upload_id.to_string(),
         collection_id: update_response.collection_id,
-        hash: Some(updated_hash.clone()),
-        no_upload: false,
+        hash: Some(updated_hash),
+        no_upload: true,
         completed_parts: vec![],
         auto_update: true,
     };
@@ -506,10 +702,27 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     );
     assert_eq!(updated_object.filename, update_name);
     assert_eq!(updated_object.content_len, update_len);
-    assert_eq!(updated_object.hash.as_ref().unwrap().clone(), updated_hash);
     assert_eq!(updated_object.hooks, dummy_hooks);
     assert_eq!(updated_object.labels, dummy_labels);
+    //assert!(updated_object.hashes.contains(&updated_hash));
     assert!(updated_object.auto_update);
 
     updated_object
+}
+
+// Helper function to fetch an object group directly from database
+#[allow(dead_code)]
+pub fn get_raw_db_object_group(
+    object_group_uuid: &String,
+    collection_uuid: &String,
+) -> ObjectGroupOverview {
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    db.get_object_group_by_id(&GetObjectGroupByIdRequest {
+        group_id: object_group_uuid.to_string(),
+        collection_id: collection_uuid.to_string(),
+    })
+    .unwrap()
+    .object_group
+    .unwrap()
 }

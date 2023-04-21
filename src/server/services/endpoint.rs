@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Code, Request, Response, Status};
 
@@ -44,7 +45,7 @@ impl EndpointService for EndpointServiceImpl {
         self.authz.admin_authorize(request.metadata()).await?;
 
         let inner_request = request.into_inner();
-        let endpoint = self.database.add_endpoint(&inner_request)?;
+        let (endpoint, pubkey_serial) = self.database.add_endpoint(&inner_request)?;
 
         // Transform database Endpoint to proto Endpoint
         let mut proto_endpoint = ProtoEndpoint::try_from(endpoint)
@@ -54,6 +55,7 @@ impl EndpointService for EndpointServiceImpl {
         // Return gRPC response after everything succeeded
         let response = Response::new(AddEndpointResponse {
             endpoint: Some(proto_endpoint),
+            pubkey_serial,
         });
 
         log::info!("Sending AddEndpointResponse back to client.");
@@ -100,8 +102,8 @@ impl EndpointService for EndpointServiceImpl {
                     aruna_rust_api::api::storage::services::v1::get_endpoint_request::Endpoint::EndpointId(
                         ep_id,
                     ) => {
-                        let ep_uuid = uuid::Uuid
-                            ::parse_str(ep_id.as_str())
+                        let ep_uuid = diesel_ulid::DieselUlid
+                            ::from_str(ep_id.as_str())
                             .map_err(ArunaError::from)?;
                         self.database.get_endpoint(&ep_uuid)
                     }
@@ -240,7 +242,8 @@ impl TryFrom<Endpoint> for ProtoEndpoint {
                 Some(path) => path,
             },
             is_public: db_endpoint.is_public,
-            is_default: false, //ToDo: How to to know default from outside?
+            is_default: false,
+            status: db_endpoint.status as i32, //ToDo: How to to know default from outside?
         })
     }
 }
