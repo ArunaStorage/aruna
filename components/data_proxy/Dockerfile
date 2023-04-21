@@ -3,7 +3,7 @@ FROM rust:1-alpine AS builder
 WORKDIR /usr/src/
 RUN apk update
 RUN apk upgrade
-RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc libsodium
+RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc libsodium libsodium-dev
 
 COPY . .
 RUN cargo build --release
