@@ -28,7 +28,7 @@ r2d2 = { version = ">= 0.8.10, < 0.9.0"}
 rand = "0.8.5"
 rand_core = "0.6.4"
 regex = "1.7.3"
-reqsign = { version = "0.8.5", features = ["reqwest_request"]}
+reqsign = { version = "0.9.4", features = ["reqwest_request"]}
 reqwest = {version = "0.11.16", features = ["json"] }
 serde = {version = "1.0.159", features = ["derive"]}
 serde_json = "1.0.95"
