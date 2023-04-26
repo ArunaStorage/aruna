@@ -256,7 +256,7 @@ impl S3 for S3ServiceServer {
 
         let (object_id, _) = anotif.get_col_obj()?;
         let output = PutObjectOutput {
-            e_tag: Some(object_id),
+            e_tag: Some(format!("-{}", object_id)),
             checksum_sha256: Some(final_sha256),
             ..Default::default()
         };
@@ -625,7 +625,7 @@ impl S3 for S3ServiceServer {
             body,
             content_length: calc_content_len,
             last_modified: Some(timestamp),
-            e_tag: Some(object.id),
+            e_tag: Some(format!("-{}", object.id)),
             version_id: Some(format!("{}", object.rev_number)),
             ..Default::default()
         })
