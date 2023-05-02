@@ -4,16 +4,14 @@ use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
-    types::{CompletedMultipartUpload, CompletedPart},
+    config::Region,
     primitives::ByteStream,
-    Client, config::Region,
+    types::{CompletedMultipartUpload, CompletedPart},
+    Client,
 };
-use std::env;
 use tokio_stream::StreamExt;
 
 use super::storage_backend::StorageBackend;
-
-const S3_ENDPOINT_HOST_ENV_VAR: &str = "S3_ENDPOINT_HOST";
 
 #[derive(Debug, Clone)]
 pub struct S3Backend {
@@ -22,13 +20,12 @@ pub struct S3Backend {
 
 impl S3Backend {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let endpoint = env::var(S3_ENDPOINT_HOST_ENV_VAR)
-            .unwrap_or_else(|_| "http://localhost:9000".to_string());
+        let s3_endpoint = dotenv::var("AWS_S3_HOST").unwrap();
 
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)
             .region(Region::new("RegionOne"))
-            .endpoint_url(endpoint.as_str())
+            .endpoint_url(&s3_endpoint)
             .build();
 
         let s3_client = aws_sdk_s3::Client::from_conf(s3_config);

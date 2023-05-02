@@ -18,8 +18,15 @@ mod service_server;
 async fn main() {
     dotenv::from_filename(".env").ok();
 
-    let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
+    //let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
+    // External S3 server
+    let proxy_data_host = dotenv::var("PROXY_DATA_HOST").unwrap();
+    // ULID of the endpoint
     let endpoint_id = dotenv::var("ENDPOINT_ID").unwrap();
+    // Aruna Backend
+    let backend_host = dotenv::var("BACKEND_HOST").unwrap();
+    // Internal backchannel Aruna -> Dproxy
+    let internal_backend_host = dotenv::var("BACKEND_HOST_INTERNAL").unwrap();
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -45,13 +52,10 @@ async fn main() {
     };
     let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
-    let data_socket = format!("{hostname}:1337");
-    let aruna_server = "http://0.0.0.0:50052".to_string();
-
     let data_handler = Arc::new(
         DataHandler::new(
             storage_backend.clone(),
-            aruna_server.to_string(),
+            backend_host.to_string(),
             ServiceSettings {
                 endpoint_id: rusty_ulid::Ulid::from_str(&endpoint_id).unwrap(),
                 ..Default::default()
@@ -62,8 +66,8 @@ async fn main() {
     );
 
     let data_server = S3Server::new(
-        &data_socket,
-        aruna_server,
+        &proxy_data_host,
+        backend_host,
         storage_backend.clone(),
         data_handler.clone(),
     )
@@ -74,7 +78,7 @@ async fn main() {
         InternalServerImpl::new(storage_backend.clone(), data_handler.clone())
             .await
             .unwrap();
-    let internal_proxy_socket = "0.0.0.0:8081".to_string().parse().unwrap();
+    let internal_proxy_socket = internal_backend_host.parse().unwrap();
 
     let internal_proxy_server =
         ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
