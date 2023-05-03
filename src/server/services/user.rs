@@ -59,11 +59,38 @@ impl UserService for UserServiceImpl {
             // Get subject from OIDC context in metadata
             let subject_id = self.authz.validate_oidc_only(request.metadata()).await?;
 
+            let copied_request = request.into_inner();
             // Create user in db and return response
             let response = Response::new(
                 self.database
-                    .register_user(request.into_inner(), subject_id)?,
+                    .register_user(copied_request.clone(), subject_id)?,
             );
+
+            match &self.mail_client {
+                Some(mc) => {
+                    match mc.send_message(
+                        "support@aruna-storage.org",
+                        format!(
+                            "
+                            A new user registered: \n
+                            Name: {}, \n
+                            Email: {}, \n
+                            Project Hint: {} \n
+                            ",
+                            &copied_request.display_name,
+                            &copied_request.email,
+                            &copied_request.project
+                        ),
+                        &format!("New user registered: {}", &copied_request.display_name),
+                    ) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            log::info!("Failed to send email on RegisterUser: Err: {e}");
+                        }
+                    }
+                }
+                None => {}
+            }
 
             log::info!("Sending RegisterUserResponse back to client.");
             log::debug!("{}", format_grpc_response(&response));
