@@ -1219,6 +1219,7 @@ fn delete_object_from_versioned_collection_test() {
     let versioned_collection = db
         .pin_collection_version(pin_request, creator)
         .unwrap()
+        .0
         .collection
         .unwrap();
 

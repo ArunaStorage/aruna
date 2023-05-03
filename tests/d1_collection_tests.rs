@@ -711,7 +711,7 @@ fn pin_collection_test() {
     };
     let pin_up_res = db.pin_collection_version(pin_col_req, creator).unwrap();
 
-    assert!(pin_up_res.collection.unwrap().id != col_id.to_string());
+    assert!(pin_up_res.0.collection.unwrap().id != col_id.to_string());
 }
 
 #[test]

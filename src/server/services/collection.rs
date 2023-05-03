@@ -295,13 +295,23 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.pin_collection_version(request.get_ref().to_owned(), user_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let (response, bucket) = task::spawn_blocking(move || {
+            db.pin_collection_version(request.get_ref().to_owned(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        let response = Response::new(response);
+
+        match &self.kube_client {
+            Some(kc) => match kc.create_bucket(&bucket).await {
+                Err(e) => {
+                    log::error!("Unable to create kube_bucket err: {e}")
+                }
+                Ok(_) => {}
+            },
+            None => {}
+        }
 
         log::info!("Sending PinCollectionVersionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
