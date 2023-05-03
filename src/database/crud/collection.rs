@@ -359,11 +359,12 @@ impl Database {
         &self,
         request: UpdateCollectionRequest,
         user_id: diesel_ulid::DieselUlid,
-    ) -> Result<UpdateCollectionResponse, ArunaError> {
+    ) -> Result<(UpdateCollectionResponse, String), ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collection_objects::dsl as references_dsl;
         use crate::database::schema::collection_objects::dsl::collection_objects;
         use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::projects::dsl as proj_dsl;
         use crate::database::schema::required_labels::dsl as reqlbl;
 
         // Validate collection name against regex schema
@@ -377,166 +378,204 @@ impl Database {
         let old_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Execute request in transaction
-        let ret_collections = self
-            .pg_connection
-            .get()?
-            .transaction::<Option<CollectionOverview>, ArunaError, _>(|conn| {
-                // Query the old collection
-                let old_collection = collections
-                    .filter(id.eq(&old_collection_id))
-                    .first::<Collection>(conn)?;
+        let (ret_collection, projname) =
+            self.pg_connection
+                .get()?
+                .transaction::<(Option<CollectionOverview>, String), ArunaError, _>(|conn| {
+                    // Query the old collection
+                    let old_collection: Collection = collections
+                        .filter(id.eq(&old_collection_id))
+                        .first::<Collection>(conn)?;
 
-                // Check if label ontology update will succeed
-                check_label_ontology(old_collection_id, request.label_ontology.clone(), conn)?;
+                    // Query the prohject_name -> For bucket
 
-                // If the old collection or the update creates a new "versioned" collection
-                // -> This needs to perform a pin
-                if old_collection.version_id.is_some() || request.version.is_some() {
-                    let mut old_overview = query_overview(conn, old_collection.clone())?;
-                    // Return error if old_version is >= new_version
-                    // Updates must increase the semver
-                    // Updates for "historic" versions are not allowed
-                    if let Some(v) = &old_overview.coll_version {
-                        if Version::from(v.clone()) >= request.version.clone().unwrap_or_default() {
-                            return Err(ArunaError::InvalidRequest(
-                                "New version must be greater than old one".to_string(),
-                            ));
+                    let proj_name: String = proj_dsl::projects
+                        .filter(database::schema::projects::id.eq(&old_collection.project_id))
+                        .select(database::schema::projects::name)
+                        .first::<String>(conn)?;
+
+                    // Check if label ontology update will succeed
+                    check_label_ontology(old_collection_id, request.label_ontology.clone(), conn)?;
+
+                    // If the old collection or the update creates a new "versioned" collection
+                    // -> This needs to perform a pin
+                    if old_collection.version_id.is_some() || request.version.is_some() {
+                        let mut old_overview = query_overview(conn, old_collection.clone())?;
+                        // Return error if old_version is >= new_version
+                        // Updates must increase the semver
+                        // Updates for "historic" versions are not allowed
+                        if let Some(v) = &old_overview.coll_version {
+                            if Version::from(v.clone())
+                                >= request.version.clone().unwrap_or_default()
+                            {
+                                return Err(ArunaError::InvalidRequest(
+                                    "New version must be greater than old one".to_string(),
+                                ));
+                            }
                         }
-                    }
 
-                    // Create new "Version" database struct
-                    let new_version = request
-                        .version
-                        .clone()
-                        .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
-                        .ok_or_else(|| {
-                            ArunaError::InvalidRequest(
-                                "Unable to create collection version".to_string(),
-                            )
-                        })?;
+                        // Create new "Version" database struct
+                        let new_version = request
+                            .version
+                            .clone()
+                            .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
+                            .ok_or_else(|| {
+                                ArunaError::InvalidRequest(
+                                    "Unable to create collection version".to_string(),
+                                )
+                            })?;
 
-                    // Create new Uuid for collection
-                    let new_coll_uuid = diesel_ulid::DieselUlid::generate();
-                    // Create new key_values
-                    let new_key_values = to_key_values::<CollectionKeyValue>(
-                        request.labels.clone(),
-                        request.hooks.clone(),
-                        new_coll_uuid,
-                    );
+                        // Create new Uuid for collection
+                        let new_coll_uuid = diesel_ulid::DieselUlid::generate();
+                        // Create new key_values
+                        let new_key_values = to_key_values::<CollectionKeyValue>(
+                            request.labels.clone(),
+                            request.hooks.clone(),
+                            new_coll_uuid,
+                        );
 
-                    // Modify "old" key_value to include new values
-                    old_overview.coll_key_value = Some(new_key_values);
-                    // Put together the new collection info
-                    let new_coll = Collection {
-                        id: new_coll_uuid,
-                        shared_version_id: old_collection.shared_version_id,
-                        name: request.name.clone(),
-                        description: request.description.clone(),
-                        created_at: chrono::Utc::now().naive_utc(),
-                        created_by: user_id,
-                        version_id: Some(new_version.id),
-                        dataclass: Some(request.dataclass()).map(DBDataclass::from),
-                        project_id: old_collection.project_id,
-                    };
-                    // Execute the pin request and return the collection overview
+                        // Modify "old" key_value to include new values
+                        old_overview.coll_key_value = Some(new_key_values);
+                        // Put together the new collection info
+                        let new_coll = Collection {
+                            id: new_coll_uuid,
+                            shared_version_id: old_collection.shared_version_id,
+                            name: request.name.clone(),
+                            description: request.description.clone(),
+                            created_at: chrono::Utc::now().naive_utc(),
+                            created_by: user_id,
+                            version_id: Some(new_version.id),
+                            dataclass: Some(request.dataclass()).map(DBDataclass::from),
+                            project_id: old_collection.project_id,
+                        };
+                        // Execute the pin request and return the collection overview
 
-                    let new_overview = pin_collection_to_version(
-                        old_collection_id,
-                        user_id,
-                        transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
-                        conn,
-                    )?;
+                        let new_overview = pin_collection_to_version(
+                            old_collection_id,
+                            user_id,
+                            transform_collection_overviewdb(
+                                new_coll,
+                                new_version,
+                                Some(old_overview),
+                            )?,
+                            conn,
+                        )?;
 
-                    // Parse the uuid
-                    let new_uuid_parsed = diesel_ulid::DieselUlid::from_str(&new_overview.id)?;
-                    // Update ontology
-                    // Delete old required labels
-                    delete(reqlbl::required_labels)
-                        .filter(reqlbl::collection_id.eq(new_uuid_parsed))
-                        .execute(conn)?;
-
-                    if request.label_ontology.is_some() {
-                        insert_into(reqlbl::required_labels)
-                            .values(&from_ontology_todb(request.label_ontology, new_uuid_parsed))
+                        // Parse the uuid
+                        let new_uuid_parsed = diesel_ulid::DieselUlid::from_str(&new_overview.id)?;
+                        // Update ontology
+                        // Delete old required labels
+                        delete(reqlbl::required_labels)
+                            .filter(reqlbl::collection_id.eq(new_uuid_parsed))
                             .execute(conn)?;
-                    }
 
-                    Ok(Some(new_overview))
-                    // This is the update "in place" for collections without versions
-                } else {
-                    // Name update is only allowed for "empty" collections
-                    if old_collection.name != request.name {
-                        let coll_objects = collection_objects
-                            .filter(references_dsl::collection_id.eq(&old_collection_id))
-                            .select(references_dsl::object_id)
-                            .load::<diesel_ulid::DieselUlid>(conn)?;
-
-                        if !coll_objects.is_empty() {
-                            return Err(ArunaError::InvalidRequest(
-                                "Name update only allowed for empty collections".to_string(),
-                            ));
+                        if request.label_ontology.is_some() {
+                            insert_into(reqlbl::required_labels)
+                                .values(&from_ontology_todb(
+                                    request.label_ontology,
+                                    new_uuid_parsed,
+                                ))
+                                .execute(conn)?;
                         }
-                    }
 
-                    // Create new collection info
-                    let update_col = Collection {
-                        id: old_collection.id,
-                        shared_version_id: old_collection.shared_version_id,
-                        name: request.name,
-                        description: request.description,
-                        created_at: old_collection.created_at,
-                        created_by: user_id,
-                        version_id: None,
-                        dataclass: old_collection.dataclass,
-                        project_id: old_collection.project_id,
-                    };
+                        Ok((Some(new_overview), proj_name))
+                        // This is the update "in place" for collections without versions
+                    } else {
+                        // Name update is only allowed for "empty" collections
+                        if old_collection.name != request.name {
+                            let coll_objects = collection_objects
+                                .filter(references_dsl::collection_id.eq(&old_collection_id))
+                                .select(references_dsl::object_id)
+                                .load::<diesel_ulid::DieselUlid>(conn)?;
 
-                    // Delete all old keyvalues
-                    delete(ckvdsl::collection_key_value)
-                        .filter(ckvdsl::collection_id.eq(old_collection.id))
-                        .execute(conn)?;
-                    // Create new key_values
-                    let new_key_values = to_key_values::<CollectionKeyValue>(
-                        request.labels.clone(),
-                        request.hooks,
-                        old_collection.id,
-                    );
-                    // Insert new key_values
-                    insert_into(ckvdsl::collection_key_value)
-                        .values(new_key_values)
-                        .execute(conn)?;
+                            if !coll_objects.is_empty() {
+                                return Err(ArunaError::InvalidRequest(
+                                    "Name update only allowed for empty collections".to_string(),
+                                ));
+                            }
+                        }
 
-                    // Delete old required labels
-                    delete(reqlbl::required_labels)
-                        .filter(reqlbl::collection_id.eq(old_collection.id))
-                        .execute(conn)?;
+                        // Create new collection info
+                        let update_col = Collection {
+                            id: old_collection.id,
+                            shared_version_id: old_collection.shared_version_id,
+                            name: request.name,
+                            description: request.description,
+                            created_at: old_collection.created_at,
+                            created_by: user_id,
+                            version_id: None,
+                            dataclass: old_collection.dataclass,
+                            project_id: old_collection.project_id,
+                        };
 
-                    if request.label_ontology.is_some() {
-                        insert_into(reqlbl::required_labels)
-                            .values(&from_ontology_todb(
-                                request.label_ontology,
-                                old_collection.id,
-                            ))
+                        // Delete all old keyvalues
+                        delete(ckvdsl::collection_key_value)
+                            .filter(ckvdsl::collection_id.eq(old_collection.id))
                             .execute(conn)?;
+                        // Create new key_values
+                        let new_key_values = to_key_values::<CollectionKeyValue>(
+                            request.labels.clone(),
+                            request.hooks,
+                            old_collection.id,
+                        );
+                        // Insert new key_values
+                        insert_into(ckvdsl::collection_key_value)
+                            .values(new_key_values)
+                            .execute(conn)?;
+
+                        // Delete old required labels
+                        delete(reqlbl::required_labels)
+                            .filter(reqlbl::collection_id.eq(old_collection.id))
+                            .execute(conn)?;
+
+                        if request.label_ontology.is_some() {
+                            insert_into(reqlbl::required_labels)
+                                .values(&from_ontology_todb(
+                                    request.label_ontology,
+                                    old_collection.id,
+                                ))
+                                .execute(conn)?;
+                        }
+
+                        // Update the collection "in place"
+                        update(collections)
+                            .filter(id.eq(&old_collection.id))
+                            .set(&update_col)
+                            .execute(conn)?;
+
+                        // return the new collectionoverview
+                        Ok((
+                            map_to_collection_overview(Some(query_overview(conn, update_col)?))?,
+                            proj_name,
+                        ))
                     }
+                })?;
 
-                    // Update the collection "in place"
-                    update(collections)
-                        .filter(id.eq(&old_collection.id))
-                        .set(&update_col)
-                        .execute(conn)?;
-
-                    // return the new collectionoverview
-                    Ok(map_to_collection_overview(Some(query_overview(
-                        conn, update_col,
-                    )?))?)
+        let bucket = match &ret_collection {
+            Some(c) => match &c.version {
+                Some(v) => match v {
+                    CollectionVersiongRPC::SemanticVersion(semver) => {
+                        format!(
+                            "{}.{}.{}.{}.{}",
+                            &semver.major, &semver.minor, &semver.patch, &c.name, &projname
+                        )
+                    }
+                    CollectionVersiongRPC::Latest(_) => format!("latest.{}.{}", &c.name, &projname),
+                },
+                None => {
+                    format!("latest.{}.{}", &c.name, &projname)
                 }
-            })?;
+            },
+            None => "".to_string(),
+        };
 
         // Return the collectionoverview returned from transaction
-        Ok(UpdateCollectionResponse {
-            collection: ret_collections,
-        })
+        Ok((
+            UpdateCollectionResponse {
+                collection: ret_collection,
+            },
+            bucket,
+        ))
     }
 
     /// PinCollectionVersion creates a copy of the collection with a specific "pinned" version
