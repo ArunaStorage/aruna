@@ -943,12 +943,13 @@ impl Database {
                 },
             )?;
 
-            let db_object = get_object_revision_by_path(conn, object_path, object_revision, None)?
-                .ok_or_else(|| {
-                    ArunaError::InvalidRequest(format!(
-                        "Could not find object for path {object_path}"
-                    ))
-                })?;
+            let db_object =
+                get_object_revision_by_path(conn, object_path, object_revision, None, false)?
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(format!(
+                            "Could not find object for path {object_path}"
+                        ))
+                    })?;
             let proto_object: ProtoObject =
                 if let Some(object_dto) = get_object_ignore_coll(&db_object.id, conn)? {
                     object_dto.try_into()?
@@ -1059,7 +1060,7 @@ impl Database {
                 // Path -> Fetch Object
                 //      Object != PUBLIC | PRIVATE --> return None
                 //      Object == PUBLIC | PRIVATE --> request.hash == encryption_keys.hash --> return encryption key
-                let req_object = get_object_revision_by_path(conn, &request.path, -1, None)?
+                let req_object = get_object_revision_by_path(conn, &request.path, -1, None, true)?
                     .ok_or_else(|| {
                         ArunaError::InvalidRequest(format!(
                             "Could not find object for path {}",
@@ -2331,8 +2332,13 @@ impl Database {
                 ))?;
 
                 // Fetch object to check if it exists
-                let get_object =
-                    get_object_revision_by_path(conn, &request.path, -1, Some(collection_uuid))?;
+                let get_object = get_object_revision_by_path(
+                    conn,
+                    &request.path,
+                    -1,
+                    Some(collection_uuid),
+                    true,
+                )?;
 
                 // Check permissions
                 let (creator_uuid, _) = self.get_checked_user_id_from_token(
@@ -3314,6 +3320,7 @@ pub fn get_object_revision_by_path(
     object_path: &String,
     object_revision: i64,
     check_collection: Option<diesel_ulid::DieselUlid>,
+    include_staging: bool,
 ) -> Result<Option<Object>, ArunaError> {
     if !object_path.starts_with("s3://") {
         return Err(ArunaError::InvalidRequest(
@@ -3356,11 +3363,18 @@ pub fn get_object_revision_by_path(
                 .filter(database::schema::objects::shared_revision_id.eq(p.shared_revision_id))
                 .into_boxed();
 
-            let base_request = if object_revision < 0 {
+            let mut base_request = if object_revision < 0 {
                 base_request // Get the latest revision
             } else {
                 base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
             };
+
+            if !include_staging {
+                base_request = base_request.filter(
+                    database::schema::objects::object_status
+                        .eq(crate::database::models::enums::ObjectStatus::AVAILABLE),
+                );
+            }
 
             Ok(base_request
                 .order_by(database::schema::objects::revision_number.desc())
@@ -3368,6 +3382,9 @@ pub fn get_object_revision_by_path(
                 .optional()?)
         }
         None => {
+            if !include_staging {
+                return Err(ArunaError::InvalidRequest("Object not found".to_string()));
+            };
             // Try to query the temp path from labels
 
             // Get fq_path from label

@@ -13,15 +13,13 @@ use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
 };
 use openssl::pkey::PKey;
-use reqsign::credential::{Credential, CredentialLoad};
-use reqsign::{AwsCredentialLoader, AwsV4Signer};
+use reqsign::{AwsCredential, AwsV4Signer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use time::Duration;
 use tokio::sync::RwLock;
 use tonic::metadata::MetadataMap;
 use url::Url;
@@ -102,27 +100,6 @@ pub struct Context {
     // All other fields will be ignored, this should only be used for
     // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
-}
-
-#[derive(Debug)]
-pub struct CustomLoader {
-    pub access_key: String,
-    pub secret_key: String,
-}
-
-impl CustomLoader {
-    pub fn new(access_key: &str, secret_key: &str) -> Self {
-        CustomLoader {
-            access_key: access_key.to_string(),
-            secret_key: secret_key.to_string(),
-        }
-    }
-}
-
-impl CredentialLoad for CustomLoader {
-    fn load_credential(&self) -> Result<Option<Credential>> {
-        Ok(Some(Credential::new(&self.access_key, &self.secret_key)))
-    }
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -639,19 +616,7 @@ pub fn sign_url(
     endpoint: &str,
     duration: i64,
 ) -> Result<String> {
-    // Signer will load region and credentials from environment by default.
-    let cloder = reqsign::AwsConfigLoader::with_loaded();
-    cloder.set_region("RegionOne");
-
-    let signer = AwsV4Signer::builder()
-        .config_loader(cloder.clone())
-        .credential_loader(
-            AwsCredentialLoader::new(cloder).with_customed_credential_loader(Arc::new(
-                CustomLoader::new(access_key, secret_key),
-            )),
-        )
-        .service("s3")
-        .build()?;
+    let signer = AwsV4Signer::new("s3", "RegionOne");
 
     // Set protocol depending if ssl
     let protocol = if ssl { "https://" } else { "http://" };
@@ -681,7 +646,16 @@ pub fn sign_url(
     let mut req = reqwest::Request::new(method, url);
 
     // Signing request with Signer
-    signer.sign_query(&mut req, Duration::seconds(duration))?;
+    signer.sign_query(
+        &mut req,
+        std::time::Duration::new(duration as u64, 0), // Sec, nano
+        &AwsCredential {
+            access_key_id: access_key.to_string(),
+            secret_access_key: secret_key.to_string(),
+            session_token: None,
+            expires_in: None,
+        },
+    )?;
     Ok(req.url().to_string())
 }
 

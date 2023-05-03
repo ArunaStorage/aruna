@@ -255,7 +255,7 @@ pub async fn try_get_collection(
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init collection service
-    let collection_service = CollectionServiceImpl::new(db, authz).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
 
     // Validate format of provided ids
     let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();

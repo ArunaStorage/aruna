@@ -357,7 +357,7 @@ impl ObjectService for ObjectServiceImpl {
                     diesel_ulid::DieselUlid::from_str(&endpoint_uuid).map_err(ArunaError::from)?;
                 database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
             } else {
-                endpoint_clone.proxy_hostname.to_string()
+                endpoint_clone.proxy_hostname
             };
 
             Ok(GetUploadUrlResponse {
