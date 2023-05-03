@@ -79,7 +79,7 @@ fn create_object_test() {
         .create_new_collection(create_collection_request, creator)
         .unwrap();
     let collection_id =
-        diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
+        diesel_ulid::DieselUlid::from_str(&create_collection_response.0.collection_id).unwrap();
 
     // Create Object
     let new_object_id = diesel_ulid::DieselUlid::generate();

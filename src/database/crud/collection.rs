@@ -82,9 +82,10 @@ impl Database {
         &self,
         request: CreateNewCollectionRequest,
         creator: diesel_ulid::DieselUlid,
-    ) -> Result<CreateNewCollectionResponse, ArunaError> {
+    ) -> Result<(CreateNewCollectionResponse, String), ArunaError> {
         use crate::database::schema::collection_key_value::dsl::*;
         use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::projects::dsl::*;
         use crate::database::schema::required_labels::dsl::*;
 
         // Validate collection name against regex schema
@@ -104,6 +105,7 @@ impl Database {
             request.hooks.clone(),
             collection_uuid,
         );
+        let parsed_project_ulid = diesel_ulid::DieselUlid::from_str(&request.project_id)?;
         // Create collection DB struct
         let db_collection = models::collection::Collection {
             id: collection_uuid,
@@ -114,16 +116,17 @@ impl Database {
             created_at: chrono::Utc::now().naive_utc(),
             version_id: None,
             dataclass: Some(request.dataclass()).map(DBDataclass::from),
-            project_id: diesel_ulid::DieselUlid::from_str(&request.project_id)?,
+            project_id: parsed_project_ulid,
         };
 
         // Map ontology TODO add LabelOntology to createCollection request
         let req_labels = from_ontology_todb(request.label_ontology, collection_uuid);
 
         // Insert in transaction
-        self.pg_connection
+        let proj_name = self
+            .pg_connection
             .get()?
-            .transaction::<_, Error, _>(|conn| {
+            .transaction::<String, Error, _>(|conn| {
                 // Insert collection
                 insert_into(collections)
                     .values(&db_collection)
@@ -138,12 +141,20 @@ impl Database {
                         .values(&req_labels)
                         .execute(conn)?;
                 }
-                Ok(())
+
+                let proj_name: String = projects
+                    .filter(database::schema::projects::id.eq(&parsed_project_ulid))
+                    .select(database::schema::projects::name)
+                    .first::<String>(conn)?;
+                Ok(proj_name)
             })?;
         // Create response and return
-        Ok(CreateNewCollectionResponse {
-            collection_id: collection_uuid.to_string(),
-        })
+        Ok((
+            CreateNewCollectionResponse {
+                collection_id: collection_uuid.to_string(),
+            },
+            format!("latest.{}.{}", request.name, proj_name),
+        ))
     }
 
     /// GetCollectionById queries a single collection via its uuid.

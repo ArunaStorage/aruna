@@ -164,7 +164,7 @@ fn get_collections_test() {
 
     // Create a new collection
     let result_2 = db.create_new_collection(request, creator).unwrap();
-    let res_2_id = result_2.collection_id;
+    let res_2_id = result_2.0.collection_id;
 
     let request = CreateNewCollectionRequest {
         name: "new-collection-3".to_owned(),
@@ -246,7 +246,9 @@ fn get_collections_test() {
             .len()
             == 1
     );
-    assert!(quest_result.collections.unwrap().collection_overviews[0].id == result_1.collection_id);
+    assert!(
+        quest_result.collections.unwrap().collection_overviews[0].id == result_1.0.collection_id
+    );
 
     // 2. Label filter (3)
     let q_col_req = GetCollectionsRequest {
@@ -301,7 +303,9 @@ fn get_collections_test() {
             .len()
             == 1
     );
-    assert!(quest_result.collections.unwrap().collection_overviews[0].id == result_3.collection_id);
+    assert!(
+        quest_result.collections.unwrap().collection_overviews[0].id == result_3.0.collection_id
+    );
 
     // 2. PageRequest (1)
     let q_col_req = GetCollectionsRequest {
@@ -599,7 +603,7 @@ fn pin_collection_test() {
     };
 
     let result = db.create_new_collection(request, creator).unwrap();
-    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.0.collection_id).unwrap();
     assert!(!col_id.to_string().is_empty());
 
     let endpoint_uuid = common::functions::get_default_endpoint_ulid();
@@ -750,7 +754,7 @@ fn delete_collection_test() {
     };
 
     let result_2 = db.create_new_collection(ref_col_request, creator).unwrap();
-    let col_id = diesel_ulid::DieselUlid::from_str(&result.collection_id).unwrap();
+    let col_id = diesel_ulid::DieselUlid::from_str(&result.0.collection_id).unwrap();
     assert!(!col_id.to_string().is_empty());
 
     let endpoint_uuid = common::functions::get_default_endpoint_ulid();
@@ -794,8 +798,8 @@ fn delete_collection_test() {
 
     let obj_ref_req = CreateObjectReferenceRequest {
         object_id: obj_1_id.to_string(),
-        collection_id: result.collection_id,
-        target_collection_id: result_2.collection_id,
+        collection_id: result.0.collection_id,
+        target_collection_id: result_2.0.collection_id,
         writeable: true,
         auto_update: true,
         sub_path: "".to_string(),
@@ -918,7 +922,7 @@ pub fn test_collection_materialized_views_stats() {
         .create_new_collection(create_collection_request, creator)
         .unwrap();
     let collection_id =
-        diesel_ulid::DieselUlid::from_str(&create_collection_response.collection_id).unwrap();
+        diesel_ulid::DieselUlid::from_str(&create_collection_response.0.collection_id).unwrap();
 
     // Create Object
     let new_object_id = diesel_ulid::DieselUlid::generate();
