@@ -19,13 +19,13 @@ use aruna_rust_api::api::storage::models::v1::{
     ProjectPermission, Token, TokenType, User as gRPCUser,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, DeleteApiTokenRequest,
-    DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse,
-    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetUserProjectsRequest,
-    GetUserProjectsResponse, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
-    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UpdateUserEmailRequest,
-    UpdateUserEmailResponse, UserProject, UserWithPerms,
+    ActivateUserRequest, CreateApiTokenRequest, DeleteApiTokenRequest, DeleteApiTokenResponse,
+    DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse, GetApiTokenRequest,
+    GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse, GetNotActivatedUsersRequest,
+    GetNotActivatedUsersResponse, GetUserProjectsRequest, GetUserProjectsResponse, GetUserResponse,
+    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
+    UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse, UserProject,
+    UserWithPerms,
 };
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -96,12 +96,9 @@ impl Database {
     ///
     /// ## Returns
     ///
-    /// * Result<ActivateUserResponse, ArunaError>: Placeholder, currently empty response
+    /// * Result<User, ArunaError>: Placeholder, currently empty response
     ///
-    pub fn activate_user(
-        &self,
-        request: ActivateUserRequest,
-    ) -> Result<ActivateUserResponse, ArunaError> {
+    pub fn activate_user(&self, request: ActivateUserRequest) -> Result<User, ArunaError> {
         use crate::database::schema::user_permissions::dsl::user_permissions;
         use crate::database::schema::users::dsl::*;
 
@@ -117,13 +114,14 @@ impl Database {
         */
 
         // Update the user
-        self.pg_connection
+        let user = self
+            .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
-                update(users)
+            .transaction::<User, ArunaError, _>(|conn| {
+                let user = update(users)
                     .filter(id.eq(&user_id))
                     .set(active.eq(true))
-                    .execute(conn)?;
+                    .get_result::<User>(conn)?;
 
                 if let Some(request_perm) = &request.project_perms {
                     match map_permissions(request_perm.permission()) {
@@ -141,19 +139,19 @@ impl Database {
                                 .values(&user_perm)
                                 .execute(conn)?;
 
-                            Ok(())
+                            Ok(user)
                         }
                         None => Err(ArunaError::InvalidRequest(
                             "Unspecified permission is not allowed".to_string(),
                         )),
                     }
                 } else {
-                    Ok(())
+                    Ok(user)
                 }
             })?;
 
         // Create successfull response
-        Ok(ActivateUserResponse {})
+        Ok(user)
     }
 
     /// Deactivates a registered user.

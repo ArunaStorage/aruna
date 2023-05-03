@@ -168,11 +168,43 @@ impl UserService for UserServiceImpl {
         // For now only admins can activate "new" users
         self.authz.admin_authorize(request.metadata()).await?;
         // Activate the user
-        let response = Response::new(self.database.activate_user(request.into_inner())?);
+        let response = self.database.activate_user(request.into_inner())?;
+
+        if !response.email.clone().is_empty() {
+            match &self.mail_client {
+                Some(mc) => {
+                    match mc.send_message(
+                        &response.email,
+                        format!(
+                            "
+                            Hi and thanks for registering at Aruna (aruna-storage.org) \n
+                            \n
+                            Your account has been activated and is now ready to use. \n
+                            \n
+                            Your user-id is: {}
+                            
+                            If you have any questions, feel free to respond or take a look at our Documentation.
+
+                            Best Regards
+
+                            AOS Team
+                            ",
+                            &response.id.to_string()
+                        ),
+                        &format!("Welcome to Aruna!"),
+                    ) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            log::info!("Failed to send email on RegisterUser: Err: {e}");
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
 
         log::info!("Sending ActivateUserRequest back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        Ok(Response::new(ActivateUserResponse {}))
     }
 
     /// CreateAPIToken creates a new API token, users must use a token for all requests except this one and register_user
