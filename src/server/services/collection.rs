@@ -5,6 +5,7 @@ use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
+use crate::server::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
@@ -15,7 +16,7 @@ use tonic::Response;
 use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(CollectionServiceImpl);
+crate::impl_grpc_server!(CollectionServiceImpl, kube_client: Option<KubeClient>);
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
