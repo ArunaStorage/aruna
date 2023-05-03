@@ -170,7 +170,7 @@ impl UserService for UserServiceImpl {
         // Activate the user
         let response = self.database.activate_user(request.into_inner())?;
 
-        if !response.email.clone().is_empty() {
+        if !response.email.is_empty() {
             match &self.mail_client {
                 Some(mc) => {
                     match mc.send_message(

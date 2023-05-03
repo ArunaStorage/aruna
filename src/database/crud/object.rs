@@ -3383,7 +3383,7 @@ pub fn get_object_revision_by_path(
         }
         None => {
             if !include_staging {
-                return Err(ArunaError::InvalidRequest(format!("Object not found")));
+                return Err(ArunaError::InvalidRequest("Object not found".to_string()));
             };
             // Try to query the temp path from labels
 

@@ -64,12 +64,11 @@ impl CollectionService for CollectionServiceImpl {
         .map_err(ArunaError::from)??;
 
         match &self.kube_client {
-            Some(kc) => match kc.create_bucket(&bucket).await {
-                Err(e) => {
-                    log::error!("Unable to create kube_bucket err: {e}")
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
                 }
-                Ok(_) => {}
-            },
+            }
             None => {}
         }
 
@@ -240,12 +239,11 @@ impl CollectionService for CollectionServiceImpl {
         .map_err(ArunaError::from)??;
 
         match &self.kube_client {
-            Some(kc) => match kc.create_bucket(&bucket).await {
-                Err(e) => {
-                    log::error!("Unable to create kube_bucket err: {e}")
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
                 }
-                Ok(_) => {}
-            },
+            }
             None => {}
         }
 
@@ -304,12 +302,11 @@ impl CollectionService for CollectionServiceImpl {
         let response = Response::new(response);
 
         match &self.kube_client {
-            Some(kc) => match kc.create_bucket(&bucket).await {
-                Err(e) => {
-                    log::error!("Unable to create kube_bucket err: {e}")
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
                 }
-                Ok(_) => {}
-            },
+            }
             None => {}
         }
 
