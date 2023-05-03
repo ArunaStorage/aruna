@@ -442,6 +442,7 @@ fn update_collection_test() {
     let updated_collection = db
         .update_collection(update_request.clone(), creator)
         .unwrap()
+        .0
         .collection
         .unwrap();
 
@@ -471,6 +472,7 @@ fn update_collection_test() {
     let updated_collection = db
         .update_collection(update_request.clone(), creator)
         .unwrap()
+        .0
         .collection
         .unwrap();
 
@@ -539,6 +541,7 @@ fn update_collection_test() {
     let archived_collection = db
         .update_collection(update_request, creator)
         .unwrap()
+        .0
         .collection
         .unwrap();
 
