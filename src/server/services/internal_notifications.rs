@@ -7,6 +7,7 @@ use aruna_rust_api::api::internal::v1::{
     GetStreamGroupResponse,
 };
 use std::sync::Arc;
+use tonic::{Code, Status};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(InternalEventServiceImpl);
@@ -17,24 +18,36 @@ impl InternalEventService for InternalEventServiceImpl {
         &self,
         _request: tonic::Request<CreateStreamGroupRequest>,
     ) -> Result<tonic::Response<CreateStreamGroupResponse>, tonic::Status> {
-        todo!()
+        return Err(Status::new(
+            Code::Unimplemented,
+            "Create StreamGroup not yet implemented",
+        ));
     }
     async fn get_stream_group(
         &self,
         _request: tonic::Request<GetStreamGroupRequest>,
     ) -> Result<tonic::Response<GetStreamGroupResponse>, tonic::Status> {
-        todo!()
+        return Err(Status::new(
+            Code::Unimplemented,
+            "Get StreamGroup not yet implemented",
+        ));
     }
     async fn delete_stream_group(
         &self,
         _request: tonic::Request<DeleteStreamGroupRequest>,
     ) -> Result<tonic::Response<DeleteStreamGroupResponse>, tonic::Status> {
-        todo!()
+        return Err(Status::new(
+            Code::Unimplemented,
+            "Delete StreamGroup not yet implemented",
+        ));
     }
     async fn get_shared_revision(
         &self,
         _request: tonic::Request<GetSharedRevisionRequest>,
     ) -> Result<tonic::Response<GetSharedRevisionResponse>, tonic::Status> {
-        todo!()
+        return Err(Status::new(
+            Code::Unimplemented,
+            "Get Shared Revision not yet implemented",
+        ));
     }
 }
