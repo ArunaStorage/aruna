@@ -626,6 +626,42 @@ impl Database {
         })
     }
 
+    /// Returns the identifier of the collection associated with the specific object group.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `object_group_ulid: &diesel_ulid::DieselUlid` - ObjectGroup identifier
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<diesel_ulid::DieselUlid, ArunaError>` -
+    /// Collection identifier associated with the provided ObjectGroup.
+    ///
+    pub fn get_object_group_collection_id(
+        &self,
+        object_group_ulid: &diesel_ulid::DieselUlid,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+        use crate::database::schema::collection_object_groups::dsl as cogr_dsl;
+        use crate::database::schema::collection_object_groups::dsl::collection_object_groups;
+
+        // Fetch collection ulid from database
+        let collection_ulid = self
+            .pg_connection
+            .get()?
+            .transaction::<diesel_ulid::DieselUlid, ArunaError, _>(|conn| {
+                // Fetch latest object group revision which definitely has a reference
+                let latest: ObjectGroup = get_latest_objgrp(conn, object_group_ulid)?;
+
+                // Fetch collection id of object group reference
+                Ok(collection_object_groups
+                    .filter(cogr_dsl::object_group_id.eq(&latest.id))
+                    .select(cogr_dsl::collection_id)
+                    .first::<diesel_ulid::DieselUlid>(conn)?)
+            })?;
+
+        Ok(collection_ulid)
+    }
+
     pub fn delete_object_group(
         &self,
         request: DeleteObjectGroupRequest,
@@ -871,7 +907,7 @@ pub fn bump_revisisions(
             mappings.insert(old.id, new_uuid);
             // Query the "latest" version first
             // Note: This could be skipped if updates are only allowed for the currently "latest" revision
-            let latest = get_latest_objgrp(conn, old.id)?;
+            let latest = get_latest_objgrp(conn, &old.id)?;
             // Create a new object_group entry
             // with increased revision number
             Ok(ObjectGroup {
@@ -983,7 +1019,7 @@ pub fn bump_revisisions(
 ///
 pub fn get_latest_objgrp(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    ref_object_group_id: diesel_ulid::DieselUlid,
+    ref_object_group_id: &diesel_ulid::DieselUlid,
 ) -> Result<ObjectGroup, diesel::result::Error> {
     use crate::database::schema::object_groups::dsl as objgrps;
     let shared_id = objgrps::object_groups
