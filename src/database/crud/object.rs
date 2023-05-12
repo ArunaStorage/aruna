@@ -3,6 +3,8 @@ use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::str::FromStr;
+use std::thread;
+use std::time;
 
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
@@ -197,14 +199,16 @@ impl Database {
         let collection_uuid =
             diesel_ulid::DieselUlid::from_str(&request.collection_id).map_err(ArunaError::from)?;
 
+        let mut connection = self.pg_connection.get()?;
+
+        let mut backoff = 10;
+        let mut transaction_result;
         // Insert staging object with all its needed assets into database
-        let created_object = self
-            .pg_connection
-            .get()?
-            .transaction::<Object, ArunaError, _>(|conn| {
+        loop {
+            transaction_result = connection.transaction::<Object, ArunaError, _>(|conn| {
                 create_staging_object(
                     conn,
-                    staging_object,
+                    staging_object.clone(),
                     &object_uuid,
                     request.hash.clone(),
                     &collection_uuid,
@@ -212,8 +216,21 @@ impl Database {
                     request.is_specification,
                     Some(endpoint_uuid),
                 )
-            })?;
+            });
 
+            match transaction_result {
+                Ok(_) => break,
+                Err(_) => {
+                    thread::sleep(time::Duration::from_millis(backoff as u64));
+                    backoff = i32::pow(backoff, 2);
+                    if backoff > 100000 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let created_object = transaction_result?;
         // Return response which is missing the upload id which will be created by upload init
         Ok(InitializeNewObjectResponse {
             object_id: created_object.id.to_string(),
@@ -231,119 +248,136 @@ impl Database {
         let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
+        let mut connection = self.pg_connection.get()?;
+        let mut backoff = 10;
+        let mut transaction_result;
+
         // Insert all defined objects into the database
-        let object_dto = self
-            .pg_connection
-            .get()?
-            .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
-                // Check if object is latest!
-                let latest = get_latest_obj(conn, req_object_uuid)?;
-                let is_still_latest = latest.id == req_object_uuid;
 
-                if !is_still_latest {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Object {req_object_uuid} is not latest revision. "
-                    )));
-                }
+        loop {
+            transaction_result =
+                connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+                    // Check if object is latest!
+                    let latest = get_latest_obj(conn, req_object_uuid)?;
+                    let is_still_latest = latest.id == req_object_uuid;
 
-                // What can we do here ?
-                // - Set auto update ?
-                // - Set or check expected hashes
-                // - Finalize EMPTY object ?
+                    if !is_still_latest {
+                        return Err(ArunaError::InvalidRequest(format!(
+                            "Object {req_object_uuid} is not latest revision. "
+                        )));
+                    }
 
-                // // Update the object itself to be available
-                // let returned_obj = diesel::update(
-                //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
-                // )
-                // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
-                // .get_result::<Object>(conn)?;
+                    // What can we do here ?
+                    // - Set auto update ?
+                    // - Set or check expected hashes
+                    // - Finalize EMPTY object ?
 
-                // Update hash if (re-)upload and request contains hash
-                if !request.no_upload && request.hash.is_some() {
-                    (match &request.hash {
-                        None => {
-                            return Err(ArunaError::InvalidRequest(
-                                "Missing hash after re-upload.".to_string(),
-                            ));
-                        }
-                        Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
-                            .set((
-                                database::schema::hashes::hash.eq(&req_hash.hash),
-                                database::schema::hashes::hash_type
-                                    .eq(HashType::from_grpc(req_hash.alg)),
-                            ))
-                            .execute(conn),
-                    })?;
-                }
+                    // // Update the object itself to be available
+                    // let returned_obj = diesel::update(
+                    //     objects.filter(database::schema::objects::id.eq(req_object_uuid)),
+                    // )
+                    // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
+                    // .get_result::<Object>(conn)?;
 
-                // Check if the origin id is different from uuid
-                // This indicates an "updated" object and not a new one
-                // Finishing updates need extra steps to update all references
-                // In other collections / objectgroups
+                    // Update hash if (re-)upload and request contains hash
+                    if !request.no_upload && request.hash.is_some() {
+                        (match &request.hash {
+                            None => {
+                                return Err(ArunaError::InvalidRequest(
+                                    "Missing hash after re-upload.".to_string(),
+                                ));
+                            }
+                            Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                                .set((
+                                    database::schema::hashes::hash.eq(&req_hash.hash),
+                                    database::schema::hashes::hash_type
+                                        .eq(HashType::from_grpc(req_hash.alg)),
+                                ))
+                                .execute(conn),
+                        })?;
+                    }
 
-                if latest.object_status != ObjectStatus::AVAILABLE {
-                    update(objects)
-                        .filter(database::schema::objects::id.eq(&req_object_uuid))
-                        .set((
-                            database::schema::objects::object_status.eq(ObjectStatus::FINALIZING),
-                        ))
-                        .execute(conn)?;
-                }
+                    // Check if the origin id is different from uuid
+                    // This indicates an "updated" object and not a new one
+                    // Finishing updates need extra steps to update all references
+                    // In other collections / objectgroups
 
-                // Special treatment if only metadata was updated
-                if request.no_upload {
-                    // Only on update without upload
-                    if latest.origin_id != req_object_uuid {
-                        // Clone object locations of old object with new object id as data stays the same.
-                        let mut cloned_locations = Vec::new();
-                        for old_location in object_locations
-                            .filter(
-                                database::schema::object_locations::object_id.eq(&latest.origin_id),
-                            )
-                            .load::<ObjectLocation>(conn)?
-                        {
-                            cloned_locations.push(ObjectLocation {
-                                id: diesel_ulid::DieselUlid::generate(),
-                                bucket: old_location.bucket,
-                                path: old_location.path,
-                                endpoint_id: old_location.endpoint_id,
-                                object_id: req_object_uuid,
-                                is_primary: old_location.is_primary,
-                                is_encrypted: old_location.is_encrypted,
-                                is_compressed: old_location.is_compressed,
-                            });
-                        }
-                        insert_into(object_locations)
-                            .values(&cloned_locations)
-                            .execute(conn)?;
-
-                        // Clone encryption keys of old object for specific data hashes
-                        let mut cloned_keys = Vec::new();
-                        for old_key in encryption_keys
-                            .filter(
-                                database::schema::encryption_keys::object_id.eq(&latest.origin_id),
-                            )
-                            .load::<EncryptionKey>(conn)?
-                        {
-                            cloned_keys.push(EncryptionKey {
-                                id: diesel_ulid::DieselUlid::generate(),
-                                hash: old_key.hash,
-                                object_id: req_object_uuid,
-                                endpoint_id: old_key.endpoint_id,
-                                is_temporary: old_key.is_temporary,
-                                encryption_key: old_key.encryption_key,
-                            });
-                        }
-                        insert_into(encryption_keys)
-                            .values(&cloned_keys)
+                    if latest.object_status != ObjectStatus::AVAILABLE {
+                        update(objects)
+                            .filter(database::schema::objects::id.eq(&req_object_uuid))
+                            .set((database::schema::objects::object_status
+                                .eq(ObjectStatus::FINALIZING),))
                             .execute(conn)?;
                     }
 
-                    set_object_available(conn, &latest, &req_coll_uuid, None)?;
-                }
+                    // Special treatment if only metadata was updated
+                    if request.no_upload {
+                        // Only on update without upload
+                        if latest.origin_id != req_object_uuid {
+                            // Clone object locations of old object with new object id as data stays the same.
+                            let mut cloned_locations = Vec::new();
+                            for old_location in object_locations
+                                .filter(
+                                    database::schema::object_locations::object_id
+                                        .eq(&latest.origin_id),
+                                )
+                                .load::<ObjectLocation>(conn)?
+                            {
+                                cloned_locations.push(ObjectLocation {
+                                    id: diesel_ulid::DieselUlid::generate(),
+                                    bucket: old_location.bucket,
+                                    path: old_location.path,
+                                    endpoint_id: old_location.endpoint_id,
+                                    object_id: req_object_uuid,
+                                    is_primary: old_location.is_primary,
+                                    is_encrypted: old_location.is_encrypted,
+                                    is_compressed: old_location.is_compressed,
+                                });
+                            }
+                            insert_into(object_locations)
+                                .values(&cloned_locations)
+                                .execute(conn)?;
 
-                Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
-            })?;
+                            // Clone encryption keys of old object for specific data hashes
+                            let mut cloned_keys = Vec::new();
+                            for old_key in encryption_keys
+                                .filter(
+                                    database::schema::encryption_keys::object_id
+                                        .eq(&latest.origin_id),
+                                )
+                                .load::<EncryptionKey>(conn)?
+                            {
+                                cloned_keys.push(EncryptionKey {
+                                    id: diesel_ulid::DieselUlid::generate(),
+                                    hash: old_key.hash,
+                                    object_id: req_object_uuid,
+                                    endpoint_id: old_key.endpoint_id,
+                                    is_temporary: old_key.is_temporary,
+                                    encryption_key: old_key.encryption_key,
+                                });
+                            }
+                            insert_into(encryption_keys)
+                                .values(&cloned_keys)
+                                .execute(conn)?;
+                        }
+
+                        set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                    }
+
+                    Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
+                });
+            match transaction_result {
+                Ok(_) => break,
+                Err(_) => {
+                    thread::sleep(time::Duration::from_millis(backoff as u64));
+                    backoff = i32::pow(backoff, 2);
+                    if backoff > 100000 {
+                        break;
+                    }
+                }
+            }
+        }
+        let object_dto = transaction_result?;
 
         let mapped = object_dto
             .map(|e| e.try_into())
