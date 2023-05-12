@@ -721,8 +721,15 @@ impl Database {
         collection_uuid: &diesel_ulid::DieselUlid,
     ) -> Result<ObjectWithUrl, ArunaError> {
         // Read object and paths from database
-        let (object_dto, obj_paths) =
-            self.pg_connection
+
+        let mut backoff = 10;
+        let mut transaction_result;
+
+        // Insert all defined objects into the database
+
+        loop {
+            transaction_result = self
+                .pg_connection
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), ArunaError, _>(|conn| {
                     // Check if object exists in collection
@@ -746,7 +753,24 @@ impl Database {
                     };
 
                     Ok((object_dto_option, proto_paths))
-                })?;
+                });
+
+            match transaction_result {
+                Ok(_) => {
+                    break;
+                }
+                Err(_) => {
+                    thread::sleep(time::Duration::from_millis(backoff as u64));
+                    backoff = i32::pow(backoff, 2);
+                    if backoff > 100000 {
+                        log::warn!("Backoff reached for auth!");
+                        break;
+                    }
+                }
+            }
+        }
+
+        let (object_dto, obj_paths) = transaction_result?;
 
         let proto_object: Option<ProtoObject> = object_dto
             .map(|e| e.try_into())

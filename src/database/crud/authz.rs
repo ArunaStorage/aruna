@@ -366,6 +366,7 @@ impl Database {
                     thread::sleep(time::Duration::from_millis(backoff as u64));
                     backoff = i32::pow(backoff, 2);
                     if backoff > 100000 {
+                        log::warn!("Backoff reached for auth!");
                         break;
                     }
                 }
