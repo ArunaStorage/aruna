@@ -81,7 +81,7 @@ pub struct ObjectDto {
     pub object: Object,
     pub labels: Vec<KeyValue>,
     pub hooks: Vec<KeyValue>,
-    pub hashes: Vec<ApiHash>,
+    pub object_hashes: Vec<ApiHash>,
     pub source: Option<Source>,
     pub latest: bool,
     pub update: bool,
@@ -92,7 +92,7 @@ impl PartialEq for ObjectDto {
         self.object == other.object
             && self.labels == other.labels
             && self.hooks == other.hooks
-            && self.hashes == other.hashes
+            && self.object_hashes == other.object_hashes
             && self.source == other.source
             && self.latest == other.latest
             && self.update == other.update
@@ -127,7 +127,7 @@ impl TryFrom<ObjectDto> for ProtoObject {
         let timestamp = naivedatetime_to_prost_time(object_dto.object.created_at)?;
 
         let proto_hashes = object_dto
-            .hashes
+            .object_hashes
             .iter()
             .map(|h| ProtoHash {
                 //alg: object_dto.hash.hash_type as i32,
@@ -4439,7 +4439,7 @@ pub fn get_object(
                 object,
                 labels,
                 hooks,
-                hashes: object_hashes,
+                object_hashes: object_hashes,
                 source,
                 latest,
                 update: colobj.auto_update,
@@ -4503,7 +4503,7 @@ pub fn get_object_ignore_coll(
         object,
         labels,
         hooks,
-        hashes: object_hash,
+        object_hashes: object_hash,
         source,
         latest,
         update: false, // Always false might not include any collection_info
