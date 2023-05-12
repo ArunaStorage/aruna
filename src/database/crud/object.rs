@@ -199,28 +199,34 @@ impl Database {
         let collection_uuid =
             diesel_ulid::DieselUlid::from_str(&request.collection_id).map_err(ArunaError::from)?;
 
-        let mut connection = self.pg_connection.get()?;
-
         let mut backoff = 10;
         let mut transaction_result;
         // Insert staging object with all its needed assets into database
         loop {
-            transaction_result = connection.transaction::<Object, ArunaError, _>(|conn| {
-                create_staging_object(
-                    conn,
-                    staging_object.clone(),
-                    &object_uuid,
-                    request.hash.clone(),
-                    &collection_uuid,
-                    creator_uuid,
-                    request.is_specification,
-                    Some(endpoint_uuid),
-                )
-            });
+            log::info!("Current backoff: {backoff}, create_object");
+            transaction_result = self
+                .pg_connection
+                .get()?
+                .transaction::<Object, ArunaError, _>(|conn| {
+                    create_staging_object(
+                        conn,
+                        staging_object.clone(),
+                        &object_uuid,
+                        request.hash.clone(),
+                        &collection_uuid,
+                        creator_uuid,
+                        request.is_specification,
+                        Some(endpoint_uuid),
+                    )
+                });
 
             match transaction_result {
-                Ok(_) => break,
+                Ok(_) => {
+                    log::info!("Broke with OK, create_object");
+                    break;
+                }
                 Err(_) => {
+                    log::info!("Let us sleep, finish_staging");
                     thread::sleep(time::Duration::from_millis(backoff as u64));
                     backoff = i32::pow(backoff, 2);
                     if backoff > 100000 {
@@ -248,15 +254,17 @@ impl Database {
         let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
-        let mut connection = self.pg_connection.get()?;
         let mut backoff = 10;
         let mut transaction_result;
 
         // Insert all defined objects into the database
 
         loop {
-            transaction_result =
-                connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+            log::info!("Current backoff: {backoff}, finish_object_staging");
+            transaction_result = self
+                .pg_connection
+                .get()?
+                .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
                     // Check if object is latest!
                     let latest = get_latest_obj(conn, req_object_uuid)?;
                     let is_still_latest = latest.id == req_object_uuid;
@@ -367,8 +375,12 @@ impl Database {
                     Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
                 });
             match transaction_result {
-                Ok(_) => break,
+                Ok(_) => {
+                    log::info!("Broke with OK, finish_staging");
+                    break;
+                }
                 Err(_) => {
+                    log::info!("Let us sleep, finish_staging");
                     thread::sleep(time::Duration::from_millis(backoff as u64));
                     backoff = i32::pow(backoff, 2);
                     if backoff > 100000 {
