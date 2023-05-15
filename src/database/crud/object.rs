@@ -4735,15 +4735,16 @@ pub fn create_path_db(
         active: true,
     };
 
-    if (paths
-        .filter(database::schema::paths::bucket.eq(s3bucket))
-        .filter(database::schema::paths::path.eq(s3path))
-        .first::<Path>(conn)
-        .optional()?)
-    .is_none()
-    {
-        diesel::insert_into(paths).values(path_obj).execute(conn)?;
-    };
+    // Can be removed because of unique constraint on s3bucket/s3path
+    // if (paths
+    //     .filter(database::schema::paths::bucket.eq(s3bucket))
+    //     .filter(database::schema::paths::path.eq(s3path))
+    //     .first::<Path>(conn)
+    //     .optional()?)
+    // .is_none()
+    // {
+    diesel::insert_into(paths).values(path_obj).execute(conn)?;
+    // };
 
     Ok(())
 }
