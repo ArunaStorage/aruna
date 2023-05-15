@@ -201,35 +201,31 @@ impl Database {
 
         let mut backoff = 10;
         let mut transaction_result;
+        let mut connection = self.pg_connection.get()?;
         // Insert staging object with all its needed assets into database
         loop {
             log::info!("Current backoff: {backoff}, create_object");
-            transaction_result = self
-                .pg_connection
-                .get()?
-                .transaction::<Object, ArunaError, _>(|conn| {
-                    create_staging_object(
-                        conn,
-                        staging_object.clone(),
-                        &object_uuid,
-                        request.hash.clone(),
-                        &collection_uuid,
-                        creator_uuid,
-                        request.is_specification,
-                        Some(endpoint_uuid),
-                    )
-                });
+            transaction_result = connection.transaction::<Object, ArunaError, _>(|conn| {
+                create_staging_object(
+                    conn,
+                    staging_object.clone(),
+                    &object_uuid,
+                    request.hash.clone(),
+                    &collection_uuid,
+                    creator_uuid,
+                    request.is_specification,
+                    Some(endpoint_uuid),
+                )
+            });
 
             match transaction_result {
                 Ok(_) => {
-                    log::info!("Broke with OK, create_object");
                     break;
                 }
                 Err(_) => {
-                    log::info!("Let us sleep, finish_staging");
                     thread::sleep(time::Duration::from_millis(backoff as u64));
                     backoff = i32::pow(backoff, 2);
-                    if backoff > 100000 {
+                    if backoff > 1000000 {
                         break;
                     }
                 }
@@ -256,15 +252,12 @@ impl Database {
 
         let mut backoff = 10;
         let mut transaction_result;
-
+        let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
 
         loop {
-            log::info!("Current backoff: {backoff}, finish_object_staging");
-            transaction_result = self
-                .pg_connection
-                .get()?
-                .transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
+            transaction_result =
+                connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
                     // Check if object is latest!
                     let latest = get_latest_obj(conn, req_object_uuid)?;
                     let is_still_latest = latest.id == req_object_uuid;
@@ -724,13 +717,11 @@ impl Database {
 
         let mut backoff = 10;
         let mut transaction_result;
-
+        let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
 
         loop {
-            transaction_result = self
-                .pg_connection
-                .get()?
+            transaction_result = connection
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), ArunaError, _>(|conn| {
                     // Check if object exists in collection
                     if !object_exists_in_collection(conn, object_uuid, collection_uuid, true)? {

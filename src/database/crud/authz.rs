@@ -137,126 +137,118 @@ impl Database {
 
         let mut backoff = 10;
         let mut transaction_result: Result<(Option<diesel_ulid::DieselUlid>, ApiToken), dError>;
-
+        let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
 
         loop {
-            transaction_result =
-                self.pg_connection
-                    .get()?
-                    .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(
-                        |conn| {
-                            // Get the API token, if this errors -> no corresponding database token object could be found
-                            let api_token = api_tokens
-                                .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
-                                .first::<ApiToken>(conn)?;
+            transaction_result = connection
+                .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(|conn| {
+                    // Get the API token, if this errors -> no corresponding database token object could be found
+                    let api_token = api_tokens
+                        .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
+                        .first::<ApiToken>(conn)?;
 
-                            // Case 1:
-                            // This is checked first because all other checks can be omitted if this succeeds
-                            // Check if Token is "personal" and if the request is admin scoped
-                            // Check if the user has admin permissions and return
+                    // Case 1:
+                    // This is checked first because all other checks can be omitted if this succeeds
+                    // Check if Token is "personal" and if the request is admin scoped
+                    // Check if the user has admin permissions and return
 
-                            if api_token.collection_id.is_none() && api_token.project_id.is_none() {
-                                let admin_user_perm = sql_query(
-                        "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
+                    if api_token.collection_id.is_none() && api_token.project_id.is_none() {
+                        let admin_user_perm = sql_query(
+                            "SELECT uperm.id, uperm.user_id, uperm.user_right, uperm.project_id 
                                FROM user_permissions AS uperm 
                                JOIN projects AS p 
                                ON p.id = uperm.project_id 
                                WHERE uperm.user_id = $1
                                AND p.flag & 1 = 1
                                LIMIT 1",
-                    )
-                    .bind::<Uuid, _>(api_token.creator_user_id)
-                    .get_result::<UserPermission>(conn)
-                    .optional()?;
+                        )
+                        .bind::<Uuid, _>(api_token.creator_user_id)
+                        .get_result::<UserPermission>(conn)
+                        .optional()?;
 
-                                // If an associated admin_user_perm is found, this can return a new context
-                                // for the admin scope
-                                if admin_user_perm.is_some() {
-                                    return Ok((Some(api_token.creator_user_id), api_token));
-                                }
+                        // If an associated admin_user_perm is found, this can return a new context
+                        // for the admin scope
+                        if admin_user_perm.is_some() {
+                            return Ok((Some(api_token.creator_user_id), api_token));
+                        }
+                    }
+
+                    // Case 2:
+                    // The request is a "personal" scope
+                    // This can immediately return the user_id if the token is also personal scoped
+                    // Mostly used to modify tokens
+                    if req_ctx.personal {
+                        if api_token.project_id.is_none() && api_token.collection_id.is_none() {
+                            return Ok((Some(api_token.creator_user_id), api_token));
+                        } else {
+                            return Err(dError::NotFound);
+                        }
+                    }
+
+                    // If the requested context / scope is of type COLLECTION
+                    if req_ctx.resource_type == Resources::COLLECTION {
+                        // Case 3:
+                        // If api_token.collection_id == context_collection_id
+                        // And user_right != None && api_token.collection_id != None && context_collection_id != None
+                        // This will return Some(Context) otherwise this will return None
+                        if api_token.collection_id.is_some() {
+                            let collection_ctx = option_uuid_helper(
+                                api_token.collection_id,
+                                Some(req_ctx.resource_id),
+                                Resources::COLLECTION,
+                                req_ctx.user_right,
+                                api_token.user_right,
+                            );
+
+                            // If apitoken.collection_id == context_collection_id
+                            // We can return early here -> The ApiToken is "scoped" to this specific collection
+                            // in case the response is None -> just continue
+                            if collection_ctx.is_some() {
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
+                        }
 
-                            // Case 2:
-                            // The request is a "personal" scope
-                            // This can immediately return the user_id if the token is also personal scoped
-                            // Mostly used to modify tokens
-                            if req_ctx.personal {
-                                if api_token.project_id.is_none()
-                                    && api_token.collection_id.is_none()
-                                {
-                                    return Ok((Some(api_token.creator_user_id), api_token));
-                                } else {
-                                    return Err(dError::NotFound);
-                                }
+                        // Case 4:
+                        // When the request is a collection_id that does not directly match
+                        // apitoken.collection_id or apitoken.project_id but api_token is project scoped
+                        // It might be possible that the collection is part of the "scoped" project
+                        // This checks if the collection is part of the "scoped" project
+                        // and returns early
+                        if api_token.project_id.is_some() {
+                            let is_collection_in_project = collections
+                                .filter(
+                                    crate::database::schema::collections::dsl::id
+                                        .eq(req_ctx.resource_id),
+                                )
+                                .filter(
+                                    crate::database::schema::collections::dsl::project_id
+                                        .eq(api_token.project_id.unwrap_or_default()),
+                                )
+                                .select(crate::database::schema::collections::dsl::id)
+                                .first::<diesel_ulid::DieselUlid>(conn)
+                                .optional()?;
+
+                            let col_in_proj_context = option_uuid_helper(
+                                Some(req_ctx.resource_id),
+                                is_collection_in_project,
+                                Resources::COLLECTION,
+                                req_ctx.user_right,
+                                api_token.user_right,
+                            );
+
+                            if col_in_proj_context.is_some() {
+                                return Ok((Some(api_token.creator_user_id), api_token));
                             }
+                        }
 
-                            // If the requested context / scope is of type COLLECTION
-                            if req_ctx.resource_type == Resources::COLLECTION {
-                                // Case 3:
-                                // If api_token.collection_id == context_collection_id
-                                // And user_right != None && api_token.collection_id != None && context_collection_id != None
-                                // This will return Some(Context) otherwise this will return None
-                                if api_token.collection_id.is_some() {
-                                    let collection_ctx = option_uuid_helper(
-                                        api_token.collection_id,
-                                        Some(req_ctx.resource_id),
-                                        Resources::COLLECTION,
-                                        req_ctx.user_right,
-                                        api_token.user_right,
-                                    );
-
-                                    // If apitoken.collection_id == context_collection_id
-                                    // We can return early here -> The ApiToken is "scoped" to this specific collection
-                                    // in case the response is None -> just continue
-                                    if collection_ctx.is_some() {
-                                        return Ok((Some(api_token.creator_user_id), api_token));
-                                    }
-                                }
-
-                                // Case 4:
-                                // When the request is a collection_id that does not directly match
-                                // apitoken.collection_id or apitoken.project_id but api_token is project scoped
-                                // It might be possible that the collection is part of the "scoped" project
-                                // This checks if the collection is part of the "scoped" project
-                                // and returns early
-                                if api_token.project_id.is_some() {
-                                    let is_collection_in_project = collections
-                                        .filter(
-                                            crate::database::schema::collections::dsl::id
-                                                .eq(req_ctx.resource_id),
-                                        )
-                                        .filter(
-                                            crate::database::schema::collections::dsl::project_id
-                                                .eq(api_token.project_id.unwrap_or_default()),
-                                        )
-                                        .select(crate::database::schema::collections::dsl::id)
-                                        .first::<diesel_ulid::DieselUlid>(conn)
-                                        .optional()?;
-
-                                    let col_in_proj_context = option_uuid_helper(
-                                        Some(req_ctx.resource_id),
-                                        is_collection_in_project,
-                                        Resources::COLLECTION,
-                                        req_ctx.user_right,
-                                        api_token.user_right,
-                                    );
-
-                                    if col_in_proj_context.is_some() {
-                                        return Ok((Some(api_token.creator_user_id), api_token));
-                                    }
-                                }
-
-                                // Case 6:
-                                // This is the case when the request is Collection scoped but the ApiToken is "personal"
-                                // -> no collection_id or project_id is specified
-                                // in this case it needs to be checked if the user_permission for the collections project exists
-                                if api_token.collection_id.is_none()
-                                    && api_token.project_id.is_none()
-                                {
-                                    // SELECT * from userpermissions INNER JOIN collections on project_id;
-                                    let user_permission_option: Option<UserPermission> =
-                            user_permissions
+                        // Case 6:
+                        // This is the case when the request is Collection scoped but the ApiToken is "personal"
+                        // -> no collection_id or project_id is specified
+                        // in this case it needs to be checked if the user_permission for the collections project exists
+                        if api_token.collection_id.is_none() && api_token.project_id.is_none() {
+                            // SELECT * from userpermissions INNER JOIN collections on project_id;
+                            let user_permission_option: Option<UserPermission> = user_permissions
                                 .inner_join(collections.on(
                                     crate::database::schema::collections::dsl::project_id.eq(
                                         crate::database::schema::user_permissions::dsl::project_id,
@@ -271,92 +263,73 @@ impl Database {
                                 .first::<UserPermission>(conn)
                                 .optional()?;
 
-                                    if let Some(user_perm) = user_permission_option {
-                                        let col_in_proj_ctx2 = option_uuid_helper(
-                                            Some(req_ctx.resource_id),
-                                            Some(req_ctx.resource_id),
-                                            Resources::COLLECTION,
-                                            req_ctx.user_right,
-                                            Some(user_perm.user_right), // This unwrap is ok safe because project_valid.is_some()
-                                        );
+                            if let Some(user_perm) = user_permission_option {
+                                let col_in_proj_ctx2 = option_uuid_helper(
+                                    Some(req_ctx.resource_id),
+                                    Some(req_ctx.resource_id),
+                                    Resources::COLLECTION,
+                                    req_ctx.user_right,
+                                    Some(user_perm.user_right), // This unwrap is ok safe because project_valid.is_some()
+                                );
 
-                                        if col_in_proj_ctx2.is_some() {
-                                            return Ok((
-                                                Some(api_token.creator_user_id),
-                                                api_token,
-                                            ));
-                                        }
-                                    }
+                                if col_in_proj_ctx2.is_some() {
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
+                        }
+                    }
 
-                            if req_ctx.resource_type == Resources::PROJECT {
-                                // Case 5:
-                                // If api_token.project_id == context_project_id
-                                // And user_right != None && api_token.project_id != None && context_project_id != None
-                                // This will return Some(Context) otherwise this will return None
-                                if api_token.project_id.is_some() {
-                                    let project_ctx = option_uuid_helper(
-                                        api_token.project_id,
-                                        Some(req_ctx.resource_id),
-                                        Resources::PROJECT,
-                                        req_ctx.user_right,
-                                        api_token.user_right,
-                                    );
+                    if req_ctx.resource_type == Resources::PROJECT {
+                        // Case 5:
+                        // If api_token.project_id == context_project_id
+                        // And user_right != None && api_token.project_id != None && context_project_id != None
+                        // This will return Some(Context) otherwise this will return None
+                        if api_token.project_id.is_some() {
+                            let project_ctx = option_uuid_helper(
+                                api_token.project_id,
+                                Some(req_ctx.resource_id),
+                                Resources::PROJECT,
+                                req_ctx.user_right,
+                                api_token.user_right,
+                            );
 
-                                    // If apitoken.collection_id == context_collection_id
-                                    // We can return early here -> The ApiToken is "scoped" to this specific collection
-                                    if project_ctx.is_some() {
-                                        return Ok((Some(api_token.creator_user_id), api_token));
-                                    }
-                                }
+                            // If apitoken.collection_id == context_collection_id
+                            // We can return early here -> The ApiToken is "scoped" to this specific collection
+                            if project_ctx.is_some() {
+                                return Ok((Some(api_token.creator_user_id), api_token));
+                            }
+                        }
 
-                                // Case 7:
-                                // If context is user_scoped check if the user has the correct project permissions
-                                // This checks for the permissions in the user_permissions table which already contains a project_id
-                                if api_token.project_id.is_none()
-                                    && api_token.collection_id.is_none()
-                                {
-                                    let user_permissions_option = user_permissions
-                            .filter(user_id.eq(&api_token.creator_user_id))
-                            .filter(
-                                crate::database::schema::user_permissions::dsl::project_id
-                                    .eq(req_ctx.resource_id),
-                            )
-                            .first::<UserPermission>(conn)
-                            .optional()?;
-                                    if user_permissions_option.is_some() {
-                                        let col_in_proj_ctx = option_uuid_helper(
-                                            Some(
-                                                user_permissions_option
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .project_id,
-                                            ), // This unwrap is ok safe because project_valid.is_some()
-                                            Some(req_ctx.resource_id),
-                                            Resources::PROJECT,
-                                            req_ctx.user_right,
-                                            Some(
-                                                user_permissions_option
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .user_right,
-                                            ), // This unwrap is ok safe because project_valid.is_some()
-                                        );
+                        // Case 7:
+                        // If context is user_scoped check if the user has the correct project permissions
+                        // This checks for the permissions in the user_permissions table which already contains a project_id
+                        if api_token.project_id.is_none() && api_token.collection_id.is_none() {
+                            let user_permissions_option = user_permissions
+                                .filter(user_id.eq(&api_token.creator_user_id))
+                                .filter(
+                                    crate::database::schema::user_permissions::dsl::project_id
+                                        .eq(req_ctx.resource_id),
+                                )
+                                .first::<UserPermission>(conn)
+                                .optional()?;
+                            if user_permissions_option.is_some() {
+                                let col_in_proj_ctx = option_uuid_helper(
+                                    Some(user_permissions_option.as_ref().unwrap().project_id), // This unwrap is ok safe because project_valid.is_some()
+                                    Some(req_ctx.resource_id),
+                                    Resources::PROJECT,
+                                    req_ctx.user_right,
+                                    Some(user_permissions_option.as_ref().unwrap().user_right), // This unwrap is ok safe because project_valid.is_some()
+                                );
 
-                                        if col_in_proj_ctx.is_some() {
-                                            return Ok((
-                                                Some(api_token.creator_user_id),
-                                                api_token,
-                                            ));
-                                        }
-                                    }
+                                if col_in_proj_ctx.is_some() {
+                                    return Ok((Some(api_token.creator_user_id), api_token));
                                 }
                             }
+                        }
+                    }
 
-                            Ok((None, api_token))
-                        },
-                    );
+                    Ok((None, api_token))
+                });
 
             match transaction_result {
                 Ok(_) => {
