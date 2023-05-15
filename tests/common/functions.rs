@@ -562,20 +562,15 @@ pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
 
 /// GetReferences wrapper for simplified use in tests.
 #[allow(dead_code)]
-pub fn get_object_references(
-    collection_id: String,
-    object_id: String,
-    with_revisions: bool,
-) -> Vec<ObjectReference> {
+pub fn get_object_references(object_ulid: &str, with_revisions: bool) -> Vec<ObjectReference> {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let get_request = GetReferencesRequest {
-        collection_id,
-        object_id,
+    db.get_references(
+        &diesel_ulid::DieselUlid::from_str(object_ulid).unwrap(),
         with_revisions,
-    };
-
-    db.get_references(&get_request).unwrap().references
+    )
+    .unwrap()
+    .references
 }
 
 /// Helper function to get the "raw" object from database without ID

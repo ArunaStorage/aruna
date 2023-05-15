@@ -2486,11 +2486,7 @@ async fn delete_object_grpc_test() {
 
     assert!(delete_object_response.is_ok());
 
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        staging_object_id.to_string(),
-        false,
-    );
+    let object_references = common::functions::get_object_references(&staging_object_id, false);
 
     assert!(object_references.is_empty());
 
@@ -2566,11 +2562,7 @@ async fn delete_object_grpc_test() {
 
     assert!(delete_object_response.is_ok());
 
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        staging_object_id.to_string(),
-        false,
-    );
+    let object_references = common::functions::get_object_references(&staging_object_id, false);
 
     assert!(object_references.is_empty());
 
@@ -2690,11 +2682,7 @@ async fn delete_object_revisions_grpc_test() {
     assert_eq!(rev_2_deleted.object_status, ObjectStatus::TRASH); // Validate deletion
 
     // Validate that latest reference should now point to revision 1
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        rev_2_object.id.to_string(),
-        true,
-    );
+    let object_references = common::functions::get_object_references(&rev_2_object.id, true);
     assert_eq!(object_references.len(), 0); // No references should exist
 
     // Check status of all 3 objects

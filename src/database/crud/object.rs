@@ -1576,21 +1576,19 @@ impl Database {
     ///
     pub fn get_references(
         &self,
-        request: &GetReferencesRequest,
+        object_ulid: &diesel_ulid::DieselUlid,
+        with_revisions: bool,
     ) -> Result<GetReferencesResponse, ArunaError> {
-        // Extract (and automagically validate) uuids from request
-        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
-
         // Transaction time
         let references = self
             .pg_connection
             .get()?
             .transaction::<Vec<ObjectReference>, Error, _>(|conn| {
                 let orig_object = objects
-                    .filter(database::schema::objects::id.eq(object_uuid))
+                    .filter(database::schema::objects::id.eq(object_ulid))
                     .first::<Object>(conn)?;
 
-                if request.with_revisions {
+                if with_revisions {
                     let all_revisions = objects
                         .filter(
                             database::schema::objects::shared_revision_id

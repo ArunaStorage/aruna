@@ -686,12 +686,19 @@ impl ObjectService for ObjectServiceImpl {
             )
             .await?;
 
+        // Consume gRPC request and extract remaining request fields
+        let inner_request = request.into_inner();
+        let object_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.object_id)
+            .map_err(ArunaError::from)?;
+
         // Create Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.get_references(request.get_ref()))
-                .await
-                .map_err(ArunaError::from)??,
+            task::spawn_blocking(move || {
+                database_clone.get_references(&object_ulid, inner_request.with_revisions)
+            })
+            .await
+            .map_err(ArunaError::from)??,
         );
 
         // Return gRPC response after everything succeeded
