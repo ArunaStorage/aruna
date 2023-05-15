@@ -4734,7 +4734,10 @@ pub fn create_path_db(
     //     .optional()?)
     // .is_none()
     // {
-    diesel::insert_into(paths).values(path_obj).execute(conn)?;
+    diesel::insert_into(paths)
+        .values(path_obj)
+        .on_conflict_do_nothing()
+        .execute(conn)?;
     // };
 
     Ok(())
