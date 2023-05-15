@@ -4500,7 +4500,7 @@ pub fn get_object(
                 object,
                 labels,
                 hooks,
-                object_hashes: object_hashes,
+                object_hashes,
                 source,
                 latest,
                 update: colobj.auto_update,
