@@ -4,10 +4,12 @@ use chrono::{Datelike, Timelike};
 use std::str::FromStr;
 
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, Status, Version,
+    DataClass, Hashalgorithm, KeyValue, LabelOrIdQuery, PageRequest, ResourceType, Status, Version,
 };
 
-use crate::database::models::enums::{Dataclass, HashType, KeyValueType, ObjectStatus, UserRights};
+use crate::database::models::enums::{
+    Dataclass, HashType, KeyValueType, ObjectStatus, Resources, UserRights,
+};
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::TypeConversionError::PROTOCONVERSION;
 use crate::error::{ArunaError, TypeConversionError};
@@ -556,6 +558,34 @@ pub fn db_to_grpc_hash_type(db_hash_type: &HashType) -> i32 {
         HashType::SHA256 => Hashalgorithm::Sha256 as i32,
         _ => Hashalgorithm::Unspecified as i32,
     }
+}
+
+/// Converts gRPC enum ResourceType to db model enum Resources
+pub fn grpc_to_db_resource(proto_resource: &i32) -> Result<Resources, ArunaError> {
+    let db_resource = match proto_resource {
+        1 => Resources::PROJECT,
+        2 => Resources::COLLECTION,
+        3 => Resources::OBJECTGROUP,
+        4 => Resources::OBJECT,
+        5 => {
+            return Err(ArunaError::InvalidRequest(
+                "Resource type all not yet supported".to_string(),
+            ))
+        }
+        _ => return Err(ArunaError::TypeConversionError(PROTOCONVERSION)), // Unspecified is not good...
+    };
+
+    Ok(db_resource)
+}
+
+/// Converts db model enum Resources to gRPC enum ResourceType
+pub fn db_to_grpc_resource(db_resource: Resources) -> Result<ResourceType, ArunaError> {
+    Ok(match db_resource {
+        Resources::PROJECT => ResourceType::Project,
+        Resources::COLLECTION => ResourceType::Collection,
+        Resources::OBJECT => ResourceType::Object,
+        Resources::OBJECTGROUP => ResourceType::ObjectGroup,
+    })
 }
 
 #[cfg(test)]
