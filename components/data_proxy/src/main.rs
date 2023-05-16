@@ -18,7 +18,7 @@ mod service_server;
 async fn main() {
     dotenv::from_filename(".env").ok();
 
-    //let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
+    let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
     // External S3 server
     let proxy_data_host = dotenv::var("PROXY_DATA_HOST").unwrap();
     // ULID of the endpoint
@@ -67,6 +67,7 @@ async fn main() {
 
     let data_server = S3Server::new(
         &proxy_data_host,
+        hostname,
         backend_host,
         storage_backend.clone(),
         data_handler.clone(),
