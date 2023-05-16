@@ -8,8 +8,8 @@ use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
     CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
-    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, ObjectWithUrl,
-    PinCollectionVersionRequest, StageObject, UpdateObjectRequest,
+    GetObjectsRequest, InitializeNewObjectRequest, ObjectWithUrl, PinCollectionVersionRequest,
+    StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -464,9 +464,9 @@ fn update_object_get_references_test() {
         collection_id: rand_collection.id.to_string(),
         ..Default::default()
     });
+    let object_rev_0_ulid = diesel_ulid::DieselUlid::from_str(&object.id).unwrap();
 
     // Create auto_updating reference in col 2
-
     let create_ref = CreateObjectReferenceRequest {
         object_id: object.id.clone(),
         collection_id: rand_collection.id.clone(),
@@ -493,6 +493,7 @@ fn update_object_get_references_test() {
         content_len: 123456,
         ..Default::default()
     });
+    let object_rev_2_ulid = diesel_ulid::DieselUlid::from_str(&update_2.id).unwrap();
 
     // Validate update
     assert!(matches!(
@@ -505,7 +506,6 @@ fn update_object_get_references_test() {
     assert!(update_2.auto_update);
 
     // Get auto_updated object
-
     let get_obj = GetObjectsRequest {
         collection_id: rand_collection_2.id,
         page_request: None,
@@ -519,25 +519,12 @@ fn update_object_get_references_test() {
     assert_eq!(some_object.object.unwrap().id, update_2.id);
 
     // Get references test
-
-    let get_refs = GetReferencesRequest {
-        collection_id: rand_collection.id.to_string(),
-        object_id: update_2.id,
-        with_revisions: true,
-    };
-
-    let get_refs_resp_1 = db.get_references(&get_refs).unwrap();
+    let get_refs_resp_1 = db.get_references(&object_rev_2_ulid, true).unwrap();
 
     println!("Refs: {:#?}", get_refs_resp_1.references);
     assert_eq!(get_refs_resp_1.references.len(), 2);
 
-    let get_refs = GetReferencesRequest {
-        collection_id: rand_collection.id,
-        object_id: object.id,
-        with_revisions: true,
-    };
-
-    let get_refs_resp_2 = db.get_references(&get_refs).unwrap();
+    let get_refs_resp_2 = db.get_references(&object_rev_0_ulid, true).unwrap();
 
     println!("Refs: {:#?}", get_refs_resp_2.references);
     assert!(get_refs_resp_2.references.len() == 2);
