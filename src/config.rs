@@ -1,5 +1,5 @@
 use crate::database::models::enums::EndpointType;
-use std::env::VarError;
+use std::env::{self, VarError};
 use std::fs;
 
 use crate::error::{ArunaError, TypeConversionError};
@@ -14,7 +14,9 @@ pub struct ArunaServerConfig {
 
 /// This struct contains all values collected from environmental variables
 #[derive(Clone, Debug, Deserialize)]
-pub struct EnvConfig {}
+pub struct EnvConfig {
+    pub event_emitter_host: String,
+}
 
 /// This struct is used as template to parse the ArunaServer config.toml file
 #[derive(Clone, Debug, Deserialize)]
@@ -103,7 +105,8 @@ impl ArunaServerConfig {
     /// ## Behaviour:
     ///
     /// Tries to load all specified environmental variables specified in the function body.
-    /// If the parameter is mandatory the
+    /// If the parameter is mandatory any error stops the execution. Optional parameters are
+    /// filled with a specified default value if not set.
     ///
     fn load_config_env() -> Result<EnvConfig, VarError> {
         //let env_var = env::var("ENV_VAR")?; //Note: Mandatory
@@ -115,7 +118,15 @@ impl ArunaServerConfig {
         };
         */
 
-        Ok(EnvConfig {})
+        // Optional event emitter host for notifications
+        let internal_event_emitter_host = match env::var("INTERNAL_EVENT_EMITTER_HOST") {
+            Ok(host) => host,
+            Err(_) => "".to_string(),
+        };
+
+        Ok(EnvConfig {
+            event_emitter_host: internal_event_emitter_host,
+        })
     }
 }
 
