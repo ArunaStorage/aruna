@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::anyhow;
 use kube::{
     api::{Api, PostParams},
@@ -34,7 +36,8 @@ pub struct KubeClient {
 impl KubeClient {
     pub async fn new() -> anyhow::Result<Self> {
         let client = Client::try_default().await?;
-        let api: Api<BucketCert> = Api::default_namespaced(client.clone());
+        let namespace = env::var("ARUNA_NAMESPACE")?;
+        let api: Api<BucketCert> = Api::namespaced(client.clone(), &namespace);
         Ok(KubeClient {
             _client: client,
             api,

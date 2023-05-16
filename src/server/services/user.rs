@@ -191,7 +191,7 @@ impl UserService for UserServiceImpl {
                             ",
                             &response.id.to_string()
                         ),
-                        &format!("Welcome to Aruna!"),
+                        "Welcome to Aruna!",
                     ) {
                         Ok(()) => {}
                         Err(e) => {

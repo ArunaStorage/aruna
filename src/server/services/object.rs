@@ -415,19 +415,29 @@ impl ObjectService for ObjectServiceImpl {
                 collection_uuid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
-            .await?;
+            .await
+            .unwrap();
 
         // Consume gRPC request
         let inner_request = request.into_inner();
 
         // Fetch staging object to get temp path from init
-        let staging_object = self
-            .database
-            .get_object_by_id(&object_uuid, &collection_uuid)?
-            .object
-            .ok_or(ArunaError::InvalidRequest(format!(
+
+        let database_clone = self.database.clone();
+        let staging_object = task::spawn_blocking(move || {
+            database_clone
+                .get_object_by_id(&object_uuid, &collection_uuid)?
+                .object
+                .ok_or(ArunaError::InvalidRequest(format!(
+                    "Could not find object {object_uuid} in collection {collection_uuid}"
+                )))
+        })
+        .await
+        .map_err(|_| {
+            ArunaError::InvalidRequest(format!(
                 "Could not find object {object_uuid} in collection {collection_uuid}"
-            )))?;
+            ))
+        })??;
 
         // Check if object status is still INITIALIZING
         if grpc_to_db_object_status(&staging_object.status) != ObjectStatus::INITIALIZING {
