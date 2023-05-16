@@ -6,6 +6,7 @@ use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
 
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use chrono::prelude::*;
 use dotenv::dotenv;
 use http::Method;
@@ -21,6 +22,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
+use tokio::task;
 use tonic::metadata::MetadataMap;
 use url::Url;
 
@@ -419,6 +421,104 @@ impl Authz {
             }),
         )
         .await
+    }
+
+    /// Authorizes an arbitrary resource for read permissions.
+    /// Currently used for streaming group requests authorizations.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `metadata` - Request header metadata containing the authorization token
+    /// * `resource_ulid` - Unique id of the resource
+    /// * `resource_type` - Type of the resource
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<diesel_ulid::DieselUlid, ArunaError>` - 
+    /// Returns the user id associated with the provided authorization token on authorization success;
+    /// Error else.
+    ///
+    pub async fn resource_read_authorize(
+        &self,
+        metadata: MetadataMap,
+        resource_ulid: diesel_ulid::DieselUlid,
+        resource_type: ResourceType,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+        let authorized = match resource_type {
+            ResourceType::Unspecified => {
+                return Err(ArunaError::InvalidRequest(
+                    "unspecified resource type is not allowed".to_string(),
+                ))
+            }
+            ResourceType::Project => {
+                // Authorize against project
+                self.project_authorize(&metadata, resource_ulid, UserRights::READ)
+                    .await?
+            }
+            ResourceType::Collection => {
+                // Authorize against collection
+                self.collection_authorize(&metadata, resource_ulid, UserRights::READ)
+                    .await?
+            }
+            ResourceType::ObjectGroup => {
+                // Authorize against collection
+                let database_clone = self.db.clone();
+                let collection_ulid = task::spawn_blocking(move || {
+                    database_clone.get_object_group_collection_id(&resource_ulid)
+                })
+                .await
+                .map_err(ArunaError::from)??;
+
+                self.collection_authorize(&metadata, collection_ulid, UserRights::READ)
+                    .await?
+            }
+            ResourceType::Object => {
+                // Get all collection ids and auth until success or ids exhausted
+                let database_clone = self.db.clone();
+                let collection_ulids = task::spawn_blocking(move || {
+                    database_clone.get_references(&resource_ulid, false)
+                })
+                .await
+                .map_err(ArunaError::from)??
+                .references
+                .into_iter()
+                .map(|reference| {
+                    diesel_ulid::DieselUlid::from_str(&reference.collection_id)
+                        .map_err(ArunaError::from)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+                let mut authed = None;
+                for collection_ulid in collection_ulids {
+                    match self
+                        .collection_authorize(&metadata, collection_ulid, UserRights::READ)
+                        .await
+                    {
+                        Ok(token_ulid) => {
+                            authed = Some(token_ulid);
+                            break;
+                        }
+                        Err(_) => {}
+                    }
+                }
+
+                match authed {
+                    Some(token_ulid) => token_ulid,
+                    None => {
+                        return Err(ArunaError::AuthorizationError(
+                            AuthorizationError::PERMISSIONDENIED,
+                        ))
+                    }
+                }
+            }
+            ResourceType::All => {
+                return Err(ArunaError::InvalidRequest(
+                    "resource type all not yet supported".to_string(),
+                ))
+            }
+        };
+
+        Ok(authorized)
     }
 
     pub async fn check_if_oidc(
