@@ -17,6 +17,7 @@ use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::service_account::ServiceAccountServiceImpl;
 use crate::server::services::user::UserServiceImpl;
 use aruna_rust_api::api::internal::v1::internal_authorize_service_server::InternalAuthorizeServiceServer;
+use aruna_rust_api::api::internal::v1::internal_event_emitter_service_client::InternalEventEmitterServiceClient;
 use aruna_rust_api::api::internal::v1::internal_event_service_server::InternalEventServiceServer;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierServiceServer;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
@@ -65,6 +66,19 @@ impl ServiceServer {
             Ok(kc) => Some(kc),
             Err(e) => {
                 log::error!("Failed to initialize kube_client, err: {e}");
+                None
+            }
+        };
+
+        // Initialze InternalEventEmitterServiceClient if host is set
+        let event_emitter_client = match InternalEventEmitterServiceClient::connect(
+            config.clone().env_config.event_emitter_host,
+        )
+        .await
+        {
+            Ok(client) => Some(client),
+            Err(e) => {
+                log::error!("Failed to initialize event emitter, err: {e}");
                 None
             }
         };

@@ -3,7 +3,7 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetObjectGroupByIdRequest,
-    GetReferencesRequest, ObjectReference, UpdateObjectRequest,
+    ObjectReference, UpdateObjectRequest,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{

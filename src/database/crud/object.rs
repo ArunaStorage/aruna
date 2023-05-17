@@ -27,9 +27,9 @@ use aruna_rust_api::api::internal::v1::{
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
     CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
-    GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesRequest,
-    GetReferencesResponse, InitializeNewObjectResponse, ObjectReference, ObjectWithUrl,
-    Path as ProtoPath, SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
+    GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesResponse,
+    InitializeNewObjectResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
