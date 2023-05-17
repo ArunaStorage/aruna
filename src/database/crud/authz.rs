@@ -331,18 +331,21 @@ impl Database {
                     Ok((None, api_token))
                 });
 
-            match transaction_result {
+            match &transaction_result {
                 Ok(_) => {
                     break;
                 }
-                Err(_) => {
-                    thread::sleep(time::Duration::from_millis(backoff as u64));
-                    backoff = i32::pow(backoff, 2);
-                    if backoff > 100000 {
-                        log::warn!("Backoff reached for auth!");
-                        break;
+                Err(err) => match err {
+                    dError::SerializationError(_) => {
+                        thread::sleep(time::Duration::from_millis(backoff as u64));
+                        backoff = i32::pow(backoff, 2);
+                        if backoff > 100000 {
+                            log::warn!("Backoff reached for auth retries!");
+                            break;
+                        }
                     }
-                }
+                    _ => break,
+                },
             }
         }
 

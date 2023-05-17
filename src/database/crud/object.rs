@@ -218,17 +218,21 @@ impl Database {
                 )
             });
 
-            match transaction_result {
+            match &transaction_result {
                 Ok(_) => {
                     break;
                 }
-                Err(_) => {
-                    thread::sleep(time::Duration::from_millis(backoff as u64));
-                    backoff = i32::pow(backoff, 2);
-                    if backoff > 1000000 {
-                        break;
+                Err(err) => match err {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                        thread::sleep(time::Duration::from_millis(backoff as u64));
+                        backoff = i32::pow(backoff, 2);
+                        if backoff > 100000 {
+                            log::warn!("Backoff reached for object insert retries!");
+                            break;
+                        }
                     }
-                }
+                    _ => break,
+                },
             }
         }
 
@@ -367,19 +371,22 @@ impl Database {
 
                     Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
                 });
-            match transaction_result {
+
+            match &transaction_result {
                 Ok(_) => {
-                    log::info!("Broke with OK, finish_staging");
                     break;
                 }
-                Err(_) => {
-                    log::info!("Let us sleep, finish_staging");
-                    thread::sleep(time::Duration::from_millis(backoff as u64));
-                    backoff = i32::pow(backoff, 2);
-                    if backoff > 100000 {
-                        break;
+                Err(err) => match err {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                        thread::sleep(time::Duration::from_millis(backoff as u64));
+                        backoff = i32::pow(backoff, 2);
+                        if backoff > 100000 {
+                            log::warn!("Backoff reached for object finish retries!");
+                            break;
+                        }
                     }
-                }
+                    _ => break,
+                },
             }
         }
         let object_dto = transaction_result?;
@@ -746,18 +753,21 @@ impl Database {
                     Ok((object_dto_option, proto_paths))
                 });
 
-            match transaction_result {
+            match &transaction_result {
                 Ok(_) => {
                     break;
                 }
-                Err(_) => {
-                    thread::sleep(time::Duration::from_millis(backoff as u64));
-                    backoff = i32::pow(backoff, 2);
-                    if backoff > 100000 {
-                        log::warn!("Backoff reached for auth!");
-                        break;
+                Err(err) => match err {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                        thread::sleep(time::Duration::from_millis(backoff as u64));
+                        backoff = i32::pow(backoff, 2);
+                        if backoff > 100000 {
+                            log::warn!("Backoff reached for object fetch retries!");
+                            break;
+                        }
                     }
-                }
+                    _ => break,
+                },
             }
         }
 
