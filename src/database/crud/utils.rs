@@ -8,6 +8,7 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 
 use crate::database::models::enums::{Dataclass, HashType, KeyValueType, ObjectStatus, UserRights};
+use crate::database::models::object::Relation;
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::TypeConversionError::PROTOCONVERSION;
 use crate::error::{ArunaError, TypeConversionError};
@@ -513,6 +514,11 @@ pub fn db_to_grpc_dataclass(db_dataclass: &Dataclass) -> DataClass {
     }
 }
 
+pub fn get_latest_relation(mut relations: Vec<Relation>) -> Option<Relation> {
+    relations.sort_by(|a, b| a.object_id.cmp(&b.object_id));
+    relations.pop()
+}
+
 pub fn grpc_to_db_object_status(grpc_status: &i32) -> ObjectStatus {
     match grpc_status {
         0 => ObjectStatus::ERROR, // Unspecified is not good
@@ -611,6 +617,30 @@ mod tests {
 
         assert_eq!(as_option.is_some(), result.is_some());
         assert_eq!(test_id.to_string(), result.unwrap())
+    }
+
+    #[test]
+    fn get_latest_relation_test() {
+        let new_ulid = diesel_ulid::DieselUlid::generate();
+
+        let good_rels = vec![
+            Relation {
+                id: new_ulid,
+                ..Default::default()
+            },
+            Relation {
+                object_id: diesel_ulid::DieselUlid::from_str("01H11QZNJ26MN0E5ZEYAEH6ZN2").unwrap(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(
+            get_latest_relation(good_rels).unwrap(),
+            Relation {
+                object_id: diesel_ulid::DieselUlid::from_str("01H11QZNJ26MN0E5ZEYAEH6ZN2").unwrap(),
+                ..Default::default()
+            }
+        )
     }
 
     #[test]

@@ -10,6 +10,7 @@ use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
 use diesel::{delete, insert_into, prelude::*, update};
+use diesel_ulid::DieselUlid;
 use r2d2::PooledConnection;
 
 use crate::database::models::auth::Project;
@@ -75,6 +76,7 @@ use crate::database::schema::{
 use crate::server::services::authz::Context;
 
 use super::objectgroups::bump_revisisions;
+use super::utils;
 use super::utils::*;
 
 // Struct to hold a database object with all its assets
@@ -1528,6 +1530,17 @@ impl Database {
                     .filter(database::schema::objects::id.eq(&object_uuid))
                     .first::<Object>(conn)?;
 
+
+                let target_collection: Collection = collections.filter(database::schema::collections::id.eq(&target_collection_uuid)).first(conn)?;
+                let version_string = match target_collection.version_id {
+                    Some(v) => {
+                        let ver: CollectionVersion = collection_version.filter(database::schema::collection_version::id.eq(&v)).first::<CollectionVersion>(conn)?;
+                        format!("{}.{}.{}", &ver.major, &ver.minor, &ver.patch)
+                    }
+                    None => "latest".to_string(),
+                };
+
+
                 let original_reference: Option<CollectionObject> = collection_objects
                     .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
                     .filter(
@@ -1615,21 +1628,31 @@ impl Database {
                     .get_result::<CollectionObject>(conn)?;
 
                 // Construct path string
-                let (s3bucket, s3path) = construct_path_string(
-                    &target_collection_uuid,
-                    &original_object.filename,
-                    &request.sub_path,
-                    conn,
-                )?;
+                let get_rels: Option<Vec<Relation>> = 
+                    relations
+                        .filter(database::schema::relations::collection_id.eq(&source_collection_uuid))
+                        .filter(database::schema::relations::shared_revision_id.eq(&original_object.shared_revision_id))
+                        .load::<Relation>(conn).optional()?;
 
-                create_path_db(
-                    &s3bucket,
-                    &s3path,
-                    &original_object.shared_revision_id,
-                    &target_collection_uuid,
-                    conn,
-                )?;
-
+                match get_rels {
+                    Some(rels) => {
+                        let new_rels = rels.into_iter().map(|re|       
+                            Relation { 
+                                id: DieselUlid::generate(),
+                                object_id: re.object_id,
+                                path: re.path,
+                                project_id: re.project_id,
+                                project_name: re.project_name, 
+                                collection_id: target_collection_uuid,
+                                collection_path: format!("{}.{}", version_string, target_collection.name),
+                                shared_revision_id: re.shared_revision_id,
+                                path_active: re.path_active
+                            }                        
+                        ).collect::<Vec<_>>();
+                        insert_into(relations).values(new_rels).execute(conn)?;
+                    }
+                    None => {}
+                }
                 Ok(())
             })?;
 
@@ -4666,7 +4689,48 @@ pub fn check_if_obj_in_coll(
     result == (object_ids.len() as i64)
 }
 
-pub fn construct_path_string(
+pub fn construct_s3_path(rel: Relation) -> String {
+    format!(
+        "s3://{}.{}/{}",
+        &rel.collection_path, &rel.project_name, &rel.path
+    )
+}
+
+pub fn get_object_by_path(
+    s3path: &str,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<Option<Relation>, ArunaError> {
+    use crate::database::schema::relations::dsl as relations_dsl;
+
+    // s3://latest.my-collection-blup.project-name/my/super/path.txt
+
+    if s3path.starts_with("s3://") {
+        let (proj_name, coll_name, version) = utils::parse_bucket_path(s3path[5..].to_string())?;
+
+        let col_path = match version {
+            Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, coll_name),
+            None => format!("latest.{}", coll_name),
+        };
+
+        let rels: Option<Vec<Relation>> = relations
+            .filter(relations_dsl::collection_path.eq(col_path))
+            .filter(relations_dsl::project_name.eq(proj_name))
+            .load::<Relation>(conn)
+            .optional()?;
+
+        match rels {
+            Some(mut r) => {
+                r.sort_by(|a, b| a.id.cmp(&b.id));
+                Ok(r.pop())
+            }
+            None => Ok(None),
+        }
+    } else {
+        return Err(ArunaError::InvalidRequest("Invalid s3path".to_string()));
+    }
+}
+
+pub fn _construct_path_string(
     collection_uuid: &diesel_ulid::DieselUlid,
     fname: &str,
     subpath: &str,

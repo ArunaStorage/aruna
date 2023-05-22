@@ -141,7 +141,18 @@ impl ToDbKeyValue for ObjectKeyValue {
     }
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
+#[derive(
+    Associations,
+    Queryable,
+    Insertable,
+    Identifiable,
+    Selectable,
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+)]
 #[diesel(table_name = relations)]
 #[diesel(belongs_to(Object))]
 #[diesel(belongs_to(Project))]
