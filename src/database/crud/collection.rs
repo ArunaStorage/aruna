@@ -13,13 +13,12 @@ use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::object::{clone_object, delete_multiple_objects};
 use crate::database::models;
-use crate::database::models::auth::Project as DBProject;
 use crate::database::models::collection::{
     Collection, CollectionKeyValue, CollectionObject, CollectionObjectGroup, CollectionVersion,
     RequiredLabel,
 };
 use crate::database::models::enums::{Dataclass as DBDataclass, KeyValueType, ReferenceStatus};
-use crate::database::models::object::{Object, ObjectKeyValue, Path};
+use crate::database::models::object::{Object, ObjectKeyValue, Relation};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::database::schema::collections::dsl::collections;
@@ -41,7 +40,6 @@ use diesel::result::Error;
 use diesel::{delete, prelude::*};
 use diesel::{insert_into, update};
 use r2d2::PooledConnection;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -1108,8 +1106,6 @@ fn pin_collection_to_version(
     let mut new_obj_grp_objs = Vec::new();
     // Mapping table with key = original_uuid and value = new_uuid
     let mut object_mapping_table = HashMap::new();
-    // Mapping table with key: original shared_revision_id and value: new shared_revision_id
-    let mut revision_id_mapping = HashMap::new();
     // Mapping table for objectgroups with key = original_uuid and value = new_uuid
     let mut object_group_mappings = HashMap::new();
     // Clone each object from old to new collection
@@ -1122,18 +1118,11 @@ fn pin_collection_to_version(
             new_collection_overview.coll.id,
         )?;
 
-        match revision_id_mapping.entry(orig_obj.shared_revision_id) {
-            Entry::Occupied(_) => {}
-            Entry::Vacant(_) => {
-                revision_id_mapping.insert(orig_obj.shared_revision_id, new_revision_id);
-            }
-        };
-
         object_mapping_table.insert(orig_obj.id, diesel_ulid::DieselUlid::from_str(&new_obj.id)?);
         new_objects.push(new_obj);
     }
     // Clone and adjust existing paths belonging to the shared_revision_ids of the objects
-    pin_paths_to_version(&new_collection_overview, revision_id_mapping, conn)?;
+    pin_paths_to_version(&new_collection_overview, &origin_collection, conn)?;
 
     // Iterate through objectgroups
     for obj_grp in original_object_groups {
@@ -1269,12 +1258,10 @@ fn pin_collection_to_version(
 ///
 fn pin_paths_to_version(
     pin_collection: &CollectionOverviewDb,
-    revision_id_mapping: HashMap<diesel_ulid::DieselUlid, diesel_ulid::DieselUlid>,
+    old_collection_id: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<(), ArunaError> {
-    use crate::database::schema::paths::dsl as paths_dsl;
-    use crate::database::schema::paths::dsl::paths;
-    use crate::database::schema::projects::dsl as project_dsl;
+    use crate::database::schema::relations::dsl as relations_dsl;
 
     // Create new version string
     let new_version = match &pin_collection.coll_version {
@@ -1288,45 +1275,34 @@ fn pin_paths_to_version(
     }?;
 
     // Fetch all paths belonging to the provided shared_revision_ids
-    let old_paths = paths
-        .filter(
-            paths_dsl::shared_revision_id.eq_any(&revision_id_mapping.keys().collect::<Vec<_>>()),
-        )
-        .load::<Path>(conn)?;
-
-    let project_name = project_dsl::projects
-        .filter(project_dsl::id.eq(pin_collection.coll.project_id))
-        .first::<DBProject>(conn)?;
+    let old_relations: Vec<Relation> = relations_dsl::relations
+        .filter(relations_dsl::collection_id.eq(old_collection_id))
+        .load::<Relation>(conn)?;
 
     // Adjust paths to cloned objects
     let mut modified_paths = Vec::new();
-    for old_path in old_paths {
+    for old_rel in old_relations {
         // Split path in mutable parts for easier modification/replacement
-        let new_bucket = format!(
-            "{}.{}.{}",
-            new_version, pin_collection.coll.name, project_name.name
-        );
+        let new_collection_path = format!("{}.{}", new_version, pin_collection.coll.name,);
 
         // Created new path record and save in vector for later insertion
-        modified_paths.push(Path {
+        modified_paths.push(Relation {
             id: diesel_ulid::DieselUlid::generate(),
-            bucket: new_bucket,
-            path: old_path.path,
-            shared_revision_id: *revision_id_mapping
-                .get(&old_path.shared_revision_id)
-                .ok_or_else(|| {
-                    ArunaError::InvalidRequest(
-                        "Could not map old object to newly created.".to_string(),
-                    )
-                })?,
+            object_id: old_rel.object_id,
+            path: old_rel.path,
+            project_id: old_rel.project_id,
+            project_name: old_rel.project_name,
             collection_id: pin_collection.coll.id,
-            created_at: chrono::Utc::now().naive_utc(),
-            active: true,
+            collection_path: new_collection_path,
+            shared_revision_id: old_rel.shared_revision_id,
+            path_active: old_rel.path_active,
         });
     }
 
     // Insert all modified paths at once
-    insert_into(paths).values(&modified_paths).execute(conn)?;
+    insert_into(relations_dsl::relations)
+        .values(&modified_paths)
+        .execute(conn)?;
 
     Ok(())
 }
