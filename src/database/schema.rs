@@ -357,6 +357,25 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    collection_stats (id) {
+        id -> Uuid,
+        object_count -> Int8,
+        object_group_count -> Int8,
+        size -> Numeric,
+        last_updated -> Timestamp,
+    }
+}
+
+diesel::table! {
+    object_group_stats (id) {
+        id -> Uuid,
+        object_count -> Int8,
+        size -> Numeric,
+        last_updated -> Timestamp,
+    }
+}
+
 diesel::joinable!(api_tokens -> collections (collection_id));
 diesel::joinable!(api_tokens -> projects (project_id));
 diesel::joinable!(api_tokens -> pub_keys (pub_key));

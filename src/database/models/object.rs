@@ -142,16 +142,20 @@ impl ToDbKeyValue for ObjectKeyValue {
 }
 
 #[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
-#[diesel(table_name = paths)]
+#[diesel(table_name = relations)]
+#[diesel(belongs_to(Object))]
+#[diesel(belongs_to(Project))]
 #[diesel(belongs_to(Collection))]
-pub struct Path {
+pub struct Relation {
     pub id: diesel_ulid::DieselUlid,
-    pub bucket: String,
+    pub object_id: diesel_ulid::DieselUlid,
     pub path: String,
-    pub shared_revision_id: diesel_ulid::DieselUlid,
+    pub project_id: diesel_ulid::DieselUlid,
+    pub project_name: String,
     pub collection_id: diesel_ulid::DieselUlid,
-    pub created_at: chrono::NaiveDateTime,
-    pub active: bool,
+    pub collection_path: String,
+    pub shared_revision_id: diesel_ulid::DieselUlid,
+    pub path_active: bool,
 }
 
 #[cfg(test)]
