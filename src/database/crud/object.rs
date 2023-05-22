@@ -15,7 +15,7 @@ use r2d2::PooledConnection;
 use crate::database::models::auth::Project;
 use crate::database::models::collection::Collection;
 use crate::database::models::collection::CollectionVersion;
-use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
+use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Relation};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
 
@@ -69,8 +69,8 @@ use crate::database::schema::encryption_keys::dsl::encryption_keys;
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
     collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
-    projects::dsl::*, sources::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, projects::dsl::*,
+    relations::dsl::*, sources::dsl::*,
 };
 use crate::server::services::authz::Context;
 
@@ -908,16 +908,24 @@ impl Database {
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
         collection_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError> {
+    ) -> Result<
+        (
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+            Vec<Relation>,
+        ),
+        ArunaError,
+    > {
         use crate::database::schema::encryption_keys::dsl as keys_dsl;
         use crate::database::schema::objects::dsl as objects_dsl;
-        use crate::database::schema::paths::dsl as paths_dsl;
+        use crate::database::schema::relations::dsl as relations_dsl;
 
         let location_info = self.pg_connection.get()?.transaction::<(
             ObjectLocation,
             Endpoint,
             Option<EncryptionKey>,
-            Vec<Path>,
+            Vec<Relation>,
         ), ArunaError, _>(|conn| {
             // Fetch shared_revision_id of provided object
             let shared_revision_uuid = objects
@@ -926,11 +934,10 @@ impl Database {
                 .first::<diesel_ulid::DieselUlid>(conn)?;
 
             // Fetch all paths associated with the shared_revision_id
-            let all_paths = paths
-                .filter(paths_dsl::collection_id.eq(&collection_uuid))
-                .filter(paths_dsl::shared_revision_id.eq(&shared_revision_uuid))
-                .order_by(paths_dsl::created_at.desc())
-                .load::<Path>(conn)?;
+            let all_paths = relations_dsl::relations
+                .filter(relations_dsl::collection_id.eq(&collection_uuid))
+                .filter(relations_dsl::shared_revision_id.eq(&shared_revision_uuid))
+                .load::<Relation>(conn)?;
 
             // Fetch primary location of the object
             let location: ObjectLocation = object_locations
@@ -2039,32 +2046,27 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
-                use crate::database::schema::paths::dsl as paths_dsl;
-
-                // Get the object to aquire shared revision
-                let get_obj = objects
-                    .filter(database::schema::objects::id.eq(obj_id))
-                    .first::<Object>(conn)?;
+                use crate::database::schema::relations::dsl as relations_dsl;
 
                 // Get all paths depending on include_inactive parameter
-                let mut path_query = paths
-                    .filter(paths_dsl::collection_id.eq(col_id))
-                    .filter(paths_dsl::shared_revision_id.eq(&get_obj.shared_revision_id))
+                let mut path_query = relations
+                    .filter(relations_dsl::collection_id.eq(&col_id))
+                    .filter(relations_dsl::object_id.eq(&obj_id))
                     .into_boxed();
 
                 if !request.include_inactive {
-                    path_query = path_query.filter(paths_dsl::active.eq(&true))
+                    path_query = path_query.filter(relations_dsl::path_active.eq(&true))
                 }
 
-                let obj_paths = path_query.order_by(paths_dsl::created_at.desc()).load::<Path>(conn).optional()?;
+                let obj_relations: Option<Vec<Relation>> = path_query.load::<Relation>(conn).optional()?;
 
                 // Filter paths for active / not active, map to protopath
-                match obj_paths {
+                match obj_relations {
                     Some(pths) => {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
+                            if request.include_inactive || p.path_active{
+                                Some(ProtoPath{ path: format!("s3://{}.{}{}", p.collection_path,p.project_name, p.path), visibility: p.path_active })
                             }else{
                                 None
                             }
@@ -2091,23 +2093,22 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
-                use crate::database::schema::paths::dsl as paths_dsl;
+                use crate::database::schema::relations::dsl as relations_dsl;
 
                 // Get all paths for collection
-                let obj_paths = paths
-                    .filter(paths_dsl::collection_id.eq(col_id))
-                    .order_by(paths_dsl::shared_revision_id)
-                    .order_by(paths_dsl::created_at.desc())
-                    .load::<Path>(conn)
+                let obj_relations: Option<Vec<Relation>> = relations
+                    .filter(relations_dsl::collection_id.eq(col_id))
+                    .load::<Relation>(conn)
                     .optional()?;
 
                 // Filter paths fo
-                match obj_paths {
+                // Filter paths for active / not active, map to protopath
+                match obj_relations {
                     Some(pths) => {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
+                            if request.include_inactive || p.path_active{
+                                Some(ProtoPath{ path: format!("s3://{}.{}{}", p.collection_path,p.project_name, p.path), visibility: p.path_active })
                             }else{
                                 None
                             }
