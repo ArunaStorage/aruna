@@ -2191,41 +2191,6 @@ impl Database {
         Ok(CreateObjectPathResponse { path: db_path })
     }
 
-    /// Generates the default path of an object for the specific collection.
-    ///
-    /// ## Arguments:
-    ///
-    /// * `` -
-    /// * `` -
-    ///
-    /// ## Returns:
-    ///
-    /// * `Result<String, ArunaError>` - The
-    ///
-    pub fn generate_object_path(
-        &self,
-        object_uuid: &diesel_ulid::DieselUlid,
-        collection_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<(String, String), ArunaError> {
-        use crate::database::schema::objects::dsl as objects_dsl;
-
-        let (object_bucket, object_key) = self
-            .pg_connection
-            .get()?
-            .transaction::<(String, String), ArunaError, _>(|conn| {
-                // Fetch object filename
-                let file_name = objects
-                    .filter(objects_dsl::id.eq(object_uuid))
-                    .select(objects_dsl::filename)
-                    .first::<String>(conn)?;
-
-                // Generate default path
-                construct_path_string(collection_uuid, file_name.as_str(), "", conn)
-            })?;
-
-        Ok((object_bucket, object_key))
-    }
-
     /// ToDo: Rust Doc
     pub fn set_object_path_visibility(
         &self,
@@ -2248,27 +2213,24 @@ impl Database {
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let old_path = paths
-                    .filter(database::schema::paths::bucket.eq(s3bucket))
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .first::<Path>(conn)?;
 
-                if old_path.collection_id != col_id {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Path is not part of collection: {col_id}"
-                    )));
-                }
+                let target_id: DieselUlid  = relations
+                    .filter(database::schema::relations::collection_id.eq(&col_id))
+                    .filter(database::schema::relations::path.eq(s3path))
+                    .order(database::schema::relations::object_id.desc())
+                    .limit(1)
+                    .select(database::schema::relations::id)
+                    .first::<DieselUlid>(conn)?;
 
-                let res = update(paths)
-                    .filter(database::schema::paths::bucket.eq(s3bucket))
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .set(database::schema::paths::active.eq(request.visibility))
-                    .get_result::<Path>(conn)
+                let res = update(relations)
+                    .filter(database::schema::relations::id.eq(&target_id))
+                    .set(database::schema::relations::path_active.eq(request.visibility))
+                    .get_result::<Relation>(conn)
                     .optional()?;
 
                 Ok(res.map(|p| ProtoPath {
-                    path: format!("s3://{}{}", p.bucket, p.path),
-                    visibility: p.active,
+                    path: format!("s3://{}.{}/{}", p.collection_path, p.project_name, p.path),
+                    visibility: p.path_active,
                 }))
             })?;
 
