@@ -2256,13 +2256,13 @@ impl Database {
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let get_path: Path = paths
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .filter(database::schema::paths::bucket.eq(&s3bucket))
-                    .first::<Path>(conn)?;
+                let (proj_name, col_path) = parse_bucket_path_as_colpath(s3bucket.to_string())?;
 
-                let (_, maybe_collection) =
-                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+                let all_relations: Vec<Relation> = relations
+                    .filter(database::schema::relations::path.eq(s3path))
+                    .filter(database::schema::relations::project_name.eq(&proj_name))
+                    .filter(database::schema::relations::collection_path.eq(&col_path))
+                    .load::<Relation>(conn)?;
 
                 // Only proceed if collection exists
                 let col_id = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(

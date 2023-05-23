@@ -494,6 +494,15 @@ pub fn parse_bucket_path(
     Ok((project_name, collection_name, collection_version))
 }
 
+pub fn parse_bucket_path_as_colpath(bucket_path: String) -> Result<(String, String), ArunaError> {
+    let (proj, col, version) = parse_bucket_path(bucket_path)?;
+    let colpath = match version {
+        Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, col),
+        None => format!("latest.{}", col),
+    };
+    Ok((proj, colpath))
+}
+
 pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
     match grpcdclass {
         0 => Dataclass::PRIVATE, // Unspecified
