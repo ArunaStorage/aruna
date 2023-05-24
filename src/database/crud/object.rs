@@ -2562,38 +2562,14 @@ pub fn create_staging_object(
         ));
     };
 
-    // Create and validate path
-    let (s3bucket, s3path) = construct_path_string(
-        &collection_object.collection_id,
-        &object.filename,
-        &staging_object.sub_path,
-        conn,
-    )?;
-
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
-        .optional()?;
-
-    // If it already exists
-    if let Some(existing) = exists {
-        // Check if the existing is not associated with the current shared_revision_id -> Error
-        // else -> do nothing
-        if existing.shared_revision_id != object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
-    }
+    let relation = create_relation(object_uuid, collection_uuid, &staging_object.sub_path, conn)?;
 
     // If path not exists -> Add labels
     key_value_pairs.push(ObjectKeyValue {
         id: diesel_ulid::DieselUlid::generate(),
         object_id: object.id,
         key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
+        value: relation.path,
         key_value_type: KeyValueType::LABEL,
     });
 
@@ -2601,7 +2577,7 @@ pub fn create_staging_object(
         id: diesel_ulid::DieselUlid::generate(),
         object_id: object.id,
         key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
+        value: format!("{}.{}", relation.collection_path, relation.project_name),
         key_value_type: KeyValueType::LABEL,
     });
 
@@ -2781,31 +2757,30 @@ pub fn update_object_init(
         ));
     };
 
-    // Get full qualified path
-    let (s3bucket, s3path) = construct_path_string(
-        &collection_object.collection_id,
-        &new_object.filename,
-        &staging_object.sub_path,
-        conn,
-    )?;
+    let s3path = format!("{}/{}", &staging_object.sub_path, &new_object.filename);
 
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+    // Check if relation/path exists for another shared_rev_id
+    let exists = relations
+        .filter(database::schema::relations::path.eq(&s3path))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .filter(database::schema::relations::shared_revision_id.ne(&latest.shared_revision_id))
+        .first::<Relation>(conn)
         .optional()?;
 
-    // If it already exists
-    if let Some(existing) = exists {
-        // Check if the existing is not associated with the current shared_revision_id -> Error
-        // else -> do nothing
-        if existing.shared_revision_id != new_object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
-        // If path not exists -> Add label
+
+    let namevars: (String, String, CollectionVersion) = 
+        collections
+            .filter(database::schema::collections::id.eq(&collection_uuid))
+            .inner_join(database::schema::projects::dsl::projects)
+            .inner_join(database::schema::collection_version::dsl::collection_version)
+            .select((database::schema::projects::name, database::schema::collections::name, CollectionVersion::as_select()))
+            .first::<(String, String, CollectionVersion)>(conn)?;
+
+    // If it already exists -> FAIL
+    if let Some(_) = exists {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
     }
 
     // Always add internal path labels
@@ -3020,15 +2995,6 @@ pub fn update_object_in_place(
             "labels or hooks are invalid".to_string(),
         ));
     };
-
-    // Add internal labels to key_value_pairs
-    // Get fq_path
-    let (s3bucket, s3path) = construct_path_string(
-        collection_uuid,
-        &stage_object.filename,
-        &stage_object.sub_path,
-        conn,
-    )?;
 
     // Check if path already exists
     let exists = paths
@@ -4735,15 +4701,24 @@ pub fn _construct_path_string(
 pub fn create_relation(objid: &DieselUlid, collid: &DieselUlid, subpath: &str, conn: &mut PooledConnection<ConnectionManager<PgConnection>>) -> Result<Relation, ArunaError> {
     // TODO: Optimize this query + insert!
     let get_object: Object = objects.filter(crate::database::schema::objects::id.eq(objid)).first::<Object>(conn)?;
-    let collection: Collection = collections.filter(crate::database::schema::collections::id.eq(collid)).first::<Collection>(conn)?;
-    let version_string = match collection.version_id {
+
+
+    // Join Collection x Projects x CollectionVersion to query all necessary infos at once !
+    let (proj_name, project_ulid, collection_name, colver): (String, DieselUlid, String, Option<CollectionVersion>) = collections
+            .filter(database::schema::collections::id.eq(&collid))
+            .inner_join(database::schema::projects::dsl::projects)
+            .left_join(database::schema::collection_version::dsl::collection_version)
+            .select((database::schema::projects::name, database::schema::projects::id, database::schema::collections::name, Option::<CollectionVersion>::as_select()))
+            .first::<(String, DieselUlid, String, Option<CollectionVersion>)>(conn)?;
+
+
+
+    let version_string = match colver {
         Some(v) => {
-            let cver: CollectionVersion = collection_version.filter(crate::database::schema::collection_version::id.eq(&v)).first::<CollectionVersion>(conn)?;
-            format!("{}.{}.{}", cver.major, cver.minor, cver.patch)
+            format!("{}.{}.{}", v.major, v.minor, v.patch)
         },
         None => "latest".to_string()
     };
-    let projname: String = projects.filter(crate::database::schema::projects::id.eq(&collection.project_id)).select(crate::database::schema::projects::name).first::<String>(conn)?;
 
     let object_path = format!("{}/{}", subpath, get_object.filename);
 
@@ -4751,10 +4726,10 @@ pub fn create_relation(objid: &DieselUlid, collid: &DieselUlid, subpath: &str, c
         id: DieselUlid::generate(),
         object_id: get_object.id,
         path: object_path.to_string(),
-        project_id: collection.project_id,
-        project_name: projname,
-        collection_id: collection.id,
-        collection_path: format!("{}.{}", version_string, collection.name),
+        project_id: project_ulid,
+        project_name: proj_name,
+        collection_id: *collid,
+        collection_path: format!("{}.{}", version_string, collection_name),
         shared_revision_id: get_object.shared_revision_id,
         path_active: true
     };
