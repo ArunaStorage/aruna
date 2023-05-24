@@ -2188,7 +2188,7 @@ impl Database {
                     ));
                 }
 
-                let (s3bucket, s3path) = request.path[5..]
+                let (_, s3path) = request.path[5..]
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
@@ -3284,7 +3284,7 @@ pub fn get_latest_obj(
 pub fn get_object_revision_by_path(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     object_path: &String,
-    object_revision: i64,
+    _object_revision: i64,
     check_collection: Option<diesel_ulid::DieselUlid>,
     include_staging: bool,
 ) -> Result<Option<Object>, ArunaError> {
@@ -3312,7 +3312,7 @@ pub fn get_object_revision_by_path(
 
     // Validate that provided collection id and path collection id matches
     if let Some(check_col_id) = check_collection {
-        if let Some(latest_rest) = get_latest_relation {
+        if let Some(ref latest_rest) = get_latest_relation {
             if check_col_id != latest_rest.collection_id {
                 return Err(ArunaError::InvalidRequest(format!(
                     "Path is not part of collection: {check_col_id}"
@@ -3322,9 +3322,9 @@ pub fn get_object_revision_by_path(
     }
 
     match get_latest_relation {
-        Some(p) => {
+        Some(ref p) => {
             // Query the existing path
-            let base_request = objects
+            let mut base_request = objects
                 .filter(database::schema::objects::id.eq(p.object_id)).into_boxed();
 
             if !include_staging {
@@ -4478,7 +4478,7 @@ pub fn get_objects_by_relations(
     let object_uuids = all_relations.iter().map(|rel| rel.object_id).unique().collect::<Vec<_>>();
 
     // Create a hashmap with key == shared_rev and value == "latest" object_id
-    let latest_per_shared = all_relations.iter().fold(HashMap::new(),|map, rel| {
+    let latest_per_shared = all_relations.iter().fold(HashMap::new(),|mut map, rel| {
         let element = map.entry(rel.shared_revision_id).or_insert(rel.object_id);
         if element.datetime() < rel.object_id.datetime() {
             *element = rel.object_id

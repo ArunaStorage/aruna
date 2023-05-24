@@ -1110,7 +1110,7 @@ fn pin_collection_to_version(
     let mut object_group_mappings = HashMap::new();
     // Clone each object from old to new collection
     for orig_obj in original_objects {
-        let (new_obj, new_revision_id) = clone_object(
+        let (new_obj, _) = clone_object(
             conn,
             &creator_user,
             orig_obj.id,
