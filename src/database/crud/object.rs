@@ -4697,6 +4697,11 @@ pub fn create_relation(
     let object_path = if subpath.is_empty() {
         get_object.filename
     } else {
+        if subpath.chars().all(|c| c == '/') {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path/name, violates s3 object key naming scheme".to_string(),
+            ));
+        }
         let stripped_prefix = match subpath.strip_prefix("/") {
             Some(stripped) => stripped,
             None => subpath,
@@ -4712,7 +4717,7 @@ pub fn create_relation(
 
     if !PATH_SCHEMA.is_match(&object_path) {
         return Err(ArunaError::InvalidRequest(
-            "Invalid object key naming scheme".to_string(),
+            "Invalid path/name, violates s3 object key naming scheme".to_string(),
         ));
     }
 
