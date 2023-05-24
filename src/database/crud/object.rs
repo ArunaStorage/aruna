@@ -4697,10 +4697,18 @@ pub fn create_relation(
     let object_path = if subpath.is_empty() {
         get_object.filename
     } else {
-        format!("{}/{}", subpath, get_object.filename)
+        let stripped_prefix = match subpath.strip_prefix("/") {
+            Some(stripped) => stripped,
+            None => subpath,
+        };
+        let stripped_suffix = match stripped_prefix.strip_suffix("/") {
+            Some(stripped) => stripped,
+            None => stripped_prefix,
+        };
+        format!("{}/{}", stripped_suffix, get_object.filename)
     };
 
-    if PATH_SCHEMA.is_match(&object_path) {
+    if !PATH_SCHEMA.is_match(&object_path) {
         return Err(ArunaError::InvalidRequest(
             "Invalid object key naming scheme".to_string(),
         ));
