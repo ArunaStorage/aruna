@@ -2560,6 +2560,12 @@ pub fn create_staging_object(
         ));
     };
 
+    if let Some(sour) = source {
+        diesel::insert_into(sources).values(&sour).execute(conn)?;
+    }
+    diesel::insert_into(objects).values(&object).execute(conn)?;
+    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
+
     let relation = create_relation(
         object_uuid,
         Some(object.clone()),
@@ -2595,11 +2601,6 @@ pub fn create_staging_object(
         });
     }
 
-    if let Some(sour) = source {
-        diesel::insert_into(sources).values(&sour).execute(conn)?;
-    }
-    diesel::insert_into(objects).values(&object).execute(conn)?;
-    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
     diesel::insert_into(object_key_value)
         .values(&key_value_pairs)
         .execute(conn)?;
