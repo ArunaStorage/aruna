@@ -6,6 +6,8 @@ use std::str::FromStr;
 use std::thread;
 use std::time;
 
+use itertools::Itertools;
+
 use diesel::dsl::{count, max, min};
 use diesel::r2d2::ConnectionManager;
 use diesel::result::Error;
@@ -2242,70 +2244,7 @@ impl Database {
                     .filter(database::schema::relations::collection_path.eq(&col_path))
                     .load::<Relation>(conn)?;
 
-                // Only proceed if collection exists
-                let col_id = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
-                    "Collection in path {} does not exist.",
-                    request.path
-                )))?;
-
-                if get_path.collection_id != col_id {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Path is not part of collection: {col_id}"
-                    )));
-                }
-
-                let raw_objects = objects
-                    .filter(
-                        database::schema::objects::shared_revision_id
-                            .eq(get_path.shared_revision_id),
-                    )
-                    .order_by(database::schema::objects::revision_number.desc())
-                    .load::<Object>(conn)
-                    .optional()?
-                    .unwrap_or_default();
-
-                let obj_ids = raw_objects
-                    .iter()
-                    .map(|e| e.id)
-                    .collect::<Vec<diesel_ulid::DieselUlid>>();
-
-                let refs = collection_objects
-                    .filter(database::schema::collection_objects::collection_id.eq(&col_id))
-                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_ids))
-                    .load::<CollectionObject>(conn)?;
-
-                let mut obj_with_ref = Vec::new();
-                let mut obj_without_ref = Vec::new();
-                'outer: for object_uuid in obj_ids {
-                    for object_ref in &refs {
-                        if object_uuid == object_ref.object_id {
-                            obj_with_ref.push(object_uuid);
-
-                            if !request.with_revisions {
-                                break 'outer;
-                            } else {
-                                continue 'outer;
-                            }
-                        }
-                    }
-
-                    obj_without_ref.push(object_uuid);
-                }
-
-                let mut results: Vec<ProtoObject> = Vec::new();
-                for ref_obj in obj_with_ref {
-                    let t_obj = get_object(&ref_obj, &col_id, false, conn)?;
-                    if let Some(ob) = t_obj {
-                        results.push(ob.try_into()?)
-                    };
-                }
-                for ref_obj in obj_without_ref {
-                    let t_obj = get_object_ignore_coll(&ref_obj, conn)?;
-                    if let Some(ob) = t_obj {
-                        results.push(ob.try_into()?)
-                    };
-                }
-                Ok(results)
+                Ok(get_objects_by_relations(all_relations, conn)?.into_iter().map(|e| e.try_into()).collect::<Result<Vec<_>, ArunaError>>()?)
             })?;
 
         Ok(GetObjectsByPathResponse { object: db_objects })
@@ -4497,7 +4436,7 @@ pub fn get_object(
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `object_uuid`: `&diesel_ulid::DieselUlid` - The Uuid of the requested object
 ///
-/// ## Resturns:
+/// ## Returns:
 ///
 /// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
 /// Database representation of an object
@@ -4543,6 +4482,70 @@ pub fn get_object_ignore_coll(
         latest,
         update: false, // Always false might not include any collection_info
     }))
+}
+
+
+/// This will query all objects as DTO based on a list of relations
+/// Expects the list to include ALL associated relations per collection
+pub fn get_objects_by_relations(
+    all_relations: Vec<Relation>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<Vec<ObjectDto>, diesel::result::Error> {
+
+    let object_uuids = all_relations.iter().map(|rel| rel.object_id).unique().collect::<Vec<_>>();
+
+    // Create a hashmap with key == shared_rev and value == "latest" object_id
+    let latest_per_shared = all_relations.iter().fold(HashMap::new(),|map, rel| {
+        let element = map.entry(rel.shared_revision_id).or_insert(rel.object_id);
+        if element.datetime() < rel.object_id.datetime() {
+            *element = rel.object_id
+        };
+        map
+    }); 
+
+    let objs: Vec<Object> = objects
+        .filter(database::schema::objects::id.eq_any(&object_uuids))
+        .load::<Object>(conn)?;
+
+    let object_key_values: Vec<Vec<ObjectKeyValue>> = ObjectKeyValue::belonging_to(&objs).load::<ObjectKeyValue>(conn)?.grouped_by(&objs);
+    let object_hashes: Vec<Vec<ApiHash>> = ApiHash::belonging_to(&objs).load::<ApiHash>(conn)?.grouped_by(&objs);
+
+    let zipped: Vec<((Object, Vec<ObjectKeyValue>), Vec<Db_Hash>)> = objs.into_iter().zip(object_key_values).zip(object_hashes).collect::<Vec<_>>(); 
+
+    let mut results = Vec::new();
+
+    for ((obj, kvs), hsh) in zipped {
+
+        let source: Option<Source> = match &obj.source_id {
+            None => None,
+            Some(src_id) => Some(
+                sources
+                    .filter(database::schema::sources::id.eq(src_id))
+                    .first::<Source>(conn)?,
+            ),
+        };
+
+        let (labels, hooks) = from_key_values(kvs);
+
+        let latest = if let Some(latest_id) = latest_per_shared.get(&obj.shared_revision_id){
+            *latest_id == obj.id
+        }else{
+            false
+        };
+
+        results.push(ObjectDto {
+            object: obj,
+            labels,
+            hooks,
+            object_hashes: hsh,
+            source,
+            latest,
+            update: false, // Always false might not include any collection_info
+        })
+
+    };
+
+    Ok(results)
 }
 
 fn delete_object_and_bump_objectgroups(
