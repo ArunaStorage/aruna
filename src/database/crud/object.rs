@@ -2768,13 +2768,13 @@ pub fn update_object_init(
         .optional()?;
 
 
-    let namevars: (String, String, CollectionVersion) = 
+    let (projname, colname, colver): (String, String, Option<CollectionVersion>) = 
         collections
             .filter(database::schema::collections::id.eq(&collection_uuid))
             .inner_join(database::schema::projects::dsl::projects)
-            .inner_join(database::schema::collection_version::dsl::collection_version)
-            .select((database::schema::projects::name, database::schema::collections::name, CollectionVersion::as_select()))
-            .first::<(String, String, CollectionVersion)>(conn)?;
+            .left_join(database::schema::collection_version::dsl::collection_version)
+            .select((database::schema::projects::name, database::schema::collections::name, Option::<CollectionVersion>::as_select()))
+            .first::<(String, String, Option<CollectionVersion>)>(conn)?;
 
     // If it already exists -> FAIL
     if let Some(_) = exists {
@@ -2782,6 +2782,11 @@ pub fn update_object_init(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
     }
+
+    let bucket_name = match colver {
+        Some(v) => format!("{}.{}.{}.{}.{}", v.major, v.minor, v.patch, colname, projname),
+        None => format!("latest.{}.{}", colname, projname)
+    };
 
     // Always add internal path labels
     key_value_pairs.push(ObjectKeyValue {
@@ -2796,7 +2801,7 @@ pub fn update_object_init(
         id: diesel_ulid::DieselUlid::generate(),
         object_id: staging_object_uuid,
         key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
+        value: bucket_name,
         key_value_type: KeyValueType::LABEL,
     });
 
@@ -2996,21 +3001,43 @@ pub fn update_object_in_place(
         ));
     };
 
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+    let s3path = format!("{}/{}", &stage_object.sub_path, &stage_object.filename);
+
+    // Check if relation/path exists for another shared_rev_id
+    let exists = relations
+        .filter(database::schema::relations::path.eq(&s3path))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .filter(database::schema::relations::shared_revision_id.ne(&old_object.shared_revision_id))
+        .first::<Relation>(conn)
         .optional()?;
+
+
+    let (projname, colname, colver): (String, String, Option<CollectionVersion>) = 
+        collections
+            .filter(database::schema::collections::id.eq(&collection_uuid))
+            .inner_join(database::schema::projects::dsl::projects)
+            .left_join(database::schema::collection_version::dsl::collection_version)
+            .select((database::schema::projects::name, database::schema::collections::name, Option::<CollectionVersion>::as_select()))
+            .first::<(String, String, Option<CollectionVersion>)>(conn)?;
+
+    // If it already exists -> FAIL
+    if let Some(_) = exists {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
+    }
+
+    let bucket_name = match colver {
+        Some(v) => format!("{}.{}.{}.{}.{}", v.major, v.minor, v.patch, colname, projname),
+        None => format!("latest.{}.{}", colname, projname)
+    };
     // If it already exists
-    if let Some(existing) = exists {
+    if let Some(_) = exists {
         // Check if the existing is not associated with the current shared_revision_id -> Error
         // else -> do nothing
-        if existing.shared_revision_id != old_object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
     }
 
     // Always add internal labels back to provided staging object labels
@@ -3025,7 +3052,7 @@ pub fn update_object_in_place(
         id: diesel_ulid::DieselUlid::generate(),
         object_id: *object_uuid,
         key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
+        value: bucket_name,
         key_value_type: KeyValueType::LABEL,
     });
 
