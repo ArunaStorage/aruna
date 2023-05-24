@@ -1635,25 +1635,22 @@ impl Database {
                         .filter(database::schema::relations::shared_revision_id.eq(&original_object.shared_revision_id))
                         .load::<Relation>(conn).optional()?;
 
-                match get_rels {
-                    Some(rels) => {
-                        let new_rels = rels.into_iter().map(|re|
-                            Relation {
-                                id: DieselUlid::generate(),
-                                object_id: re.object_id,
-                                path: re.path,
-                                project_id: re.project_id,
-                                project_name: re.project_name,
-                                collection_id: target_collection_uuid,
-                                collection_path: format!("{}.{}", version_string, target_collection.name),
-                                shared_revision_id: re.shared_revision_id,
-                                path_active: re.path_active
-                            }
-                        ).collect::<Vec<_>>();
-                        insert_into(relations).values(new_rels).execute(conn)?;
-                    }
-                    None => {}
-                }
+                if let Some(rels) = get_rels {
+                    let new_rels = rels.into_iter().map(|re|
+                        Relation {
+                            id: DieselUlid::generate(),
+                            object_id: re.object_id,
+                            path: re.path,
+                            project_id: re.project_id,
+                            project_name: re.project_name,
+                            collection_id: target_collection_uuid,
+                            collection_path: format!("{}.{}", version_string, target_collection.name),
+                            shared_revision_id: re.shared_revision_id,
+                            path_active: re.path_active
+                        }
+                    ).collect::<Vec<_>>();
+                    insert_into(relations).values(new_rels).execute(conn)?;
+                };
                 Ok(())
             })?;
 
@@ -2242,10 +2239,10 @@ impl Database {
                     .filter(database::schema::relations::collection_path.eq(&col_path))
                     .load::<Relation>(conn)?;
 
-                Ok(get_objects_by_relations(all_relations, conn)?
+                get_objects_by_relations(all_relations, conn)?
                     .into_iter()
                     .map(|e| e.try_into())
-                    .collect::<Result<Vec<_>, ArunaError>>()?)
+                    .collect::<Result<Vec<_>, ArunaError>>()
             })?;
 
         Ok(GetObjectsByPathResponse { object: db_objects })
@@ -2780,7 +2777,7 @@ pub fn update_object_init(
         .first::<(String, String, Option<CollectionVersion>)>(conn)?;
 
     // If it already exists -> FAIL
-    if let Some(_) = exists {
+    if exists.is_some() {
         return Err(ArunaError::InvalidRequest(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
@@ -3029,7 +3026,7 @@ pub fn update_object_in_place(
         .first::<(String, String, Option<CollectionVersion>)>(conn)?;
 
     // If it already exists -> FAIL
-    if let Some(_) = exists {
+    if exists.is_some() {
         return Err(ArunaError::InvalidRequest(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
@@ -3043,7 +3040,7 @@ pub fn update_object_in_place(
         None => format!("latest.{}.{}", colname, projname),
     };
     // If it already exists
-    if let Some(_) = exists {
+    if exists.is_some() {
         // Check if the existing is not associated with the current shared_revision_id -> Error
         // else -> do nothing
         return Err(ArunaError::InvalidRequest(
@@ -3295,7 +3292,7 @@ pub fn get_latest_obj(
 /// `Result<Object, ArunaError>` - The latest database object revision or error if the request failed.
 pub fn get_object_revision_by_path(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    object_path: &String,
+    object_path: &str,
     _object_revision: i64,
     check_collection: Option<diesel_ulid::DieselUlid>,
     include_staging: bool,
@@ -4511,6 +4508,7 @@ pub fn get_objects_by_relations(
         .load::<ApiHash>(conn)?
         .grouped_by(&objs);
 
+    #[allow(clippy::type_complexity)]
     let zipped: Vec<((Object, Vec<ObjectKeyValue>), Vec<Db_Hash>)> = objs
         .into_iter()
         .zip(object_key_values)
@@ -4650,8 +4648,8 @@ pub fn get_object_by_path(
 
     // s3://latest.my-collection-blup.project-name/my/super/path.txt
 
-    if s3path.starts_with("s3://") {
-        let (proj_name, coll_name, version) = utils::parse_bucket_path(s3path[5..].to_string())?;
+    if let Some(stripped) = s3path.strip_prefix("s3://") {
+        let (proj_name, coll_name, version) = utils::parse_bucket_path(stripped.to_string())?;
 
         let col_path = match version {
             Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, coll_name),
@@ -4672,12 +4670,12 @@ pub fn get_object_by_path(
             None => Ok(None),
         }
     } else {
-        return Err(ArunaError::InvalidRequest("Invalid s3path".to_string()));
+        Err(ArunaError::InvalidRequest("Invalid s3path".to_string()))
     }
 }
 
 fn disect_full_object_path(full_path: &str) -> (String, String) {
-    let mut all_parts = full_path.split("/").collect::<Vec<_>>();
+    let mut all_parts = full_path.split('/').collect::<Vec<_>>();
     let fname = all_parts.pop().unwrap_or_default().to_string();
     let subpath = all_parts.join("/");
     (subpath, fname)
@@ -4746,11 +4744,9 @@ pub fn create_relation(
         .first::<Relation>(conn)
         .optional()?
     {
-        Some(_) => {
-            return Err(ArunaError::InvalidRequest(
-                "Unable to create path relation for another object hierarchy".to_string(),
-            ));
-        }
+        Some(_) => Err(ArunaError::InvalidRequest(
+            "Unable to create path relation for another object hierarchy".to_string(),
+        )),
         None => Ok(insert_into(relations)
             .values(&rel)
             .get_result::<Relation>(conn)?),
@@ -4876,7 +4872,7 @@ fn set_object_available(
 
         let (subpath, _) = disect_full_object_path(&p_lbl.value);
 
-        create_relation(&updated_obj.id, &coll_uuid, &subpath, conn)?;
+        create_relation(&updated_obj.id, coll_uuid, &subpath, conn)?;
 
         // Delete the path label afterwards
         delete(object_key_value)
