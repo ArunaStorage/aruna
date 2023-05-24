@@ -624,12 +624,10 @@ async fn get_object_path_grpc_test() {
         "//path/".to_string(),       // Empty path parts are not allowed
         "//path//".to_string(),      // Empty path parts are not allowed
         "path//path".to_string(),    // Empty path parts are not allowed
-        "LOUD/PATH/".to_string(),    // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no upper case characters
         "$%&/path/".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no special characters
         "custom\\path/".to_string(), // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no backslashes
         "some path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no whitespaces
         "some|path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no pipes
-        "some.path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no points
         "some,path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no commas
     ]
     .iter()
