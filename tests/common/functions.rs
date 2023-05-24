@@ -628,7 +628,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         .collect::<Vec<_>>();
 
     let update_name = if update.new_name.is_empty() {
-        "This is an updated object.name".to_string()
+        "This_is_an_updated_object.name".to_string()
     } else {
         update.new_name.to_string()
     };

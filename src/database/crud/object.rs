@@ -4708,6 +4708,8 @@ pub fn create_relation(
         format!("{}/{}", stripped_suffix, get_object.filename)
     };
 
+    dbg!(&object_path);
+
     if !PATH_SCHEMA.is_match(&object_path) {
         return Err(ArunaError::InvalidRequest(
             "Invalid object key naming scheme".to_string(),
