@@ -3300,41 +3300,33 @@ pub fn get_object_revision_by_path(
         .split_once('/')
         .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-    let get_path: Option<Path> = paths
-        .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+
+    let (projname, colpath) = parse_bucket_path_as_colpath(s3bucket.to_string())?;
+
+    let get_latest_relation: Option<Relation> = relations
+        .filter(database::schema::relations::path.eq(s3path))
+        .filter(database::schema::relations::project_name.eq(&projname))
+        .filter(database::schema::relations::collection_path.eq(&colpath))
+        .order_by(database::schema::relations::object_id)
+        .first::<Relation>(conn)
         .optional()?;
 
     // Validate that provided collection id and path collection id matches
-    if let Some(collection_validation) = check_collection {
-        let (_, maybe_collection) =
-            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
-
-        // Only proceed if collection exists
-        let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
-            "Collection in path {object_path} does not exist."
-        )))?;
-
-        if collection_validation != collection_uuid {
-            return Err(ArunaError::InvalidRequest(format!(
-                "Path is not part of collection: {collection_validation}"
-            )));
+    if let Some(check_col_id) = check_collection {
+        if let Some(latest_rest) = get_latest_relation {
+            if check_col_id != latest_rest.collection_id {
+                return Err(ArunaError::InvalidRequest(format!(
+                    "Path is not part of collection: {check_col_id}"
+                )));
+            }
         }
     }
 
-    match get_path {
+    match get_latest_relation {
         Some(p) => {
             // Query the existing path
             let base_request = objects
-                .filter(database::schema::objects::shared_revision_id.eq(p.shared_revision_id))
-                .into_boxed();
-
-            let mut base_request = if object_revision < 0 {
-                base_request // Get the latest revision
-            } else {
-                base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
-            };
+                .filter(database::schema::objects::id.eq(p.object_id)).into_boxed();
 
             if !include_staging {
                 base_request = base_request.filter(
@@ -3344,7 +3336,6 @@ pub fn get_object_revision_by_path(
             }
 
             Ok(base_request
-                .order_by(database::schema::objects::revision_number.desc())
                 .first::<Object>(conn)
                 .optional()?)
         }
