@@ -2157,7 +2157,7 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
-                let relation = create_relation(&obj_id, &col_id, &request.sub_path, conn)?;
+                let relation = create_relation(&obj_id, None, &col_id, &request.sub_path, conn)?;
                 // Query path
                 Ok(Some(ProtoPath {
                     path: relation_as_s3_path(&relation),
@@ -2560,7 +2560,13 @@ pub fn create_staging_object(
         ));
     };
 
-    let relation = create_relation(object_uuid, collection_uuid, &staging_object.sub_path, conn)?;
+    let relation = create_relation(
+        object_uuid,
+        Some(object.clone()),
+        collection_uuid,
+        &staging_object.sub_path,
+        conn,
+    )?;
 
     // If path not exists -> Add labels
     key_value_pairs.push(ObjectKeyValue {
@@ -4687,13 +4693,17 @@ fn disect_full_object_path(full_path: &str) -> (String, String) {
 /// Will fail if the subpath is already associated with a different object hierarchy
 pub fn create_relation(
     objid: &DieselUlid,
+    option_obj: Option<Object>,
     collid: &DieselUlid,
     subpath: &str,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Relation, ArunaError> {
-    let get_object: Object = objects
-        .filter(crate::database::schema::objects::id.eq(objid))
-        .first::<Object>(conn)?;
+    let get_object: Object = match option_obj {
+        Some(o) => o,
+        None => objects
+            .filter(crate::database::schema::objects::id.eq(objid))
+            .first::<Object>(conn)?,
+    };
     // Join Collection x Projects x CollectionVersion to query all necessary infos at once !
     let (proj_name, project_ulid, collection_name, colver): (
         String,
@@ -4872,7 +4882,7 @@ fn set_object_available(
 
         let (subpath, _) = disect_full_object_path(&p_lbl.value);
 
-        create_relation(&updated_obj.id, coll_uuid, &subpath, conn)?;
+        create_relation(&updated_obj.id, None, coll_uuid, &subpath, conn)?;
 
         // Delete the path label afterwards
         delete(object_key_value)
