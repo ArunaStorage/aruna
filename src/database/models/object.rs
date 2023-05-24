@@ -152,6 +152,7 @@ impl ToDbKeyValue for ObjectKeyValue {
     Default,
     PartialEq,
     Eq,
+    AsChangeset,
 )]
 #[diesel(table_name = relations)]
 #[diesel(belongs_to(Object))]

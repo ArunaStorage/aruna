@@ -330,7 +330,8 @@ CREATE TABLE relations (
     path_active BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE
+    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,
+    UNIQUE(object_id, path, project_name, collection_path)
 );
 
 CREATE INDEX rel_ob_id ON relations (object_id);

@@ -1,26 +1,33 @@
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::str::FromStr;
-use std::thread;
-use std::time;
-
-use itertools::Itertools;
-
-use diesel::dsl::{count, max, min};
-use diesel::r2d2::ConnectionManager;
-use diesel::result::Error;
-use diesel::{delete, insert_into, prelude::*, update};
-use diesel_ulid::DieselUlid;
-use r2d2::PooledConnection;
-
-use crate::database::models::collection::Collection;
+use super::objectgroups::bump_revisisions;
+use super::utils;
+use super::utils::*;
+use crate::database;
+use crate::database::connection::Database;
+use crate::database::crud::collection::is_collection_versioned;
+use crate::database::crud::utils::{
+    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_hash_type, db_to_grpc_object_status,
+    from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
+};
+use crate::database::models::collection::CollectionObject;
 use crate::database::models::collection::CollectionVersion;
+use crate::database::models::enums::{
+    Dataclass, HashType, KeyValueType, ObjectStatus, ReferenceStatus, Resources, SourceType,
+    UserRights,
+};
 use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Relation};
+use crate::database::models::object::{
+    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
+};
 use crate::database::models::object_group::ObjectGroupObject;
+use crate::database::schema::encryption_keys::dsl::encryption_keys;
+use crate::database::schema::{
+    collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
+    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, projects::dsl::*,
+    relations::dsl::*, sources::dsl::*,
+};
 use crate::error::{ArunaError, GrpcNotFoundError};
-
+use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
     GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
@@ -48,37 +55,21 @@ use aruna_rust_api::api::storage::{
         UpdateObjectResponse,
     },
 };
-
+use diesel::dsl::{count, max, min};
+use diesel::r2d2::ConnectionManager;
+use diesel::result::Error;
+use diesel::{delete, insert_into, prelude::*, update};
+use diesel_ulid::DieselUlid;
+use itertools::Itertools;
+use r2d2::PooledConnection;
 use rand::distributions::{Alphanumeric, DistString};
-
-use crate::database;
-use crate::database::connection::Database;
-use crate::database::crud::collection::is_collection_versioned;
-use crate::database::crud::utils::{
-    check_all_for_db_kv, db_to_grpc_dataclass, db_to_grpc_hash_type, db_to_grpc_object_status,
-    from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
-};
-use crate::database::models::collection::CollectionObject;
-use crate::database::models::enums::{
-    Dataclass, HashType, KeyValueType, ObjectStatus, ReferenceStatus, Resources, SourceType,
-    UserRights,
-};
-use crate::database::models::object::{
-    Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
-};
-
-use crate::database::schema::encryption_keys::dsl::encryption_keys;
-use crate::database::schema::{
-    collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
-    collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, projects::dsl::*,
-    relations::dsl::*, sources::dsl::*,
-};
-use crate::server::services::authz::Context;
-
-use super::objectgroups::bump_revisisions;
-use super::utils;
-use super::utils::*;
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::str::FromStr;
+use std::thread;
+use std::time;
 
 // Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
@@ -1531,17 +1522,6 @@ impl Database {
                     .filter(database::schema::objects::id.eq(&object_uuid))
                     .first::<Object>(conn)?;
 
-
-                let target_collection: Collection = collections.filter(database::schema::collections::id.eq(&target_collection_uuid)).first(conn)?;
-                let version_string = match target_collection.version_id {
-                    Some(v) => {
-                        let ver: CollectionVersion = collection_version.filter(database::schema::collection_version::id.eq(&v)).first::<CollectionVersion>(conn)?;
-                        format!("{}.{}.{}", &ver.major, &ver.minor, &ver.patch)
-                    }
-                    None => "latest".to_string(),
-                };
-
-
                 let original_reference: Option<CollectionObject> = collection_objects
                     .filter(database::schema::collection_objects::object_id.eq(&object_uuid))
                     .filter(
@@ -1629,28 +1609,7 @@ impl Database {
                     .get_result::<CollectionObject>(conn)?;
 
                 // Construct path string
-                let get_rels: Option<Vec<Relation>> =
-                    relations
-                        .filter(database::schema::relations::collection_id.eq(&source_collection_uuid))
-                        .filter(database::schema::relations::shared_revision_id.eq(&original_object.shared_revision_id))
-                        .load::<Relation>(conn).optional()?;
-
-                if let Some(rels) = get_rels {
-                    let new_rels = rels.into_iter().map(|re|
-                        Relation {
-                            id: DieselUlid::generate(),
-                            object_id: re.object_id,
-                            path: re.path,
-                            project_id: re.project_id,
-                            project_name: re.project_name,
-                            collection_id: target_collection_uuid,
-                            collection_path: format!("{}.{}", version_string, target_collection.name),
-                            shared_revision_id: re.shared_revision_id,
-                            path_active: re.path_active
-                        }
-                    ).collect::<Vec<_>>();
-                    insert_into(relations).values(new_rels).execute(conn)?;
-                };
+                create_relation(&original_object.id, Some(original_object.clone()), &target_collection_uuid, &request.sub_path, conn)?;
                 Ok(())
             })?;
 
@@ -2129,7 +2088,7 @@ impl Database {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
                             if request.include_inactive || p.path_active{
-                                Some(ProtoPath{ path: format!("s3://{}.{}{}", p.collection_path,p.project_name, p.path), visibility: p.path_active })
+                                Some(ProtoPath{ path: relation_as_s3_path(p), visibility: p.path_active })
                             }else{
                                 None
                             }
@@ -4684,7 +4643,12 @@ pub fn get_object_by_path(
 fn disect_full_object_path(full_path: &str) -> (String, String) {
     let mut all_parts = full_path.split('/').collect::<Vec<_>>();
     let fname = all_parts.pop().unwrap_or_default().to_string();
-    let subpath = all_parts.join("/");
+
+    let subpath = if all_parts.is_empty() {
+        "".to_string()
+    } else {
+        all_parts.join("/")
+    };
     (subpath, fname)
 }
 
@@ -4730,7 +4694,17 @@ pub fn create_relation(
         None => "latest".to_string(),
     };
 
-    let object_path = format!("{}/{}", subpath, get_object.filename);
+    let object_path = if subpath.is_empty() {
+        get_object.filename
+    } else {
+        format!("{}/{}", subpath, get_object.filename)
+    };
+
+    if PATH_SCHEMA.is_match(&object_path) {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid object key naming scheme".to_string(),
+        ));
+    }
 
     let rel = Relation {
         id: DieselUlid::generate(),
@@ -4758,9 +4732,23 @@ pub fn create_relation(
         Some(_) => Err(ArunaError::InvalidRequest(
             "Unable to create path relation for another object hierarchy".to_string(),
         )),
-        None => Ok(insert_into(relations)
-            .values(&rel)
-            .get_result::<Relation>(conn)?),
+        None => {
+            match insert_into(relations)
+                .values(&rel)
+                .on_conflict_do_nothing()
+                .get_result::<Relation>(conn)
+                .optional()?
+            {
+                Some(rel) => Ok(rel),
+                None => Ok(relations
+                    .filter(crate::database::schema::relations::object_id.eq(&rel.object_id))
+                    .filter(
+                        crate::database::schema::relations::collection_id.eq(&rel.collection_id),
+                    )
+                    .filter(crate::database::schema::relations::project_id.eq(&rel.project_id))
+                    .first::<Relation>(conn)?),
+            }
+        }
     }
 }
 

@@ -529,7 +529,10 @@ pub fn get_latest_relation(mut relations: Vec<Relation>) -> Option<Relation> {
 }
 
 pub fn relation_as_s3_path(rel: &Relation) -> String {
-    format!("{}.{}/{}", rel.collection_path, rel.project_name, rel.path)
+    format!(
+        "s3://{}.{}/{}",
+        rel.collection_path, rel.project_name, rel.path
+    )
 }
 
 pub fn grpc_to_db_object_status(grpc_status: &i32) -> ObjectStatus {
