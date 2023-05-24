@@ -15,7 +15,6 @@ use diesel::{delete, insert_into, prelude::*, update};
 use diesel_ulid::DieselUlid;
 use r2d2::PooledConnection;
 
-use crate::database::models::auth::Project;
 use crate::database::models::collection::Collection;
 use crate::database::models::collection::CollectionVersion;
 use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Relation};
@@ -3402,11 +3401,11 @@ pub fn get_project_collection_ids_of_bucket_path(
     use crate::database::schema::projects::dsl as project_dsl;
 
     // Parse bucket string
-    let (project_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
+    let (proj_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
 
     // Fetch project by its unique name
     let project_uuid = projects
-        .filter(project_dsl::name.eq(&project_name))
+        .filter(project_dsl::name.eq(&proj_name))
         .select(project_dsl::id)
         .first::<diesel_ulid::DieselUlid>(conn)?;
 
@@ -4221,9 +4220,9 @@ pub fn delete_multiple_objects(
             }
         }
 
-        delete(paths)
-            .filter(database::schema::paths::collection_id.eq(&col_id))
-            .filter(database::schema::paths::shared_revision_id.eq_any(&shared_revisions_to_delete))
+        delete(relations)
+            .filter(database::schema::relations::collection_id.eq(&col_id))
+            .filter(database::schema::relations::shared_revision_id.eq_any(&shared_revisions_to_delete))
             .execute(conn)?;
     }
 
@@ -4657,70 +4656,19 @@ pub fn get_object_by_path(
     }
 }
 
-pub fn _construct_path_string(
-    collection_uuid: &diesel_ulid::DieselUlid,
-    fname: &str,
-    subpath: &str,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<(String, String), ArunaError> {
-    let col = collections
-        .filter(database::schema::collections::id.eq(collection_uuid))
-        .first::<Collection>(conn)?;
-
-    let version_name = if let Some(v_id) = col.version_id {
-        let v_db = collection_version
-            .filter(database::schema::collection_version::id.eq(v_id))
-            .first::<CollectionVersion>(conn)?;
-        format!("{}.{}.{}", v_db.major, v_db.minor, v_db.patch)
-    } else {
-        "latest".to_string()
-    };
-
-    let proj_name = projects
-        .filter(database::schema::projects::id.eq(col.project_id))
-        .first::<Project>(conn)?
-        .name;
-
-    let col_name = col.name;
-
-    let fq_path = if !subpath.is_empty() {
-        if !PATH_SCHEMA.is_match(subpath) {
-            return Err(ArunaError::InvalidRequest(
-            "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
-                .to_string(),
-            ));
-        }
-
-        let modified_path = if subpath.starts_with('/') {
-            if subpath.ends_with('/') {
-                subpath.to_string()
-            } else {
-                format!("{subpath}/")
-            }
-        } else if subpath.ends_with('/') {
-            format!("/{subpath}")
-        } else {
-            format!("/{subpath}/")
-        };
-
-        format!("{modified_path}{fname}")
-    } else {
-        format!("/{fname}")
-    };
-
-    Ok((format!("{version_name}.{col_name}.{proj_name}"), fq_path))
+fn disect_full_object_path(full_path: &str) -> (String, String) {
+    let mut all_parts = full_path.split("/").collect::<Vec<_>>();
+    let fname = all_parts.pop().unwrap_or_default().to_string();
+    let subpath = all_parts.join("/");
+    (subpath, fname)
 }
-
 
 /// Helper function that queries the necessary information and inserts a new relation.
 /// Ideally this should be executet in a separate transaction.
 /// 
 /// Will fail if the subpath is already associated with a different object hierarchy
 pub fn create_relation(objid: &DieselUlid, collid: &DieselUlid, subpath: &str, conn: &mut PooledConnection<ConnectionManager<PgConnection>>) -> Result<Relation, ArunaError> {
-    // TODO: Optimize this query + insert!
     let get_object: Object = objects.filter(crate::database::schema::objects::id.eq(objid)).first::<Object>(conn)?;
-
-
     // Join Collection x Projects x CollectionVersion to query all necessary infos at once !
     let (proj_name, project_ulid, collection_name, colver): (String, DieselUlid, String, Option<CollectionVersion>) = collections
             .filter(database::schema::collections::id.eq(&collid))
@@ -4728,8 +4676,6 @@ pub fn create_relation(objid: &DieselUlid, collid: &DieselUlid, subpath: &str, c
             .left_join(database::schema::collection_version::dsl::collection_version)
             .select((database::schema::projects::name, database::schema::projects::id, database::schema::collections::name, Option::<CollectionVersion>::as_select()))
             .first::<(String, DieselUlid, String, Option<CollectionVersion>)>(conn)?;
-
-
 
     let version_string = match colver {
         Some(v) => {
@@ -4806,26 +4752,27 @@ pub fn get_paths_proto(
     maybe_collection_uuid: Option<&diesel_ulid::DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ProtoPath>, ArunaError> {
-    use crate::database::schema::paths::dsl as paths_dsl;
+    use crate::database::schema::relations::dsl as rel_dsl;
 
     // Construct query to fetch paths from
-    let mut path_query = paths
-        .filter(paths_dsl::shared_revision_id.eq(shared_rev_id))
-        .filter(paths_dsl::active.eq(&true))
-        .order_by(paths_dsl::created_at.desc())
+    let mut path_query = relations
+        .filter(rel_dsl::shared_revision_id.eq(shared_rev_id))
+        .filter(rel_dsl::path_active.eq(&true))
+        .order_by(rel_dsl::object_id)
         .into_boxed();
 
     if let Some(collection_uuid) = maybe_collection_uuid {
-        path_query = path_query.filter(paths_dsl::collection_id.eq(collection_uuid))
+        path_query = path_query.filter(rel_dsl::collection_id.eq(collection_uuid))
     }
 
-    let active_paths = path_query.load::<Path>(conn)?;
+    let active_paths = path_query.load::<Relation>(conn)?;
 
     Ok(active_paths
         .iter()
-        .map(|pth| ProtoPath {
-            path: format!("s3://{}{}", pth.bucket, pth.path),
-            visibility: pth.active,
+        .map(|pth|             
+            ProtoPath {
+            path: relation_as_s3_path(pth),
+            visibility: pth.path_active,
         })
         .collect::<Vec<_>>())
 }
@@ -4883,13 +4830,11 @@ fn set_object_available(
             .filter(database::schema::object_key_value::object_id.eq(object.id))
             .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"))
             .first::<ObjectKeyValue>(conn)?;
-        create_path_db(
-            &bucket_label.value,
-            &p_lbl.value,
-            &updated_obj.shared_revision_id,
-            coll_uuid,
-            conn,
-        )?;
+
+        let (subpath, _) = disect_full_object_path(&p_lbl.value);
+        
+        create_relation(&updated_obj.id, &coll_uuid, &subpath, conn)?;
+    
         // Delete the path label afterwards
         delete(object_key_value)
             .filter(database::schema::object_key_value::id.eq(p_lbl.id))
