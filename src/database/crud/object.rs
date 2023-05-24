@@ -2159,35 +2159,13 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
-                // Get the object to aquire shared revision
-                let get_obj = objects
-                    .filter(database::schema::objects::id.eq(obj_id))
-                    .first::<Object>(conn)?;
-                // Construct path string
-                let (s3bucket, s3path) =
-                    construct_path_string(&col_id, &get_obj.filename, &request.sub_path, conn)?;
-                // Create path in database
-                create_path_db(
-                    &s3bucket,
-                    &s3path,
-                    &get_obj.shared_revision_id,
-                    &col_id,
-                    conn,
-                )?;
+                let relation = create_relation(&obj_id, &col_id, &request.sub_path, conn)?;
                 // Query path
-                Ok(paths
-                    .filter(database::schema::paths::path.eq(&s3path))
-                    .filter(database::schema::paths::bucket.eq(&s3bucket))
-                    .first::<Path>(conn)
-                    .optional()
-                    .map(|res| {
-                        res.map(|elem| ProtoPath {
-                            path: format!("s3://{}{}", elem.bucket, elem.path),
-                            visibility: elem.active,
-                        })
-                    })?)
+                Ok(Some(ProtoPath{ 
+                    path: relation_as_s3_path(&relation),
+                    visibility: true
+                }))
             })?;
-
         Ok(CreateObjectPathResponse { path: db_path })
     }
 
@@ -4746,39 +4724,86 @@ pub fn _construct_path_string(
     Ok((format!("{version_name}.{col_name}.{proj_name}"), fq_path))
 }
 
-pub fn create_path_db(
-    s3bucket: &str,
-    s3path: &str,
-    shared_rev_id: &diesel_ulid::DieselUlid,
-    collection_uuid: &diesel_ulid::DieselUlid,
-    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<(), ArunaError> {
-    let path_obj = Path {
-        id: diesel_ulid::DieselUlid::generate(),
-        bucket: s3bucket.into(),
-        path: s3path.into(),
-        shared_revision_id: *shared_rev_id,
-        collection_id: *collection_uuid,
-        created_at: chrono::Utc::now().naive_utc(),
-        active: true,
+
+/// Helper function that queries the necessary information and inserts a new relation.
+/// Ideally this should be executet in a separate transaction.
+/// 
+/// Will fail if the subpath is already associated with a different object hierarchy
+pub fn create_relation(objid: &DieselUlid, collid: &DieselUlid, subpath: &str, conn: &mut PooledConnection<ConnectionManager<PgConnection>>) -> Result<Relation, ArunaError> {
+    // TODO: Optimize this query + insert!
+    let get_object: Object = objects.filter(crate::database::schema::objects::id.eq(objid)).first::<Object>(conn)?;
+    let collection: Collection = collections.filter(crate::database::schema::collections::id.eq(collid)).first::<Collection>(conn)?;
+    let version_string = match collection.version_id {
+        Some(v) => {
+            let cver: CollectionVersion = collection_version.filter(crate::database::schema::collection_version::id.eq(&v)).first::<CollectionVersion>(conn)?;
+            format!("{}.{}.{}", cver.major, cver.minor, cver.patch)
+        },
+        None => "latest".to_string()
+    };
+    let projname: String = projects.filter(crate::database::schema::projects::id.eq(&collection.project_id)).select(crate::database::schema::projects::name).first::<String>(conn)?;
+
+    let object_path = format!("{}/{}", subpath, get_object.filename);
+
+    let rel = Relation { 
+        id: DieselUlid::generate(),
+        object_id: get_object.id,
+        path: object_path.to_string(),
+        project_id: collection.project_id,
+        project_name: projname,
+        collection_id: collection.id,
+        collection_path: format!("{}.{}", version_string, collection.name),
+        shared_revision_id: get_object.shared_revision_id,
+        path_active: true
     };
 
-    // Can be removed because of unique constraint on s3bucket/s3path
-    // if (paths
-    //     .filter(database::schema::paths::bucket.eq(s3bucket))
-    //     .filter(database::schema::paths::path.eq(s3path))
-    //     .first::<Path>(conn)
-    //     .optional()?)
-    // .is_none()
-    // {
-    diesel::insert_into(paths)
-        .values(path_obj)
-        .on_conflict_do_nothing()
-        .execute(conn)?;
-    // };
-
-    Ok(())
+    // Check if a similar relation exists
+    match relations
+        .filter(crate::database::schema::relations::path.eq(&object_path))
+        .filter(crate::database::schema::relations::collection_id.eq(&collid))
+        .filter(crate::database::schema::relations::shared_revision_id.ne(get_object.shared_revision_id))
+        .first::<Relation>(conn)
+        .optional()?
+        {
+            Some(_) => {return Err(ArunaError::InvalidRequest("Unable to create path relation for another object hierarchy".to_string()));},
+            None => Ok(insert_into(relations).values(&rel).get_result::<Relation>(conn)?)
+        }
 }
+
+
+
+// pub fn create_path_db(
+//     s3bucket: &str,
+//     s3path: &str,
+//     shared_rev_id: &diesel_ulid::DieselUlid,
+//     collection_uuid: &diesel_ulid::DieselUlid,
+//     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+// ) -> Result<(), ArunaError> {
+//     let path_obj = Path {
+//         id: diesel_ulid::DieselUlid::generate(),
+//         bucket: s3bucket.into(),
+//         path: s3path.into(),
+//         shared_revision_id: *shared_rev_id,
+//         collection_id: *collection_uuid,
+//         created_at: chrono::Utc::now().naive_utc(),
+//         active: true,
+//     };
+
+//     // Can be removed because of unique constraint on s3bucket/s3path
+//     // if (paths
+//     //     .filter(database::schema::paths::bucket.eq(s3bucket))
+//     //     .filter(database::schema::paths::path.eq(s3path))
+//     //     .first::<Path>(conn)
+//     //     .optional()?)
+//     // .is_none()
+//     // {
+//     diesel::insert_into(paths)
+//         .values(path_obj)
+//         .on_conflict_do_nothing()
+//         .execute(conn)?;
+//     // };
+
+//     Ok(())
+// }
 
 pub fn get_paths_proto(
     shared_rev_id: &diesel_ulid::DieselUlid,
