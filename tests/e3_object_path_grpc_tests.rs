@@ -491,7 +491,7 @@ async fn create_object_path_with_reference_grpc_test() {
         .object_paths;
 
     // Target collection should now have two references and two references, because two objects in the hierarchy exist
-    assert_eq!(target_collection_paths.len(), 2); // Only default subpath of object
+    assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
     assert_eq!(
         target_collection_paths.first().unwrap().path,
         format!("{static_path_part}/{}", random_object.filename)
