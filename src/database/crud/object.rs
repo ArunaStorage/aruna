@@ -1271,7 +1271,7 @@ impl Database {
                     let lat_obj = get_latest_obj(conn, parsed_object_id)?;
                     let obj = get_object(
                         &lat_obj.id,
-                        Some(lat_obj),
+                        Some(lat_obj.clone()),
                         &parsed_collection_id,
                         false,
                         conn,
