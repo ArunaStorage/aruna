@@ -336,7 +336,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    dError::SerializationError(_) => {
+                    dError::SerializationError(_)
+                    | dError::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    ) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {

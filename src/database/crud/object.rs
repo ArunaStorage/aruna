@@ -217,7 +217,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
@@ -382,7 +386,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
@@ -763,7 +771,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
