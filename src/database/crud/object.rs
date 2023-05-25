@@ -257,14 +257,14 @@ impl Database {
             transaction_result =
                 connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
                     // Check if object is latest!
-                    let latest = get_latest_obj(conn, req_object_uuid)?;
-                    let is_still_latest = latest.id == req_object_uuid;
+                    // let latest = get_latest_obj(conn, req_object_uuid)?;
+                    // let is_still_latest = latest.id == req_object_uuid;
 
-                    if !is_still_latest {
-                        return Err(ArunaError::InvalidRequest(format!(
-                            "Object {req_object_uuid} is not latest revision. "
-                        )));
-                    }
+                    // if !is_still_latest {
+                    //     return Err(ArunaError::InvalidRequest(format!(
+                    //         "Object {req_object_uuid} is not latest revision. "
+                    //     )));
+                    // }
 
                     // What can we do here ?
                     // - Set auto update ?
@@ -278,6 +278,10 @@ impl Database {
                     // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     // .get_result::<Object>(conn)?;
 
+                    let queried_object: Object = objects
+                        .filter(database::schema::objects::id.eq(&req_object_uuid))
+                        .first::<Object>(conn)?;
+
                     // Update hash if (re-)upload and request contains hash
                     if !request.no_upload && request.hash.is_some() {
                         (match &request.hash {
@@ -286,7 +290,8 @@ impl Database {
                                     "Missing hash after re-upload.".to_string(),
                                 ));
                             }
-                            Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                            Some(req_hash) => diesel::update(database::schema::hashes::dsl::hashes)
+                                .filter(database::schema::hashes::object_id.eq(&req_object_uuid))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type
@@ -301,7 +306,7 @@ impl Database {
                     // Finishing updates need extra steps to update all references
                     // In other collections / objectgroups
 
-                    if latest.object_status != ObjectStatus::AVAILABLE {
+                    if queried_object.object_status != ObjectStatus::AVAILABLE {
                         update(objects)
                             .filter(database::schema::objects::id.eq(&req_object_uuid))
                             .set((database::schema::objects::object_status
@@ -312,13 +317,13 @@ impl Database {
                     // Special treatment if only metadata was updated
                     if request.no_upload {
                         // Only on update without upload
-                        if latest.origin_id != req_object_uuid {
+                        if queried_object.origin_id != req_object_uuid {
                             // Clone object locations of old object with new object id as data stays the same.
                             let mut cloned_locations = Vec::new();
                             for old_location in object_locations
                                 .filter(
                                     database::schema::object_locations::object_id
-                                        .eq(&latest.origin_id),
+                                        .eq(&queried_object.origin_id),
                                 )
                                 .load::<ObjectLocation>(conn)?
                             {
@@ -342,7 +347,7 @@ impl Database {
                             for old_key in encryption_keys
                                 .filter(
                                     database::schema::encryption_keys::object_id
-                                        .eq(&latest.origin_id),
+                                        .eq(&queried_object.origin_id),
                                 )
                                 .load::<EncryptionKey>(conn)?
                             {
@@ -360,10 +365,16 @@ impl Database {
                                 .execute(conn)?;
                         }
 
-                        set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                        set_object_available(conn, &queried_object, &req_coll_uuid, None)?;
                     }
 
-                    Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
+                    Ok(get_object(
+                        &req_object_uuid,
+                        Some(queried_object),
+                        &req_coll_uuid,
+                        true,
+                        conn,
+                    )?)
                 });
 
             match &transaction_result {
@@ -667,7 +678,7 @@ impl Database {
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                     // Use the helper function to execute the request
-                    let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
+                    let object = get_object(&object_uuid, None, &collection_uuid, true, conn)?;
                     let proto_paths = if let Some(obj) = object.clone() {
                         get_paths_proto(
                             &obj.object.shared_revision_id,
@@ -1258,7 +1269,13 @@ impl Database {
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                     let lat_obj = get_latest_obj(conn, parsed_object_id)?;
-                    let obj = get_object(&lat_obj.id, &parsed_collection_id, false, conn)?;
+                    let obj = get_object(
+                        &lat_obj.id,
+                        Some(lat_obj),
+                        &parsed_collection_id,
+                        false,
+                        conn,
+                    )?;
 
                     let proto_paths = if let Some(obj) = obj.clone() {
                         get_paths_proto(
@@ -1455,7 +1472,7 @@ impl Database {
                 if let Some(q_objs) = query_collections {
                     for s_obj in q_objs {
                         if let Some(obj) =
-                            get_object(&s_obj.object_id, &query_collection_id, false, conn)?
+                            get_object(&s_obj.object_id, None, &query_collection_id, false, conn)?
                         {
                             let proto_paths = get_paths_proto(
                                 &obj.object.shared_revision_id,
@@ -1957,7 +1974,7 @@ impl Database {
                     .values(&db_key_values)
                     .execute(conn)?;
 
-                get_object(&parsed_object_id, &parsed_collection_id, true, conn)
+                get_object(&parsed_object_id, None, &parsed_collection_id, true, conn)
                     .map_err(ArunaError::DieselError)
             })?;
 
@@ -2003,7 +2020,7 @@ impl Database {
                     .values(&new_hooks)
                     .execute(conn)?;
 
-                get_object(&parsed_object_id, &parsed_collection_id, true, conn)
+                get_object(&parsed_object_id, None, &parsed_collection_id, true, conn)
             })?;
 
         let mapped = updated_objects
@@ -2176,7 +2193,7 @@ impl Database {
         &self,
         request: GetObjectsByPathRequest,
     ) -> Result<GetObjectsByPathResponse, ArunaError> {
-        let db_objects = self
+        let proto_objects = self
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoObject>, ArunaError, _>(|conn| {
@@ -2198,13 +2215,23 @@ impl Database {
                     .filter(database::schema::relations::collection_path.eq(&col_path))
                     .load::<Relation>(conn)?;
 
-                get_objects_by_relations(all_relations, conn)?
+                if let Some(first_rel) = all_relations.first() {
+                    get_objects_by_relations(
+                        &all_relations,
+                        Some(first_rel.collection_id.clone()),
+                        conn,
+                    )?
                     .into_iter()
                     .map(|e| e.try_into())
                     .collect::<Result<Vec<_>, ArunaError>>()
+                } else {
+                    Ok(Vec::new())
+                }
             })?;
 
-        Ok(GetObjectsByPathResponse { object: db_objects })
+        Ok(GetObjectsByPathResponse {
+            object: proto_objects,
+        })
     }
 
     /// Fetch the latest revision of an object via its unique path or create a staging object if
@@ -4317,13 +4344,17 @@ pub fn get_all_references(
 ///
 pub fn get_object(
     object_uuid: &diesel_ulid::DieselUlid,
+    queried_object: Option<Object>,
     collection_uuid: &diesel_ulid::DieselUlid,
     include_staging: bool,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectDto>, diesel::result::Error> {
-    let object: Object = objects
-        .filter(database::schema::objects::id.eq(&object_uuid))
-        .first::<Object>(conn)?;
+    let object: Object = match queried_object {
+        Some(o) => o,
+        None => objects
+            .filter(database::schema::objects::id.eq(&object_uuid))
+            .first::<Object>(conn)?,
+    };
 
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
@@ -4445,7 +4476,8 @@ pub fn get_object_ignore_coll(
 /// This will query all objects as DTO based on a list of relations
 /// Expects the list to include ALL associated relations per collection
 pub fn get_objects_by_relations(
-    all_relations: Vec<Relation>,
+    all_relations: &Vec<Relation>,
+    single_collection: Option<DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ObjectDto>, diesel::result::Error> {
     let object_uuids = all_relations
@@ -4453,15 +4485,6 @@ pub fn get_objects_by_relations(
         .map(|rel| rel.object_id)
         .unique()
         .collect::<Vec<_>>();
-
-    // Create a hashmap with key == shared_rev and value == "latest" object_id
-    let latest_per_shared = all_relations.iter().fold(HashMap::new(), |mut map, rel| {
-        let element = map.entry(rel.shared_revision_id).or_insert(rel.object_id);
-        if element.datetime() < rel.object_id.datetime() {
-            *element = rel.object_id
-        };
-        map
-    });
 
     let objs: Vec<Object> = objects
         .filter(database::schema::objects::id.eq_any(&object_uuids))
@@ -4495,10 +4518,19 @@ pub fn get_objects_by_relations(
 
         let (labels, hooks) = from_key_values(kvs);
 
-        let latest = if let Some(latest_id) = latest_per_shared.get(&obj.shared_revision_id) {
-            *latest_id == obj.id
-        } else {
-            false
+        let (update, latest) = match single_collection {
+            Some(cid) => collection_objects
+                .filter(database::schema::collection_objects::object_id.eq(&obj.id))
+                .filter(database::schema::collection_objects::collection_id.eq(&cid))
+                .select((
+                    database::schema::collection_objects::auto_update,
+                    database::schema::collection_objects::is_latest,
+                ))
+                .first::<(bool, bool)>(conn)
+                .optional()
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            None => (false, false),
         };
 
         results.push(ObjectDto {
@@ -4508,9 +4540,11 @@ pub fn get_objects_by_relations(
             object_hashes: hsh,
             source,
             latest,
-            update: false, // Always false might not include any collection_info
+            update,
         })
     }
+
+    results.sort_by(|a, b| b.object.revision_number.cmp(&a.object.revision_number));
 
     Ok(results)
 }

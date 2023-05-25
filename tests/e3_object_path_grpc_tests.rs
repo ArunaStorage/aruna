@@ -1416,13 +1416,15 @@ async fn get_object_by_path_grpc_test() {
         .path
         .unwrap();
 
+    // Update expectations
+    rev_0_object.auto_update = false;
     // Get latest object through available paths
-    for object_path in vec![
-        rev_0_default_path.to_string(),
-        rev_0_custom_path.path.to_string(),
-        rev_1_custom_path.path.to_string(),
+    for (object_path, expected) in vec![
+        (rev_0_default_path.to_string(), rev_1_object.clone()), // Already got updated -> rev1
+        (rev_0_custom_path.path.to_string(), rev_0_object.clone()),
+        (rev_1_custom_path.path.to_string(), rev_1_object.clone()),
     ]
-    .iter()
+    .into_iter()
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
@@ -1437,20 +1439,18 @@ async fn get_object_by_path_grpc_test() {
             .get_objects_by_path(get_object_by_path_request)
             .await
             .unwrap()
-            .into_inner()
-            .object[0]
-            .clone();
+            .into_inner();
 
-        assert_eq!(proto_object, rev_1_object); // Objects should be equal and always latest revision
+        assert_eq!(proto_object.object[0], expected); // Objects should be equal and always latest revision
     }
 
     // Get all object revisions through available paths
-    for object_path in vec![
-        rev_0_default_path.to_string(),
-        rev_0_custom_path.path.to_string(),
-        rev_1_custom_path.path.to_string(),
+    for (object_path, expected_size, expected_last_object) in vec![
+        (rev_0_default_path.to_string(), 2, rev_1_object.clone()),
+        (rev_0_custom_path.path.to_string(), 1, rev_0_object.clone()),
+        (rev_1_custom_path.path.to_string(), 1, rev_1_object.clone()),
     ]
-    .iter()
+    .into_iter()
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
@@ -1468,10 +1468,8 @@ async fn get_object_by_path_grpc_test() {
             .into_inner()
             .object;
 
-        println!("{:#?}", proto_objects);
-
-        assert_eq!(proto_objects.len(), 2); // Only contain revision 0 and 1
-                                            //assert!(proto_objects.contains(&rev_0_object));
-        assert!(proto_objects.contains(&rev_1_object));
+        assert_eq!(proto_objects.len(), expected_size); // Only contain revision 0 and 1
+                                                        //assert!(proto_objects.contains(&rev_0_object));
+        assert!(proto_objects.contains(&expected_last_object));
     }
 }
