@@ -841,7 +841,7 @@ fn get_checked_user_id_from_token_test() {
     // Collection scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
         project_id: "".to_string(),
-        collection_id: col_2.clone().collection_id,
+        collection_id: col_2.clone().0.collection_id,
         name: "personal_u5_token".to_string(),
         expires_at: None,
         permission: 2, // ADMIN permissions
@@ -853,7 +853,7 @@ fn get_checked_user_id_from_token_test() {
     // Collection scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
         project_id: "".to_string(),
-        collection_id: col_1.collection_id,
+        collection_id: col_1.0.collection_id,
         name: "personal_u5_token".to_string(),
         expires_at: None,
         permission: 5, // ADMIN permissions
@@ -976,7 +976,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::COLLECTION,
-                resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&col_2.0.collection_id).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -990,7 +990,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::ADMIN,
             resource_type: database::models::enums::Resources::COLLECTION,
-            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.0.collection_id).unwrap(),
             admin: false,
             personal: false,
             oidc_context: false,
@@ -1003,7 +1003,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::ADMIN,
             resource_type: database::models::enums::Resources::COLLECTION,
-            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.collection_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&col_2.0.collection_id).unwrap(),
             admin: false,
             personal: false,
             oidc_context: false,

@@ -1,3 +1,6 @@
+use std::thread;
+use std::time;
+
 use crate::database::connection::Database;
 use crate::database::models::auth::{ApiToken, PubKey, PubKeyInsert, User, UserPermission};
 use crate::database::models::enums::{Resources, UserRights};
@@ -132,9 +135,13 @@ impl Database {
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
 
-        let (creator_uid, api_token) =
-            self.pg_connection
-                .get()?
+        let mut backoff = 10;
+        let mut transaction_result: Result<(Option<diesel_ulid::DieselUlid>, ApiToken), dError>;
+        let mut connection = self.pg_connection.get()?;
+        // Insert all defined objects into the database
+
+        loop {
+            transaction_result = connection
                 .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
@@ -322,7 +329,27 @@ impl Database {
                     }
 
                     Ok((None, api_token))
-                })?;
+                });
+
+            match &transaction_result {
+                Ok(_) => {
+                    break;
+                }
+                Err(err) => match err {
+                    dError::SerializationError(_) => {
+                        thread::sleep(time::Duration::from_millis(backoff as u64));
+                        backoff = i32::pow(backoff, 2);
+                        if backoff > 100000 {
+                            log::warn!("Backoff reached for auth retries!");
+                            break;
+                        }
+                    }
+                    _ => break,
+                },
+            }
+        }
+
+        let (creator_uid, api_token) = transaction_result?;
 
         match creator_uid {
             Some(uid) => Ok((uid, api_token)),

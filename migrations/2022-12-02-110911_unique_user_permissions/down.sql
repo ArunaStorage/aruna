@@ -6,4 +6,4 @@
 -- Warning:
 --   CASCADE drops all dependent objects without listing them, which can lead to inadvertent and difficult-to-recover losses.
 --   To avoid potential harm, it is recommended dropping objects individually in most cases.
-DROP INDEX unique_user_project_permission CASCADE;
+DROP INDEX unique_user_project_permission;

@@ -223,7 +223,7 @@ async fn destroy_project_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
-    let collection_service = CollectionServiceImpl::new(db, authz).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);

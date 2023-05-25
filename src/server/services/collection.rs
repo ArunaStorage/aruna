@@ -5,6 +5,7 @@ use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
+use crate::server::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
@@ -15,7 +16,7 @@ use tonic::Response;
 use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(CollectionServiceImpl);
+crate::impl_grpc_server!(CollectionServiceImpl, kube_client: Option<KubeClient>);
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
@@ -56,13 +57,22 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.create_new_collection(request.get_ref().to_owned(), creator_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let (response, bucket) = task::spawn_blocking(move || {
+            db.create_new_collection(request.get_ref().to_owned(), creator_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        match &self.kube_client {
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
+                }
+            }
+            None => {}
+        }
+
+        let response = Response::new(response);
 
         log::info!("Sending CreateNewCollectionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -222,13 +232,22 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.update_collection(request.get_ref().to_owned(), user_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let (response, bucket) = task::spawn_blocking(move || {
+            db.update_collection(request.get_ref().to_owned(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        match &self.kube_client {
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
+                }
+            }
+            None => {}
+        }
+
+        let response = Response::new(response);
 
         log::info!("Sending UpdateCollectionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -274,13 +293,22 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.pin_collection_version(request.get_ref().to_owned(), user_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let (response, bucket) = task::spawn_blocking(move || {
+            db.pin_collection_version(request.get_ref().to_owned(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        let response = Response::new(response);
+
+        match &self.kube_client {
+            Some(kc) => {
+                if let Err(err) = kc.create_bucket(&bucket).await {
+                    log::error!("Unable to create kube_bucket err: {err}")
+                }
+            }
+            None => {}
+        }
 
         log::info!("Sending PinCollectionVersionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));

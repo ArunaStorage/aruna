@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
+use crate::server::kube_client::KubeClient;
 use crate::server::mail_client::MailClient;
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
@@ -60,6 +61,14 @@ impl ServiceServer {
             None
         };
 
+        let kubeclient = match KubeClient::new().await {
+            Ok(kc) => Some(kc),
+            Err(e) => {
+                log::error!("Failed to initialize kube_client, err: {e}");
+                None
+            }
+        };
+
         // Initialize instance default data proxy endpoint
         let default_endpoint = db_ref
             .init_default_endpoint(config.clone().config.default_endpoint)
@@ -107,7 +116,8 @@ impl ServiceServer {
             EndpointServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let project_service = ProjectServiceImpl::new(db_ref.clone(), authz.clone()).await;
         let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone(), mailclient).await;
-        let collection_service = CollectionServiceImpl::new(db_ref.clone(), authz.clone()).await;
+        let collection_service =
+            CollectionServiceImpl::new(db_ref.clone(), authz.clone(), kubeclient).await;
         let object_service =
             ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let object_group_service = ObjectGroupServiceImpl::new(db_ref.clone(), authz.clone()).await;

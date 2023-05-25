@@ -144,7 +144,7 @@ CREATE TABLE sources (
 -- Table with objects which represent individual data blobs
 CREATE TABLE objects (
     -- The unique per object id
-    id UUID NOT NULL,
+    id UUID NOT NULL PRIMARY KEY,
     shared_revision_id UUID NOT NULL,
     revision_number INT NOT NULL,
     filename TEXT NOT NULL,
@@ -155,13 +155,13 @@ CREATE TABLE objects (
     dataclass DATACLASS NOT NULL DEFAULT 'PRIVATE',
     source_id UUID REFERENCES sources(id),
     origin_id UUID NOT NULL,
-    PRIMARY KEY (id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 ALTER TABLE objects
 ADD FOREIGN KEY (origin_id) REFERENCES objects(id);
 -- objects table cannot reference itself until created
-CREATE INDEX objects_id_idx ON objects (shared_revision_id, revision_number);
+CREATE INDEX objects_shared_rev_idx ON objects (shared_revision_id, revision_number);
+CREATE INDEX objects_shared_single_idx ON objects (shared_revision_id);
 -- Table with endpoints
 CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
@@ -196,6 +196,8 @@ CREATE TABLE hashes (
     hash_type HASH_TYPE NOT NULL,
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
+CREATE INDEX hashes_objects_idx ON hashes (object_id);
+
 -- Table with the key-value pairs associated with specific objects
 CREATE TABLE object_key_value (
     id UUID PRIMARY KEY,
@@ -205,6 +207,7 @@ CREATE TABLE object_key_value (
     key_value_type KEY_VALUE_TYPE NOT NULL,
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
+CREATE INDEX object_key_value_objects_idx ON object_key_value (object_id);
 /* ----- ObjectGroups ---------------------------------------------- */
 -- Table with object groups which act as a single level organization for objects in collections
 CREATE TABLE object_groups (
@@ -246,6 +249,8 @@ CREATE TABLE collection_objects (
     FOREIGN KEY (collection_id) REFERENCES collections(id),
     CONSTRAINT unique_collection_object UNIQUE (object_id, collection_id)
 );
+CREATE INDEX collection_objects_collection_idx ON collection_objects (collection_id);
+CREATE INDEX collection_objects_objects_idx ON collection_objects (object_id);
 -- Join table between collections and object_groups
 CREATE TABLE collection_object_groups (
     id UUID PRIMARY KEY,

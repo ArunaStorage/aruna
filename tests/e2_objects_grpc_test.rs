@@ -279,7 +279,7 @@ async fn get_objects_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
-    let collection_service = CollectionServiceImpl::new(db.clone(), authz.clone()).await;
+    let collection_service = CollectionServiceImpl::new(db.clone(), authz.clone(), None).await;
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();

@@ -279,7 +279,7 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         .create_new_collection(create_collection_request_test.clone().request, creator)
         .unwrap();
 
-    let get_col_resp = get_collection(res.collection_id);
+    let get_col_resp = get_collection(res.0.collection_id);
     // Collection should not be public
     assert_eq!(
         get_col_resp.is_public,
