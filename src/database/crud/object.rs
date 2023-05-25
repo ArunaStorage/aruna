@@ -282,7 +282,7 @@ impl Database {
                     // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     // .get_result::<Object>(conn)?;
 
-                    let queried_object: Object = objects
+                    let mut queried_object: Object = objects
                         .filter(database::schema::objects::id.eq(&req_object_uuid))
                         .first::<Object>(conn)?;
 
@@ -316,6 +316,8 @@ impl Database {
                             .set((database::schema::objects::object_status
                                 .eq(ObjectStatus::FINALIZING),))
                             .execute(conn)?;
+
+                        queried_object.object_status = ObjectStatus::FINALIZING;
                     }
 
                     // Special treatment if only metadata was updated
@@ -370,6 +372,7 @@ impl Database {
                         }
 
                         set_object_available(conn, &queried_object, &req_coll_uuid, None)?;
+                        queried_object.object_status = ObjectStatus::AVAILABLE;
                     }
 
                     Ok(get_object(
