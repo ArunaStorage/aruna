@@ -193,7 +193,7 @@ impl Database {
         let collection_uuid =
             diesel_ulid::DieselUlid::from_str(&request.collection_id).map_err(ArunaError::from)?;
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
         // Insert staging object with all its needed assets into database
@@ -252,7 +252,7 @@ impl Database {
         let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
@@ -735,7 +735,7 @@ impl Database {
     ) -> Result<ObjectWithUrl, ArunaError> {
         // Read object and paths from database
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database

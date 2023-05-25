@@ -135,7 +135,7 @@ impl Database {
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result: Result<(Option<diesel_ulid::DieselUlid>, ApiToken), dError>;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
