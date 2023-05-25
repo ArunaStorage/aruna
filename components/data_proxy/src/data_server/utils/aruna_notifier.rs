@@ -95,6 +95,8 @@ impl ArunaNotifier {
                         s3_error!(NoSuchBucket, "Bucket not found")
                     } else if e.message() == "Format of path test.test is not valid." {
                         s3_error!(NoSuchBucket, "Bucket not found / invalid bucket scheme")
+                    } else if e.message() == "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."{
+                        s3_error!(InvalidArgument, "Invalid path, path does not comply with the bucket or key naming rules")
                     } else {
                         s3_error!(InternalError, "Internal notifier error")
                     }
