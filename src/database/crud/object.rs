@@ -2046,7 +2046,7 @@ impl Database {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
                             if request.include_inactive || p.path_active{
-                                Some(ProtoPath{ path: format!("s3://{}.{}{}", p.collection_path,p.project_name, p.path), visibility: p.path_active })
+                                Some(ProtoPath{ path: relation_as_s3_path(p), visibility: p.path_active })
                             }else{
                                 None
                             }
@@ -4712,8 +4712,6 @@ pub fn create_relation(
         };
         format!("{}/{}", stripped_suffix, get_object.filename)
     };
-
-    dbg!(&object_path);
 
     if !PATH_SCHEMA.is_match(&object_path) {
         return Err(ArunaError::InvalidRequest(
