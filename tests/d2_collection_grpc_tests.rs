@@ -37,7 +37,7 @@ async fn create_collection_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
-    let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
+    let project_service = ProjectServiceImpl::new(db.clone(), authz.clone(), None).await;
     let collection_service = CollectionServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation

@@ -140,7 +140,7 @@ pub async fn add_project_permission(
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Validate format of provided ids
     let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
@@ -196,7 +196,7 @@ pub async fn edit_project_permission(
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Validate format of provided ids
     let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();

@@ -4,15 +4,21 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
+use crate::server::event_emit_client::NotificationEmitClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
+use aruna_rust_api::api::internal::v1::{EmittedResource, ProjectResource};
+use aruna_rust_api::api::notification::services::v1::EventType;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::*;
+use tokio::task;
 
 use std::sync::Arc;
 use tonic::Response;
 
 // ProjectServiceImpl struct
-crate::impl_grpc_server!(ProjectServiceImpl);
+crate::impl_grpc_server!(ProjectServiceImpl, event_emitter: Option<NotificationEmitClient>);
 
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {
@@ -176,15 +182,44 @@ impl ProjectService for ProjectServiceImpl {
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
 
-        // Execute request and return response
-        let response = Response::new(
-            self.database
-                .destroy_project(request.into_inner(), _user_id)?,
-        );
+        // Try to delete project
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.destroy_project(request.into_inner(), _user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        match &self.event_emitter {
+            Some(emit_client) => {
+                let event_emitter_clone = emit_client.clone();
+                task::spawn(async move {
+                    event_emitter_clone
+                        .emit_event(
+                            parsed_project_id.to_string(),
+                            ResourceType::Project,
+                            EventType::Deleted,
+                            vec![EmittedResource {
+                                resource: Some(Resource::Project(ProjectResource {
+                                    project_id: parsed_project_id.to_string(),
+                                })),
+                            }],
+                        )
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from)??;
+            }
+            None => {}
+        }
+
+        // Return gRPC response
+        let grpc_response = Response::new(response);
 
         log::info!("Sending DestroyProjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     /// UpdateProject updates a project and all associated user_permissions.
@@ -214,15 +249,44 @@ impl ProjectService for ProjectServiceImpl {
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
 
-        // Execute request and return response
-        let response = Response::new(
-            self.database
-                .update_project(request.into_inner(), user_id)?,
-        );
+        // Create project
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.update_project(request.into_inner(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        match &self.event_emitter {
+            Some(emit_client) => {
+                let event_emitter_clone = emit_client.clone();
+                task::spawn(async move {
+                    event_emitter_clone
+                        .emit_event(
+                            parsed_project_id.to_string(),
+                            ResourceType::Project,
+                            EventType::Updated,
+                            vec![EmittedResource {
+                                resource: Some(Resource::Project(ProjectResource {
+                                    project_id: parsed_project_id.to_string(),
+                                })),
+                            }],
+                        )
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from)??;
+            }
+            None => {}
+        }
+
+        // Return gRPC response
+        let grpc_response = Response::new(response);
 
         log::info!("Sending UpdateProjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     /// RemoveUserFromProject removes a specific user from the project
