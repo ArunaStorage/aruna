@@ -17,11 +17,12 @@ use crate::{
         models::enums::Resources,
     },
     error::ArunaError,
+    server::services::utils::format_grpc_request,
 };
 
 use std::{str::FromStr, sync::Arc};
 use tokio::task;
-use tonic::metadata::{MetadataMap, MetadataValue};
+use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue, MetadataMap};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(InternalEventServiceImpl);
@@ -43,14 +44,19 @@ impl InternalEventService for InternalEventServiceImpl {
         &self,
         request: tonic::Request<CreateStreamGroupRequest>,
     ) -> Result<tonic::Response<CreateStreamGroupResponse>, tonic::Status> {
+        log::info!("Received CreateStreamGroupRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Consume gRPC request
         let inner_request = request.into_inner();
+        log::info!("Consumed gRPC Request");
 
         // Create metadata map with provided token for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            "Authorization",
-            MetadataValue::try_from(format!("Bearer {}", inner_request.token).as_str())
+            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+                .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
+            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -112,20 +118,15 @@ impl InternalEventService for InternalEventServiceImpl {
         &self,
         request: tonic::Request<GetStreamGroupRequest>,
     ) -> Result<tonic::Response<GetStreamGroupResponse>, tonic::Status> {
+        log::info!("Received GetStreamGroupRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
         // Consume gRPC request
         let inner_request = request.into_inner();
 
         // Extract stream group ulid from request
         let stream_group_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.stream_group_id)
             .map_err(ArunaError::from)?;
-
-        // Create dummy header metadata for authorization
-        let mut metadata = MetadataMap::new();
-        metadata.insert(
-            "Authorization",
-            MetadataValue::try_from(format!("Bearer {}", inner_request.token).as_str())
-                .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-        );
 
         // Fetch NotificationStreamGroup from database
         let database_clone = self.database.clone();
@@ -138,8 +139,9 @@ impl InternalEventService for InternalEventServiceImpl {
         // Create dummy header metadata for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            "Authorization",
-            MetadataValue::try_from(format!("Bearer {}", inner_request.token).as_str())
+            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+                .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
+            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -192,8 +194,9 @@ impl InternalEventService for InternalEventServiceImpl {
         // Create dummy header metadata for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            "Authorization",
-            MetadataValue::try_from(format!("Bearer {}", inner_request.token).as_str())
+            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+                .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
+            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 

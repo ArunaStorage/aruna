@@ -275,7 +275,6 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         };
 
         // Create and return gRPC response
-        log::info!("External authorization: {}", authorized);
         Ok(tonic::Response::new(AuthorizeResponse { ok: authorized }))
     }
 

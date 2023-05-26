@@ -564,11 +564,12 @@ impl Database {
                 delete(
                     user_permissions.filter(
                         crate::database::schema::user_permissions::project_id
-                            .eq(p_id)
-                            .and(crate::database::schema::user_permissions::user_id.eq(d_u_id)),
+                            .eq(&p_id)
+                            .and(crate::database::schema::user_permissions::user_id.eq(&d_u_id)),
                     ),
                 )
                 .execute(conn)?;
+
                 Ok(())
             })?;
 

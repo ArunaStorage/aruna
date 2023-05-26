@@ -102,16 +102,8 @@ impl Database {
         use crate::database::schema::user_permissions::dsl::user_permissions;
         use crate::database::schema::users::dsl::*;
 
+        // Parse user id from request and validate its format
         let user_id = diesel_ulid::DieselUlid::from_str(&request.user_id)?;
-
-        // Map grpc_perm because it is an Option by default
-        /*
-        let grpc_perm = request.project_perms.ok_or_else(|| {
-            ArunaError::InvalidRequest(
-                "Project permissions are required to activate a user".to_string(),
-            )
-        })?;
-        */
 
         // Update the user
         let user = self

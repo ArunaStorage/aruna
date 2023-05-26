@@ -1559,10 +1559,7 @@ impl ObjectService for ObjectServiceImpl {
                 }
             }
 
-            match 1 {
-                1 => Ok(()),
-                _ => Err(ArunaError::InvalidRequest("Won't happen.".to_string())),
-            }
+            Ok::<(), ArunaError>(())
         });
 
         // Return gRPC response after everything succeeded

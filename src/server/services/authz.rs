@@ -434,7 +434,7 @@ impl Authz {
     ///
     /// ## Returns:
     ///
-    /// * `Result<diesel_ulid::DieselUlid, ArunaError>` - 
+    /// * `Result<diesel_ulid::DieselUlid, ArunaError>` -
     /// Returns the user id associated with the provided authorization token on authorization success;
     /// Error else.
     ///

@@ -1,5 +1,5 @@
 use crate::database::models::enums::EndpointType;
-use std::env::{self, VarError};
+use std::env::VarError;
 use std::fs;
 
 use crate::error::{ArunaError, TypeConversionError};
@@ -123,7 +123,7 @@ impl ArunaServerConfig {
             Err(_) => "Default_Value"
         };
         */
-        
+
         Ok(EnvConfig {})
     }
 }
