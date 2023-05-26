@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
+use crate::server::event_emit_client::NotificationEmitClient;
 use crate::server::kube_client::KubeClient;
 use crate::server::mail_client::MailClient;
 use crate::server::services::authz::Authz;
@@ -17,7 +18,6 @@ use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::service_account::ServiceAccountServiceImpl;
 use crate::server::services::user::UserServiceImpl;
 use aruna_rust_api::api::internal::v1::internal_authorize_service_server::InternalAuthorizeServiceServer;
-use aruna_rust_api::api::internal::v1::internal_event_emitter_service_client::InternalEventEmitterServiceClient;
 use aruna_rust_api::api::internal::v1::internal_event_service_server::InternalEventServiceServer;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierServiceServer;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
@@ -45,11 +45,13 @@ impl ServiceServer {
         let db = Database::new(&config.clone().config.database_url);
         let db_ref = Arc::new(db);
 
+        // Initialize dev environment
         let dev_env = match env::var("ARUNA_DEV_ENV") {
             Ok(var) => var.to_ascii_uppercase() == "TRUE",
             _ => false,
         };
 
+        // Initialize mail client if config is provided
         let mailclient = if !dev_env {
             match MailClient::new() {
                 Ok(mc) => Some(mc),
@@ -62,6 +64,7 @@ impl ServiceServer {
             None
         };
 
+        // Initialize kube client if config is provided
         let kubeclient = match KubeClient::new().await {
             Ok(kc) => Some(kc),
             Err(e) => {
@@ -70,17 +73,16 @@ impl ServiceServer {
             }
         };
 
-        // Initialze InternalEventEmitterServiceClient if host is set
-        let event_emitter_client = match InternalEventEmitterServiceClient::connect(
-            config.clone().env_config.event_emitter_host,
+        // Initialize notification emitting client if config is provided
+        let event_config_clone = config.config.event_notifications.clone();
+        let event_emit_client = match NotificationEmitClient::new(
+            event_config_clone.emitter_host,
+            event_config_clone.emitter_token,
         )
         .await
         {
             Ok(client) => Some(client),
-            Err(e) => {
-                log::error!("Failed to initialize event emitter, err: {e}");
-                None
-            }
+            Err(_) => None,
         };
 
         // Initialize instance default data proxy endpoint
