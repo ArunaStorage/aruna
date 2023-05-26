@@ -14,9 +14,7 @@ pub struct ArunaServerConfig {
 
 /// This struct contains all values collected from environmental variables
 #[derive(Clone, Debug, Deserialize)]
-pub struct EnvConfig {
-    pub event_emitter_host: String,
-}
+pub struct EnvConfig {}
 
 /// This struct is used as template to parse the ArunaServer config.toml file
 #[derive(Clone, Debug, Deserialize)]
@@ -24,8 +22,16 @@ pub struct Config {
     pub database_url: String,
     pub oauth_realminfo: String,
     pub default_endpoint: DefaultEndpoint,
+    pub event_notifications: EventNotifications,
     pub loc_version: LocationVersion,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EventNotifications {
+    pub emitter_host: String,
+    pub emitter_token: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct DefaultEndpoint {
     pub ep_type: EndpointType,
@@ -117,16 +123,8 @@ impl ArunaServerConfig {
             Err(_) => "Default_Value"
         };
         */
-
-        // Optional event emitter host for notifications
-        let internal_event_emitter_host = match env::var("INTERNAL_EVENT_EMITTER_HOST") {
-            Ok(host) => host,
-            Err(_) => "".to_string(),
-        };
-
-        Ok(EnvConfig {
-            event_emitter_host: internal_event_emitter_host,
-        })
+        
+        Ok(EnvConfig {})
     }
 }
 
