@@ -479,7 +479,7 @@ fn update_object_get_references_test() {
     let _resp = db.create_object_reference(create_ref).unwrap();
 
     let update_1 = common::functions::update_object(&TCreateUpdate {
-        original_object: object.clone(),
+        original_object: object,
         collection_id: rand_collection.id.to_string(),
         new_name: "SuperName".to_string(),
         ..Default::default()
@@ -488,7 +488,7 @@ fn update_object_get_references_test() {
     // Update Object again
     let update_2 = common::functions::update_object(&TCreateUpdate {
         original_object: update_1,
-        collection_id: rand_collection.id.to_string(),
+        collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
         content_len: 123456,
         ..Default::default()

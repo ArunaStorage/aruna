@@ -30,7 +30,7 @@ impl Database {
     pub fn create_notification_stream_group(
         &self,
         stream_group_ulid: diesel_ulid::DieselUlid,
-        resource_id: diesel_ulid::DieselUlid,
+        resource_ulid: diesel_ulid::DieselUlid,
         resource_type: Resources,
         include_sub_resources: bool,
     ) -> Result<NotificationStreamGroup, ArunaError> {
@@ -51,8 +51,8 @@ impl Database {
                         include_sub_resources,
                     )?,
                     */
-                    resource_id: resource_id,
-                    resource_type: resource_type,
+                    resource_id: resource_ulid,
+                    resource_type,
                     notify_on_sub_resources: include_sub_resources,
                 };
 

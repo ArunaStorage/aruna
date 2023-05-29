@@ -23,7 +23,7 @@ impl tonic::service::Interceptor for ClientInterceptor {
         metadata.append(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(format!("{}", self.internal_token.as_str()))
+            AsciiMetadataValue::try_from(self.internal_token.to_string())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 

@@ -47,7 +47,7 @@ impl ResourceInfoService for ResourceInfoServiceImpl {
             })?;
 
         // Validate token
-        let token_ulid = self.authz.validate_and_query_token(&auth_token).await?;
+        let token_ulid = self.authz.validate_and_query_token(auth_token).await?;
 
         //ToDo: How to correctly authorize against resource_id/resource_type without specific action?
         //self.authz.resource_read_authorize(metadata, resource_ulid, resource_type)?;

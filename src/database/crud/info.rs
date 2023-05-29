@@ -80,7 +80,7 @@ impl Database {
                         //  - Implicit: All auto_update references of shared_revision_id or even all other references?
 
                         // Fetch all collection ids the object is explicitly member of
-                        let all_object_refs = crate::database::crud::object::get_all_references(conn, &resource_ulid, &false)?;
+                        let all_object_refs = crate::database::crud::object::get_all_references(conn, resource_ulid, &false)?;
 
                         // Filter all relevant coll ids from references
                         let obj_coll_ids = all_object_refs
@@ -126,10 +126,10 @@ impl Database {
 
                         // Loop hierarchy creation
                         let mut obj_hierarchies = vec![];
-                        for (again_coll_id, object_group_ids) in col_obj_grps {
+                        for (again_coll_id, object_group_ulids) in col_obj_grps {
                             obj_hierarchies.push(Hierarchy {
                                 object_id: resource_ulid.to_string(),
-                                object_group_ids: object_group_ids,
+                                object_group_ids: object_group_ulids,
                                 collection_id: again_coll_id.to_string(),
                                 project_id: match col_projs.get(&again_coll_id) {
                                     Some(project_ulid) => project_ulid.to_string(),

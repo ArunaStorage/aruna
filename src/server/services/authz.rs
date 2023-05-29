@@ -490,15 +490,12 @@ impl Authz {
 
                 let mut authed = None;
                 for collection_ulid in collection_ulids {
-                    match self
+                    if let Ok(token_ulid) = self
                         .collection_authorize(&metadata, collection_ulid, UserRights::READ)
                         .await
                     {
-                        Ok(token_ulid) => {
-                            authed = Some(token_ulid);
-                            break;
-                        }
-                        Err(_) => {}
+                        authed = Some(token_ulid);
+                        break;
                     }
                 }
 

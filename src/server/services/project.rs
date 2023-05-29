@@ -18,7 +18,10 @@ use std::sync::Arc;
 use tonic::Response;
 
 // ProjectServiceImpl struct
-crate::impl_grpc_server!(ProjectServiceImpl, event_emitter: Option<NotificationEmitClient>);
+crate::impl_grpc_server!(
+    ProjectServiceImpl,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {

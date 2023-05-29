@@ -56,7 +56,7 @@ impl InternalEventService for InternalEventServiceImpl {
         metadata.insert(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
+            AsciiMetadataValue::try_from(inner_request.token.to_string())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -80,7 +80,7 @@ impl InternalEventService for InternalEventServiceImpl {
         let db_stream_group = task::spawn_blocking(move || {
             database_clone.create_notification_stream_group(
                 diesel_ulid::DieselUlid::generate(),
-                resource_ulid.clone(),
+                resource_ulid,
                 grpc_to_db_resource(&inner_request.resource_type)?,
                 inner_request.notify_on_sub_resource,
             )
@@ -141,7 +141,7 @@ impl InternalEventService for InternalEventServiceImpl {
         metadata.insert(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
+            AsciiMetadataValue::try_from(inner_request.token.to_string())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -196,7 +196,7 @@ impl InternalEventService for InternalEventServiceImpl {
         metadata.insert(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(format!("{}", inner_request.token))
+            AsciiMetadataValue::try_from(inner_request.token.to_string())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
