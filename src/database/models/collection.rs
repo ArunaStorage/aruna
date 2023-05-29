@@ -128,7 +128,7 @@ pub struct CollectionObject {
     pub reference_status: ReferenceStatus,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct CollectionObjectGroup {
