@@ -3,9 +3,11 @@ use crate::database::connection::Database;
 use crate::error::ArunaError;
 use aruna_rust_api::api::internal::v1::{
     internal_authorize_service_server::InternalAuthorizeService, Authorization, AuthorizeRequest,
-    AuthorizeResponse, GetSecretRequest, GetSecretResponse,
+    AuthorizeResponse, GetSecretRequest, GetSecretResponse, GetTokenFromSecretRequest,
+    GetTokenFromSecretResponse,
 };
-use std::str::FromStr;
+use std::time::Duration;
+use std::{str::FromStr, time::SystemTime};
 
 use chrono::Utc;
 use std::sync::Arc;
@@ -75,6 +77,50 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
                 secretkey: api_token.secretkey,
                 accesskey: api_token.id.to_string(),
             }),
+        }))
+    }
+
+    /// Generates a short-lived token for authorization from s3 access credentials
+    ///
+    /// ## Arguments:
+    ///
+    ///
+    /// ## Returns:
+    ///
+    ///
+    /// ## Behaviour:
+    ///
+    async fn get_token_from_secret(
+        &self,
+        request: tonic::Request<GetTokenFromSecretRequest>,
+    ) -> Result<tonic::Response<GetTokenFromSecretResponse>, tonic::Status> {
+        let inner_request = request.into_inner();
+
+        let token_id = &inner_request
+            .authorization
+            .ok_or_else(|| {
+                tonic::Status::new(Code::Unauthenticated, format!("Missing access key"))
+            })?
+            .accesskey;
+
+        let authz_clone = self.authz.clone();
+
+        let expiry = Some(
+            SystemTime::now()
+                .checked_add(Duration::new(300, 0))
+                .ok_or_else(|| {
+                    tonic::Status::new(Code::Internal, format!("Set system time error"))
+                })?
+                .into(),
+        );
+        let api_token = task::spawn_blocking(move || authz_clone.sign_new_token(&token_id, expiry))
+            .await
+            .map_err(ArunaError::from)?
+            .await?;
+
+        // Return gRPC response
+        Ok(tonic::Response::new(GetTokenFromSecretResponse {
+            token: api_token,
         }))
     }
 }
