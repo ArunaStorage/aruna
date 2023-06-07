@@ -4,7 +4,7 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 
 use crate::error::{ArunaError, TypeConversionError};
-use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use crate::server::services::utils::{format_grpc_request, format_grpc_response, CORSVec};
 
 use crate::database::models::enums::{Resources, UserRights};
 use crate::server::services::authz::Context;
@@ -227,7 +227,10 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
             },
         };
 
+        let cors: CORSVec = proto_object.clone().labels.into();
+
         let response = tonic::Response::new(GetObjectLocationResponse {
+            cors_configurations: cors.into(),
             object: Some(proto_object),
             location: Some(proto_location),
         });

@@ -95,16 +95,12 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         request: tonic::Request<GetTokenFromSecretRequest>,
     ) -> Result<tonic::Response<GetTokenFromSecretResponse>, tonic::Status> {
         let inner_request = request.into_inner();
-
-        let token_id = &inner_request
+        let token_id = inner_request
             .authorization
             .ok_or_else(|| {
                 tonic::Status::new(Code::Unauthenticated, format!("Missing access key"))
             })?
             .accesskey;
-
-        let authz_clone = self.authz.clone();
-
         let expiry = Some(
             SystemTime::now()
                 .checked_add(Duration::new(300, 0))
@@ -113,10 +109,7 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
                 })?
                 .into(),
         );
-        let api_token = task::spawn_blocking(move || authz_clone.sign_new_token(&token_id, expiry))
-            .await
-            .map_err(ArunaError::from)?
-            .await?;
+        let api_token = self.authz.sign_new_token(&token_id, expiry).await?;
 
         // Return gRPC response
         Ok(tonic::Response::new(GetTokenFromSecretResponse {
