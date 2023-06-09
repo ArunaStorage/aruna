@@ -71,6 +71,7 @@ async fn main() {
         backend_host,
         storage_backend.clone(),
         data_handler.clone(),
+        endpoint_id,
     )
     .await
     .unwrap();

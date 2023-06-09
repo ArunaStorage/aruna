@@ -82,7 +82,10 @@ impl InternalProxyService for InternalServerImpl {
         let upload_id = self
             .data_client
             .init_multipart_upload(Location {
-                bucket: "temp".to_string(),
+                bucket: format!(
+                    "{}-temp",
+                    &self.data_handler.settings.endpoint_id.to_string()
+                ),
                 path: format!(
                     "{}/{}",
                     inner_request.collection_id, inner_request.object_id

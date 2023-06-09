@@ -75,7 +75,11 @@ impl DataHandler {
             .find(|e| e.alg == Hashalgorithm::Sha256 as i32)
             .ok_or_else(|| anyhow!("Sha256 not found"))?;
 
-        to.bucket = format!("b{}", &sha_hash.hash[0..2]);
+        to.bucket = format!(
+            "{}-{}",
+            self.settings.endpoint_id.to_string(),
+            &sha_hash.hash[0..2]
+        );
         to.path = sha_hash.hash[2..].to_string();
 
         // Get the correct encryption key based on the actual hash of the object
@@ -266,7 +270,7 @@ impl DataHandler {
             .clone()
             .finish_multipart_upload(
                 ArunaLocation {
-                    bucket: "temp".to_string(),
+                    bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
                     path: format!("{}/{}", collection_id, object_id),
                     ..Default::default()
                 },
@@ -288,14 +292,14 @@ impl DataHandler {
             mover_clone
                 .move_encode(
                     ArunaLocation {
-                        bucket: "temp".to_string(),
+                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         encryption_key: enc_key.clone(),
                         ..Default::default()
                     },
                     ArunaLocation {
-                        bucket: "temp".to_string(),
+                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         is_compressed: compressing,

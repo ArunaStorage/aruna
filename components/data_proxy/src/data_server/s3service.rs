@@ -41,16 +41,19 @@ use crate::data_server::utils::utils::create_location_from_hash;
 pub struct S3ServiceServer {
     backend: Arc<Box<dyn StorageBackend>>,
     data_handler: Arc<DataHandler>,
+    endpoint_id: String,
 }
 
 impl S3ServiceServer {
     pub async fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         data_handler: Arc<DataHandler>,
+        endpoint_id: String,
     ) -> Result<Self> {
         Ok(S3ServiceServer {
             backend: backend.clone(),
             data_handler,
+            endpoint_id,
         })
     }
 }
@@ -84,7 +87,7 @@ impl S3 for S3ServiceServer {
                 if !h.is_empty() && h.len() == 32 {
                     self.backend
                         .head_object(ArunaLocation {
-                            bucket: format!("b{}", &h[0..2]),
+                            bucket: format!("{}-{}", &self.endpoint_id, &h[0..2]),
                             path: h[2..].to_string(),
                             ..Default::default()
                         })
@@ -283,7 +286,7 @@ impl S3 for S3ServiceServer {
             .backend
             .clone()
             .init_multipart_upload(ArunaLocation {
-                bucket: "temp".to_string(),
+                bucket: format!("{}-temp", self.endpoint_id),
                 path: format!("{}/{}", collection_id, object_id),
                 ..Default::default()
             })
@@ -330,7 +333,7 @@ impl S3 for S3ServiceServer {
                     BufferedS3Sink::new(
                         self.backend.clone(),
                         ArunaLocation {
-                            bucket: "temp".to_string(),
+                            bucket: format!("{}-temp", &self.endpoint_id),
                             path: format!("{}/{}", collection_id, object_id),
                             ..Default::default()
                         },
@@ -490,7 +493,7 @@ impl S3 for S3ServiceServer {
             .content_len;
 
         let get_location = ArunaLocation {
-            bucket: format!("b{}", &sha256_hash.hash[0..2]),
+            bucket: format!("{}-{}", &self.endpoint_id, &sha256_hash.hash[0..2]),
             path: sha256_hash.hash[2..].to_string(),
             ..Default::default()
         };
