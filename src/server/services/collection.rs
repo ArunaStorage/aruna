@@ -5,7 +5,7 @@ use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
-use crate::server::kube_client::KubeClient;
+use crate::server::clients::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;

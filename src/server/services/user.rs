@@ -15,7 +15,7 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 use crate::database::crud::utils::{map_permissions, EMAIL_SCHEMA};
 use crate::error::ArunaError;
-use crate::server::mail_client::MailClient;
+use crate::server::clients::mail_client::MailClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v1::*;

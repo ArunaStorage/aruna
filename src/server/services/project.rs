@@ -4,7 +4,7 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
-use crate::server::event_emit_client::NotificationEmitClient;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::internal::v1::{EmittedResource, ProjectResource};
