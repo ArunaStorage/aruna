@@ -1,6 +1,7 @@
 use super::authz::Authz;
 use crate::database::{connection::Database, models::enums::UserRights};
 use crate::error::ArunaError;
+use aruna_rust_api::api::internal::v1::{GetTokenFromSecretRequest, GetTokenFromSecretResponse};
 use aruna_rust_api::api::{
     internal::v1::{
         internal_authorize_service_server::InternalAuthorizeService, Authorization,
@@ -331,4 +332,13 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
             }),
         }))
     }
+
+    ///ToDo: Rust Doc
+    async fn get_token_from_secret(
+        &self,
+        _request: tonic::Request<GetTokenFromSecretRequest>,
+    ) -> Result<tonic::Response<GetTokenFromSecretResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("Not yet implemented."))
+    }   
+    
 }

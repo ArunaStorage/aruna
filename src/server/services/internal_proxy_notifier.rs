@@ -230,6 +230,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         let response = tonic::Response::new(GetObjectLocationResponse {
             object: Some(proto_object),
             location: Some(proto_location),
+            cors_configurations: vec![], //ToDo: Really query this info from DataProxy/S3 backend? ... 
         });
 
         // Return gRPC response after everything succeeded

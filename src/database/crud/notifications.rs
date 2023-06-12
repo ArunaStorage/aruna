@@ -30,6 +30,7 @@ impl Database {
     pub fn create_notification_stream_group(
         &self,
         stream_group_ulid: diesel_ulid::DieselUlid,
+        stream_group_subject: String,
         resource_ulid: diesel_ulid::DieselUlid,
         resource_type: Resources,
         include_sub_resources: bool,
@@ -42,15 +43,7 @@ impl Database {
                 // Prepare NotificationStreamGroup for insert
                 let stream_group_insert = NotificationStreamGroup {
                     id: stream_group_ulid,
-                    subject: "".to_string(), //ToDo: waiting for API change
-                    /*
-                    generate_consumer_subject(
-                        conn,
-                        resource_type,
-                        resource_hierarchy, // ToDo ...
-                        include_sub_resources,
-                    )?,
-                    */
+                    subject: stream_group_subject,
                     resource_id: resource_ulid,
                     resource_type,
                     notify_on_sub_resources: include_sub_resources,

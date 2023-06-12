@@ -49,7 +49,6 @@ impl InternalEventService for InternalEventServiceImpl {
 
         // Consume gRPC request
         let inner_request = request.into_inner();
-        log::info!("Consumed gRPC Request");
 
         // Create metadata map with provided token for authorization
         let mut metadata = MetadataMap::new();
@@ -63,6 +62,11 @@ impl InternalEventService for InternalEventServiceImpl {
         // Extract provided resource id from request
         let resource_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.resource_id)
             .map_err(ArunaError::from)?;
+
+        let stream_group_subject = match inner_request.subject.is_empty() {
+            true => inner_request.subject,
+            false => return Err(tonic::Status::invalid_argument("Empty subject not allowed")),
+        };
 
         // Authorize against resource associated with the stream group
         self.authz
@@ -80,6 +84,7 @@ impl InternalEventService for InternalEventServiceImpl {
         let db_stream_group = task::spawn_blocking(move || {
             database_clone.create_notification_stream_group(
                 diesel_ulid::DieselUlid::generate(),
+                stream_group_subject,
                 resource_ulid,
                 grpc_to_db_resource(&inner_request.resource_type)?,
                 inner_request.notify_on_sub_resource,
