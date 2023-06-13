@@ -135,7 +135,7 @@ impl Database {
         use crate::database::schema::user_permissions::dsl::*;
         use diesel::result::Error as dError;
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result: Result<(Option<diesel_ulid::DieselUlid>, ApiToken), dError>;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
@@ -336,7 +336,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    dError::SerializationError(_) => {
+                    dError::SerializationError(_)
+                    | dError::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    ) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {

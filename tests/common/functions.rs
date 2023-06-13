@@ -426,10 +426,10 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
 
     // Validate Object creation
     assert_eq!(finished_object.id, object_id.to_string());
-    assert!(matches!(
+    assert_eq!(
         grpc_to_db_object_status(&finished_object.status),
         ObjectStatus::AVAILABLE
-    ));
+    );
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, object_filename);
     assert_eq!(finished_object.content_len, object_length);
@@ -623,7 +623,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         .collect::<Vec<_>>();
 
     let update_name = if update.new_name.is_empty() {
-        "This is an updated object.name".to_string()
+        "This_is_an_updated_object.name".to_string()
     } else {
         update.new_name.to_string()
     };

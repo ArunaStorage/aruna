@@ -602,7 +602,7 @@ impl Database {
 
                 all.iter()
                     .filter_map(|obj_grp_obj| {
-                        match get_object(&obj_grp_obj.object_id, &col_id, true, conn) {
+                        match get_object(&obj_grp_obj.object_id, None, &col_id, true, conn) {
                             Ok(opt) => opt.map(|s| Ok((s, obj_grp_obj.is_meta))),
                             Err(e) => Some(Err(e)),
                         }

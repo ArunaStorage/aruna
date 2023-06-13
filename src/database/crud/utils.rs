@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::models::v1::{
 use crate::database::models::enums::{
     Dataclass, HashType, KeyValueType, ObjectStatus, Resources, UserRights,
 };
+use crate::database::models::object::Relation;
 use crate::database::models::traits::{IsKeyValue, ToDbKeyValue};
 use crate::error::TypeConversionError::PROTOCONVERSION;
 use crate::error::{ArunaError, TypeConversionError};
@@ -23,7 +24,7 @@ lazy_static! {
     /// Both cases should be checked in tests and should result in safe behaviour because
     /// the string is static.
     pub static ref NAME_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$").unwrap();
-    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^(/?[a-z0-9\-]+)+/?$").unwrap();
+    pub static ref PATH_SCHEMA: Regex = Regex::new(r"^[a-zA-Z0-9\-_\*\.\(\)'!]+(/?[a-zA-Z0-9\-_\*\.\(\)'!]+)+$").unwrap();
     pub static ref EMAIL_SCHEMA: Regex = Regex::new(r"^([a-z0-9_+]([a-z0-9_+.]*[a-z0-9_+])?)@([a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6})").unwrap();
 }
 
@@ -495,6 +496,15 @@ pub fn parse_bucket_path(
     Ok((project_name, collection_name, collection_version))
 }
 
+pub fn parse_bucket_path_as_colpath(bucket_path: String) -> Result<(String, String), ArunaError> {
+    let (proj, col, version) = parse_bucket_path(bucket_path)?;
+    let colpath = match version {
+        Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, col),
+        None => format!("latest.{}", col),
+    };
+    Ok((proj, colpath))
+}
+
 pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
     match grpcdclass {
         0 => Dataclass::PRIVATE, // Unspecified
@@ -513,6 +523,18 @@ pub fn db_to_grpc_dataclass(db_dataclass: &Dataclass) -> DataClass {
         Dataclass::CONFIDENTIAL => DataClass::Confidential,
         Dataclass::PROTECTED => DataClass::Protected,
     }
+}
+
+pub fn get_latest_relation(mut relations: Vec<Relation>) -> Option<Relation> {
+    relations.sort_by(|a, b| a.object_id.cmp(&b.object_id));
+    relations.pop()
+}
+
+pub fn relation_as_s3_path(rel: &Relation) -> String {
+    format!(
+        "s3://{}.{}/{}",
+        rel.collection_path, rel.project_name, rel.path
+    )
 }
 
 pub fn grpc_to_db_object_status(grpc_status: &i32) -> ObjectStatus {
@@ -641,6 +663,30 @@ mod tests {
 
         assert_eq!(as_option.is_some(), result.is_some());
         assert_eq!(test_id.to_string(), result.unwrap())
+    }
+
+    #[test]
+    fn get_latest_relation_test() {
+        let new_ulid = diesel_ulid::DieselUlid::generate();
+
+        let good_rels = vec![
+            Relation {
+                id: new_ulid,
+                ..Default::default()
+            },
+            Relation {
+                object_id: diesel_ulid::DieselUlid::from_str("01H11QZNJ26MN0E5ZEYAEH6ZN2").unwrap(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(
+            get_latest_relation(good_rels).unwrap(),
+            Relation {
+                object_id: diesel_ulid::DieselUlid::from_str("01H11QZNJ26MN0E5ZEYAEH6ZN2").unwrap(),
+                ..Default::default()
+            }
+        )
     }
 
     #[test]

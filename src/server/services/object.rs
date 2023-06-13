@@ -1909,15 +1909,17 @@ fn get_object_download_url(
         }
     };
 
-    let active_paths = paths.iter().filter(|path| path.active).collect::<Vec<_>>();
+    let active_paths = paths
+        .iter()
+        .filter(|path| path.path_active)
+        .collect::<Vec<_>>();
     let (object_bucket, object_key) = if let Some(latest_active_path) = active_paths.first() {
         (
-            latest_active_path.bucket.to_string(),
-            if latest_active_path.path.starts_with('/') {
-                latest_active_path.path[1..].to_string()
-            } else {
-                latest_active_path.path.to_string()
-            },
+            format!(
+                "{}.{}",
+                latest_active_path.collection_path, latest_active_path.project_name
+            ),
+            latest_active_path.path.to_string(),
         )
     } else {
         let latest_inactive_path = if let Some(latest_inactive_path) = paths.first() {
@@ -1929,12 +1931,11 @@ fn get_object_download_url(
         };
 
         (
-            latest_inactive_path.bucket.to_string(),
-            if latest_inactive_path.path.starts_with('/') {
-                latest_inactive_path.path[1..].to_string()
-            } else {
-                latest_inactive_path.path.to_string()
-            },
+            format!(
+                "{}.{}",
+                latest_inactive_path.collection_path, latest_inactive_path.project_name
+            ),
+            latest_inactive_path.path.to_string(),
         )
     };
 
