@@ -39,6 +39,7 @@ serde = {version = "1.0.152", features = ["derive"]}
 sha2 = {version = "0.10.6", features = ["std", "asm", "sha2-asm"]}
 tokio = {version = "1.25.0", features = ["full"]}
 tokio-stream = "0.1.12"
+tower = {version = "0.4.13", features = ["retry"]}
 tonic = "0.9.1"
 tracing = "0.1.37"
 tracing-error = "0.2.0"
