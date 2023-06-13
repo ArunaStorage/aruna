@@ -18,6 +18,7 @@ use crate::database::models::collection::CollectionVersion;
 use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
 use crate::database::models::object_group::ObjectGroupObject;
 use crate::error::{ArunaError, GrpcNotFoundError};
+use crate::server::services::utils::CORSVec;
 
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
@@ -980,7 +981,16 @@ impl Database {
         object_revision: i64,
         endpoint_uuid: &diesel_ulid::DieselUlid,
         token_uuid: diesel_ulid::DieselUlid,
-    ) -> Result<(ProtoObject, ObjectLocation, Endpoint, Option<EncryptionKey>), ArunaError> {
+    ) -> Result<
+        (
+            ProtoObject,
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+            CORSVec,
+        ),
+        ArunaError,
+    > {
         use crate::database::schema::encryption_keys::dsl as keys_dsl;
         use crate::database::schema::endpoints::dsl as endpoints_dsl;
         use crate::database::schema::object_locations::dsl as locations_dsl;
@@ -990,6 +1000,7 @@ impl Database {
             ObjectLocation,
             Endpoint,
             Option<EncryptionKey>,
+            CORSVec,
         ), ArunaError, _>(|conn| {
             let (s3bucket, _) = object_path[5..]
                 .split_once('/')
@@ -1000,6 +1011,22 @@ impl Database {
             let collection_uuid = collection_uuid_option.ok_or(ArunaError::InvalidRequest(
                 format!("Collection in path {} does not exist.", object_path),
             ))?;
+
+            let collection = match self.get_collection_by_id(
+                aruna_rust_api::api::storage::services::v1::GetCollectionByIdRequest {
+                    collection_id: collection_uuid.to_string().clone(),
+                },
+            ) {
+                Ok(collection) => Some(collection),
+                Err(_) => None,
+            };
+            let cors_headers: CORSVec = match collection {
+                Some(collection) => match collection.collection {
+                    Some(collection) => collection.labels.into(),
+                    None => CORSVec { cors: vec![] },
+                },
+                None => CORSVec { cors: vec![] },
+            };
 
             // Check permissions
             self.get_checked_user_id_from_token(
@@ -1072,7 +1099,13 @@ impl Database {
                 ));
             }
 
-            Ok((proto_object, location, endpoint, encryption_key))
+            Ok((
+                proto_object,
+                location,
+                endpoint,
+                encryption_key,
+                cors_headers,
+            ))
         })?;
 
         Ok(location_info)

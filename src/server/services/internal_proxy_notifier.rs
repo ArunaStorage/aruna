@@ -201,7 +201,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
 
         // Finalize Object in database
         let database_clone = self.database.clone();
-        let (proto_object, db_location, db_endpoint, encryption_key_option) =
+        let (proto_object, db_location, db_endpoint, encryption_key_option, cors) =
             task::spawn_blocking(move || {
                 database_clone.get_object_with_location_info(
                     &inner_request.path,
@@ -226,8 +226,6 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                 "".to_string()
             },
         };
-
-        let cors: CORSVec = proto_object.clone().labels.into();
 
         let response = tonic::Response::new(GetObjectLocationResponse {
             cors_configurations: cors.into(),
