@@ -38,7 +38,7 @@ async fn create_collection_grpc_test() {
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
     let project_service = ProjectServiceImpl::new(db.clone(), authz.clone(), None).await;
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -181,7 +181,7 @@ async fn get_collection_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -270,7 +270,7 @@ async fn get_collections_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -559,7 +559,7 @@ async fn update_collection_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -784,7 +784,7 @@ async fn pin_collection_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1018,7 +1018,7 @@ async fn delete_collection_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);

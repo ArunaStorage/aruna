@@ -339,6 +339,5 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
         _request: tonic::Request<GetTokenFromSecretRequest>,
     ) -> Result<tonic::Response<GetTokenFromSecretResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not yet implemented."))
-    }   
-    
+    }
 }

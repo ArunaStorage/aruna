@@ -8,9 +8,9 @@ use crate::error::TypeConversionError;
 use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::clients::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::internal::v1::CollectionResource;
 use aruna_rust_api::api::internal::v1::EmittedResource;
-use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::notification::services::v1::EventType;
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
@@ -307,38 +307,38 @@ impl CollectionService for CollectionServiceImpl {
                         })
                         .await
                         .map_err(ArunaError::from)??;
-                            },
-                            None => {},
-                        }
-            },
-            None => {}, // Do nothing if no collection in response.
+                    }
+                    None => {}
+                }
+            }
+            None => {} // Do nothing if no collection in response.
         }
 
-/*
-        match &self.event_emitter {
-            Some(emit_client) => {
-                let event_emitter_clone = emit_client.clone();
-                task::spawn(async move {
-                    event_emitter_clone
-                        .emit_event(
-                            collection_clone.unwrap_or_default(),
-                            ResourceType::Collection,
-                            EventType::Created,
-                            vec![EmittedResource {
-                                resource: Some(Resource::Collection(CollectionResource {
-                                    project_id: project_id.to_string(),
-                                    collection_id: collection_ulid_clone,
-                                })),
-                            }],
-                        )
+        /*
+                match &self.event_emitter {
+                    Some(emit_client) => {
+                        let event_emitter_clone = emit_client.clone();
+                        task::spawn(async move {
+                            event_emitter_clone
+                                .emit_event(
+                                    collection_clone.unwrap_or_default(),
+                                    ResourceType::Collection,
+                                    EventType::Created,
+                                    vec![EmittedResource {
+                                        resource: Some(Resource::Collection(CollectionResource {
+                                            project_id: project_id.to_string(),
+                                            collection_id: collection_ulid_clone,
+                                        })),
+                                    }],
+                                )
+                                .await
+                        })
                         .await
-                })
-                .await
-                .map_err(ArunaError::from)??;
-            }
-            None => {}
-        }
-*/
+                        .map_err(ArunaError::from)??;
+                    }
+                    None => {}
+                }
+        */
 
         let response = Response::new(response);
 
