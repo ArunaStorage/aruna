@@ -29,10 +29,10 @@ use aruna_rust_api::api::storage::models::v1::{
     CollectionOverviews, CollectionStats, LabelOntology, Stats, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    CreateNewCollectionRequest, CreateNewCollectionResponse, DeleteCollectionRequest,
-    DeleteCollectionResponse, GetCollectionByIdRequest, GetCollectionByIdResponse,
-    GetCollectionsRequest, GetCollectionsResponse, PinCollectionVersionRequest,
-    PinCollectionVersionResponse, UpdateCollectionRequest, UpdateCollectionResponse,
+    CreateNewCollectionRequest, CreateNewCollectionResponse, GetCollectionByIdRequest,
+    GetCollectionByIdResponse, GetCollectionsRequest, GetCollectionsResponse,
+    PinCollectionVersionRequest, PinCollectionVersionResponse, UpdateCollectionRequest,
+    UpdateCollectionResponse,
 };
 use bigdecimal::ToPrimitive;
 use diesel::r2d2::ConnectionManager;
@@ -676,9 +676,10 @@ impl Database {
     ///
     pub fn delete_collection(
         &self,
-        request: DeleteCollectionRequest,
-        user_id: diesel_ulid::DieselUlid,
-    ) -> Result<DeleteCollectionResponse, ArunaError> {
+        collection_ulid: &diesel_ulid::DieselUlid,
+        user_ulid: diesel_ulid::DieselUlid,
+        force_delete: bool,
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         // Import of database structures
         use crate::database::schema::collection_key_value::dsl as colkv;
         use crate::database::schema::collection_object_groups::dsl as colobjgrp;
@@ -687,23 +688,28 @@ impl Database {
         use crate::database::schema::object_group_key_value::dsl as objgrpkv;
         use crate::database::schema::object_group_objects::dsl as objgrpobj;
         use crate::database::schema::object_groups::dsl as objgrp;
-        // Parse the collection_id string to uuid
-        let collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
+
         // Execute the request in transaction
-        self.pg_connection.get()?.transaction::<_, ArunaError, _>(|conn| {
+        let project_ulid = self.pg_connection.get()?.transaction::<diesel_ulid::DieselUlid, ArunaError, _>(|conn| {
+            // Query project id of collection for notifications ...
+            let project_ulid = col::collections
+                .filter(col::id.eq(&collection_ulid))
+                .select(col::project_id)
+                .first::<diesel_ulid::DieselUlid>(conn)?;
+
             // Query all object references
             let all_obj_references = colobj::collection_objects
-                .filter(colobj::collection_id.eq(collection_id))
+                .filter(colobj::collection_id.eq(collection_ulid))
                 .load::<CollectionObject>(conn)?;
             // If not all objects are moved or deleted and no force is used
-            if all_obj_references.iter().any(|e| e.reference_status != ReferenceStatus::STAGING) && !request.force{
+            if all_obj_references.iter().any(|e| e.reference_status != ReferenceStatus::STAGING) && !force_delete{
                 return Err(ArunaError::InvalidRequest("Can not delete collection that is not empty, use force or delete all associated objects first.".to_string()))
             }
             // Delete everything related to object_groups
             // Delete collection object groups belonging to this collection
             let deleted_objgrp = delete(
             colobjgrp::collection_object_groups.filter(
-                colobjgrp::collection_id.eq(collection_id)
+                colobjgrp::collection_id.eq(&collection_ulid)
             )
             ).load::<CollectionObjectGroup>(conn)?;
             // Filter out the objgrpids
@@ -736,23 +742,24 @@ impl Database {
                 //for object_uuid in all_obj_ids {
                     delete_multiple_objects(
                         all_obj_ids,
-                    collection_id,
+                    collection_ulid.clone(),
                     true,
                     false,
-                        user_id,
+                        user_ulid,
                         conn
                     )?;
                 //}
             }
             // Delete all collection_key_values
             delete(
-                colkv::collection_key_value.filter(colkv::collection_id.eq(collection_id))
+                colkv::collection_key_value.filter(colkv::collection_id.eq(&collection_ulid))
             ).execute(conn)?;
             // Delete the collection
-            delete(col::collections.filter(col::id.eq(collection_id))).execute(conn)?;
-            Ok(())
+            delete(col::collections.filter(col::id.eq(&collection_ulid))).execute(conn)?;
+
+            Ok(project_ulid)
         })?;
-        Ok(DeleteCollectionResponse {})
+        Ok(project_ulid)
     }
 }
 

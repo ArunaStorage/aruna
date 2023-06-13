@@ -84,28 +84,25 @@ impl CollectionService for CollectionServiceImpl {
 
         // Try to emit event notification
         let collection_ulid_clone = response.collection_id.clone();
-        match &self.event_emitter {
-            Some(emit_client) => {
-                let event_emitter_clone = emit_client.clone();
-                task::spawn(async move {
-                    event_emitter_clone
-                        .emit_event(
-                            collection_ulid_clone.clone(),
-                            ResourceType::Collection,
-                            EventType::Created,
-                            vec![EmittedResource {
-                                resource: Some(Resource::Collection(CollectionResource {
-                                    project_id: project_id.to_string(),
-                                    collection_id: collection_ulid_clone,
-                                })),
-                            }],
-                        )
-                        .await
-                })
-                .await
-                .map_err(ArunaError::from)??;
-            }
-            None => {}
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        collection_ulid_clone.clone(),
+                        ResourceType::Collection,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Collection(CollectionResource {
+                                project_id: project_id.to_string(),
+                                collection_id: collection_ulid_clone,
+                            })),
+                        }],
+                    )
+                    .await
+            })
+            .await
+            .map_err(ArunaError::from)??;
         }
 
         let response = Response::new(response);
@@ -439,35 +436,57 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Received DeleteCollectionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user_id = if request.get_ref().force {
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Parse the inner request parameter
+        let collection_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.collection_id)
+            .map_err(ArunaError::from)?;
+        let force_delete = inner_request.force;
+
+        // Validate user permissions for collection deletion
+        let user_id = if force_delete {
             self.authz
-                .project_authorize_by_collectionid(
-                    request.metadata(),
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                    UserRights::ADMIN,
-                )
+                .project_authorize_by_collectionid(&metadata, collection_ulid, UserRights::ADMIN)
                 .await?
         } else {
             self.authz
-                .collection_authorize(
-                    request.metadata(),
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                    UserRights::WRITE,
-                )
+                .collection_authorize(&metadata, collection_ulid, UserRights::WRITE)
                 .await?
         };
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.delete_collection(request.get_ref().to_owned(), user_id)
+        let project_ulid = task::spawn_blocking(move || {
+            db.delete_collection(&collection_ulid, user_id, force_delete)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        collection_ulid.to_string(),
+                        ResourceType::Collection,
+                        EventType::Deleted,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Collection(CollectionResource {
+                                project_id: project_ulid.to_string(),
+                                collection_id: collection_ulid.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
             })
             .await
-            .map_err(ArunaError::from)??,
-        );
+            .map_err(ArunaError::from)??;
+        }
+
+        // Create and send gRPC response
+        let response = Response::new(DeleteCollectionResponse {});
 
         log::info!("Sending DeleteCollectionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));

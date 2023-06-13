@@ -861,22 +861,12 @@ fn delete_collection_test() {
 
     let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
 
-    let delete_req_normal = DeleteCollectionRequest {
-        collection_id: col_id.to_string(),
-        force: false,
-    };
-
-    let res = db.delete_collection(delete_req_normal, creator);
+    let res = db.delete_collection(&col_id, creator, false);
     // This should fail !
     assert!(res.is_err());
 
-    let delete_req_force = DeleteCollectionRequest {
-        collection_id: col_id.to_string(),
-        force: true,
-    };
-
     // Should not fail
-    let _res = db.delete_collection(delete_req_force, creator).unwrap();
+    let _res = db.delete_collection(&col_id, creator, true);
 }
 
 #[test]
