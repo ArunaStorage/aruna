@@ -131,10 +131,15 @@ impl ServiceServer {
         let endpoint_service =
             EndpointServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let project_service =
-            ProjectServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client).await;
+            ProjectServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client.clone()).await;
         let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone(), mailclient).await;
-        let collection_service =
-            CollectionServiceImpl::new(db_ref.clone(), authz.clone(), kubeclient).await;
+        let collection_service = CollectionServiceImpl::new(
+            db_ref.clone(),
+            authz.clone(),
+            kubeclient,
+            event_emit_client,
+        )
+        .await;
         let object_service =
             ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
         let object_group_service = ObjectGroupServiceImpl::new(db_ref.clone(), authz.clone()).await;

@@ -5,8 +5,14 @@ use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::clients::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::CollectionResource;
+use aruna_rust_api::api::internal::v1::EmittedResource;
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
+use aruna_rust_api::api::notification::services::v1::EventType;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
 use tokio::task;
@@ -16,7 +22,11 @@ use tonic::Response;
 use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(CollectionServiceImpl, kube_client: Option<KubeClient>);
+crate::impl_grpc_server!(
+    CollectionServiceImpl,
+    kube_client: Option<KubeClient>,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
@@ -68,6 +78,32 @@ impl CollectionService for CollectionServiceImpl {
                 if let Err(err) = kc.create_bucket(&bucket).await {
                     log::error!("Unable to create kube_bucket err: {err}")
                 }
+            }
+            None => {}
+        }
+
+        // Try to emit event notification
+        let collection_ulid_clone = response.collection_id.clone();
+        match &self.event_emitter {
+            Some(emit_client) => {
+                let event_emitter_clone = emit_client.clone();
+                task::spawn(async move {
+                    event_emitter_clone
+                        .emit_event(
+                            collection_ulid_clone.clone(),
+                            ResourceType::Collection,
+                            EventType::Created,
+                            vec![EmittedResource {
+                                resource: Some(Resource::Collection(CollectionResource {
+                                    project_id: project_id.to_string(),
+                                    collection_id: collection_ulid_clone,
+                                })),
+                            }],
+                        )
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from)??;
             }
             None => {}
         }
@@ -232,7 +268,7 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let (response, bucket) = task::spawn_blocking(move || {
+        let (response, bucket, project_ulid) = task::spawn_blocking(move || {
             db.update_collection(request.get_ref().to_owned(), user_id)
         })
         .await
@@ -246,6 +282,63 @@ impl CollectionService for CollectionServiceImpl {
             }
             None => {}
         }
+
+        // Try to emit event notification
+        match &response.collection {
+            Some(collection) => {
+                let collection_clone = collection.clone();
+                match &self.event_emitter {
+                    Some(emit_client) => {
+                        let event_emitter_clone = emit_client.clone();
+                        task::spawn(async move {
+                            event_emitter_clone
+                                .emit_event(
+                                    collection_clone.id.clone(),
+                                    ResourceType::Collection,
+                                    EventType::Created,
+                                    vec![EmittedResource {
+                                        resource: Some(Resource::Collection(CollectionResource {
+                                            project_id: project_ulid.to_string(),
+                                            collection_id: collection_clone.id,
+                                        })),
+                                    }],
+                                )
+                                .await
+                        })
+                        .await
+                        .map_err(ArunaError::from)??;
+                            },
+                            None => {},
+                        }
+            },
+            None => {}, // Do nothing if no collection in response.
+        }
+
+/*
+        match &self.event_emitter {
+            Some(emit_client) => {
+                let event_emitter_clone = emit_client.clone();
+                task::spawn(async move {
+                    event_emitter_clone
+                        .emit_event(
+                            collection_clone.unwrap_or_default(),
+                            ResourceType::Collection,
+                            EventType::Created,
+                            vec![EmittedResource {
+                                resource: Some(Resource::Collection(CollectionResource {
+                                    project_id: project_id.to_string(),
+                                    collection_id: collection_ulid_clone,
+                                })),
+                            }],
+                        )
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from)??;
+            }
+            None => {}
+        }
+*/
 
         let response = Response::new(response);
 

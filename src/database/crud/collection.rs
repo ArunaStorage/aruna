@@ -359,7 +359,7 @@ impl Database {
         &self,
         request: UpdateCollectionRequest,
         user_id: diesel_ulid::DieselUlid,
-    ) -> Result<(UpdateCollectionResponse, String), ArunaError> {
+    ) -> Result<(UpdateCollectionResponse, String, diesel_ulid::DieselUlid), ArunaError> {
         use crate::database::schema::collection_key_value::dsl as ckvdsl;
         use crate::database::schema::collection_objects::dsl as references_dsl;
         use crate::database::schema::collection_objects::dsl::collection_objects;
@@ -378,20 +378,20 @@ impl Database {
         let old_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
         // Execute request in transaction
-        let (ret_collection, projname) =
+        let (ret_collection, projid, projname) =
             self.pg_connection
                 .get()?
-                .transaction::<(Option<CollectionOverview>, String), ArunaError, _>(|conn| {
+                .transaction::<(Option<CollectionOverview>, diesel_ulid::DieselUlid, String), ArunaError, _>(|conn| {
                     // Query the old collection
                     let old_collection: Collection = collections
                         .filter(id.eq(&old_collection_id))
                         .first::<Collection>(conn)?;
 
                     // Query the project_name -> For bucket
-                    let proj_name: String = proj_dsl::projects
+                    let (proj_id, proj_name): (diesel_ulid::DieselUlid, String) = proj_dsl::projects
                         .filter(database::schema::projects::id.eq(&old_collection.project_id))
-                        .select(database::schema::projects::name)
-                        .first::<String>(conn)?;
+                        .select((database::schema::projects::id, database::schema::projects::name))
+                        .first::<(diesel_ulid::DieselUlid, String)>(conn)?;
 
                     // Check if label ontology update will succeed
                     check_label_ontology(old_collection_id, request.label_ontology.clone(), conn)?;
@@ -477,7 +477,7 @@ impl Database {
                                 .execute(conn)?;
                         }
 
-                        Ok((Some(new_overview), proj_name))
+                        Ok((Some(new_overview), proj_id, proj_name))
                         // This is the update "in place" for collections without versions
                     } else {
                         // Name update is only allowed for "empty" collections
@@ -545,6 +545,7 @@ impl Database {
                         // return the new collectionoverview
                         Ok((
                             map_to_collection_overview(Some(query_overview(conn, update_col)?))?,
+                            proj_id,
                             proj_name,
                         ))
                     }
@@ -558,6 +559,7 @@ impl Database {
                 collection: ret_collection,
             },
             bucket,
+            projid,
         ))
     }
 
