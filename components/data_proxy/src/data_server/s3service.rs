@@ -521,7 +521,7 @@ impl S3 for S3ServiceServer {
             .as_bytes()
             .to_vec();
 
-        let footer_parser = if content_length > (65536 + 28) * 2 {
+        let footer_parser: Option<FooterParser> = if content_length > 5242880 + 80 * 28 {
             let (footer_sender, footer_receiver) = async_channel::unbounded();
             self.backend
                 .get_object(
@@ -546,13 +546,11 @@ impl S3 for S3ServiceServer {
             })?;
             drop(arsw);
 
-            match FooterParser::from_encrypted(
-                &output
-                    .try_into()
-                    .map_err(|_| s3_error!(InternalError, "Unable to get encryption_key"))?,
-                &encryption_key,
-            ) {
-                Ok(p) => Some(p),
+            match output.try_into() {
+                Ok(i) => match FooterParser::from_encrypted(&i, &encryption_key) {
+                    Ok(p) => Some(p),
+                    Err(_) => None,
+                },
                 Err(_) => None,
             }
         } else {
