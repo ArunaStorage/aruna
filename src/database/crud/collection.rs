@@ -571,85 +571,91 @@ impl Database {
         &self,
         request: PinCollectionVersionRequest,
         user_id: diesel_ulid::DieselUlid,
-    ) -> Result<(PinCollectionVersionResponse, String), ArunaError> {
+    ) -> Result<
+        (
+            PinCollectionVersionResponse,
+            diesel_ulid::DieselUlid,
+            String,
+        ),
+        ArunaError,
+    > {
         use crate::database::schema::collections::dsl::*;
         use crate::database::schema::projects::dsl as proj_dsl;
         // Parse the old collection id
         let old_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         // Execute the database transaction
-        let (ret_collection, proj_name) =
-            self.pg_connection
-                .get()?
-                .transaction::<(Option<CollectionOverview>, String), ArunaError, _>(|conn| {
-                    // Query the old collection
-                    let old_collection = collections
-                        .filter(id.eq(old_collection_id))
-                        .first::<Collection>(conn)?;
+        let (ret_collection, proj_id, proj_name) =
+            self.pg_connection.get()?.transaction::<(
+                Option<CollectionOverview>,
+                diesel_ulid::DieselUlid,
+                String,
+            ), ArunaError, _>(|conn| {
+                // Query the old collection
+                let old_collection = collections
+                    .filter(id.eq(old_collection_id))
+                    .first::<Collection>(conn)?;
 
-                    // Query the project_name -> For bucket
-                    let proj_name: String = proj_dsl::projects
-                        .filter(database::schema::projects::id.eq(&old_collection.project_id))
-                        .select(database::schema::projects::name)
-                        .first::<String>(conn)?;
-                    // Get the old collection overview with labels, hooks etc.
-                    let old_overview = query_overview(conn, old_collection.clone())?;
-                    // If the old collection or the update creates a new "versioned" collection
-                    // -> This needs to perform a pin
-                    if old_collection.version_id.is_some() {
-                        // Return error if old_version is >= new_version
-                        // Updates must increase the semver
-                        // Updates for "historic" versions are not allowed
-                        if let Some(v) = &old_overview.coll_version {
-                            if Version::from(v.clone())
-                                >= request.version.clone().ok_or_else(|| {
-                                    ArunaError::InvalidRequest(
-                                        "Unable to determine old version -> None".to_string(),
-                                    )
-                                })?
-                            {
-                                return Err(ArunaError::InvalidRequest(
-                                    "New version must be greater than old one".to_string(),
-                                ));
-                            }
+                // Query the project_name -> For bucket
+                let proj_name: String = proj_dsl::projects
+                    .filter(database::schema::projects::id.eq(&old_collection.project_id))
+                    .select(database::schema::projects::name)
+                    .first::<String>(conn)?;
+                // Get the old collection overview with labels, hooks etc.
+                let old_overview = query_overview(conn, old_collection.clone())?;
+                // If the old collection or the update creates a new "versioned" collection
+                // -> This needs to perform a pin
+                if old_collection.version_id.is_some() {
+                    // Return error if old_version is >= new_version
+                    // Updates must increase the semver
+                    // Updates for "historic" versions are not allowed
+                    if let Some(v) = &old_overview.coll_version {
+                        if Version::from(v.clone())
+                            >= request.version.clone().ok_or_else(|| {
+                                ArunaError::InvalidRequest(
+                                    "Unable to determine old version -> None".to_string(),
+                                )
+                            })?
+                        {
+                            return Err(ArunaError::InvalidRequest(
+                                "New version must be greater than old one".to_string(),
+                            ));
                         }
                     }
-                    // Build the new version
-                    let new_version = request
-                        .version
-                        .clone()
-                        .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
-                        .ok_or_else(|| {
-                            ArunaError::InvalidRequest(
-                                "Unable to determine old version -> None".to_string(),
-                            )
-                        })?;
-                    // Create new collection database struct
-                    let new_coll = Collection {
-                        id: diesel_ulid::DieselUlid::generate(),
-                        shared_version_id: old_collection.shared_version_id,
-                        name: old_collection.name,
-                        description: old_collection.description,
-                        created_at: chrono::Utc::now().naive_utc(),
-                        created_by: user_id,
-                        version_id: Some(new_version.id),
-                        dataclass: old_collection.dataclass,
-                        project_id: old_collection.project_id,
-                    };
-                    // Pin the collection and return the overview
-                    Ok((
-                        Some(pin_collection_to_version(
-                            old_collection_id,
-                            user_id,
-                            transform_collection_overviewdb(
-                                new_coll,
-                                new_version,
-                                Some(old_overview),
-                            )?,
-                            conn,
-                        )?),
-                        proj_name,
-                    ))
-                })?;
+                }
+                // Build the new version
+                let new_version = request
+                    .version
+                    .clone()
+                    .map(|v| from_grpc_version(v, diesel_ulid::DieselUlid::generate()))
+                    .ok_or_else(|| {
+                        ArunaError::InvalidRequest(
+                            "Unable to determine old version -> None".to_string(),
+                        )
+                    })?;
+                // Create new collection database struct
+                let new_coll = Collection {
+                    id: diesel_ulid::DieselUlid::generate(),
+                    shared_version_id: old_collection.shared_version_id,
+                    name: old_collection.name,
+                    description: old_collection.description,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    created_by: user_id,
+                    version_id: Some(new_version.id),
+                    dataclass: old_collection.dataclass,
+                    project_id: old_collection.project_id,
+                };
+                // Pin the collection and return the overview
+                Ok((
+                    Some(pin_collection_to_version(
+                        old_collection_id,
+                        user_id,
+                        transform_collection_overviewdb(new_coll, new_version, Some(old_overview))?,
+                        conn,
+                    )?),
+                    old_collection.project_id,
+                    proj_name,
+                ))
+            })?;
 
         let bucket = map_to_bucket(&ret_collection, proj_name);
         // Return the collectionoverview to the grpc function
@@ -657,6 +663,7 @@ impl Database {
             PinCollectionVersionResponse {
                 collection: ret_collection,
             },
+            proj_id,
             bucket,
         ))
     }

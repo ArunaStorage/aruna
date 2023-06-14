@@ -284,59 +284,31 @@ impl CollectionService for CollectionServiceImpl {
         match &response.collection {
             Some(collection) => {
                 let collection_clone = collection.clone();
-                match &self.event_emitter {
-                    Some(emit_client) => {
-                        let event_emitter_clone = emit_client.clone();
-                        task::spawn(async move {
-                            event_emitter_clone
-                                .emit_event(
-                                    collection_clone.id.clone(),
-                                    ResourceType::Collection,
-                                    EventType::Created,
-                                    vec![EmittedResource {
-                                        resource: Some(Resource::Collection(CollectionResource {
-                                            project_id: project_ulid.to_string(),
-                                            collection_id: collection_clone.id,
-                                        })),
-                                    }],
-                                )
-                                .await
-                        })
-                        .await
-                        .map_err(ArunaError::from)??;
-                    }
-                    None => {}
+                if let Some(emit_client) = &self.event_emitter {
+                    let event_emitter_clone = emit_client.clone();
+                    task::spawn(async move {
+                        event_emitter_clone
+                            .emit_event(
+                                collection_clone.id.clone(),
+                                ResourceType::Collection,
+                                EventType::Updated,
+                                vec![EmittedResource {
+                                    resource: Some(Resource::Collection(CollectionResource {
+                                        project_id: project_ulid.to_string(),
+                                        collection_id: collection_clone.id,
+                                    })),
+                                }],
+                            )
+                            .await
+                    })
+                    .await
+                    .map_err(ArunaError::from)??;
                 }
             }
             None => {} // Do nothing if no collection in response.
         }
 
-        /*
-                match &self.event_emitter {
-                    Some(emit_client) => {
-                        let event_emitter_clone = emit_client.clone();
-                        task::spawn(async move {
-                            event_emitter_clone
-                                .emit_event(
-                                    collection_clone.unwrap_or_default(),
-                                    ResourceType::Collection,
-                                    EventType::Created,
-                                    vec![EmittedResource {
-                                        resource: Some(Resource::Collection(CollectionResource {
-                                            project_id: project_id.to_string(),
-                                            collection_id: collection_ulid_clone,
-                                        })),
-                                    }],
-                                )
-                                .await
-                        })
-                        .await
-                        .map_err(ArunaError::from)??;
-                    }
-                    None => {}
-                }
-        */
-
+        // Create gRPC response
         let response = Response::new(response);
 
         log::info!("Sending UpdateCollectionResponse back to client.");
@@ -383,13 +355,11 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let (response, bucket) = task::spawn_blocking(move || {
+        let (response, project_ulid, bucket) = task::spawn_blocking(move || {
             db.pin_collection_version(request.get_ref().to_owned(), user_id)
         })
         .await
         .map_err(ArunaError::from)??;
-
-        let response = Response::new(response);
 
         match &self.kube_client {
             Some(kc) => {
@@ -399,6 +369,37 @@ impl CollectionService for CollectionServiceImpl {
             }
             None => {}
         }
+
+        // Try to emit event notification
+        match &response.collection {
+            Some(collection) => {
+                let collection_clone = collection.clone();
+                if let Some(emit_client) = &self.event_emitter {
+                    let event_emitter_clone = emit_client.clone();
+                    task::spawn(async move {
+                        event_emitter_clone
+                            .emit_event(
+                                collection_clone.id.clone(),
+                                ResourceType::Collection,
+                                EventType::Created,
+                                vec![EmittedResource {
+                                    resource: Some(Resource::Collection(CollectionResource {
+                                        project_id: project_ulid.to_string(),
+                                        collection_id: collection_clone.id,
+                                    })),
+                                }],
+                            )
+                            .await
+                    })
+                    .await
+                    .map_err(ArunaError::from)??;
+                }
+            }
+            None => {} // Do nothing if no collection in response.
+        }
+
+        // Create gRPC response
+        let response = Response::new(response);
 
         log::info!("Sending PinCollectionVersionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));

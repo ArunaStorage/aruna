@@ -18,8 +18,8 @@ use aruna_rust_api::api::storage::models::v1::{
     ProjectOverview, ProjectPermission, ProjectPermissionDisplayName, User as gRPCUser,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
-    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
+    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, DestroyProjectRequest,
+    DestroyProjectResponse, EditUserPermissionsForProjectRequest,
     EditUserPermissionsForProjectResponse, GetAllUserPermissionsForProjectResponse,
     GetProjectRequest, GetProjectResponse, GetProjectsRequest, GetProjectsResponse,
     GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
