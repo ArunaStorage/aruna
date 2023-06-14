@@ -59,18 +59,15 @@ fn create_object_test() {
         description: "Project created in create_object_test()".to_string(),
     };
 
-    let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id =
-        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
-
-    assert!(!project_id.to_string().is_empty());
+    let project_ulid = db.create_project(create_project_request, creator).unwrap();
+    assert!(!project_ulid.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
         name: "create-object-test-collection".to_string(),
         description: "Test collection used in create_object_test().".to_string(),
         label_ontology: None,
-        project_id: project_id.to_string(),
+        project_id: project_ulid.to_string(),
         labels: vec![],
         hooks: vec![],
         dataclass: DataClass::Private as i32,

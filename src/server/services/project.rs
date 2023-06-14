@@ -42,14 +42,40 @@ impl ProjectService for ProjectServiceImpl {
         log::info!("Received CreateProjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
         // Authorize as global admin
-        let user_id = self.authz.admin_authorize(request.metadata()).await?;
+        let user_id = self.authz.admin_authorize(&metadata).await?;
 
         // Create new project and respond with overview
-        let response = Response::new(
-            self.database
-                .create_project(request.into_inner(), user_id)?,
-        );
+        let project_ulid = self.database.create_project(inner_request, user_id)?;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        project_ulid.to_string(),
+                        ResourceType::Project,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: project_ulid.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+            })
+            .await
+            .map_err(ArunaError::from)??;
+        }
+
+        // Create gRPC response
+        let response = Response::new(CreateProjectResponse {
+            project_id: project_ulid.to_string(),
+        });
 
         log::info!("Sending CreateProjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -194,27 +220,24 @@ impl ProjectService for ProjectServiceImpl {
         .map_err(ArunaError::from)??;
 
         // Try to emit event notification
-        match &self.event_emitter {
-            Some(emit_client) => {
-                let event_emitter_clone = emit_client.clone();
-                task::spawn(async move {
-                    event_emitter_clone
-                        .emit_event(
-                            parsed_project_id.to_string(),
-                            ResourceType::Project,
-                            EventType::Deleted,
-                            vec![EmittedResource {
-                                resource: Some(Resource::Project(ProjectResource {
-                                    project_id: parsed_project_id.to_string(),
-                                })),
-                            }],
-                        )
-                        .await
-                })
-                .await
-                .map_err(ArunaError::from)??;
-            }
-            None => {}
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        parsed_project_id.to_string(),
+                        ResourceType::Project,
+                        EventType::Deleted,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: parsed_project_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+            })
+            .await
+            .map_err(ArunaError::from)??;
         }
 
         // Return gRPC response
@@ -261,27 +284,24 @@ impl ProjectService for ProjectServiceImpl {
         .map_err(ArunaError::from)??;
 
         // Try to emit event notification
-        match &self.event_emitter {
-            Some(emit_client) => {
-                let event_emitter_clone = emit_client.clone();
-                task::spawn(async move {
-                    event_emitter_clone
-                        .emit_event(
-                            parsed_project_id.to_string(),
-                            ResourceType::Project,
-                            EventType::Updated,
-                            vec![EmittedResource {
-                                resource: Some(Resource::Project(ProjectResource {
-                                    project_id: parsed_project_id.to_string(),
-                                })),
-                            }],
-                        )
-                        .await
-                })
-                .await
-                .map_err(ArunaError::from)??;
-            }
-            None => {}
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        parsed_project_id.to_string(),
+                        ResourceType::Project,
+                        EventType::Updated,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: parsed_project_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+            })
+            .await
+            .map_err(ArunaError::from)??;
         }
 
         // Return gRPC response

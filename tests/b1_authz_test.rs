@@ -665,15 +665,15 @@ fn get_user_projects_test() {
         name: "get-user-projects-test-project-001".to_string(),
         description: "First project created in get_user_projects_test()".to_string(),
     };
-    let proj_1 = db
+    let proj_1_ulid = db
         .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj
     let add_user_req = AddUserToProjectRequest {
-        project_id: proj_1.project_id.clone(),
+        project_id: proj_1_ulid.to_string(),
         user_permission: Some(ProjectPermission {
             user_id: user_id.to_string(),
-            project_id: proj_1.clone().project_id,
+            project_id: proj_1_ulid.to_string(),
             permission: 2,
             service_account: false,
         }),
@@ -686,7 +686,7 @@ fn get_user_projects_test() {
         description: "Second project created in get_user_projects_test()".to_string(),
     };
     // This should add the user automatically
-    let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();
+    let _proj_2_ulid = db.create_project(crt_proj_req_2, user_id).unwrap();
 
     // Check the user_perms
     let perms = db.get_user(user_id).unwrap();
@@ -694,7 +694,10 @@ fn get_user_projects_test() {
     assert!(perms.project_permissions.len() == 2);
 
     for perm in perms.project_permissions {
-        assert!(perm.project_id == proj_1.project_id || perm.project_id == _proj_2.project_id);
+        assert!(
+            perm.project_id == proj_1_ulid.to_string()
+                || perm.project_id == _proj_2_ulid.to_string()
+        );
     }
 
     let get_user_projects = GetUserProjectsRequest {
@@ -735,15 +738,15 @@ fn get_checked_user_id_from_token_test() {
         name: "testproj-1".to_string(),
         description: "".to_string(),
     };
-    let proj_1 = db
+    let proj_1_ulid = db
         .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
         .unwrap();
     // Add new user to the proj with permissions "Read"
     let add_user_req = AddUserToProjectRequest {
-        project_id: proj_1.project_id.clone(),
+        project_id: proj_1_ulid.to_string(),
         user_permission: Some(ProjectPermission {
             user_id: user_id.to_string(),
-            project_id: proj_1.clone().project_id,
+            project_id: proj_1_ulid.to_string(),
             permission: 2,
             service_account: false,
         }),
@@ -756,7 +759,7 @@ fn get_checked_user_id_from_token_test() {
         description: "".to_string(),
     };
     // This should add the user automatically
-    let _proj_2 = db.create_project(crt_proj_req_2, user_id).unwrap();
+    let _proj_2_ulid = db.create_project(crt_proj_req_2, user_id).unwrap();
 
     // Create / Get tokens with differing permissions:
 
@@ -787,7 +790,7 @@ fn get_checked_user_id_from_token_test() {
         diesel_ulid::DieselUlid::from_str(&regular_personal_token.id).unwrap();
     // Project scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
-        project_id: proj_1.project_id.clone(),
+        project_id: proj_1_ulid.to_string(),
         collection_id: "".to_string(),
         name: "personal_u3_token".to_string(),
         expires_at: None,
@@ -800,7 +803,7 @@ fn get_checked_user_id_from_token_test() {
         diesel_ulid::DieselUlid::from_str(&project_token_with_read.id).unwrap();
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
-        project_id: _proj_2.project_id.clone(),
+        project_id: _proj_2_ulid.to_string(),
         collection_id: "".to_string(),
         name: "personal_u4_token".to_string(),
         expires_at: None,
@@ -818,7 +821,7 @@ fn get_checked_user_id_from_token_test() {
         name: "test-col-1".to_string(),
         description: "".to_string(),
         label_ontology: None,
-        project_id: proj_1.project_id.clone(),
+        project_id: proj_1_ulid.to_string(),
         labels: Vec::new(),
         hooks: Vec::new(),
         dataclass: 0,
@@ -830,7 +833,7 @@ fn get_checked_user_id_from_token_test() {
         name: "test-col-2".to_string(),
         description: "".to_string(),
         label_ontology: None,
-        project_id: _proj_2.clone().project_id,
+        project_id: _proj_2_ulid.to_string(),
         labels: Vec::new(),
         hooks: Vec::new(),
         dataclass: 0,
@@ -902,7 +905,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::ADMIN,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2_ulid.to_string()).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -917,7 +920,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::from_str(&proj_1.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&proj_1_ulid.to_string()).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -932,7 +935,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2_ulid.to_string()).unwrap(),
                 admin: false,
                 personal: false,
                 oidc_context: false,
@@ -947,7 +950,7 @@ fn get_checked_user_id_from_token_test() {
             &(Context {
                 user_right: database::models::enums::UserRights::READ,
                 resource_type: database::models::enums::Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
+                resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2_ulid.to_string()).unwrap(),
                 admin: false,
                 personal: true,
                 oidc_context: false,
@@ -961,7 +964,7 @@ fn get_checked_user_id_from_token_test() {
         &(Context {
             user_right: database::models::enums::UserRights::READ,
             resource_type: database::models::enums::Resources::PROJECT,
-            resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2.project_id).unwrap(),
+            resource_id: diesel_ulid::DieselUlid::from_str(&_proj_2_ulid.to_string()).unwrap(),
             admin: false,
             personal: true,
             oidc_context: false,

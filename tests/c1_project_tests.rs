@@ -33,8 +33,8 @@ fn create_project_test() {
         description: "Project created in create_project_test()".to_string(),
     };
 
-    let response = db.create_project(request, creator).unwrap();
-    let id = diesel_ulid::DieselUlid::from_str(&response.project_id).unwrap();
+    let proj_ulid = db.create_project(request, creator).unwrap();
+    let id = diesel_ulid::DieselUlid::from_str(&proj_ulid.to_string()).unwrap();
 
     assert!(!id.to_string().is_empty())
 }
@@ -184,10 +184,10 @@ fn add_remove_project_user_test() {
         name: "add-remove-project-user-test-project".to_string(),
         description: "Project created for add_remove_project_user_test()".to_string(),
     };
-    let create_response = db.create_project(create_request, creator).unwrap();
+    let proj_ulid = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
-    let project_id = diesel_ulid::DieselUlid::from_str(&create_response.project_id).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(&proj_ulid.to_string()).unwrap();
     assert!(!project_id.to_string().is_empty());
 
     // Add several users to project
@@ -269,10 +269,10 @@ fn edit_project_user_permissions_test() {
         name: "edit-project-user-permissions-test-project".to_string(),
         description: "Project created in edit_project_user_permissions_test()".to_string(),
     };
-    let create_response = db.create_project(create_request, creator).unwrap();
+    let proj_ulid = db.create_project(create_request, creator).unwrap();
 
     // Validate project creation
-    let project_id = diesel_ulid::DieselUlid::from_str(&create_response.project_id).unwrap();
+    let project_id = diesel_ulid::DieselUlid::from_str(&proj_ulid.to_string()).unwrap();
     assert!(!project_id.to_string().is_empty());
 
     // Add user to project as admin

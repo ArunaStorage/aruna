@@ -123,13 +123,12 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
         description: project_description.clone(),
     };
 
-    let result = db.create_project(create_request, creator).unwrap();
     // Test if project_id is parseable
-    let project_id = diesel_ulid::DieselUlid::from_str(&result.project_id).unwrap();
-    assert!(!project_id.to_string().is_empty());
+    let project_ulid = db.create_project(create_request, creator).unwrap();
+    assert!(!project_ulid.to_string().is_empty());
 
     // Query project
-    let response = get_project(&result.project_id);
+    let response = get_project(&project_ulid.to_string());
 
     //Destructure response project
     let ProjectOverview {
@@ -140,7 +139,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     } = response.clone();
 
     // Check if get == created
-    assert_eq!(project_id.to_string(), id);
+    assert_eq!(project_ulid.to_string(), id);
     assert_eq!(project_name, name);
     assert_eq!(project_description, description);
 

@@ -49,7 +49,7 @@ impl Database {
         &self,
         request: CreateProjectRequest,
         user_id: diesel_ulid::DieselUlid,
-    ) -> Result<CreateProjectResponse, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl as user_perm;
         use diesel::result::Error as dError;
@@ -93,9 +93,7 @@ impl Database {
                     .execute(conn)
             })?;
 
-        Ok(CreateProjectResponse {
-            project_id: project_id.to_string(),
-        })
+        Ok(project_id)
     }
 
     /// Adds an existing user to a project
