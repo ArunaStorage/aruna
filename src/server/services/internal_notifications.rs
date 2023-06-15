@@ -53,9 +53,9 @@ impl InternalEventService for InternalEventServiceImpl {
         // Create metadata map with provided token for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(inner_request.token.to_string())
+            AsciiMetadataValue::try_from(format!("Bearer {}", inner_request.token.to_string()))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -64,8 +64,8 @@ impl InternalEventService for InternalEventServiceImpl {
             .map_err(ArunaError::from)?;
 
         let stream_group_subject = match inner_request.subject.is_empty() {
-            true => inner_request.subject,
-            false => return Err(tonic::Status::invalid_argument("Empty subject not allowed")),
+            true => return Err(tonic::Status::invalid_argument("Empty subject not allowed")),
+            false => inner_request.subject,
         };
 
         // Authorize against resource associated with the stream group
@@ -144,9 +144,9 @@ impl InternalEventService for InternalEventServiceImpl {
         // Create dummy header metadata for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(inner_request.token.to_string())
+            AsciiMetadataValue::try_from(format!("Bearer {}", inner_request.token.to_string()))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 
@@ -199,9 +199,9 @@ impl InternalEventService for InternalEventServiceImpl {
         // Create dummy header metadata for authorization
         let mut metadata = MetadataMap::new();
         metadata.insert(
-            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
-            AsciiMetadataValue::try_from(inner_request.token.to_string())
+            AsciiMetadataValue::try_from(format!("Bearer {}", inner_request.token.to_string()))
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
         );
 

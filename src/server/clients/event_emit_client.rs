@@ -21,7 +21,7 @@ impl tonic::service::Interceptor for ClientInterceptor {
         let mut mut_req: tonic::Request<()> = request;
         let metadata = mut_req.metadata_mut();
         metadata.append(
-            AsciiMetadataKey::from_bytes("Authorization".as_bytes())
+            AsciiMetadataKey::from_bytes("internal-token".as_bytes())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
             AsciiMetadataValue::try_from(self.internal_token.to_string())
                 .map_err(|err| tonic::Status::invalid_argument(err.to_string()))?,
