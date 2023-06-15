@@ -330,6 +330,9 @@ CREATE TABLE encryption_keys (
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (endpoint_id) REFERENCES endpoints(id)
 );
+
+ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id UNIQUE (project_id, name, version_id);
+ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id_without_version UNIQUE (project_id, name) WHERE (version_id is NULL);
 /* ----- Materialized Views --------------------------------------- */
 -- Materialized view for the collections table
 CREATE MATERIALIZED VIEW collection_stats AS
