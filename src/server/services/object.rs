@@ -808,15 +808,44 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.clone_object(request.get_ref(), &creator_uuid)
+        let (proto_object, relation) = task::spawn_blocking(move || {
+            database_clone.clone_object(request.get_ref(), &creator_uuid)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        relation.object_id.to_string(),
+                        ResourceType::Object,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Object(ObjectResource {
+                                project_id: relation.project_id.to_string(),
+                                collection_id: relation.collection_id.to_string(),
+                                shared_object_id: relation.shared_revision_id.to_string(),
+                                object_id: relation.object_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
             })
             .await
-            .map_err(ArunaError::from)??,
-        );
+            .map_err(ArunaError::from)?;
+        }
 
-        //ToDo: Object create notification for cloned object
+        // Create gRPC response
+        let response = Response::new(CloneObjectResponse {
+            object: Some(proto_object),
+        });
 
         // Return gRPC response after everything succeeded
         log::info!("Sending CloneObjectResponse back to client.");

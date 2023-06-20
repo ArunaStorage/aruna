@@ -45,12 +45,12 @@ use aruna_rust_api::api::storage::{
         Source as ProtoSource,
     },
     services::v1::{
-        CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
-        CreateObjectReferenceResponse, DeleteObjectRequest, FinishObjectStagingRequest,
-        GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
-        GetObjectsByPathRequest, GetObjectsByPathResponse, GetObjectsRequest,
-        InitializeNewObjectRequest, SetObjectPathVisibilityRequest,
-        SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
+        CloneObjectRequest, CreateObjectReferenceRequest, CreateObjectReferenceResponse,
+        DeleteObjectRequest, FinishObjectStagingRequest, GetLatestObjectRevisionRequest,
+        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
+        GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
+        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
     },
 };
 use diesel::dsl::{count, max, min};
@@ -1772,7 +1772,7 @@ impl Database {
         &self,
         request: &CloneObjectRequest,
         creator_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<CloneObjectResponse, ArunaError> {
+    ) -> Result<(ProtoObject, Relation), ArunaError> {
         // Extract (and automagically validate) uuids from request
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
@@ -1780,11 +1780,11 @@ impl Database {
             diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
-        let cloned_object = self
+        let (cloned_object, relation) = self
             .pg_connection
             .get()?
-            .transaction::<ProtoObject, Error, _>(|conn| {
-                let (proto_object, _) = clone_object(
+            .transaction::<(ProtoObject, Relation), Error, _>(|conn| {
+                let (proto_object, _, relation) = clone_object(
                     conn,
                     creator_uuid,
                     object_uuid,
@@ -1792,12 +1792,10 @@ impl Database {
                     target_collection_uuid,
                 )?;
 
-                Ok(proto_object)
+                Ok((proto_object, relation))
             })?;
 
-        Ok(CloneObjectResponse {
-            object: Some(cloned_object),
-        })
+        Ok((cloned_object, relation))
     }
 
     /// This performs a hard delete on the object. The object and all its assets will be
@@ -3199,7 +3197,7 @@ pub fn clone_object(
     object_uuid: diesel_ulid::DieselUlid,
     source_collection_uuid: diesel_ulid::DieselUlid,
     target_collection_uuid: diesel_ulid::DieselUlid,
-) -> Result<(ProtoObject, diesel_ulid::DieselUlid), Error> {
+) -> Result<(ProtoObject, diesel_ulid::DieselUlid, Relation), Error> {
     // Get original object, collection_object reference, key_values, hash and source
     let mut db_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -3280,6 +3278,15 @@ pub fn clone_object(
         .values(&db_collection_object)
         .execute(conn)?;
 
+    // Insert relation for cloned object
+    let relation = create_relation(
+        &db_object.id,
+        Some(db_object.clone()),
+        &target_collection_uuid,
+        "",
+        conn,
+    )?;
+
     // Transform everything into gRPC proto format
     let (labels, hooks) = from_key_values(db_object_key_values);
     let timestamp = naivedatetime_to_prost_time(db_object.created_at)
@@ -3320,6 +3327,7 @@ pub fn clone_object(
                 .collect::<Vec<_>>(),
         },
         db_object.shared_revision_id,
+        relation,
     ))
 }
 
