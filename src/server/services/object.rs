@@ -1,5 +1,6 @@
 use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::notification::services::v1::EventType;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -815,6 +816,8 @@ impl ObjectService for ObjectServiceImpl {
             .map_err(ArunaError::from)??,
         );
 
+        //ToDo: Object create notification for cloned object
+
         // Return gRPC response after everything succeeded
         log::info!("Sending CloneObjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -856,11 +859,54 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
+        let relations =
             task::spawn_blocking(move || database_clone.delete_objects(request.into_inner(), user))
                 .await
-                .map_err(ArunaError::from)??,
-        );
+                .map_err(ArunaError::from)??;
+
+        // Generate EmittedResource for each relation
+        let emitted_resources: HashMap<diesel_ulid::DieselUlid, EmittedResource> = relations
+            .into_iter()
+            .map(|relation| {
+                (
+                    relation.object_id,
+                    EmittedResource {
+                        resource: Some(Resource::Object(ObjectResource {
+                            project_id: relation.project_id.to_string(),
+                            collection_id: relation.collection_id.to_string(),
+                            shared_object_id: relation.shared_revision_id.to_string(),
+                            object_id: relation.object_id.to_string(),
+                        })),
+                    },
+                )
+            })
+            .collect();
+
+        // Try to emit event notification for each deleted object
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                for (object_ulid, emitted_resource) in emitted_resources {
+                    if let Err(err) = event_emitter_clone
+                        .emit_event(
+                            object_ulid.to_string(), // Which resource id with multiple emitted resources?
+                            ResourceType::Object,
+                            EventType::Deleted,
+                            vec![emitted_resource],
+                        )
+                        .await
+                    {
+                        // Only log error but do not crash function execution at this point
+                        log::error!("Failed to emit notification: {}", err)
+                    }
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(DeleteObjectsResponse {});
 
         // Return gRPC response after everything succeeded
         log::info!("Sending DeleteObjectResponse back to client.");
@@ -901,13 +947,43 @@ impl ObjectService for ObjectServiceImpl {
                 .await?
         };
 
-        // Create Object in database
+        // Delete Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
+        let relation =
             task::spawn_blocking(move || database_clone.delete_object(request.into_inner(), user))
                 .await
-                .map_err(ArunaError::from)??,
-        );
+                .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        relation.object_id.to_string(),
+                        ResourceType::Object,
+                        EventType::Deleted,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Object(ObjectResource {
+                                project_id: relation.project_id.to_string(),
+                                collection_id: relation.collection_id.to_string(),
+                                shared_object_id: relation.shared_revision_id.to_string(),
+                                object_id: relation.object_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(DeleteObjectResponse {});
 
         // Return gRPC response after everything succeeded
         log::info!("Sending DeleteObjectResponse back to client.");

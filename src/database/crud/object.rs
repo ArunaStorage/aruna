@@ -34,8 +34,8 @@ use aruna_rust_api::api::internal::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
-    CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
-    GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesResponse,
+    CreateObjectPathResponse, DeleteObjectsRequest, GetObjectPathRequest, GetObjectPathResponse,
+    GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesResponse,
     InitializeNewObjectResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
     SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
 };
@@ -46,10 +46,10 @@ use aruna_rust_api::api::storage::{
     },
     services::v1::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
-        CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
-        FinishObjectStagingRequest, GetLatestObjectRevisionRequest, GetObjectByIdRequest,
-        GetObjectRevisionsRequest, GetObjectsByPathRequest, GetObjectsByPathResponse,
-        GetObjectsRequest, InitializeNewObjectRequest, SetObjectPathVisibilityRequest,
+        CreateObjectReferenceResponse, DeleteObjectRequest, FinishObjectStagingRequest,
+        GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
+        GetObjectsByPathRequest, GetObjectsByPathResponse, GetObjectsRequest,
+        InitializeNewObjectRequest, SetObjectPathVisibilityRequest,
         SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
@@ -1820,7 +1820,7 @@ impl Database {
         &self,
         request: DeleteObjectRequest,
         creator_id: diesel_ulid::DieselUlid,
-    ) -> Result<DeleteObjectResponse, ArunaError> {
+    ) -> Result<Relation, ArunaError> {
         //ToDo: - Set status of all affected objects to UNAVAILABLE
         //ToDo: - What do with borrowed child objects?
         /*ToDo: - Delete only possible on latest revision?
@@ -1868,9 +1868,17 @@ impl Database {
         let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
-        self.pg_connection
+        let relation = self
+            .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Relation, ArunaError, _>(|conn| {
+                use crate::database::schema::relations::dsl as relations_dsl;
+
+                let relation = relations
+                    .filter(relations_dsl::object_id.eq(&parsed_object_id))
+                    .filter(relations_dsl::collection_id.eq(&parsed_collection_id))
+                    .first(conn)?;
+
                 delete_multiple_objects(
                     vec![parsed_object_id],
                     parsed_collection_id,
@@ -1880,17 +1888,17 @@ impl Database {
                     conn,
                 )?;
 
-                Ok(())
+                Ok(relation)
             })?;
 
-        Ok(DeleteObjectResponse {})
+        Ok(relation)
     }
 
     pub fn delete_objects(
         &self,
         request: DeleteObjectsRequest,
         creator_id: diesel_ulid::DieselUlid,
-    ) -> Result<DeleteObjectsResponse, ArunaError> {
+    ) -> Result<Vec<Relation>, ArunaError> {
         //writeable = w+ or w-
         //history   = h+ or h-
         //force     = f+ or f-
@@ -1930,9 +1938,21 @@ impl Database {
             .map(|objid| diesel_ulid::DieselUlid::from_str(objid))
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.pg_connection
+        let obj_relations = self
+            .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Vec<Relation>, ArunaError, _>(|conn| {
+                use crate::database::schema::relations::dsl as relations_dsl;
+
+                // Query single relation for each object to be deleted (group_by is not viable here)
+                let distinct_select = relations
+                    .select(Relation::as_select())
+                    .filter(relations_dsl::object_id.eq_any(&parsed_object_ids))
+                    .filter(relations_dsl::collection_id.eq(&parsed_collection_id))
+                    .distinct_on(relations_dsl::object_id)
+                    .load::<Relation>(conn)?;
+
+                // Delete objects
                 delete_multiple_objects(
                     parsed_object_ids,
                     parsed_collection_id,
@@ -1942,9 +1962,9 @@ impl Database {
                     conn,
                 )?;
 
-                Ok(())
+                Ok(distinct_select)
             })?;
-        Ok(DeleteObjectsResponse {})
+        Ok(obj_relations)
     }
 
     /// ToDo: Rust Doc
@@ -2481,7 +2501,7 @@ impl Database {
     /// ## Returns:
     ///
     /// * `Result<Vec<Relation>, ArunaError>` -
-    /// All queried object relations which can also be none; Error else.
+    /// All queried object relations which can also be empty; Error else.
     ///
     pub fn get_object_relations(
         &self,
