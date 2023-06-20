@@ -4,23 +4,30 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 
 use crate::error::{ArunaError, TypeConversionError};
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 
 use crate::database::models::enums::{Resources, UserRights};
 use crate::server::services::authz::Context;
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierService;
 use aruna_rust_api::api::internal::v1::{
-    FinalizeObjectRequest, FinalizeObjectResponse, GetCollectionByBucketRequest,
+    EmittedResource, FinalizeObjectRequest, FinalizeObjectResponse, GetCollectionByBucketRequest,
     GetCollectionByBucketResponse, GetObjectLocationRequest, GetObjectLocationResponse,
     GetOrCreateEncryptionKeyRequest, GetOrCreateEncryptionKeyResponse,
-    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location,
+    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location, ObjectResource,
 };
+use aruna_rust_api::api::notification::services::v1::EventType;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use std::sync::Arc;
 use tokio::task;
 use tonic::{Request, Response, Status};
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(InternalProxyNotifierServiceImpl);
+crate::impl_grpc_server!(
+    InternalProxyNotifierServiceImpl,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 /// Trait created by tonic based on gRPC service definitions from .proto files.
 ///   The source .proto files are defined in the ArunaStorage/ArunaAPI repo.
@@ -100,13 +107,37 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
 
         // Finalize Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || database_clone.finalize_object(&inner_request))
-                .await
-                .map_err(ArunaError::from)??,
-        );
+        let relation = task::spawn_blocking(move || database_clone.finalize_object(&inner_request))
+            .await
+            .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                event_emitter_clone
+                    .emit_event(
+                        relation.object_id.to_string(),
+                        ResourceType::Object,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Object(ObjectResource {
+                                project_id: relation.project_id.to_string(),
+                                collection_id: relation.collection_id.to_string(),
+                                shared_object_id: relation.shared_revision_id.to_string(),
+                                object_id: relation.object_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+            })
+            .await
+            .map_err(ArunaError::from)??;
+        }
 
         // Return gRPC response after everything succeeded
+        let response = Response::new(FinalizeObjectResponse {});
+
         log::debug!("Sending FinalizeObjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);

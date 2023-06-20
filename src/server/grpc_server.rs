@@ -137,11 +137,16 @@ impl ServiceServer {
             db_ref.clone(),
             authz.clone(),
             kubeclient,
-            event_emit_client,
+            event_emit_client.clone(),
         )
         .await;
-        let object_service =
-            ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
+        let object_service = ObjectServiceImpl::new(
+            db_ref.clone(),
+            authz.clone(),
+            default_endpoint.clone(),
+            event_emit_client.clone(),
+        )
+        .await;
         let object_group_service = ObjectGroupServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
         let resource_info_service =
@@ -161,7 +166,8 @@ impl ServiceServer {
             InternalAuthorizeServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
         let internal_proxy_notifier_service =
-            InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone()).await;
+            InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client)
+                .await;
 
         log::info!("ArunaServer (external) listening on {}", addr);
 

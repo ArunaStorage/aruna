@@ -29,9 +29,8 @@ use crate::database::schema::{
 use crate::error::{ArunaError, GrpcNotFoundError};
 use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::{
-    FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
-    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
-    LocationType,
+    FinalizeObjectRequest, GetOrCreateEncryptionKeyRequest, GetOrCreateObjectByPathRequest,
+    GetOrCreateObjectByPathResponse, Location as ProtoLocation, LocationType,
 };
 use aruna_rust_api::api::storage::services::v1::{
     AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
@@ -48,11 +47,10 @@ use aruna_rust_api::api::storage::{
     services::v1::{
         CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
         CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
-        FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
-        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
-        GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
-        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
-        UpdateObjectResponse,
+        FinishObjectStagingRequest, GetLatestObjectRevisionRequest, GetObjectByIdRequest,
+        GetObjectRevisionsRequest, GetObjectsByPathRequest, GetObjectsByPathResponse,
+        GetObjectsRequest, InitializeNewObjectRequest, SetObjectPathVisibilityRequest,
+        SetObjectPathVisibilityResponse, UpdateObjectRequest, UpdateObjectResponse,
     },
 };
 use diesel::dsl::{count, max, min};
@@ -248,15 +246,15 @@ impl Database {
         &self,
         request: &FinishObjectStagingRequest,
         _user_id: &diesel_ulid::DieselUlid,
-    ) -> Result<FinishObjectStagingResponse, ArunaError> {
+        //) -> Result<FinishObjectStagingResponse, ArunaError> {
+    ) -> Result<Option<ObjectDto>, ArunaError> {
         let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
+        // Try to finish object staging (inside transaction retry logic)
         let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
-        // Insert all defined objects into the database
-
         loop {
             transaction_result =
                 connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
@@ -309,7 +307,6 @@ impl Database {
                     // This indicates an "updated" object and not a new one
                     // Finishing updates need extra steps to update all references
                     // In other collections / objectgroups
-
                     if queried_object.object_status != ObjectStatus::AVAILABLE {
                         update(objects)
                             .filter(database::schema::objects::id.eq(&req_object_uuid))
@@ -405,12 +402,19 @@ impl Database {
                 },
             }
         }
-        let object_dto = transaction_result?;
+        Ok(transaction_result?)
+
+        /*
+        let (object_dto, project_ulid) = transaction_result?;
+
+        Ok((object_dto, todo!()))
 
         let mapped = object_dto
             .map(|e| e.try_into())
             .map_or(Ok(None), |r| r.map(Some))?;
+
         Ok(FinishObjectStagingResponse { object: mapped })
+        */
     }
 
     /// Finalizes the object by updating the location, validating the hashes and setting the object
@@ -430,10 +434,7 @@ impl Database {
     /// Updates the sole existing object location with the provided data of the final location the
     /// object has been moved to. Also validates/creates the provided hashes depending if the individual hash
     /// already exists in the database. Finally the objects status is set to `Available`.
-    pub fn finalize_object(
-        &self,
-        request: &FinalizeObjectRequest,
-    ) -> Result<FinalizeObjectResponse, ArunaError> {
+    pub fn finalize_object(&self, request: &FinalizeObjectRequest) -> Result<Relation, ArunaError> {
         // Check format of provided ids
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
@@ -458,7 +459,7 @@ impl Database {
         let result = self
             .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Relation, ArunaError, _>(|conn| {
                 // Check if object is latest!
                 let latest = get_latest_obj(conn, object_uuid)?;
                 let is_still_latest = latest.id == object_uuid;
@@ -581,12 +582,17 @@ impl Database {
                         Some(request.content_length),
                     )?;
                 }
-                Ok(())
+
+                // Return one of the collection specific object relations for event notification
+                Ok(relations
+                    .filter(crate::database::schema::relations::object_id.eq(&object_uuid))
+                    .filter(crate::database::schema::relations::collection_id.eq(&collection_uuid))
+                    .first::<Relation>(conn)?)
             });
 
         // Check if finalize succeeded. If not, set object status to ERROR and add internal label with truncated error message
         match result {
-            Ok(_) => Ok(FinalizeObjectResponse {}),
+            Ok(relation) => Ok(relation),
             Err(err) => {
                 self.pg_connection
                     .get()?
@@ -2459,6 +2465,54 @@ impl Database {
         ), ArunaError, _>(|conn| {
             get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())
         })?;
+
+        Ok(result)
+    }
+
+    /// Get all relations of a specific object.
+    /// Can be optionally filtered by a project and/or collection ulid.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `object_ulid` - The object ulid
+    /// * `project_filter` - Optional project ulid
+    /// * `collection_filter` - Optional collection ulid
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Vec<Relation>, ArunaError>` -
+    /// All queried object relations which can also be none; Error else.
+    ///
+    pub fn get_object_relations(
+        &self,
+        object_ulid: &diesel_ulid::DieselUlid,
+        project_filter: Option<&diesel_ulid::DieselUlid>,
+        collection_filter: Option<&diesel_ulid::DieselUlid>,
+    ) -> Result<Vec<Relation>, ArunaError> {
+        use crate::database::schema::relations::dsl as relations_dsl;
+
+        // Create base query
+        let mut base_query = relations
+            .filter(relations_dsl::object_id.eq(&object_ulid))
+            .into_boxed();
+
+        // Filter by project on demand
+        if let Some(project_ulid) = project_filter {
+            base_query = base_query.filter(relations_dsl::project_id.eq(project_ulid));
+        }
+
+        // Filter by collection on demand
+        if let Some(collection_ulid) = collection_filter {
+            base_query = base_query.filter(relations_dsl::collection_id.eq(collection_ulid));
+        }
+
+        // Load and return relations
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<Relation>, ArunaError, _>(|conn| {
+                Ok(base_query.load::<Relation>(conn)?)
+            })?;
 
         Ok(result)
     }

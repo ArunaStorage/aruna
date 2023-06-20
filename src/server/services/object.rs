@@ -1,3 +1,5 @@
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
+use aruna_rust_api::api::notification::services::v1::EventType;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -12,20 +14,28 @@ use crate::database::models::auth::ApiToken;
 use crate::database::models::enums::{ObjectStatus, Resources, UserRights};
 use crate::database::models::object::Endpoint;
 use crate::error::ArunaError;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
 use aruna_rust_api::api::internal::v1::{
-    FinishMultipartUploadRequest, InitMultipartUploadRequest, Location, PartETag,
+    EmittedResource, FinishMultipartUploadRequest, InitMultipartUploadRequest, Location,
+    ObjectResource, PartETag,
 };
-use aruna_rust_api::api::storage::models::v1::{LabelOrIdQuery, Status as ProtoStatus};
+use aruna_rust_api::api::storage::models::v1::{
+    LabelOrIdQuery, ResourceType, Status as ProtoStatus,
+};
 use aruna_rust_api::api::storage::{
     services::v1::object_service_server::ObjectService, services::v1::*,
 };
 use http::Method;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
+crate::impl_grpc_server!(
+    ObjectServiceImpl,
+    default_endpoint: Endpoint,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 ///
 impl ObjectServiceImpl {
@@ -399,11 +409,12 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received FinishObjectStagingRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+        // Parse the provided object id (string) to ULID
+        let object_ulid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
             .map_err(|_| Status::invalid_argument("Unable to parse object id"))?;
 
-        // Parse the provided collection id (string) to UUID
-        let collection_uuid =
+        // Parse the provided collection id (string) to ULID
+        let collection_ulid =
             diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
@@ -412,7 +423,7 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_uuid, // This is the collection uuid in which this object should be created
+                collection_ulid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await
@@ -422,20 +433,19 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner();
 
         // Fetch staging object to get temp path from init
-
         let database_clone = self.database.clone();
         let staging_object = task::spawn_blocking(move || {
             database_clone
-                .get_object_by_id(&object_uuid, &collection_uuid)?
+                .get_object_by_id(&object_ulid, &collection_ulid)?
                 .object
                 .ok_or(ArunaError::InvalidRequest(format!(
-                    "Could not find object {object_uuid} in collection {collection_uuid}"
+                    "Could not find object {object_ulid} in collection {collection_ulid}"
                 )))
         })
         .await
         .map_err(|_| {
             ArunaError::InvalidRequest(format!(
-                "Could not find object {object_uuid} in collection {collection_uuid}"
+                "Could not find object {object_ulid} in collection {collection_ulid}"
             ))
         })??;
 
@@ -503,8 +513,8 @@ impl ObjectService for ObjectServiceImpl {
             if !finished_parts.is_empty() {
                 let finish_multipart_request = FinishMultipartUploadRequest {
                     upload_id: inner_request.upload_id.to_string(),
-                    collection_id: collection_uuid.to_string(),
-                    object_id: object_uuid.to_string(),
+                    collection_id: collection_ulid.to_string(),
+                    object_id: object_ulid.to_string(),
                     path: format!("s3://{upload_path}"),
                     part_etags: finished_parts,
                 };
@@ -512,29 +522,74 @@ impl ObjectService for ObjectServiceImpl {
                 // Connect to the data proxy where the user (hopefully) uploaded the data
                 let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
-                // Execute the proxy request and get the result
-                let proxy_result = data_proxy
-                    .finish_multipart_upload(finish_multipart_request)
-                    .await;
+                let result = task::spawn(async move {
+                    // Execute the proxy request and get the result
+                    data_proxy
+                        .finish_multipart_upload(finish_multipart_request.clone())
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from);
 
                 // Only proceed when proxy did not fail
-                if proxy_result.is_err() {
+                if result.is_err() {
                     return Err(Status::aborted(
                         "Proxy failed to finish object multipart upload.",
                     ));
                 }
             }
+        } else {
+            // Try to emit event notification (finalize will not be called)
+            if let Some(emit_client) = &self.event_emitter {
+                let event_emitter_clone = emit_client.clone();
+                let database_clone = self.database.clone();
+
+                task::spawn(async move {
+                    let relations = database_clone.get_object_relations(
+                        &object_ulid,
+                        None,
+                        Some(&collection_ulid),
+                    )?;
+
+                    if let Some(relation) = relations.first() {
+                        event_emitter_clone
+                            .emit_event(
+                                object_ulid.to_string(),
+                                ResourceType::Object,
+                                EventType::Created,
+                                vec![EmittedResource {
+                                    resource: Some(Resource::Object(ObjectResource {
+                                        project_id: relation.project_id.to_string(),
+                                        collection_id: collection_ulid.to_string(),
+                                        shared_object_id: relation.shared_revision_id.to_string(),
+                                        object_id: object_ulid.to_string(),
+                                    })),
+                                }],
+                            )
+                            .await?;
+                    };
+
+                    Ok::<(), ArunaError>(())
+                })
+                .await
+                .map_err(ArunaError::from)??;
+            }
         }
 
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.finish_object_staging(&inner_request_clone, &creator_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let object_dto = task::spawn_blocking(move || {
+            database_clone.finish_object_staging(&inner_request_clone, &creator_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Create gRPC response
+        let response = Response::new(FinishObjectStagingResponse {
+            object: object_dto
+                .map(|e| e.try_into())
+                .map_or(Ok(None), |r| r.map(Some))?,
+        });
 
         log::info!("Sending FinishObjectStagingResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
