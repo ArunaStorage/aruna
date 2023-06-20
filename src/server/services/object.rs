@@ -553,7 +553,7 @@ impl ObjectService for ObjectServiceImpl {
                     )?;
 
                     if let Some(relation) = relations.first() {
-                        event_emitter_clone
+                        if let Err(err) = event_emitter_clone
                             .emit_event(
                                 object_ulid.to_string(),
                                 ResourceType::Object,
@@ -567,7 +567,11 @@ impl ObjectService for ObjectServiceImpl {
                                     })),
                                 }],
                             )
-                            .await?;
+                            .await
+                        {
+                            // Only log error but do not crash function execution at this point
+                            log::error!("Failed to emit notification: {}", err)
+                        }
                     };
 
                     Ok::<(), ArunaError>(())

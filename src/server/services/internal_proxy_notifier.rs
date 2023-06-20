@@ -115,7 +115,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
         if let Some(emit_client) = &self.event_emitter {
             let event_emitter_clone = emit_client.clone();
             task::spawn(async move {
-                event_emitter_clone
+                if let Err(err) = event_emitter_clone
                     .emit_event(
                         relation.object_id.to_string(),
                         ResourceType::Object,
@@ -130,9 +130,13 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                         }],
                     )
                     .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
             })
             .await
-            .map_err(ArunaError::from)??;
+            .map_err(ArunaError::from)?;
         }
 
         // Return gRPC response after everything succeeded
