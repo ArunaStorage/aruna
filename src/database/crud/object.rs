@@ -3211,7 +3211,33 @@ pub fn clone_object(
     object_uuid: diesel_ulid::DieselUlid,
     source_collection_uuid: diesel_ulid::DieselUlid,
     target_collection_uuid: diesel_ulid::DieselUlid,
-) -> Result<(ProtoObject, diesel_ulid::DieselUlid, Relation), Error> {
+) -> Result<(ProtoObject, diesel_ulid::DieselUlid, Relation), ArunaError> {
+    use crate::database::schema::collection_version::dsl as versions_dsl;
+    use crate::database::schema::collections::dsl as collections_dsl;
+
+    // Fetch target collection infos
+    let (target_proj_id, target_proj_name, target_col_name, target_col_ver): (
+        diesel_ulid::DieselUlid,
+        String,
+        String,
+        Option<CollectionVersion>,
+    ) = collections
+        .filter(collections_dsl::id.eq(&target_collection_uuid))
+        .inner_join(database::schema::projects::dsl::projects)
+        .left_join(versions_dsl::collection_version)
+        .select((
+            database::schema::projects::id,
+            database::schema::projects::name,
+            database::schema::collections::name,
+            Option::<CollectionVersion>::as_select(),
+        ))
+        .first::<(
+            diesel_ulid::DieselUlid,
+            String,
+            String,
+            Option<CollectionVersion>,
+        )>(conn)?;
+
     // Get original object, collection_object reference, key_values, hash and source
     let mut db_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -3244,6 +3270,12 @@ pub fn clone_object(
         .filter(database::schema::object_locations::object_id.eq(&object_uuid))
         .load::<ObjectLocation>(conn)?;
 
+    // Get source collection relations of object
+    let mut object_relations: Vec<Relation> = relations
+        .filter(database::schema::relations::object_id.eq(&object_uuid))
+        .filter(database::schema::relations::collection_id.eq(&source_collection_uuid))
+        .load::<Relation>(conn)?;
+
     // Modify object
     db_object.id = diesel_ulid::DieselUlid::generate();
     db_object.shared_revision_id = diesel_ulid::DieselUlid::generate();
@@ -3275,6 +3307,25 @@ pub fn clone_object(
         location.object_id = db_object.id;
     }
 
+    // Modify relations to target collection
+    for relation in &mut object_relations {
+        relation.id = diesel_ulid::DieselUlid::generate();
+        relation.object_id = db_object.id;
+        relation.project_id = target_proj_id;
+        relation.project_name = target_proj_name.clone();
+        relation.collection_id = target_collection_uuid;
+        relation.collection_path = format!(
+            "{}.{}",
+            if let Some(version) = &target_col_ver {
+                format!("{}.{}.{}", version.major, version.minor, version.patch)
+            } else {
+                "latest".to_string()
+            },
+            target_col_name,
+        );
+        relation.shared_revision_id = db_object.shared_revision_id;
+    }
+
     // Insert cloned object, hash, key_Values and references
     insert_into(objects).values(&db_object).execute(conn)?;
     // Insert cloned locations
@@ -3291,15 +3342,10 @@ pub fn clone_object(
     insert_into(collection_objects)
         .values(&db_collection_object)
         .execute(conn)?;
-
-    // Insert relation for cloned object
-    let relation = create_relation(
-        &db_object.id,
-        Some(db_object.clone()),
-        &target_collection_uuid,
-        "",
-        conn,
-    )?;
+    // Insert modified relations
+    insert_into(relations)
+        .values(&object_relations)
+        .execute(conn)?;
 
     // Transform everything into gRPC proto format
     let (labels, hooks) = from_key_values(db_object_key_values);
@@ -3341,7 +3387,13 @@ pub fn clone_object(
                 .collect::<Vec<_>>(),
         },
         db_object.shared_revision_id,
-        relation,
+        if let Some(relation) = object_relations.first() {
+            relation.clone()
+        } else {
+            return Err(ArunaError::InvalidRequest(
+                "Object did not have any relations ...".to_string(),
+            ));
+        },
     ))
 }
 

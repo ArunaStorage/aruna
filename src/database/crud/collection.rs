@@ -1134,7 +1134,7 @@ fn pin_collection_to_version(
         new_objects.push(new_obj);
     }
     // Clone and adjust existing paths belonging to the shared_revision_ids of the objects
-    pin_paths_to_version(&new_collection_overview, &origin_collection, conn)?;
+    //pin_paths_to_version(&new_collection_overview, &origin_collection, conn)?;
 
     // Iterate through objectgroups
     for obj_grp in original_object_groups {
