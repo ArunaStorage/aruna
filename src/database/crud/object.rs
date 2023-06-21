@@ -3652,6 +3652,11 @@ pub fn delete_staging_object(
         .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
         .execute(conn)?;
 
+    // Delete staging object relations
+    delete(relations)
+        .filter(database::schema::relations::object_id.eq(object_uuid))
+        .execute(conn)?;
+
     // Get lowest object revision number
     let lowest_object_revision: Option<i64> = objects
         .select(min(database::schema::objects::revision_number))
