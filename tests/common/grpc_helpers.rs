@@ -301,7 +301,7 @@ pub async fn try_get_object(
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint, None).await;
 
     // Validate format of provided ids
     let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();

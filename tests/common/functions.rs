@@ -418,10 +418,13 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         auto_update: true,
     };
 
-    let finish_response = db
+    let finished_object: Object = db
         .finish_object_staging(&finish_request, &creator_id)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
-    let finished_object = finish_response.object.unwrap();
 
     // Validate Object creation
     assert_eq!(finished_object.id, object_id.to_string());
@@ -679,10 +682,13 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         auto_update: true,
     };
 
-    let finish_update_response = db
+    let updated_object: Object = db
         .finish_object_staging(&updated_finish_request, &creator)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
-    let updated_object = finish_update_response.object.unwrap();
 
     // Validate update
     assert_eq!(updated_object.id, updated_object_id_001.to_string());

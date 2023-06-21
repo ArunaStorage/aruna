@@ -2,7 +2,7 @@ mod common;
 
 use crate::common::functions::{get_object, get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
+    DataClass, Hash as DbHash, Hashalgorithm, KeyValue, Object as ProtoObject, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
@@ -131,8 +131,14 @@ fn create_object_test() {
         auto_update: true,
     };
 
-    let finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
-    let finished_object = finish_response.object.unwrap();
+    let finished_object: ProtoObject = db
+        .finish_object_staging(&finish_request, &creator)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
+        .unwrap();
+
     assert_eq!(finished_object.id, new_object_id.to_string());
     assert!(matches!(
         grpc_to_db_object_status(&finished_object.status),
@@ -616,7 +622,7 @@ fn delete_object_test() {
         .update_object(updatereq, &creator, new_id, &endpoint_id)
         .unwrap();
 
-    let staging_finished = db
+    let finished_object: ProtoObject = db
         .finish_object_staging(
             &FinishObjectStagingRequest {
                 object_id: update_response.object_id,
@@ -629,6 +635,10 @@ fn delete_object_test() {
             },
             &creator,
         )
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
 
     // Simple delete with revisions / with force
@@ -645,13 +655,13 @@ fn delete_object_test() {
     // Should error because single_id is "old" revision
     assert!(resp.is_err());
 
-    delreq.object_id = staging_finished.clone().object.unwrap().id;
+    delreq.object_id = finished_object.id.to_string();
 
     //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
     let _resp = db.delete_object(delreq, creator).unwrap();
 
     // Revision Should also be deleted
-    let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
+    let raw_db_object = get_object_status_raw(&finished_object.id);
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
@@ -996,9 +1006,7 @@ fn clone_object_test() {
         target_collection_id: random_collection2.id,
     };
 
-    let resp = db.clone_object(&clone_req, &creator).unwrap();
-
-    let cloned = resp.object.unwrap();
+    let (cloned, _) = db.clone_object(&clone_req, &creator).unwrap();
 
     assert_ne!(cloned.id, update_2.id);
     assert_eq!(cloned.rev_number, 0);

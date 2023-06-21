@@ -42,7 +42,7 @@ async fn create_object_with_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -212,7 +212,7 @@ async fn create_additional_object_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -379,7 +379,7 @@ async fn create_object_path_with_reference_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -570,7 +570,7 @@ async fn get_object_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -752,7 +752,7 @@ async fn get_object_paths_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1048,7 +1048,7 @@ async fn set_object_path_visibility_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1277,7 +1277,7 @@ async fn get_object_by_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
