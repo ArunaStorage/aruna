@@ -2170,12 +2170,26 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
-                let relation = create_relation(&obj_id, None, &col_id, &request.sub_path, conn)?;
-                // Query path
-                Ok(Some(ProtoPath {
-                    path: relation_as_s3_path(&relation),
-                    visibility: true,
-                }))
+                if objects
+                    .select(database::schema::objects::object_status)
+                    .filter(database::schema::objects::id.eq(&obj_id))
+                    .first::<ObjectStatus>(conn)?
+                    != ObjectStatus::AVAILABLE
+                {
+                    // Try create relation containing the new path
+                    let relation =
+                        create_relation(&obj_id, None, &col_id, &request.sub_path, conn)?;
+
+                    // Return path in s3 format
+                    Ok(Some(ProtoPath {
+                        path: relation_as_s3_path(&relation),
+                        visibility: true,
+                    }))
+                } else {
+                    Err(ArunaError::InvalidRequest(
+                        "Cannot create path for object".to_string(),
+                    ))
+                }
             })?;
         Ok(CreateObjectPathResponse { path: db_path })
     }
