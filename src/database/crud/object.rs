@@ -1872,11 +1872,13 @@ impl Database {
             .transaction::<Relation, ArunaError, _>(|conn| {
                 use crate::database::schema::relations::dsl as relations_dsl;
 
+                // Query single relation of object for notification
                 let relation = relations
                     .filter(relations_dsl::object_id.eq(&parsed_object_id))
                     .filter(relations_dsl::collection_id.eq(&parsed_collection_id))
-                    .first(conn)?;
+                    .first::<Relation>(conn)?;
 
+                // Delete object
                 delete_multiple_objects(
                     vec![parsed_object_id],
                     parsed_collection_id,
@@ -3108,7 +3110,7 @@ pub fn update_object_in_place(
     let s3path = format!("{}/{}", &stage_object.sub_path, &stage_object.filename);
 
     // Check if relation/path exists for another shared_rev_id
-    let exists = relations
+    let conflicting_relation = relations
         .filter(database::schema::relations::path.eq(&s3path))
         .filter(database::schema::relations::collection_id.eq(&collection_uuid))
         .filter(database::schema::relations::shared_revision_id.ne(&old_object.shared_revision_id))
@@ -3127,21 +3129,22 @@ pub fn update_object_in_place(
         .first::<(String, String, Option<CollectionVersion>)>(conn)?;
 
     // If it already exists -> FAIL
-    if exists.is_some() {
+    if conflicting_relation.is_some() {
         return Err(ArunaError::InvalidRequest(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
     }
 
+    // Create collection path part
+    let coll_path = format!("{}.{}", colname, projname);
+
+    // Create full bucket name
     let bucket_name = match colver {
-        Some(v) => format!(
-            "{}.{}.{}.{}.{}",
-            v.major, v.minor, v.patch, colname, projname
-        ),
-        None => format!("latest.{}.{}", colname, projname),
+        Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, coll_path),
+        None => format!("latest.{}", coll_path),
     };
     // If it already exists
-    if exists.is_some() {
+    if conflicting_relation.is_some() {
         // Check if the existing is not associated with the current shared_revision_id -> Error
         // else -> do nothing
         return Err(ArunaError::InvalidRequest(
@@ -3182,6 +3185,21 @@ pub fn update_object_in_place(
         .values(&key_value_pairs)
         .execute(conn)?;
 
+    // Fetch singleton relation of staging object and modify it for update
+    let mut staging_object_relation: Relation = relations
+        .filter(database::schema::relations::object_id.eq(&object_uuid))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .first::<Relation>(conn)?; // There has to be a relation as it is created on staging object init
+
+    staging_object_relation.project_name = projname;
+    staging_object_relation.collection_id = collection_uuid.clone();
+    staging_object_relation.collection_path = coll_path;
+
+    update(relations)
+        .filter(database::schema::relations::id.eq(&staging_object_relation.id))
+        .set(&staging_object_relation)
+        .execute(conn)?;
+
     // Update remaining object meta in-place
     old_object.filename = stage_object.filename.to_string();
     old_object.content_len = stage_object.content_len;
@@ -3191,7 +3209,7 @@ pub fn update_object_in_place(
 
     // Update the object record in the database
     let updated_obj = update(objects)
-        .filter(database::schema::objects::id.eq(&old_object.id))
+        .filter(database::schema::objects::id.eq(&object_uuid))
         .set(&old_object)
         .get_result::<Object>(conn)?;
 

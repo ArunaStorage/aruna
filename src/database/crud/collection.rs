@@ -1268,7 +1268,7 @@ fn pin_collection_to_version(
 ///
 /// * Result<(), ArunaError>: Just returns empty Ok() if succeeds; ArunaError else.
 ///
-fn pin_paths_to_version(
+fn _pin_paths_to_version(
     pin_collection: &CollectionOverviewDb,
     old_collection_id: &diesel_ulid::DieselUlid,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
