@@ -2174,7 +2174,7 @@ impl Database {
                     .select(database::schema::objects::object_status)
                     .filter(database::schema::objects::id.eq(&obj_id))
                     .first::<ObjectStatus>(conn)?
-                    != ObjectStatus::AVAILABLE
+                    == ObjectStatus::AVAILABLE
                 {
                     // Try create relation containing the new path
                     let relation =
