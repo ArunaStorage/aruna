@@ -2929,6 +2929,15 @@ pub fn update_object_init(
         diesel::insert_into(sources).values(&source).execute(conn)?;
     }
 
+    // Create relation for staging object
+    create_relation(
+        &new_object.id,
+        Some(new_object.clone()),
+        &collection_uuid,
+        &staging_object.sub_path,
+        conn,
+    )?;
+
     Ok(new_object)
 }
 
