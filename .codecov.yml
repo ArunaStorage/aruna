@@ -1,3 +1,5 @@
+codecov:
+  require_ci_to_pass: false
 coverage:
     range: 60..100 # set a high standard for ourselves
 ignore:
