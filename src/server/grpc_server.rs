@@ -162,6 +162,7 @@ impl ServiceServer {
         log::info!("ArunaServer (internal) listening on {}", other_addr);
         let internal_server = tokio::spawn(async move {
             Server::builder()
+                .http2_keepalive_interval(Some(std::time::Duration::from_secs(15)))
                 .add_service(InternalProxyNotifierServiceServer::new(
                     internal_proxy_notifier_service,
                 ))
