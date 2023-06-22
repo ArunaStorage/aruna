@@ -2121,13 +2121,18 @@ fn get_object_download_url(
         )
     };
 
+    let url_name = match endpoint.ssl {
+        true => format!("https://data.{}", endpoint.proxy_hostname),
+        false => format!("http://data.{}", endpoint.proxy_hostname),
+    };
+
     Ok(sign_download_url(
         &api_token.id.to_string(),
         &api_token.secretkey,
-        endpoint.proxy_hostname.starts_with("https://"),
+        endpoint.ssl,
         &object_bucket,
         &object_key,
-        &endpoint.proxy_hostname, // Will be "sanitized" in the sign_url(...) function
+        &url_name, // Will be "sanitized" in the sign_url(...) function
     )
     .map_err(|err| tonic::Status::new(Code::Internal, format!("Url signing failed: {err}")))?)
 }
