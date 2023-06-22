@@ -221,7 +221,6 @@ CREATE TABLE object_groups (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
     PRIMARY KEY (id),
-    is_service_account BOOL NOT NULL DEFAULT FALSE,
     UNIQUE(shared_revision_id, revision_number),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
