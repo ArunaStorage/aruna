@@ -509,4 +509,16 @@ impl CollectionService for CollectionServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         Ok(response)
     }
+
+    /// AddKeyValueToCollection
+    ///
+    /// Status: BETA
+    ///
+    /// Adds key values (labels / hooks) to a collection
+    async fn add_key_values_to_collection(
+        &self,
+        _request: tonic::Request<AddKeyValuesToCollectionRequest>,
+    ) -> std::result::Result<tonic::Response<AddKeyValuesToCollectionResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented("Currently unimplemented!"))
+    }
 }

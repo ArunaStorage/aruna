@@ -2018,7 +2018,7 @@ impl ObjectService for ObjectServiceImpl {
     /// !! Paths are collection specific !!
     async fn get_objects_as_list_v2(
         &self,
-        request: tonic::Request<GetObjectsAsListV2Request>,
+        _request: tonic::Request<GetObjectsAsListV2Request>,
     ) -> std::result::Result<tonic::Response<GetObjectsAsListV2Response>, tonic::Status> {
         Err(tonic::Status::unimplemented("Currently unimplemented!"))
     }
