@@ -10,10 +10,10 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1.0.70"
-aruna-rust-api = "1.1.0-rc.2"
+aruna-rust-api = "1.1.0-rc.5"
 bigdecimal = "0.3.0"
 chrono = "0.4.24"
-diesel = {version = "2.1.0", features = ["postgres", "uuid", "r2d2", "chrono", "numeric"]}
+diesel = {version = "2.1.0", features = ["postgres", "uuid", "r2d2", "chrono", "numeric", "serde_json"]}
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 dotenv = "0.15.0"
 http = "0.2.9"

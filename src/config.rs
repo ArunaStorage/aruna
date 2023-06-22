@@ -1,4 +1,4 @@
-use crate::database::models::enums::EndpointType;
+use crate::database::models::{enums::EndpointType, object::HostConfig};
 use std::env::VarError;
 use std::fs;
 
@@ -6,6 +6,7 @@ use crate::error::{ArunaError, TypeConversionError};
 use serde::Deserialize;
 
 /// This struct contains all parsed configuration parameters of the ArunaServer
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ArunaServerConfig {
     pub config: Config,
@@ -13,10 +14,12 @@ pub struct ArunaServerConfig {
 }
 
 /// This struct contains all values collected from environmental variables
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct EnvConfig {}
 
 /// This struct is used as template to parse the ArunaServer config.toml file
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub database_url: String,
@@ -36,8 +39,8 @@ pub struct EventNotifications {
 pub struct DefaultEndpoint {
     pub ep_type: EndpointType,
     pub endpoint_name: String,
-    pub endpoint_host: String,
-    pub endpoint_proxy: String,
+    pub endpoint_host_config: Vec<HostConfig>,
+    pub endpoint_bundler: bool,
     pub endpoint_public: bool,
     pub endpoint_docu: Option<String>,
     pub endpoint_serial: i64,
@@ -92,6 +95,7 @@ impl ArunaServerConfig {
     ///
     /// It will also return an error if the deserialization of the content into the Config struct fails.
     ///
+
     fn load_config_file() -> Result<Config, ArunaError> {
         // Read config file content
         let content = fs::read_to_string("./config/config.toml")

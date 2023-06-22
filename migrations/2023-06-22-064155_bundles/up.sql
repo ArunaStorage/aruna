@@ -14,4 +14,6 @@ CREATE TABLE bundles (
 
 
 ALTER TABLE endpoints ADD COLUMN is_bundler BOOL NOT NULL DEFAULT FALSE;
-ALTER TABLE endpoints ADD COLUMN ssl BOOL NOT NULL DEFAULT TRUE;
+ALTER TABLE endpoints DROP COLUMN proxy_hostname;
+ALTER TABLE endpoints DROP COLUMN internal_hostname;
+ALTER TABLE endpoints ADD COLUMN host_config JSONB NOT NULL;

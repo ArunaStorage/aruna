@@ -164,15 +164,11 @@ diesel::table! {
         id -> Uuid,
         endpoint_type -> EndpointType,
         name -> Text,
-        #[max_length = 0]
-        proxy_hostname -> Varchar,
-        #[max_length = 0]
-        internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,
         is_public -> Bool,
         status -> EndpointStatus,
         is_bundler -> Bool,
-        ssl -> Bool,
+        host_config -> Jsonb,
     }
 }
 

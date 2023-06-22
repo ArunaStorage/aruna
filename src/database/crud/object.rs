@@ -736,7 +736,7 @@ impl Database {
     ///
     /// * `Result<aruna_server::database::models::object::Object, ArunaError>` -
     /// Database model object if the object with the provided id exists in the database.
-    ///
+
     pub fn get_object_by_id(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
@@ -816,6 +816,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+
     pub fn get_primary_object_location(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
@@ -863,6 +864,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+
     pub fn get_primary_object_location_with_endpoint(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
