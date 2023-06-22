@@ -11,3 +11,6 @@ CREATE TABLE bundles (
     FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,
     UNIQUE(object_id, bundle_id)
 );
+
+
+ALTER TABLE endpoints ADD COLUMN is_bundler BOOL NOT NULL DEFAULT FALSE;

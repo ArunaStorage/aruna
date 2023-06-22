@@ -2,3 +2,4 @@
 
 
 DROP TABLE IF EXISTS bundles;
+ALTER TABLE endpoints DROP COLUMN is_bundler;

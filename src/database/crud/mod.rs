@@ -1,4 +1,5 @@
 pub mod authz;
+pub mod bundle;
 pub mod collection;
 pub mod cron;
 pub mod endpoint;

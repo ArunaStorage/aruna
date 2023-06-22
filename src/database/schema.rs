@@ -171,6 +171,7 @@ diesel::table! {
         documentation_path -> Nullable<Text>,
         is_public -> Bool,
         status -> EndpointStatus,
+        is_bundler -> Bool,
     }
 }
 
