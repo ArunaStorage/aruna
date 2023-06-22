@@ -2653,30 +2653,13 @@ pub fn create_staging_object(
     diesel::insert_into(objects).values(&object).execute(conn)?;
     diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
 
-    let relation = create_relation(
+    create_relation(
         object_uuid,
         Some(object.clone()),
         collection_uuid,
         &staging_object.sub_path,
         conn,
     )?;
-
-    // If path not exists -> Add labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: object.id,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: relation.path,
-        key_value_type: KeyValueType::LABEL,
-    });
-
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: object.id,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: format!("{}.{}", relation.collection_path, relation.project_name),
-        key_value_type: KeyValueType::LABEL,
-    });
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -2859,48 +2842,12 @@ pub fn update_object_init(
         .first::<Relation>(conn)
         .optional()?;
 
-    let (projname, colname, colver): (String, String, Option<CollectionVersion>) = collections
-        .filter(database::schema::collections::id.eq(&collection_uuid))
-        .inner_join(database::schema::projects::dsl::projects)
-        .left_join(database::schema::collection_version::dsl::collection_version)
-        .select((
-            database::schema::projects::name,
-            database::schema::collections::name,
-            Option::<CollectionVersion>::as_select(),
-        ))
-        .first::<(String, String, Option<CollectionVersion>)>(conn)?;
-
     // If it already exists -> FAIL
     if exists.is_some() {
         return Err(ArunaError::InvalidRequest(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
     }
-
-    let bucket_name = match colver {
-        Some(v) => format!(
-            "{}.{}.{}.{}.{}",
-            v.major, v.minor, v.patch, colname, projname
-        ),
-        None => format!("latest.{}.{}", colname, projname),
-    };
-
-    // Always add internal path labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: staging_object_uuid,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
-        key_value_type: KeyValueType::LABEL,
-    });
-
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: staging_object_uuid,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: bucket_name,
-        key_value_type: KeyValueType::LABEL,
-    });
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -3136,13 +3083,17 @@ pub fn update_object_in_place(
     }
 
     // Create collection path part
-    let coll_path = format!("{}.{}", colname, projname);
+    let coll_path = format!(
+        "{}.{}",
+        match colver {
+            Some(v) => {
+                format!("{}.{}.{}", v.major, v.minor, v.patch)
+            }
+            None => "latest".to_string(),
+        },
+        colname,
+    );
 
-    // Create full bucket name
-    let bucket_name = match colver {
-        Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, coll_path),
-        None => format!("latest.{}", coll_path),
-    };
     // If it already exists
     if conflicting_relation.is_some() {
         // Check if the existing is not associated with the current shared_revision_id -> Error
@@ -3151,22 +3102,6 @@ pub fn update_object_in_place(
             "Invalid path, already exists for different object hierarchy".to_string(),
         ));
     }
-
-    // Always add internal labels back to provided staging object labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: *object_uuid,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
-        key_value_type: KeyValueType::LABEL,
-    });
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: *object_uuid,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: bucket_name,
-        key_value_type: KeyValueType::LABEL,
-    });
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -3527,41 +3462,8 @@ pub fn get_object_revision_by_path(
             Ok(base_request.first::<Object>(conn).optional()?)
         }
         None => {
-            if !include_staging {
-                return Err(ArunaError::InvalidRequest("Object not found".to_string()));
-            };
-            // Try to query the temp path from labels
-
-            // Get fq_path from label
-            let path_label = object_key_value
-                .filter(database::schema::object_key_value::value.eq(format!("/{s3path}")))
-                .filter(
-                    database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"),
-                )
-                .first::<ObjectKeyValue>(conn)
-                .optional()?;
-
-            let mut target_object_id: Option<diesel_ulid::DieselUlid> = None;
-
-            if let Some(p_lbl) = path_label {
-                target_object_id = object_key_value
-                    .filter(database::schema::object_key_value::object_id.eq(&p_lbl.object_id))
-                    .filter(
-                        database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"),
-                    )
-                    .filter(database::schema::object_key_value::value.eq(s3bucket))
-                    .first::<ObjectKeyValue>(conn)
-                    .optional()?
-                    .map(|e| e.object_id);
-            }
-
-            match target_object_id {
-                Some(ob_id) => Ok(objects
-                    .filter(database::schema::objects::id.eq(ob_id))
-                    .first::<Object>(conn)
-                    .optional()?),
-                None => Ok(None),
-            }
+            //Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
+            return Err(ArunaError::InvalidRequest("Object not found".to_string()));
         }
     }
 }
@@ -4867,7 +4769,7 @@ pub fn get_object_by_path(
     }
 }
 
-fn disect_full_object_path(full_path: &str) -> (String, String) {
+fn _disect_full_object_path(full_path: &str) -> (String, String) {
     let mut all_parts = full_path.split('/').collect::<Vec<_>>();
     let fname = all_parts.pop().unwrap_or_default().to_string();
 
@@ -5095,33 +4997,6 @@ fn set_object_available(
         .filter(database::schema::object_key_value::object_id.eq(object.id))
         .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/endpoint_id"))
         .execute(conn)?;
-
-    // Get fq_path from label
-    let path_label = object_key_value
-        .filter(database::schema::object_key_value::object_id.eq(object.id))
-        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"))
-        .first::<ObjectKeyValue>(conn)
-        .optional()?;
-
-    if let Some(p_lbl) = path_label {
-        let bucket_label = object_key_value
-            .filter(database::schema::object_key_value::object_id.eq(object.id))
-            .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"))
-            .first::<ObjectKeyValue>(conn)?;
-
-        let (subpath, _) = disect_full_object_path(&p_lbl.value);
-
-        create_relation(&updated_obj.id, None, coll_uuid, &subpath, conn)?;
-
-        // Delete the path label afterwards
-        delete(object_key_value)
-            .filter(database::schema::object_key_value::id.eq(p_lbl.id))
-            .execute(conn)?;
-        // Delete the bucket label afterwards
-        delete(object_key_value)
-            .filter(database::schema::object_key_value::id.eq(bucket_label.id))
-            .execute(conn)?;
-    };
 
     let orig_id = updated_obj.origin_id;
     // origin_id != object_id => Update

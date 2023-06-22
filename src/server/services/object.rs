@@ -13,7 +13,7 @@ use crate::database::connection::Database;
 use crate::database::crud::utils::grpc_to_db_object_status;
 use crate::database::models::auth::ApiToken;
 use crate::database::models::enums::{ObjectStatus, Resources, UserRights};
-use crate::database::models::object::Endpoint;
+use crate::database::models::object::{Endpoint, Relation};
 use crate::error::ArunaError;
 use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context};
@@ -24,7 +24,7 @@ use aruna_rust_api::api::internal::v1::{
     ObjectResource, PartETag,
 };
 use aruna_rust_api::api::storage::models::v1::{
-    LabelOrIdQuery, ResourceType, Status as ProtoStatus,
+    LabelOrIdQuery, Object as ProtoObject, ResourceType,
 };
 use aruna_rust_api::api::storage::{
     services::v1::object_service_server::ObjectService, services::v1::*,
@@ -322,46 +322,24 @@ impl ObjectService for ObjectServiceImpl {
                 ));
             }
 
-            // Create presigned upload url
+            // Fetch staging object relation
+            let relation = database_clone
+                .get_object_relations(&object_uuid, None, Some(&collection_uuid))?
+                .first()
+                .ok_or_else(|| {
+                    Status::internal("Staging object is missing info to create upload url.")
+                })?
+                .to_owned();
+
             let mut endpoint_option: Option<String> = None;
-            let mut s3bucket_option: Option<String> = None;
-            let mut s3key_option: Option<String> = None;
-            if let Some(object_info) = proto_object_url.object {
-                if object_info.status != ProtoStatus::Initializing as i32 {
-                    return Err(tonic::Status::invalid_argument(format!(
-                        "object {object_uuid} is not in staging phase."
-                    )));
-                }
-
-                for label in object_info.labels {
-                    if label.key == *"app.aruna-storage.org/new_path" {
-                        s3key_option = Some(label.value.to_string());
-                    } else if label.key == *"app.aruna-storage.org/bucket" {
-                        s3bucket_option = Some(label.value.to_string());
-                    } else if label.key == *"app.aruna-storage.org/endpoint_id" {
-                        endpoint_option = Some(label.value.to_string());
-                    }
-
-                    if s3bucket_option.is_some()
-                        && s3key_option.is_some()
-                        && endpoint_option.is_some()
-                    {
-                        break;
-                    }
+            for label in object_data.labels.clone() {
+                if label.key == *"app.aruna-storage.org/endpoint_id" {
+                    endpoint_option = Some(label.value.to_string());
+                    break;
                 }
             }
-            let s3key = s3key_option
-                .ok_or_else(|| {
-                    Status::new(Code::Internal, "Staging object has no internal path label")
-                })?
-                .replacen('/', "", 1);
 
-            let s3bucket = s3bucket_option.ok_or_else(|| {
-                Status::new(
-                    Code::Internal,
-                    "Staging object has no internal bucket label",
-                )
-            })?;
+            let s3bucket = format!("{}.{}", relation.collection_path, relation.project_name);
 
             let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
                 let ep_uuid =
@@ -382,7 +360,7 @@ impl ObjectService for ObjectServiceImpl {
                         part_number,
                         &inner_request.upload_id,
                         &s3bucket,
-                        &s3key,
+                        &relation.path,
                         endpoint_proxy_hostname.as_str(), // Will be "sanitized" in the sign_url(...) function
                         604800, // Default 1 week until requests support custom duration
                     )
@@ -433,15 +411,27 @@ impl ObjectService for ObjectServiceImpl {
         // Consume gRPC request
         let inner_request = request.into_inner();
 
-        // Fetch staging object to get temp path from init
+        // Fetch staging object and its relation to get temp path from init
         let database_clone = self.database.clone();
-        let staging_object = task::spawn_blocking(move || {
-            database_clone
+        let (staging_object, relation) = task::spawn_blocking(move || {
+            let staging_obj = database_clone
                 .get_object_by_id(&object_ulid, &collection_ulid)?
                 .object
                 .ok_or(ArunaError::InvalidRequest(format!(
                     "Could not find object {object_ulid} in collection {collection_ulid}"
-                )))
+                )))?;
+
+            let relation = database_clone
+                .get_object_relations(&object_ulid, None, Some(&collection_ulid))?
+                .first()
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest(format!(
+                        "Could not find relation for staging object {object_ulid}"
+                    ))
+                })?
+                .to_owned();
+
+            Ok::<(ProtoObject, Relation), ArunaError>((staging_obj, relation))
         })
         .await
         .map_err(|_| {
@@ -457,38 +447,18 @@ impl ObjectService for ObjectServiceImpl {
             ));
         }
 
+        let upload_path = format!(
+            "s3://{}.{}/{}",
+            relation.collection_path, relation.project_name, relation.path
+        );
+
         // Process internal labels
-        let mut upload_path = "".to_string();
         let mut endpoint_label_value = "".to_string();
         for label in staging_object.labels {
-            if label.key == *"app.aruna-storage.org/new_path" {
-                if upload_path.is_empty() {
-                    upload_path = label.value;
-                } else {
-                    upload_path = upload_path + &label.value;
-
-                    if !endpoint_label_value.is_empty() {
-                        break;
-                    }
-                }
-            } else if label.key == *"app.aruna-storage.org/bucket" {
-                if upload_path.is_empty() {
-                    upload_path = label.value;
-                } else {
-                    upload_path = label.value + &upload_path;
-
-                    if !endpoint_label_value.is_empty() {
-                        break;
-                    }
-                }
-            } else if label.key == *"app.aruna-storage.org/endpoint" {
+            if label.key == *"app.aruna-storage.org/endpoint" {
                 endpoint_label_value = label.value;
+                break;
             }
-        }
-        if upload_path.is_empty() {
-            return Err(tonic::Status::internal(
-                "No temp upload path for object available",
-            ));
         }
         if endpoint_label_value.is_empty() {
             endpoint_label_value = self.default_endpoint.id.to_string();
