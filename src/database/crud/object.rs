@@ -402,19 +402,8 @@ impl Database {
                 },
             }
         }
-        Ok(transaction_result?)
 
-        /*
-        let (object_dto, project_ulid) = transaction_result?;
-
-        Ok((object_dto, todo!()))
-
-        let mapped = object_dto
-            .map(|e| e.try_into())
-            .map_or(Ok(None), |r| r.map(Some))?;
-
-        Ok(FinishObjectStagingResponse { object: mapped })
-        */
+        transaction_result
     }
 
     /// Finalizes the object by updating the location, validating the hashes and setting the object
@@ -2269,14 +2258,10 @@ impl Database {
                     .load::<Relation>(conn)?;
 
                 if let Some(first_rel) = all_relations.first() {
-                    get_objects_by_relations(
-                        &all_relations,
-                        Some(first_rel.collection_id.clone()),
-                        conn,
-                    )?
-                    .into_iter()
-                    .map(|e| e.try_into())
-                    .collect::<Result<Vec<_>, ArunaError>>()
+                    get_objects_by_relations(&all_relations, Some(first_rel.collection_id), conn)?
+                        .into_iter()
+                        .map(|e| e.try_into())
+                        .collect::<Result<Vec<_>, ArunaError>>()
                 } else {
                     Ok(Vec::new())
                 }
@@ -3127,7 +3112,7 @@ pub fn update_object_in_place(
         .first::<Relation>(conn)?; // There has to be a relation as it is created on staging object init
 
     staging_object_relation.project_name = projname;
-    staging_object_relation.collection_id = collection_uuid.clone();
+    staging_object_relation.collection_id = *collection_uuid;
     staging_object_relation.collection_path = coll_path;
 
     update(relations)
@@ -3463,7 +3448,7 @@ pub fn get_object_revision_by_path(
         }
         None => {
             //Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
-            return Err(ArunaError::InvalidRequest("Object not found".to_string()));
+            Err(ArunaError::InvalidRequest("Object not found".to_string()))
         }
     }
 }
@@ -4571,7 +4556,7 @@ pub fn get_object_ignore_coll(
 /// This will query all objects as DTO based on a list of relations
 /// Expects the list to include ALL associated relations per collection
 pub fn get_objects_by_relations(
-    all_relations: &Vec<Relation>,
+    all_relations: &[Relation],
     single_collection: Option<DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ObjectDto>, diesel::result::Error> {
@@ -4831,11 +4816,11 @@ pub fn create_relation(
                 "Invalid path/name, violates s3 object key naming scheme".to_string(),
             ));
         }
-        let stripped_prefix = match subpath.strip_prefix("/") {
+        let stripped_prefix = match subpath.strip_prefix('/') {
             Some(stripped) => stripped,
             None => subpath,
         };
-        let stripped_suffix = match stripped_prefix.strip_suffix("/") {
+        let stripped_suffix = match stripped_prefix.strip_suffix('/') {
             Some(stripped) => stripped,
             None => stripped_prefix,
         };

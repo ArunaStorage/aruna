@@ -334,7 +334,7 @@ impl ObjectService for ObjectServiceImpl {
             let mut endpoint_option: Option<String> = None;
             for label in object_data.labels.clone() {
                 if label.key == *"app.aruna-storage.org/endpoint_id" {
-                    endpoint_option = Some(label.value.to_string());
+                    endpoint_option = Some(label.value);
                     break;
                 }
             }

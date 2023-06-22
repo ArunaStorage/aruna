@@ -749,7 +749,7 @@ impl Database {
                 //for object_uuid in all_obj_ids {
                     delete_multiple_objects(
                         all_obj_ids,
-                    collection_ulid.clone(),
+                    *collection_ulid,
                     true,
                     false,
                         user_ulid,
