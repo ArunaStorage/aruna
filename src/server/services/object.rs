@@ -2009,6 +2009,19 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
+    /// GetObjectsAsListV2
+    ///
+    /// Status: ALPHA
+    ///
+    /// Gets a list of objects represented similar to a S3 ListObjectsV2 request
+    /// !! Paths are collection specific !!
+    async fn get_objects_as_list_v2(
+        &self,
+        request: tonic::Request<GetObjectsAsListV2Request>,
+    ) -> std::result::Result<tonic::Response<GetObjectsAsListV2Response>, tonic::Status> {
+        Err(tonic::Status::unimplemented("Currently unimplemented!"))
+    }
 }
 
 // This is a moveable version of the connect_object_endpoint
