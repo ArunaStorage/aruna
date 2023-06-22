@@ -68,6 +68,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    bundles (id) {
+        id -> Uuid,
+        #[max_length = 0]
+        bundle_id -> Varchar,
+        object_id -> Uuid,
+        endpoint_id -> Uuid,
+        collection_id -> Uuid,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::KeyValueType;
 
@@ -366,6 +377,7 @@ diesel::table! {
         display_name -> Text,
         active -> Bool,
         is_service_account -> Bool,
+        #[max_length = 0]
         email -> Varchar,
     }
 }
@@ -393,6 +405,9 @@ diesel::joinable!(api_tokens -> collections (collection_id));
 diesel::joinable!(api_tokens -> projects (project_id));
 diesel::joinable!(api_tokens -> pub_keys (pub_key));
 diesel::joinable!(api_tokens -> users (creator_user_id));
+diesel::joinable!(bundles -> collections (collection_id));
+diesel::joinable!(bundles -> endpoints (endpoint_id));
+diesel::joinable!(bundles -> objects (object_id));
 diesel::joinable!(collection_key_value -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> object_groups (object_group_id));
@@ -425,6 +440,7 @@ diesel::joinable!(user_permissions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_tokens,
+    bundles,
     collection_key_value,
     collection_object_groups,
     collection_objects,
