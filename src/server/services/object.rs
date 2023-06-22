@@ -363,12 +363,17 @@ impl ObjectService for ObjectServiceImpl {
                 )
             })?;
 
-            let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
+            let (endpoint_proxy_hostname, ssl) = if let Some(endpoint_uuid) = endpoint_option {
                 let ep_uuid =
                     diesel_ulid::DieselUlid::from_str(&endpoint_uuid).map_err(ArunaError::from)?;
-                database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
+                let ep = database_clone.get_endpoint(&ep_uuid)?;
+
+                match ep.ssl {
+                    true => (format!("https://data.{}", ep.proxy_hostname), true),
+                    false => (format!("http://data.{}", ep.proxy_hostname), false),
+                }
             } else {
-                endpoint_clone.proxy_hostname
+                (endpoint_clone.proxy_hostname, endpoint_clone.ssl)
             };
 
             Ok(GetUploadUrlResponse {
@@ -377,7 +382,7 @@ impl ObjectService for ObjectServiceImpl {
                         Method::PUT,
                         &api_token.id.to_string(),
                         &api_token.secretkey,
-                        endpoint_proxy_hostname.starts_with("https://"),
+                        ssl,
                         inner_request.multipart,
                         part_number,
                         &inner_request.upload_id,
@@ -2041,7 +2046,7 @@ pub async fn try_connect_object_endpoint_moveable(
     };
 
     // Try to establish connection to endpoint
-    let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
+    let data_proxy = InternalProxyServiceClient::connect(format!("data.{}", endpoint_url)).await;
 
     match data_proxy {
         Ok(dp) => {

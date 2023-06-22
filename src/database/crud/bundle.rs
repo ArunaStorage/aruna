@@ -7,6 +7,12 @@ impl Database {
         request: CreateBundleRequest,
     ) -> Result<CreateBundleResponse, ArunaError> {
         todo!()
+
+        // Get all object ids
+
+        // Validate that they are in collection
+
+        // Get Endpoint specific
     }
 
     pub fn delete_bundle(

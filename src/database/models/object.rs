@@ -55,6 +55,8 @@ pub struct Endpoint {
     pub documentation_path: Option<String>,
     pub is_public: bool,
     pub status: EndpointStatus,
+    pub is_bundler: bool,
+    pub ssl: bool,
 }
 
 #[derive(AsChangeset, Associations, Queryable, Insertable, Identifiable, Debug)]

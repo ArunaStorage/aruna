@@ -172,6 +172,7 @@ diesel::table! {
         is_public -> Bool,
         status -> EndpointStatus,
         is_bundler -> Bool,
+        ssl -> Bool,
     }
 }
 
