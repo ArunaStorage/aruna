@@ -741,7 +741,7 @@ fn delete_collection_test() {
     let result = db.create_new_collection(request, creator).unwrap();
 
     let ref_col_request = CreateNewCollectionRequest {
-        name: "new-collection-update-delete".to_owned(),
+        name: "new-collection-update-delete-2".to_owned(),
         description: "this_is_a_demo_collection_delete".to_owned(),
         project_id: regular_project_ulid.to_string(),
         label_ontology: None,

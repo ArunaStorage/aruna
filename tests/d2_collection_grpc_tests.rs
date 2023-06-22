@@ -93,7 +93,7 @@ async fn create_collection_grpc_test() {
     };
 
     // Loop all permissions and validate error/success
-    for permission in vec![
+    for (i, permission) in vec![
         Permission::None,
         Permission::Read,
         Permission::Append,
@@ -101,6 +101,7 @@ async fn create_collection_grpc_test() {
         Permission::Admin,
     ]
     .iter()
+    .enumerate()
     {
         // Update collection description
         create_collection_request.description = format!(
@@ -108,6 +109,8 @@ async fn create_collection_grpc_test() {
             Permission::as_str_name(permission)
         )
         .to_string();
+
+        create_collection_request.name = format!("col-{}", i).to_string();
 
         // Fast track permission edit
         assert!(common::functions::update_project_permission(
@@ -134,6 +137,7 @@ async fn create_collection_grpc_test() {
             }
             Permission::Modify | Permission::Admin => {
                 // Validate correct collection creation
+                dbg!(&create_collection_response);
                 assert!(create_collection_response.is_ok());
                 let collection_id = create_collection_response
                     .unwrap()

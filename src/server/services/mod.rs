@@ -1,4 +1,5 @@
 pub mod authz;
+pub mod bundler;
 pub mod collection;
 pub mod endpoint;
 pub mod info;
@@ -11,5 +12,6 @@ pub mod utils;
 // ----- INTERNAL Services -----
 
 pub mod internal_authorize;
+pub mod internal_bundler;
 pub mod internal_notifications;
 pub mod internal_proxy_notifier;
