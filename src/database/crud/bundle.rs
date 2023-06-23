@@ -103,8 +103,7 @@ impl Database {
                 let expiry = request
                     .expires_at
                     .clone()
-                    .map(|t| NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos as u32))
-                    .flatten();
+                    .and_then(|t| NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos as u32));
 
                 'outer: for a_obj in all_objects.iter() {
                     for a_o_loc in object_locs.iter() {
@@ -121,7 +120,7 @@ impl Database {
                             let get_enc_key: EncryptionKey = enc_dsl::encryption_keys
                                 .filter(enc_dsl::hash.eq(Some(format!(
                                     "{}{}",
-                                    a_o_loc.bucket.split("-").collect::<Vec<&str>>()[1],
+                                    a_o_loc.bucket.split('-').collect::<Vec<&str>>()[1],
                                     a_o_loc.path
                                 ))))
                                 .first::<EncryptionKey>(conn)?;
@@ -234,7 +233,7 @@ impl Database {
                             let get_enc_key: EncryptionKey = enc_dsl::encryption_keys
                                 .filter(enc_dsl::hash.eq(Some(format!(
                                     "{}{}",
-                                    a_o_loc.bucket.split("-").collect::<Vec<&str>>()[1],
+                                    a_o_loc.bucket.split('-').collect::<Vec<&str>>()[1],
                                     a_o_loc.path
                                 ))))
                                 .first::<EncryptionKey>(conn)?;
@@ -282,8 +281,7 @@ impl Database {
                                 bundle_entry.bundle_id.to_string(),
                                 bundle_entry
                                     .expires_at
-                                    .map(|e| naivedatetime_to_prost_time(e).ok())
-                                    .flatten(),
+                                    .and_then(|e| naivedatetime_to_prost_time(e).ok()),
                             );
                             entry.push(oref.clone());
                             continue 'out_loop;

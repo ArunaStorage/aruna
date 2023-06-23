@@ -85,19 +85,19 @@ fn add_endpoint_test() {
         ep_type: ProtoEndpointType::S3 as i32,
         is_bundler: false,
         host_configs: vec![
-            EndpointHostConfig{ 
+            EndpointHostConfig{
                 url: "https://proxy.aruna.uni-giessen.de".to_string(), 
-                is_primary: true, 
-                ssl: true, 
-                public: true, 
-                host_type: 1 
-            }, 
-            EndpointHostConfig{ 
+                is_primary: true,
+                ssl: true,
+                public: true,
+                host_type: 1
+            },
+            EndpointHostConfig{
                 url: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
                 is_primary: true,
                 ssl: true,
                 public: true,
-                host_type: 2 
+                host_type: 2
             }],
         //proxy_hostname: "https://proxy.aruna.uni-giessen.de".to_string(),
         //internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
@@ -172,7 +172,7 @@ fn get_endpoint_by_name_test() {
         is_public,
         status: _,
         ..
-    }= db.get_endpoint_by_name(endpoint_name).unwrap();
+    } = db.get_endpoint_by_name(endpoint_name).unwrap();
 
     // Validate returned endpoint
     assert_eq!(endpoint_uuid, id);

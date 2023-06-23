@@ -68,7 +68,7 @@ impl Database {
                     status: database::models::enums::EndpointStatus::AVAILABLE,
                     is_bundler: default_endpoint.endpoint_bundler,
                     host_config: HostConfigs {
-                        configs: default_endpoint.endpoint_host_config.clone(),
+                        configs: default_endpoint.endpoint_host_config,
                     },
                 };
 

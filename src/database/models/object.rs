@@ -165,7 +165,7 @@ impl From<EndpointHostConfig> for HostConfig {
             feature: value
                 .host_type
                 .try_into()
-                .unwrap_or_else(|_| DataProxyFeature::PROXY),
+                .unwrap_or(DataProxyFeature::PROXY),
         }
     }
 }
