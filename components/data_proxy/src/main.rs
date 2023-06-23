@@ -77,7 +77,7 @@ async fn main() {
     let data_server = S3Server::new(
         &proxy_data_host,
         hostname,
-        backend_host,
+        backend_host.to_string(),
         storage_backend.clone(),
         data_handler.clone(),
         endpoint_id.to_string(),
@@ -93,9 +93,7 @@ async fn main() {
 
     match external_bundler_url {
         Some(bundler_url) => {
-            let bundl = Bundler::new(internal_backend_host, endpoint_id)
-                .await
-                .unwrap();
+            let bundl = Bundler::new(backend_host, endpoint_id).await.unwrap();
 
             let internal_bundler = InternalBundlerServiceImpl::new(bundl.clone());
 
@@ -109,7 +107,7 @@ async fn main() {
 
             let axum_handle = run_axum(bundler_url, bundl.clone(), storage_backend.clone());
 
-            log::info!("Starting proxy and dataserver");
+            log::info!("Starting proxy, dataserver and axum server");
             let _end = match try_join!(
                 data_server.run(),
                 internal_proxy_server.serve(),
