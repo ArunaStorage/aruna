@@ -584,17 +584,17 @@ impl S3 for S3ServiceServer {
                 asrw = asrw.add_transformer(Filter::new(r));
             };
 
-            asrw.add_transformer(ZstdDec::new())
-                .add_transformer(ChaCha20Dec::new(Some(encryption_key)).map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal notifier error")
-                })?)
-                .process()
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Internal notifier error")
-                })?;
+            asrw.add_transformer(ChaCha20Dec::new(Some(encryption_key)).map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?)
+            .add_transformer(ZstdDec::new())
+            .process()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?;
 
             match 1 {
                 1 => Ok(()),
