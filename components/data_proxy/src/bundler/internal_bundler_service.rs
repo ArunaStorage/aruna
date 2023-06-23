@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 
 use super::bundler::Bundler;
 
+#[derive(Debug, Clone)]
 pub struct InternalBundlerServiceImpl {
     bundler: Arc<Mutex<Bundler>>,
 }

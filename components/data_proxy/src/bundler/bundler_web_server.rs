@@ -1,3 +1,4 @@
+use crate::backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
@@ -8,7 +9,6 @@ use aruna_file::{
     },
 };
 use aruna_rust_api::api::internal::v1::Location;
-use async_channel::{Receiver, TryRecvError};
 use axum::{
     error_handling::HandleErrorLayer,
     extract::{Path, State},
@@ -16,31 +16,20 @@ use axum::{
     routing::get,
     BoxError, Router,
 };
-use bytes::Bytes;
-use futures_util::stream::Stream;
 use hyper::StatusCode;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tower::{buffer::BufferLayer, limit::RateLimitLayer, ServiceBuilder};
 
-use crate::backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
-
 use super::bundler::Bundler;
 
 struct RequestError(anyhow::Error);
 
-async fn run_axum(
+pub async fn run_axum(
     bundler_addr: String,
-    backchannel_addr: String,
-    endpoint_id: String,
-) -> Result<tokio::task::JoinHandle<std::result::Result<(), anyhow::Error>>> {
-    let bundler = Bundler::new(backchannel_addr, endpoint_id).await?;
-    let backend = Arc::new(
-        S3Backend::new()
-            .await
-            .map_err(|_| anyhow::anyhow!("S3 init error"))?,
-    );
-
+    bundler: Arc<Mutex<Bundler>>,
+    backend: Arc<Box<dyn StorageBackend>>,
+) -> Result<()> {
     // build our application with a route
     let app = Router::new()
         // `GET /` goes to `root`
@@ -59,17 +48,16 @@ async fn run_axum(
         );
 
     // Axum Server
-    Ok(tokio::spawn(async move {
-        // run our app with hyper, listening globally on port 3000
-        axum::Server::bind(&bundler_addr.parse()?)
-            .serve(app.into_make_service())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    }))
+    // run our app with hyper, listening globally on port 3000
+    axum::Server::bind(&bundler_addr.parse()?)
+        .serve(app.into_make_service())
+        .await?;
+
+    Ok(())
 }
 
 async fn get_bundle(
-    State((bundler, backend)): State<(Arc<Mutex<Bundler>>, Arc<S3Backend>)>,
+    State((bundler, backend)): State<(Arc<Mutex<Bundler>>, Arc<Box<dyn StorageBackend>>)>,
     Path((bundle_id, file_name)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, RequestError> {
     if !file_name.ends_with(".tar.gz") {
@@ -163,20 +151,5 @@ where
 {
     fn from(err: E) -> Self {
         Self(err.into())
-    }
-}
-
-pub fn convert_channel_to_stream(chan: Receiver<Bytes>) -> impl Stream<Item = Result<Bytes>> {
-    async_stream::stream! {
-        loop {
-            let item = chan.try_recv();
-            match item {
-                Ok(i) => yield Ok(i),
-                Err(e) => match e {
-                    TryRecvError::Closed => break,
-                    _ => continue,
-                }
-            }
-        }
     }
 }

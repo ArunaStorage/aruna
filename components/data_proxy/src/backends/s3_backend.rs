@@ -20,7 +20,7 @@ pub struct S3Backend {
 
 impl S3Backend {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let s3_endpoint = dotenv::var("AWS_S3_HOST").unwrap();
+        let s3_endpoint = dotenvy::var("AWS_S3_HOST").unwrap();
 
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)

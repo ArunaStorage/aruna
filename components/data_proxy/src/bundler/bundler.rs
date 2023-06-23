@@ -6,6 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::{transport::Channel, Response};
 
+#[derive(Debug)]
 pub struct Bundler {
     pub bundle_store: HashMap<String, Option<Bundle>>,
 }
