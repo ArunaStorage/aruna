@@ -172,15 +172,25 @@ impl Database {
     pub fn delete_bundle(
         &self,
         request: DeleteBundleRequest,
-    ) -> Result<DeleteBundleResponse, ArunaError> {
+    ) -> Result<(DeleteBundleResponse, Endpoint), ArunaError> {
         use crate::database::schema::bundles::dsl as bdsl;
+        use crate::database::schema::endpoints::dsl as edsl;
+
         self.pg_connection
             .get()?
-            .transaction::<DeleteBundleResponse, ArunaError, _>(|conn| {
+            .transaction::<(DeleteBundleResponse, Endpoint), ArunaError, _>(|conn| {
+                let bundl: Bundle = bdsl::bundles
+                    .filter(bdsl::bundle_id.eq(&request.bundle_id))
+                    .first::<Bundle>(conn)?;
+
+                let endpoint: Endpoint = edsl::endpoints
+                    .filter(edsl::id.eq(bundl.endpoint_id))
+                    .first::<Endpoint>(conn)?;
+
                 delete(bdsl::bundles)
                     .filter(bdsl::bundle_id.eq(request.bundle_id))
                     .execute(conn)?;
-                Ok(DeleteBundleResponse {})
+                Ok((DeleteBundleResponse {}, endpoint))
             })
     }
 
