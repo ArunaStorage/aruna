@@ -86,7 +86,7 @@ impl S3 for S3ServiceServer {
                 if !h.is_empty() && h.len() == 32 {
                     self.backend
                         .head_object(ArunaLocation {
-                            bucket: format!("{}-{}", &self.endpoint_id, &h[0..2]),
+                            bucket: format!("{}-{}", &self.endpoint_id.to_lowercase(), &h[0..2]),
                             path: h[2..].to_string(),
                             ..Default::default()
                         })
@@ -286,7 +286,7 @@ impl S3 for S3ServiceServer {
             .backend
             .clone()
             .init_multipart_upload(ArunaLocation {
-                bucket: format!("{}-temp", self.endpoint_id),
+                bucket: format!("{}-temp", self.endpoint_id.to_lowercase()),
                 path: format!("{}/{}", collection_id, object_id),
                 ..Default::default()
             })
@@ -331,7 +331,7 @@ impl S3 for S3ServiceServer {
                 let (sink, recv) = BufferedS3Sink::new(
                     self.backend.clone(),
                     ArunaLocation {
-                        bucket: format!("{}-temp", &self.endpoint_id),
+                        bucket: format!("{}-temp", &self.endpoint_id.to_lowercase()),
                         path: format!("{}/{}", collection_id, object_id),
                         ..Default::default()
                     },
@@ -486,7 +486,11 @@ impl S3 for S3ServiceServer {
             .content_len;
 
         let get_location = ArunaLocation {
-            bucket: format!("{}-{}", &self.endpoint_id, &sha256_hash.hash[0..2]),
+            bucket: format!(
+                "{}-{}",
+                &self.endpoint_id.to_lowercase(),
+                &sha256_hash.hash[0..2]
+            ),
             path: sha256_hash.hash[2..].to_string(),
             ..Default::default()
         };

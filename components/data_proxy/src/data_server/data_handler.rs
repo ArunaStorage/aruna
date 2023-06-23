@@ -79,7 +79,7 @@ impl DataHandler {
 
         to.bucket = format!(
             "{}-{}",
-            self.settings.endpoint_id.to_string(),
+            self.settings.endpoint_id.to_string().to_lowercase(),
             &sha_hash.hash[0..2]
         );
         to.path = sha_hash.hash[2..].to_string();
@@ -275,7 +275,10 @@ impl DataHandler {
             .clone()
             .finish_multipart_upload(
                 ArunaLocation {
-                    bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                    bucket: format!(
+                        "{}-temp",
+                        self.settings.endpoint_id.to_string().to_lowercase()
+                    ),
                     path: format!("{}/{}", collection_id, object_id),
                     ..Default::default()
                 },
@@ -297,14 +300,20 @@ impl DataHandler {
             mover_clone
                 .move_encode(
                     ArunaLocation {
-                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                        bucket: format!(
+                            "{}-temp",
+                            self.settings.endpoint_id.to_string().to_lowercase()
+                        ),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         encryption_key: enc_key.clone(),
                         ..Default::default()
                     },
                     ArunaLocation {
-                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                        bucket: format!(
+                            "{}-temp",
+                            self.settings.endpoint_id.to_string().to_lowercase()
+                        ),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         is_compressed: compressing,
