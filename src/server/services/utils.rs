@@ -1,4 +1,10 @@
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use std::fmt::Debug;
+
+use diesel_ulid::DieselUlid;
+
+use crate::error::ArunaError;
 
 /// This functions unpacks the header metadata and the inner request
 /// and formats them together in a string.
@@ -40,4 +46,33 @@ where
     let body = response.get_ref();
 
     format!("\n{:#?}\n{:#?}", metadata, body)
+}
+
+/// Sign bundle
+
+type HmacSha256 = Hmac<Sha256>;
+
+pub fn create_bundle_id(
+    object_ids: &Vec<DieselUlid>,
+    collection_id: &DieselUlid,
+) -> Result<String, ArunaError> {
+    let get_secret = std::env::var("HMAC_BUNDLER_KEY").map_err(|_| {
+        ArunaError::TypeConversionError(crate::error::TypeConversionError::PARSECONFIG)
+    })?;
+    let mut mac = HmacSha256::new_from_slice(get_secret.as_bytes()).map_err(|_| {
+        ArunaError::TypeConversionError(crate::error::TypeConversionError::PARSECONFIG)
+    })?;
+    let mut data: [u8; 16] = collection_id.as_byte_array();
+    for o in object_ids {
+        xor_in_place(&mut data, &o.as_byte_array())
+    }
+    mac.update(&data);
+    Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
+#[inline(always)]
+pub fn xor_in_place(a: &mut [u8; 16], b: &[u8; 16]) {
+    for (b1, b2) in a.iter_mut().zip(b.iter()) {
+        *b1 ^= *b2;
+    }
 }

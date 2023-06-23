@@ -8,4 +8,5 @@ pub struct Bundle {
     pub object_id: diesel_ulid::DieselUlid,
     pub endpoint_id: diesel_ulid::DieselUlid,
     pub collection_id: diesel_ulid::DieselUlid,
+    pub expires_at: Option<chrono::NaiveDateTime>,
 }

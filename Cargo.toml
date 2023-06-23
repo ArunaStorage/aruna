@@ -46,6 +46,9 @@ rusty_ulid = "2.0.0"
 kube = {version= "0.82.2", features = ["runtime", "client", "derive"]}
 k8s-openapi = { version = "0.18.0", features = ["v1_24"] }
 schemars = { version = "0.8.12", features = ["chrono"] }
+sha2 = "0.10.7"
+hmac = "0.12.1"
+hex = "0.4.3"
 
 [dev-dependencies]
 serial_test = "2.0.0"

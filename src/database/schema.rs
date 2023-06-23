@@ -75,6 +75,7 @@ diesel::table! {
         object_id -> Uuid,
         endpoint_id -> Uuid,
         collection_id -> Uuid,
+        expires_at -> Nullable<Timestamp>,
     }
 }
 
