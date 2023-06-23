@@ -1,13 +1,14 @@
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
+use aruna_file::transformer::ReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
-use aruna_file::transformers::compressor::ZstdEnc;
-use aruna_file::transformers::decompressor::ZstdDec;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::filter::Filter;
 use aruna_file::transformers::footer::FooterGenerator;
+use aruna_file::transformers::zstd_comp::ZstdEnc;
+use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetObjectLocationRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
@@ -15,7 +16,6 @@ use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
-use futures::StreamExt;
 use futures::TryStreamExt;
 use md5::{Digest, Md5};
 use s3s::dto::*;
@@ -32,7 +32,6 @@ use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 
 use super::data_handler::DataHandler;
 use super::utils::aruna_notifier::ArunaNotifier;
-use super::utils::buffered_s3_sink::parse_notes_get_etag;
 use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
 use crate::data_server::utils::utils::create_location_from_hash;
@@ -129,8 +128,16 @@ impl S3 for S3ServiceServer {
                             None,
                             false,
                             None,
-                        ),
+                        )
+                        .0,
                     );
+
+                    if location.is_compressed {
+                        awr = awr.add_transformer(ZstdEnc::new(true));
+                        if req.input.content_length > 5242880 + 80 * 28 {
+                            awr = awr.add_transformer(FooterGenerator::new(None))
+                        }
+                    }
 
                     if location.is_encrypted {
                         awr = awr.add_transformer(
@@ -142,13 +149,6 @@ impl S3 for S3ServiceServer {
                                 )
                             })?,
                         );
-                    }
-
-                    if location.is_compressed {
-                        if req.input.content_length > 5242880 + 80 * 28 {
-                            awr = awr.add_transformer(FooterGenerator::new(None, true))
-                        }
-                        awr = awr.add_transformer(ZstdEnc::new(0, true));
                     }
 
                     awr.process().await.map_err(|e| {
@@ -328,21 +328,19 @@ impl S3 for S3ServiceServer {
 
         match req.input.body {
             Some(data) => {
-                let mut awr = ArunaStreamReadWriter::new_with_sink(
-                    data.into_stream(),
-                    BufferedS3Sink::new(
-                        self.backend.clone(),
-                        ArunaLocation {
-                            bucket: format!("{}-temp", &self.endpoint_id),
-                            path: format!("{}/{}", collection_id, object_id),
-                            ..Default::default()
-                        },
-                        Some(req.input.upload_id),
-                        Some(req.input.part_number),
-                        true,
-                        None,
-                    ),
+                let (sink, recv) = BufferedS3Sink::new(
+                    self.backend.clone(),
+                    ArunaLocation {
+                        bucket: format!("{}-temp", &self.endpoint_id),
+                        path: format!("{}/{}", collection_id, object_id),
+                        ..Default::default()
+                    },
+                    Some(req.input.upload_id),
+                    Some(req.input.part_number),
+                    true,
+                    None,
                 );
+                let mut awr = ArunaStreamReadWriter::new_with_sink(data.into_stream(), sink);
 
                 if self.data_handler.settings.encrypting {
                     awr = awr.add_transformer(
@@ -358,14 +356,9 @@ impl S3 for S3ServiceServer {
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
 
-                etag = parse_notes_get_etag(awr.query_notifications().await.map_err(|e| {
-                    log::error!("Processing error: {}", e);
-                    s3_error!(InternalError, "ETagError")
-                })?)
-                .map_err(|e| {
-                    log::error!("Processing error: {}", e);
-                    s3_error!(InternalError, "ETagError")
-                })?;
+                etag = recv
+                    .try_recv()
+                    .map_err(|_| s3_error!(InternalError, "Unable to get etag"))?;
             }
             _ => return Err(s3_error!(InvalidPart, "MultiPart cannot be empty")),
         };
@@ -537,8 +530,7 @@ impl S3 for S3ServiceServer {
 
             let mut output = Vec::with_capacity(130_000);
 
-            let mut arsw =
-                ArunaStreamReadWriter::new_with_writer(footer_receiver.map(Ok), &mut output);
+            let mut arsw = ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
             arsw.process().await.map_err(|e| {
                 log::error!("{}", e);
@@ -580,7 +572,7 @@ impl S3 for S3ServiceServer {
 
         tokio::spawn(async move {
             let mut asrw = ArunaStreamReadWriter::new_with_sink(
-                internal_receiver.map(Ok),
+                internal_receiver,
                 AsyncSenderSink::new(final_sender),
             );
 
@@ -589,7 +581,7 @@ impl S3 for S3ServiceServer {
             };
 
             asrw.add_transformer(ZstdDec::new())
-                .add_transformer(ChaCha20Dec::new(encryption_key).map_err(|e| {
+                .add_transformer(ChaCha20Dec::new(Some(encryption_key)).map_err(|e| {
                     log::error!("{}", e);
                     s3_error!(InternalError, "Internal notifier error")
                 })?)

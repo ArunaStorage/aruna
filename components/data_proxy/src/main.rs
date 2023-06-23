@@ -10,6 +10,7 @@ use crate::data_server::{
 };
 
 mod backends;
+mod bundler;
 mod data_server;
 mod helpers;
 mod service_server;

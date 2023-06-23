@@ -80,7 +80,7 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         range: Option<String>,
-        sender: Sender<bytes::Bytes>,
+        sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()> {
         let object = self
             .s3_client
@@ -98,7 +98,7 @@ impl StorageBackend for S3Backend {
         };
 
         while let Some(bytes) = object_request.body.next().await {
-            sender.send(bytes?).await?;
+            sender.send(Ok(bytes?)).await?;
         }
         return Ok(());
     }
