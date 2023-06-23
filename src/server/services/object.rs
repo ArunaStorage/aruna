@@ -324,7 +324,8 @@ impl ObjectService for ObjectServiceImpl {
 
         // Fetch staging object and its relation to get temp path from init
         let database_clone = self.database.clone();
-        let (staging_object, relation) = task::spawn_blocking(move || {
+        let event_emitter_clone = self.event_emitter.clone();
+        let (staging_object, relation, old_relations) = task::spawn_blocking(move || {
             let staging_obj = database_clone
                 .get_object_by_id(&object_ulid, &collection_ulid)?
                 .object
@@ -342,7 +343,36 @@ impl ObjectService for ObjectServiceImpl {
                 })?
                 .to_owned();
 
-            Ok::<(ProtoObject, Relation), ArunaError>((staging_obj, relation))
+            // If finish is for update and without upload also get relations of object revision-1
+            let outdated_object_relations = if event_emitter_clone.is_some()
+                && inner_request.no_upload
+                && staging_obj.rev_number > 0
+            {
+                let last_revision_ulid = diesel_ulid::DieselUlid::from_str(
+                    &staging_obj
+                        .origin
+                        .clone()
+                        .ok_or_else(|| {
+                            ArunaError::InvalidRequest(
+                                "Staging object is missing origin id".to_string(),
+                            )
+                        })?
+                        .id,
+                )?;
+
+                //Note: No filter as the origin could be from another collection or even project but
+                //      without filters this notification could end up anywhere ... so there should be
+                //      be a notification for each distinct collection?
+                database_clone.get_object_relations(&last_revision_ulid, None, None)?
+            } else {
+                vec![]
+            };
+
+            Ok::<(ProtoObject, Relation, Vec<Relation>), ArunaError>((
+                staging_obj,
+                relation,
+                outdated_object_relations,
+            ))
         })
         .await
         .map_err(|_| {
@@ -424,36 +454,58 @@ impl ObjectService for ObjectServiceImpl {
             // Try to emit event notification (finalize will not be called)
             if let Some(emit_client) = &self.event_emitter {
                 let event_emitter_clone = emit_client.clone();
-                let database_clone = self.database.clone();
-
                 task::spawn(async move {
-                    let relations = database_clone.get_object_relations(
-                        &object_ulid,
-                        None,
-                        Some(&collection_ulid),
-                    )?;
+                    if let Err(err) = event_emitter_clone
+                        .emit_event(
+                            object_ulid.to_string(),
+                            ResourceType::Object,
+                            EventType::Created,
+                            vec![EmittedResource {
+                                resource: Some(Resource::Object(ObjectResource {
+                                    project_id: relation.project_id.to_string(),
+                                    collection_id: collection_ulid.to_string(),
+                                    shared_object_id: relation.shared_revision_id.to_string(),
+                                    object_id: object_ulid.to_string(),
+                                })),
+                            }],
+                        )
+                        .await
+                    {
+                        // Only log error but do not crash function execution at this point
+                        log::error!("Failed to emit notification: {}", err)
+                    }
 
-                    if let Some(relation) = relations.first() {
-                        if let Err(err) = event_emitter_clone
-                            .emit_event(
-                                object_ulid.to_string(),
-                                ResourceType::Object,
-                                EventType::Created,
-                                vec![EmittedResource {
-                                    resource: Some(Resource::Object(ObjectResource {
-                                        project_id: relation.project_id.to_string(),
-                                        collection_id: collection_ulid.to_string(),
-                                        shared_object_id: relation.shared_revision_id.to_string(),
-                                        object_id: object_ulid.to_string(),
-                                    })),
-                                }],
-                            )
-                            .await
-                        {
-                            // Only log error but do not crash function execution at this point
-                            log::error!("Failed to emit notification: {}", err)
+                    // If staging_object revision > 0: Emit update notification for all revision-1 object collections
+                    let mut already_notified = vec![];
+                    if staging_object.rev_number > 0 {
+                        for old_rel in old_relations {
+                            if !already_notified.contains(&old_rel.collection_id) {
+                                if let Err(err) = event_emitter_clone
+                                    .emit_event(
+                                        old_rel.object_id.to_string(),
+                                        ResourceType::Object,
+                                        EventType::Updated,
+                                        vec![EmittedResource {
+                                            resource: Some(Resource::Object(ObjectResource {
+                                                project_id: old_rel.project_id.to_string(),
+                                                collection_id: old_rel.collection_id.to_string(),
+                                                shared_object_id: old_rel
+                                                    .shared_revision_id
+                                                    .to_string(),
+                                                object_id: old_rel.object_id.to_string(),
+                                            })),
+                                        }],
+                                    )
+                                    .await
+                                {
+                                    // Only log error but do not crash function execution at this point
+                                    log::error!("Failed to emit notification: {}", err)
+                                }
+
+                                already_notified.push(old_rel.collection_id)
+                            }
                         }
-                    };
+                    }
 
                     Ok::<(), ArunaError>(())
                 })

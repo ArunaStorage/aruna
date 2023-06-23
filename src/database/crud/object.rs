@@ -423,7 +423,10 @@ impl Database {
     /// Updates the sole existing object location with the provided data of the final location the
     /// object has been moved to. Also validates/creates the provided hashes depending if the individual hash
     /// already exists in the database. Finally the objects status is set to `Available`.
-    pub fn finalize_object(&self, request: &FinalizeObjectRequest) -> Result<Relation, ArunaError> {
+    pub fn finalize_object(
+        &self,
+        request: &FinalizeObjectRequest,
+    ) -> Result<(Relation, Option<Vec<Relation>>), ArunaError> {
         // Check format of provided ids
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
@@ -448,7 +451,7 @@ impl Database {
         let result = self
             .pg_connection
             .get()?
-            .transaction::<Relation, ArunaError, _>(|conn| {
+            .transaction::<(Relation, Option<Vec<Relation>>), ArunaError, _>(|conn| {
                 // Check if object is latest!
                 let latest = get_latest_obj(conn, object_uuid)?;
                 let is_still_latest = latest.id == object_uuid;
@@ -572,16 +575,31 @@ impl Database {
                     )?;
                 }
 
-                // Return one of the collection specific object relations for event notification
-                Ok(relations
+                // Fetch one of the collection specific object relations for event notification
+                let object_relation = relations
                     .filter(crate::database::schema::relations::object_id.eq(&object_uuid))
                     .filter(crate::database::schema::relations::collection_id.eq(&collection_uuid))
-                    .first::<Relation>(conn)?)
+                    .first::<Relation>(conn)?;
+
+                // If object revision > 0 also fetch all relations of old object for notification
+                let old_relations = if latest.revision_number > 0 {
+                    Some(
+                        relations
+                            .filter(
+                                crate::database::schema::relations::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<Relation>(conn)?,
+                    )
+                } else {
+                    None
+                };
+
+                Ok((object_relation, old_relations))
             });
 
         // Check if finalize succeeded. If not, set object status to ERROR and add internal label with truncated error message
         match result {
-            Ok(relation) => Ok(relation),
+            Ok((rel, old_rels)) => Ok((rel, old_rels)),
             Err(err) => {
                 self.pg_connection
                     .get()?

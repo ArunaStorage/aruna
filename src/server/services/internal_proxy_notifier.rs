@@ -107,9 +107,10 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
 
         // Finalize Object in database
         let database_clone = self.database.clone();
-        let relation = task::spawn_blocking(move || database_clone.finalize_object(&inner_request))
-            .await
-            .map_err(ArunaError::from)??;
+        let (relation, old_relations) =
+            task::spawn_blocking(move || database_clone.finalize_object(&inner_request))
+                .await
+                .map_err(ArunaError::from)??;
 
         // Try to emit event notification
         if let Some(emit_client) = &self.event_emitter {
@@ -133,6 +134,38 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                 {
                     // Only log error but do not crash function execution at this point
                     log::error!("Failed to emit notification: {}", err)
+                }
+
+                // If finalized object revision > 0: Emit update notification for all revision-1 object collections
+                if let Some(old_relations) = old_relations {
+                    let mut already_notified = vec![];
+                    for old_rel in old_relations {
+                        if !already_notified.contains(&old_rel.collection_id) {
+                            if let Err(err) = event_emitter_clone
+                                .emit_event(
+                                    old_rel.object_id.to_string(),
+                                    ResourceType::Object,
+                                    EventType::Updated,
+                                    vec![EmittedResource {
+                                        resource: Some(Resource::Object(ObjectResource {
+                                            project_id: old_rel.project_id.to_string(),
+                                            collection_id: old_rel.collection_id.to_string(),
+                                            shared_object_id: old_rel
+                                                .shared_revision_id
+                                                .to_string(),
+                                            object_id: old_rel.object_id.to_string(),
+                                        })),
+                                    }],
+                                )
+                                .await
+                            {
+                                // Only log error but do not crash function execution at this point
+                                log::error!("Failed to emit notification: {}", err)
+                            }
+
+                            already_notified.push(old_rel.collection_id)
+                        }
+                    }
                 }
             })
             .await

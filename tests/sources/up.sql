@@ -353,6 +353,7 @@ CREATE INDEX rel_proj_name ON relations (project_name);
 CREATE INDEX rel_col_id ON relations (collection_id);
 CREATE INDEX rel_col_path ON relations (collection_path);
 CREATE INDEX rel_ob_shared ON relations (shared_revision_id);
+
 ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id UNIQUE (project_id, name, version_id);
 ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id_without_version UNIQUE (project_id, name) WHERE (version_id is NULL);
 /* ----- Materialized Views --------------------------------------- */
