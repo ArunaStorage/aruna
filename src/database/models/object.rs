@@ -95,6 +95,7 @@ impl ToSql<Jsonb, Pg> for HostConfig {
 
 #[derive(FromSqlRow, AsExpression, serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 #[diesel(sql_type = Jsonb)]
+#[serde(transparent)]
 pub struct HostConfigs {
     pub configs: Vec<HostConfig>,
 }
