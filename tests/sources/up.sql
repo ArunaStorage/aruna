@@ -339,6 +339,7 @@ CREATE TABLE bundles (
     object_id UUID NOT NULL,
     endpoint_id UUID NOT NULL,
     collection_id UUID NOT NULL,
+    expires_at TIMESTAMP DEFAULT NULL,
     FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE,
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
     FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,

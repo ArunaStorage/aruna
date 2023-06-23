@@ -27,6 +27,13 @@ ssl = false
 public = true
 feature = "INTERNAL"
 
+[[default_endpoint.endpoint_host_config]]
+url = "localhost:3000"
+is_primary = true
+ssl = false
+public = true
+feature = "BUNDLER"
+
 [event_notifications]
 emitter_host = 'http://localhost:50053'
 emitter_token = 'ThisIsASecretToken'
