@@ -8,7 +8,6 @@ use aruna_file::{
         zstd_decomp::ZstdDec,
     },
 };
-use aruna_rust_api::api::internal::v1::Location;
 use axum::{
     error_handling::HandleErrorLayer,
     extract::{Path, State},
@@ -98,7 +97,7 @@ async fn get_bundle(
                             .await?;
 
                         backend
-                            .get_object(Location::default(), None, tx.clone())
+                            .get_object(object_location, None, tx.clone())
                             .await?;
                     }
                     Ok::<(), anyhow::Error>(())
