@@ -3467,8 +3467,10 @@ pub fn get_object_revision_by_path(
             Ok(base_request.first::<Object>(conn).optional()?)
         }
         None => {
-            //Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
-            Err(ArunaError::InvalidRequest("Object not found".to_string()))
+            // Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
+            // Err(ArunaError::InvalidRequest("Object not found".to_string()))
+            // Note2: This can happen on data proxy GetOrCreateObjectByPath requests...
+            Ok(None)
         }
     }
 }

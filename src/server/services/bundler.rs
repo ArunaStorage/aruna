@@ -46,12 +46,19 @@ impl BundlerService for BundlerServiceImpl {
                 .map_err(ArunaError::from)??;
 
         if let Some(to_cr) = to_create {
+            let (raw, ssl) = endpoint.get_primary_url(DataProxyFeature::INTERNAL)?;
+            let bundler_url = match ssl {
+                true => format!("https://{raw}"),
+                false => format!("http://{raw}"),
+            };
+
             // Try to establish connection to endpoint
-            let mut data_proxy = InternalBundlerServiceClient::connect(
-                endpoint.get_primary_url(DataProxyFeature::INTERNAL)?.0,
-            )
-            .await
-            .map_err(|_| ArunaError::InvalidRequest("Unable to connect to bundler".to_string()))?;
+            let mut data_proxy = InternalBundlerServiceClient::connect(bundler_url)
+                .await
+                .map_err(|e| {
+                    log::debug!("Unable to connect to bundler: {e}");
+                    ArunaError::InvalidRequest("Unable to connect to bundler".to_string())
+                })?;
 
             data_proxy
                 .prepare_bundle(tonic::Request::new(PrepareBundleRequest {

@@ -57,9 +57,11 @@ pub fn create_bundle_id(
     collection_id: &DieselUlid,
 ) -> Result<String, ArunaError> {
     let get_secret = std::env::var("HMAC_BUNDLER_KEY").map_err(|_| {
+        log::debug!("Unable to query HMAC_BUNDLER_KEY!");
         ArunaError::TypeConversionError(crate::error::TypeConversionError::PARSECONFIG)
     })?;
     let mut mac = HmacSha256::new_from_slice(get_secret.as_bytes()).map_err(|_| {
+        log::debug!("Unable to initialize BUNDLER_MAC!");
         ArunaError::TypeConversionError(crate::error::TypeConversionError::PARSECONFIG)
     })?;
     let mut data: [u8; 16] = collection_id.as_byte_array();
