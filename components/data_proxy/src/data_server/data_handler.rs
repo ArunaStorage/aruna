@@ -195,8 +195,8 @@ impl DataHandler {
                 AsyncSenderSink::new(transform_send),
             );
             let (probe, size_stream) = SizeProbe::new();
-            asr = asr.add_transformer(probe);
             asr = asr.add_transformer(ChaCha20Dec::new(Some(clone_key))?);
+            asr = asr.add_transformer(probe);
 
             asr.process().await?;
 
