@@ -4,8 +4,9 @@ use std::sync::Arc;
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
-use crate::server::kube_client::KubeClient;
-use crate::server::mail_client::MailClient;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
+use crate::server::clients::kube_client::KubeClient;
+use crate::server::clients::mail_client::MailClient;
 use crate::server::services::authz::Authz;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
@@ -44,11 +45,13 @@ impl ServiceServer {
         let db = Database::new(&config.clone().config.database_url);
         let db_ref = Arc::new(db);
 
+        // Initialize dev environment
         let dev_env = match env::var("ARUNA_DEV_ENV") {
             Ok(var) => var.to_ascii_uppercase() == "TRUE",
             _ => false,
         };
 
+        // Initialize mail client if config is provided
         let mailclient = if !dev_env {
             match MailClient::new() {
                 Ok(mc) => Some(mc),
@@ -61,12 +64,25 @@ impl ServiceServer {
             None
         };
 
+        // Initialize kube client if config is provided
         let kubeclient = match KubeClient::new().await {
             Ok(kc) => Some(kc),
             Err(e) => {
                 log::error!("Failed to initialize kube_client, err: {e}");
                 None
             }
+        };
+
+        // Initialize notification emitting client if config is provided
+        let event_config_clone = config.config.event_notifications.clone();
+        let event_emit_client = match NotificationEmitClient::new(
+            event_config_clone.emitter_host,
+            event_config_clone.emitter_token,
+        )
+        .await
+        {
+            Ok(client) => Some(client),
+            Err(_) => None,
         };
 
         // Initialize instance default data proxy endpoint
@@ -114,12 +130,23 @@ impl ServiceServer {
 
         let endpoint_service =
             EndpointServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
-        let project_service = ProjectServiceImpl::new(db_ref.clone(), authz.clone()).await;
+        let project_service =
+            ProjectServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client.clone()).await;
         let user_service = UserServiceImpl::new(db_ref.clone(), authz.clone(), mailclient).await;
-        let collection_service =
-            CollectionServiceImpl::new(db_ref.clone(), authz.clone(), kubeclient).await;
-        let object_service =
-            ObjectServiceImpl::new(db_ref.clone(), authz.clone(), default_endpoint.clone()).await;
+        let collection_service = CollectionServiceImpl::new(
+            db_ref.clone(),
+            authz.clone(),
+            kubeclient,
+            event_emit_client.clone(),
+        )
+        .await;
+        let object_service = ObjectServiceImpl::new(
+            db_ref.clone(),
+            authz.clone(),
+            default_endpoint.clone(),
+            event_emit_client.clone(),
+        )
+        .await;
         let object_group_service = ObjectGroupServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
         let resource_info_service =
@@ -139,7 +166,8 @@ impl ServiceServer {
             InternalAuthorizeServiceImpl::new(db_ref.clone(), authz.clone()).await;
 
         let internal_proxy_notifier_service =
-            InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone()).await;
+            InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client)
+                .await;
 
         log::info!("ArunaServer (external) listening on {}", addr);
 

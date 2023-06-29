@@ -3,7 +3,7 @@ use aruna_rust_api::api::storage::models::v1::{
 };
 use aruna_rust_api::api::storage::services::v1::{
     EditUserPermissionsForProjectRequest, GetObjectByIdRequest, GetObjectGroupByIdRequest,
-    GetReferencesRequest, ObjectReference, UpdateObjectRequest,
+    ObjectReference, UpdateObjectRequest,
 };
 use aruna_rust_api::api::storage::{
     models::v1::{
@@ -123,13 +123,12 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
         description: project_description.clone(),
     };
 
-    let result = db.create_project(create_request, creator).unwrap();
     // Test if project_id is parseable
-    let project_id = diesel_ulid::DieselUlid::from_str(&result.project_id).unwrap();
-    assert!(!project_id.to_string().is_empty());
+    let project_ulid = db.create_project(create_request, creator).unwrap();
+    assert!(!project_ulid.to_string().is_empty());
 
     // Query project
-    let response = get_project(&result.project_id);
+    let response = get_project(&project_ulid.to_string());
 
     //Destructure response project
     let ProjectOverview {
@@ -140,7 +139,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     } = response.clone();
 
     // Check if get == created
-    assert_eq!(project_id.to_string(), id);
+    assert_eq!(project_ulid.to_string(), id);
     assert_eq!(project_name, name);
     assert_eq!(project_description, description);
 
@@ -419,17 +418,20 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
         auto_update: true,
     };
 
-    let finish_response = db
+    let finished_object: Object = db
         .finish_object_staging(&finish_request, &creator_id)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
-    let finished_object = finish_response.object.unwrap();
 
     // Validate Object creation
     assert_eq!(finished_object.id, object_id.to_string());
-    assert!(matches!(
+    assert_eq!(
         grpc_to_db_object_status(&finished_object.status),
         ObjectStatus::AVAILABLE
-    ));
+    );
     assert_eq!(finished_object.rev_number, 0);
     assert_eq!(finished_object.filename, object_filename);
     assert_eq!(finished_object.content_len, object_length);
@@ -562,20 +564,15 @@ pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
 
 /// GetReferences wrapper for simplified use in tests.
 #[allow(dead_code)]
-pub fn get_object_references(
-    collection_id: String,
-    object_id: String,
-    with_revisions: bool,
-) -> Vec<ObjectReference> {
+pub fn get_object_references(object_ulid: &str, with_revisions: bool) -> Vec<ObjectReference> {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
 
-    let get_request = GetReferencesRequest {
-        collection_id,
-        object_id,
+    db.get_references(
+        &diesel_ulid::DieselUlid::from_str(object_ulid).unwrap(),
         with_revisions,
-    };
-
-    db.get_references(&get_request).unwrap().references
+    )
+    .unwrap()
+    .references
 }
 
 /// Helper function to get the "raw" object from database without ID
@@ -628,7 +625,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         .collect::<Vec<_>>();
 
     let update_name = if update.new_name.is_empty() {
-        "This is an updated object.name".to_string()
+        "This_is_an_updated_object.name".to_string()
     } else {
         update.new_name.to_string()
     };
@@ -685,10 +682,13 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
         auto_update: true,
     };
 
-    let finish_update_response = db
+    let updated_object: Object = db
         .finish_object_staging(&updated_finish_request, &creator)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
-    let updated_object = finish_update_response.object.unwrap();
 
     // Validate update
     assert_eq!(updated_object.id, updated_object_id_001.to_string());

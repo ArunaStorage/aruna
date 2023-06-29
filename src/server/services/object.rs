@@ -1,3 +1,4 @@
+use aruna_rust_api::api::notification::services::v1::EventType;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -10,22 +11,29 @@ use crate::database::connection::Database;
 use crate::database::crud::utils::grpc_to_db_object_status;
 use crate::database::models::auth::ApiToken;
 use crate::database::models::enums::{ObjectStatus, Resources, UserRights};
-use crate::database::models::object::Endpoint;
+use crate::database::models::object::{Endpoint, Relation};
 use crate::error::ArunaError;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
 use aruna_rust_api::api::internal::v1::{
     FinishMultipartUploadRequest, InitMultipartUploadRequest, Location, PartETag,
 };
-use aruna_rust_api::api::storage::models::v1::{LabelOrIdQuery, Status as ProtoStatus};
+use aruna_rust_api::api::storage::models::v1::{
+    LabelOrIdQuery, Object as ProtoObject, ResourceType,
+};
 use aruna_rust_api::api::storage::{
     services::v1::object_service_server::ObjectService, services::v1::*,
 };
 use http::Method;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(ObjectServiceImpl, default_endpoint: Endpoint);
+crate::impl_grpc_server!(
+    ObjectServiceImpl,
+    default_endpoint: Endpoint,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 ///
 impl ObjectServiceImpl {
@@ -311,46 +319,24 @@ impl ObjectService for ObjectServiceImpl {
                 ));
             }
 
-            // Create presigned upload url
+            // Fetch staging object relation
+            let relation = database_clone
+                .get_object_relations(&object_uuid, None, Some(&collection_uuid))?
+                .first()
+                .ok_or_else(|| {
+                    Status::internal("Staging object is missing info to create upload url.")
+                })?
+                .to_owned();
+
             let mut endpoint_option: Option<String> = None;
-            let mut s3bucket_option: Option<String> = None;
-            let mut s3key_option: Option<String> = None;
-            if let Some(object_info) = proto_object_url.object {
-                if object_info.status != ProtoStatus::Initializing as i32 {
-                    return Err(tonic::Status::invalid_argument(format!(
-                        "object {object_uuid} is not in staging phase."
-                    )));
-                }
-
-                for label in object_info.labels {
-                    if label.key == *"app.aruna-storage.org/new_path" {
-                        s3key_option = Some(label.value.to_string());
-                    } else if label.key == *"app.aruna-storage.org/bucket" {
-                        s3bucket_option = Some(label.value.to_string());
-                    } else if label.key == *"app.aruna-storage.org/endpoint_id" {
-                        endpoint_option = Some(label.value.to_string());
-                    }
-
-                    if s3bucket_option.is_some()
-                        && s3key_option.is_some()
-                        && endpoint_option.is_some()
-                    {
-                        break;
-                    }
+            for label in object_data.labels.clone() {
+                if label.key == *"app.aruna-storage.org/endpoint_id" {
+                    endpoint_option = Some(label.value);
+                    break;
                 }
             }
-            let s3key = s3key_option
-                .ok_or_else(|| {
-                    Status::new(Code::Internal, "Staging object has no internal path label")
-                })?
-                .replacen('/', "", 1);
 
-            let s3bucket = s3bucket_option.ok_or_else(|| {
-                Status::new(
-                    Code::Internal,
-                    "Staging object has no internal bucket label",
-                )
-            })?;
+            let s3bucket = format!("{}.{}", relation.collection_path, relation.project_name);
 
             let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
                 let ep_uuid =
@@ -371,7 +357,7 @@ impl ObjectService for ObjectServiceImpl {
                         part_number,
                         &inner_request.upload_id,
                         &s3bucket,
-                        &s3key,
+                        &relation.path,
                         endpoint_proxy_hostname.as_str(), // Will be "sanitized" in the sign_url(...) function
                         604800, // Default 1 week until requests support custom duration
                     )
@@ -399,11 +385,12 @@ impl ObjectService for ObjectServiceImpl {
         log::info!("Received FinishObjectStagingRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
+        // Parse the provided object id (string) to ULID
+        let object_ulid = diesel_ulid::DieselUlid::from_str(&request.get_ref().object_id)
             .map_err(|_| Status::invalid_argument("Unable to parse object id"))?;
 
-        // Parse the provided collection id (string) to UUID
-        let collection_uuid =
+        // Parse the provided collection id (string) to ULID
+        let collection_ulid =
             diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
                 .map_err(|_| Status::invalid_argument("Unable to parse collection id"))?;
 
@@ -412,7 +399,7 @@ impl ObjectService for ObjectServiceImpl {
             .authz
             .collection_authorize(
                 request.metadata(),
-                collection_uuid, // This is the collection uuid in which this object should be created
+                collection_ulid, // This is the collection uuid in which this object should be created
                 UserRights::APPEND, // User needs at least append permission to create an object
             )
             .await
@@ -421,21 +408,62 @@ impl ObjectService for ObjectServiceImpl {
         // Consume gRPC request
         let inner_request = request.into_inner();
 
-        // Fetch staging object to get temp path from init
-
+        // Fetch staging object and its relation to get temp path from init
         let database_clone = self.database.clone();
-        let staging_object = task::spawn_blocking(move || {
-            database_clone
-                .get_object_by_id(&object_uuid, &collection_uuid)?
+        let event_emitter_clone = self.event_emitter.clone();
+        let (staging_object, relation, old_relations) = task::spawn_blocking(move || {
+            let staging_obj = database_clone
+                .get_object_by_id(&object_ulid, &collection_ulid)?
                 .object
                 .ok_or(ArunaError::InvalidRequest(format!(
-                    "Could not find object {object_uuid} in collection {collection_uuid}"
-                )))
+                    "Could not find object {object_ulid} in collection {collection_ulid}"
+                )))?;
+
+            let relation = database_clone
+                .get_object_relations(&object_ulid, None, Some(&collection_ulid))?
+                .first()
+                .ok_or_else(|| {
+                    ArunaError::InvalidRequest(format!(
+                        "Could not find relation for staging object {object_ulid}"
+                    ))
+                })?
+                .to_owned();
+
+            // If finish is for update and without upload also get relations of object revision-1
+            let outdated_object_relations = if event_emitter_clone.is_some()
+                && inner_request.no_upload
+                && staging_obj.rev_number > 0
+            {
+                let last_revision_ulid = diesel_ulid::DieselUlid::from_str(
+                    &staging_obj
+                        .origin
+                        .clone()
+                        .ok_or_else(|| {
+                            ArunaError::InvalidRequest(
+                                "Staging object is missing origin id".to_string(),
+                            )
+                        })?
+                        .id,
+                )?;
+
+                //Note: No filter as the origin could be from another collection or even project but
+                //      without filters this notification could end up anywhere ... so there should be
+                //      be a notification for each distinct collection?
+                database_clone.get_object_relations(&last_revision_ulid, None, None)?
+            } else {
+                vec![]
+            };
+
+            Ok::<(ProtoObject, Relation, Vec<Relation>), ArunaError>((
+                staging_obj,
+                relation,
+                outdated_object_relations,
+            ))
         })
         .await
         .map_err(|_| {
             ArunaError::InvalidRequest(format!(
-                "Could not find object {object_uuid} in collection {collection_uuid}"
+                "Could not find object {object_ulid} in collection {collection_ulid}"
             ))
         })??;
 
@@ -446,38 +474,18 @@ impl ObjectService for ObjectServiceImpl {
             ));
         }
 
+        let upload_path = format!(
+            "s3://{}.{}/{}",
+            relation.collection_path, relation.project_name, relation.path
+        );
+
         // Process internal labels
-        let mut upload_path = "".to_string();
         let mut endpoint_label_value = "".to_string();
         for label in staging_object.labels {
-            if label.key == *"app.aruna-storage.org/new_path" {
-                if upload_path.is_empty() {
-                    upload_path = label.value;
-                } else {
-                    upload_path = upload_path + &label.value;
-
-                    if !endpoint_label_value.is_empty() {
-                        break;
-                    }
-                }
-            } else if label.key == *"app.aruna-storage.org/bucket" {
-                if upload_path.is_empty() {
-                    upload_path = label.value;
-                } else {
-                    upload_path = label.value + &upload_path;
-
-                    if !endpoint_label_value.is_empty() {
-                        break;
-                    }
-                }
-            } else if label.key == *"app.aruna-storage.org/endpoint" {
+            if label.key == *"app.aruna-storage.org/endpoint" {
                 endpoint_label_value = label.value;
+                break;
             }
-        }
-        if upload_path.is_empty() {
-            return Err(tonic::Status::internal(
-                "No temp upload path for object available",
-            ));
         }
         if endpoint_label_value.is_empty() {
             endpoint_label_value = self.default_endpoint.id.to_string();
@@ -503,8 +511,8 @@ impl ObjectService for ObjectServiceImpl {
             if !finished_parts.is_empty() {
                 let finish_multipart_request = FinishMultipartUploadRequest {
                     upload_id: inner_request.upload_id.to_string(),
-                    collection_id: collection_uuid.to_string(),
-                    object_id: object_uuid.to_string(),
+                    collection_id: collection_ulid.to_string(),
+                    object_id: object_ulid.to_string(),
                     path: format!("s3://{upload_path}"),
                     part_etags: finished_parts,
                 };
@@ -512,29 +520,84 @@ impl ObjectService for ObjectServiceImpl {
                 // Connect to the data proxy where the user (hopefully) uploaded the data
                 let mut data_proxy = self.try_connect_endpoint(&endpoint_uuid).await?;
 
-                // Execute the proxy request and get the result
-                let proxy_result = data_proxy
-                    .finish_multipart_upload(finish_multipart_request)
-                    .await;
+                let result = task::spawn(async move {
+                    // Execute the proxy request and get the result
+                    data_proxy
+                        .finish_multipart_upload(finish_multipart_request.clone())
+                        .await
+                })
+                .await
+                .map_err(ArunaError::from);
 
                 // Only proceed when proxy did not fail
-                if proxy_result.is_err() {
+                if result.is_err() {
                     return Err(Status::aborted(
                         "Proxy failed to finish object multipart upload.",
                     ));
                 }
             }
+        } else {
+            // Try to emit event notification (finalize will not be called)
+            if let Some(emit_client) = &self.event_emitter {
+                let event_emitter_clone = emit_client.clone();
+                task::spawn(async move {
+                    if let Err(err) = event_emitter_clone
+                        .emit_event_with_relation(
+                            &object_ulid.to_string(),
+                            ResourceType::Object,
+                            EventType::Created,
+                            &relation,
+                        )
+                        .await
+                    {
+                        // Only log error but do not crash function execution at this point
+                        log::error!("Failed to emit notification: {}", err)
+                    }
+
+                    // If staging_object revision > 0: Emit update notification for all revision-1 object collections
+                    let mut already_notified = vec![];
+                    if staging_object.rev_number > 0 {
+                        for old_rel in old_relations {
+                            if !already_notified.contains(&old_rel.collection_id) {
+                                if let Err(err) = event_emitter_clone
+                                    .emit_event_with_relation(
+                                        &old_rel.object_id.to_string(),
+                                        ResourceType::Object,
+                                        EventType::Updated,
+                                        &old_rel,
+                                    )
+                                    .await
+                                {
+                                    // Only log error but do not crash function execution at this point
+                                    log::error!("Failed to emit notification: {}", err)
+                                }
+
+                                already_notified.push(old_rel.collection_id)
+                            }
+                        }
+                    }
+
+                    Ok::<(), ArunaError>(())
+                })
+                .await
+                .map_err(ArunaError::from)??;
+            }
         }
 
         let database_clone = self.database.clone();
         let inner_request_clone = inner_request.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.finish_object_staging(&inner_request_clone, &creator_id)
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let object_dto = task::spawn_blocking(move || {
+            database_clone.finish_object_staging(&inner_request_clone, &creator_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Create gRPC response
+        let response = Response::new(FinishObjectStagingResponse {
+            object: object_dto
+                .map(|e| e.try_into())
+                .map_or(Ok(None), |r| r.map(Some))?,
+        });
 
         log::info!("Sending FinishObjectStagingResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -696,12 +759,19 @@ impl ObjectService for ObjectServiceImpl {
             )
             .await?;
 
+        // Consume gRPC request and extract remaining request fields
+        let inner_request = request.into_inner();
+        let object_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.object_id)
+            .map_err(ArunaError::from)?;
+
         // Create Object in database
         let database_clone = self.database.clone();
         let response = Response::new(
-            task::spawn_blocking(move || database_clone.get_references(request.get_ref()))
-                .await
-                .map_err(ArunaError::from)??,
+            task::spawn_blocking(move || {
+                database_clone.get_references(&object_ulid, inner_request.with_revisions)
+            })
+            .await
+            .map_err(ArunaError::from)??,
         );
 
         // Return gRPC response after everything succeeded
@@ -745,13 +815,37 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.clone_object(request.get_ref(), &creator_uuid)
+        let (proto_object, relation) = task::spawn_blocking(move || {
+            database_clone.clone_object(request.get_ref(), &creator_uuid)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event_with_relation(
+                        &relation.object_id.to_string(),
+                        ResourceType::Object,
+                        EventType::Created,
+                        &relation,
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
             })
             .await
-            .map_err(ArunaError::from)??,
-        );
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(CloneObjectResponse {
+            object: Some(proto_object),
+        });
 
         // Return gRPC response after everything succeeded
         log::info!("Sending CloneObjectResponse back to client.");
@@ -794,11 +888,36 @@ impl ObjectService for ObjectServiceImpl {
 
         // Create Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
+        let relations =
             task::spawn_blocking(move || database_clone.delete_objects(request.into_inner(), user))
                 .await
-                .map_err(ArunaError::from)??,
-        );
+                .map_err(ArunaError::from)??;
+
+        // Try to emit event notification for each deleted object
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                for relation in relations {
+                    if let Err(err) = event_emitter_clone
+                        .emit_event_with_relation(
+                            &relation.object_id.to_string(), // Which resource id with multiple emitted resources?
+                            ResourceType::Object,
+                            EventType::Deleted,
+                            &relation,
+                        )
+                        .await
+                    {
+                        // Only log error but do not crash function execution at this point
+                        log::error!("Failed to emit notification: {}", err)
+                    }
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(DeleteObjectsResponse {});
 
         // Return gRPC response after everything succeeded
         log::info!("Sending DeleteObjectResponse back to client.");
@@ -839,13 +958,36 @@ impl ObjectService for ObjectServiceImpl {
                 .await?
         };
 
-        // Create Object in database
+        // Delete Object in database
         let database_clone = self.database.clone();
-        let response = Response::new(
+        let relation =
             task::spawn_blocking(move || database_clone.delete_object(request.into_inner(), user))
                 .await
-                .map_err(ArunaError::from)??,
-        );
+                .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event_with_relation(
+                        &relation.object_id.to_string(),
+                        ResourceType::Object,
+                        EventType::Deleted,
+                        &relation,
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(DeleteObjectResponse {});
 
         // Return gRPC response after everything succeeded
         log::info!("Sending DeleteObjectResponse back to client.");
@@ -1552,10 +1694,7 @@ impl ObjectService for ObjectServiceImpl {
                 }
             }
 
-            match 1 {
-                1 => Ok(()),
-                _ => Err(ArunaError::InvalidRequest("Won't happen.".to_string())),
-            }
+            Ok::<(), ArunaError>(())
         });
 
         // Return gRPC response after everything succeeded
@@ -1905,15 +2044,17 @@ fn get_object_download_url(
         }
     };
 
-    let active_paths = paths.iter().filter(|path| path.active).collect::<Vec<_>>();
+    let active_paths = paths
+        .iter()
+        .filter(|path| path.path_active)
+        .collect::<Vec<_>>();
     let (object_bucket, object_key) = if let Some(latest_active_path) = active_paths.first() {
         (
-            latest_active_path.bucket.to_string(),
-            if latest_active_path.path.starts_with('/') {
-                latest_active_path.path[1..].to_string()
-            } else {
-                latest_active_path.path.to_string()
-            },
+            format!(
+                "{}.{}",
+                latest_active_path.collection_path, latest_active_path.project_name
+            ),
+            latest_active_path.path.to_string(),
         )
     } else {
         let latest_inactive_path = if let Some(latest_inactive_path) = paths.first() {
@@ -1925,12 +2066,11 @@ fn get_object_download_url(
         };
 
         (
-            latest_inactive_path.bucket.to_string(),
-            if latest_inactive_path.path.starts_with('/') {
-                latest_inactive_path.path[1..].to_string()
-            } else {
-                latest_inactive_path.path.to_string()
-            },
+            format!(
+                "{}.{}",
+                latest_inactive_path.collection_path, latest_inactive_path.project_name
+            ),
+            latest_inactive_path.path.to_string(),
         )
     };
 

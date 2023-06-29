@@ -1,54 +1,6 @@
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::str::FromStr;
-use std::thread;
-use std::time;
-
-use diesel::dsl::{count, max, min};
-use diesel::r2d2::ConnectionManager;
-use diesel::result::Error;
-use diesel::{delete, insert_into, prelude::*, update};
-use r2d2::PooledConnection;
-
-use crate::database::models::auth::Project;
-use crate::database::models::collection::Collection;
-use crate::database::models::collection::CollectionVersion;
-use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Path};
-use crate::database::models::object_group::ObjectGroupObject;
-use crate::error::{ArunaError, GrpcNotFoundError};
-
-use aruna_rust_api::api::internal::v1::{
-    FinalizeObjectRequest, FinalizeObjectResponse, GetOrCreateEncryptionKeyRequest,
-    GetOrCreateObjectByPathRequest, GetOrCreateObjectByPathResponse, Location as ProtoLocation,
-    LocationType,
-};
-use aruna_rust_api::api::storage::services::v1::{
-    AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
-    CreateObjectPathResponse, DeleteObjectsRequest, DeleteObjectsResponse, GetObjectPathRequest,
-    GetObjectPathResponse, GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesRequest,
-    GetReferencesResponse, InitializeNewObjectResponse, ObjectReference, ObjectWithUrl,
-    Path as ProtoPath, SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
-};
-use aruna_rust_api::api::storage::{
-    models::v1::{
-        Hash as ProtoHash, Hashalgorithm, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
-        Source as ProtoSource,
-    },
-    services::v1::{
-        CloneObjectRequest, CloneObjectResponse, CreateObjectReferenceRequest,
-        CreateObjectReferenceResponse, DeleteObjectRequest, DeleteObjectResponse,
-        FinishObjectStagingRequest, FinishObjectStagingResponse, GetLatestObjectRevisionRequest,
-        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
-        GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
-        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
-        UpdateObjectResponse,
-    },
-};
-
-use rand::distributions::{Alphanumeric, DistString};
-
+use super::objectgroups::bump_revisisions;
+use super::utils;
+use super::utils::*;
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::crud::collection::is_collection_versioned;
@@ -57,25 +9,65 @@ use crate::database::crud::utils::{
     from_key_values, naivedatetime_to_prost_time, parse_page_request, parse_query, to_key_values,
 };
 use crate::database::models::collection::CollectionObject;
+use crate::database::models::collection::CollectionVersion;
 use crate::database::models::enums::{
     Dataclass, HashType, KeyValueType, ObjectStatus, ReferenceStatus, Resources, SourceType,
     UserRights,
 };
+use crate::database::models::object::{EncryptionKey, Hash as Db_Hash, Relation};
 use crate::database::models::object::{
     Endpoint, Hash as ApiHash, Object, ObjectKeyValue, ObjectLocation, Source,
 };
-
+use crate::database::models::object_group::ObjectGroupObject;
 use crate::database::schema::encryption_keys::dsl::encryption_keys;
 use crate::database::schema::{
     collection_object_groups::dsl::*, collection_objects::dsl::*, collection_version::dsl::*,
     collections::dsl::*, endpoints::dsl::*, hashes::dsl::*, object_group_objects::dsl::*,
-    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, paths::dsl::*,
-    projects::dsl::*, sources::dsl::*,
+    object_key_value::dsl::*, object_locations::dsl::*, objects::dsl::*, projects::dsl::*,
+    relations::dsl::*, sources::dsl::*,
 };
+use crate::error::{ArunaError, GrpcNotFoundError};
 use crate::server::services::authz::Context;
-
-use super::objectgroups::bump_revisisions;
-use super::utils::*;
+use aruna_rust_api::api::internal::v1::{
+    FinalizeObjectRequest, GetOrCreateEncryptionKeyRequest, GetOrCreateObjectByPathRequest,
+    GetOrCreateObjectByPathResponse, Location as ProtoLocation, LocationType,
+};
+use aruna_rust_api::api::storage::services::v1::{
+    AddLabelsToObjectRequest, AddLabelsToObjectResponse, CreateObjectPathRequest,
+    CreateObjectPathResponse, DeleteObjectsRequest, GetObjectPathRequest, GetObjectPathResponse,
+    GetObjectPathsRequest, GetObjectPathsResponse, GetReferencesResponse,
+    InitializeNewObjectResponse, ObjectReference, ObjectWithUrl, Path as ProtoPath,
+    SetHooksOfObjectRequest, SetHooksOfObjectResponse, StageObject,
+};
+use aruna_rust_api::api::storage::{
+    models::v1::{
+        Hash as ProtoHash, Hashalgorithm, KeyValue, Object as ProtoObject, Origin as ProtoOrigin,
+        Source as ProtoSource,
+    },
+    services::v1::{
+        CloneObjectRequest, CreateObjectReferenceRequest, CreateObjectReferenceResponse,
+        DeleteObjectRequest, FinishObjectStagingRequest, GetLatestObjectRevisionRequest,
+        GetObjectByIdRequest, GetObjectRevisionsRequest, GetObjectsByPathRequest,
+        GetObjectsByPathResponse, GetObjectsRequest, InitializeNewObjectRequest,
+        SetObjectPathVisibilityRequest, SetObjectPathVisibilityResponse, UpdateObjectRequest,
+        UpdateObjectResponse,
+    },
+};
+use diesel::dsl::{count, max, min};
+use diesel::r2d2::ConnectionManager;
+use diesel::result::Error;
+use diesel::{delete, insert_into, prelude::*, update};
+use diesel_ulid::DieselUlid;
+use itertools::Itertools;
+use r2d2::PooledConnection;
+use rand::distributions::{Alphanumeric, DistString};
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::str::FromStr;
+use std::thread;
+use std::time;
 
 // Struct to hold a database object with all its assets
 #[derive(Debug, Clone)]
@@ -199,7 +191,7 @@ impl Database {
         let collection_uuid =
             diesel_ulid::DieselUlid::from_str(&request.collection_id).map_err(ArunaError::from)?;
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
         // Insert staging object with all its needed assets into database
@@ -223,7 +215,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
@@ -250,27 +246,27 @@ impl Database {
         &self,
         request: &FinishObjectStagingRequest,
         _user_id: &diesel_ulid::DieselUlid,
-    ) -> Result<FinishObjectStagingResponse, ArunaError> {
+        //) -> Result<FinishObjectStagingResponse, ArunaError> {
+    ) -> Result<Option<ObjectDto>, ArunaError> {
         let req_object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let req_coll_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
 
-        let mut backoff = 10;
+        // Try to finish object staging (inside transaction retry logic)
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
-        // Insert all defined objects into the database
-
         loop {
             transaction_result =
                 connection.transaction::<Option<ObjectDto>, ArunaError, _>(|conn| {
                     // Check if object is latest!
-                    let latest = get_latest_obj(conn, req_object_uuid)?;
-                    let is_still_latest = latest.id == req_object_uuid;
+                    // let latest = get_latest_obj(conn, req_object_uuid)?;
+                    // let is_still_latest = latest.id == req_object_uuid;
 
-                    if !is_still_latest {
-                        return Err(ArunaError::InvalidRequest(format!(
-                            "Object {req_object_uuid} is not latest revision. "
-                        )));
-                    }
+                    // if !is_still_latest {
+                    //     return Err(ArunaError::InvalidRequest(format!(
+                    //         "Object {req_object_uuid} is not latest revision. "
+                    //     )));
+                    // }
 
                     // What can we do here ?
                     // - Set auto update ?
@@ -284,6 +280,10 @@ impl Database {
                     // .set(database::schema::objects::object_status.eq(ObjectStatus::AVAILABLE))
                     // .get_result::<Object>(conn)?;
 
+                    let mut queried_object: Object = objects
+                        .filter(database::schema::objects::id.eq(&req_object_uuid))
+                        .first::<Object>(conn)?;
+
                     // Update hash if (re-)upload and request contains hash
                     if !request.no_upload && request.hash.is_some() {
                         (match &request.hash {
@@ -292,7 +292,8 @@ impl Database {
                                     "Missing hash after re-upload.".to_string(),
                                 ));
                             }
-                            Some(req_hash) => diesel::update(ApiHash::belonging_to(&latest))
+                            Some(req_hash) => diesel::update(database::schema::hashes::dsl::hashes)
+                                .filter(database::schema::hashes::object_id.eq(&req_object_uuid))
                                 .set((
                                     database::schema::hashes::hash.eq(&req_hash.hash),
                                     database::schema::hashes::hash_type
@@ -306,25 +307,26 @@ impl Database {
                     // This indicates an "updated" object and not a new one
                     // Finishing updates need extra steps to update all references
                     // In other collections / objectgroups
-
-                    if latest.object_status != ObjectStatus::AVAILABLE {
+                    if queried_object.object_status != ObjectStatus::AVAILABLE {
                         update(objects)
                             .filter(database::schema::objects::id.eq(&req_object_uuid))
                             .set((database::schema::objects::object_status
                                 .eq(ObjectStatus::FINALIZING),))
                             .execute(conn)?;
+
+                        queried_object.object_status = ObjectStatus::FINALIZING;
                     }
 
                     // Special treatment if only metadata was updated
                     if request.no_upload {
                         // Only on update without upload
-                        if latest.origin_id != req_object_uuid {
+                        if queried_object.origin_id != req_object_uuid {
                             // Clone object locations of old object with new object id as data stays the same.
                             let mut cloned_locations = Vec::new();
                             for old_location in object_locations
                                 .filter(
                                     database::schema::object_locations::object_id
-                                        .eq(&latest.origin_id),
+                                        .eq(&queried_object.origin_id),
                                 )
                                 .load::<ObjectLocation>(conn)?
                             {
@@ -348,7 +350,7 @@ impl Database {
                             for old_key in encryption_keys
                                 .filter(
                                     database::schema::encryption_keys::object_id
-                                        .eq(&latest.origin_id),
+                                        .eq(&queried_object.origin_id),
                                 )
                                 .load::<EncryptionKey>(conn)?
                             {
@@ -366,10 +368,17 @@ impl Database {
                                 .execute(conn)?;
                         }
 
-                        set_object_available(conn, &latest, &req_coll_uuid, None)?;
+                        set_object_available(conn, &queried_object, &req_coll_uuid, None)?;
+                        queried_object.object_status = ObjectStatus::AVAILABLE;
                     }
 
-                    Ok(get_object(&req_object_uuid, &req_coll_uuid, true, conn)?)
+                    Ok(get_object(
+                        &req_object_uuid,
+                        Some(queried_object),
+                        &req_coll_uuid,
+                        true,
+                        conn,
+                    )?)
                 });
 
             match &transaction_result {
@@ -377,7 +386,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
@@ -389,12 +402,8 @@ impl Database {
                 },
             }
         }
-        let object_dto = transaction_result?;
 
-        let mapped = object_dto
-            .map(|e| e.try_into())
-            .map_or(Ok(None), |r| r.map(Some))?;
-        Ok(FinishObjectStagingResponse { object: mapped })
+        transaction_result
     }
 
     /// Finalizes the object by updating the location, validating the hashes and setting the object
@@ -417,7 +426,7 @@ impl Database {
     pub fn finalize_object(
         &self,
         request: &FinalizeObjectRequest,
-    ) -> Result<FinalizeObjectResponse, ArunaError> {
+    ) -> Result<(Relation, Option<Vec<Relation>>), ArunaError> {
         // Check format of provided ids
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
@@ -442,7 +451,7 @@ impl Database {
         let result = self
             .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<(Relation, Option<Vec<Relation>>), ArunaError, _>(|conn| {
                 // Check if object is latest!
                 let latest = get_latest_obj(conn, object_uuid)?;
                 let is_still_latest = latest.id == object_uuid;
@@ -565,12 +574,32 @@ impl Database {
                         Some(request.content_length),
                     )?;
                 }
-                Ok(())
+
+                // Fetch one of the collection specific object relations for event notification
+                let object_relation = relations
+                    .filter(crate::database::schema::relations::object_id.eq(&object_uuid))
+                    .filter(crate::database::schema::relations::collection_id.eq(&collection_uuid))
+                    .first::<Relation>(conn)?;
+
+                // If object revision > 0 also fetch all relations of old object for notification
+                let old_relations = if latest.revision_number > 0 {
+                    Some(
+                        relations
+                            .filter(
+                                crate::database::schema::relations::object_id.eq(&latest.origin_id),
+                            )
+                            .load::<Relation>(conn)?,
+                    )
+                } else {
+                    None
+                };
+
+                Ok((object_relation, old_relations))
             });
 
         // Check if finalize succeeded. If not, set object status to ERROR and add internal label with truncated error message
         match result {
-            Ok(_) => Ok(FinalizeObjectResponse {}),
+            Ok((rel, old_rels)) => Ok((rel, old_rels)),
             Err(err) => {
                 self.pg_connection
                     .get()?
@@ -673,7 +702,7 @@ impl Database {
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                     // Use the helper function to execute the request
-                    let object = get_object(&object_uuid, &collection_uuid, true, conn)?;
+                    let object = get_object(&object_uuid, None, &collection_uuid, true, conn)?;
                     let proto_paths = if let Some(obj) = object.clone() {
                         get_paths_proto(
                             &obj.object.shared_revision_id,
@@ -722,7 +751,7 @@ impl Database {
     ) -> Result<ObjectWithUrl, ArunaError> {
         // Read object and paths from database
 
-        let mut backoff = 10;
+        let mut backoff = 2;
         let mut transaction_result;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
@@ -758,7 +787,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    ArunaError::DieselError(diesel::result::Error::SerializationError(_)) => {
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::SerializationFailure,
+                        _,
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100000 {
@@ -908,16 +941,24 @@ impl Database {
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
         collection_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<(ObjectLocation, Endpoint, Option<EncryptionKey>, Vec<Path>), ArunaError> {
+    ) -> Result<
+        (
+            ObjectLocation,
+            Endpoint,
+            Option<EncryptionKey>,
+            Vec<Relation>,
+        ),
+        ArunaError,
+    > {
         use crate::database::schema::encryption_keys::dsl as keys_dsl;
         use crate::database::schema::objects::dsl as objects_dsl;
-        use crate::database::schema::paths::dsl as paths_dsl;
+        use crate::database::schema::relations::dsl as relations_dsl;
 
         let location_info = self.pg_connection.get()?.transaction::<(
             ObjectLocation,
             Endpoint,
             Option<EncryptionKey>,
-            Vec<Path>,
+            Vec<Relation>,
         ), ArunaError, _>(|conn| {
             // Fetch shared_revision_id of provided object
             let shared_revision_uuid = objects
@@ -926,11 +967,10 @@ impl Database {
                 .first::<diesel_ulid::DieselUlid>(conn)?;
 
             // Fetch all paths associated with the shared_revision_id
-            let all_paths = paths
-                .filter(paths_dsl::collection_id.eq(&collection_uuid))
-                .filter(paths_dsl::shared_revision_id.eq(&shared_revision_uuid))
-                .order_by(paths_dsl::created_at.desc())
-                .load::<Path>(conn)?;
+            let all_paths = relations_dsl::relations
+                .filter(relations_dsl::collection_id.eq(&collection_uuid))
+                .filter(relations_dsl::shared_revision_id.eq(&shared_revision_uuid))
+                .load::<Relation>(conn)?;
 
             // Fetch primary location of the object
             let location: ObjectLocation = object_locations
@@ -1257,7 +1297,13 @@ impl Database {
                 .get()?
                 .transaction::<(Option<ObjectDto>, Vec<ProtoPath>), Error, _>(|conn| {
                     let lat_obj = get_latest_obj(conn, parsed_object_id)?;
-                    let obj = get_object(&lat_obj.id, &parsed_collection_id, false, conn)?;
+                    let obj = get_object(
+                        &lat_obj.id,
+                        Some(lat_obj.clone()),
+                        &parsed_collection_id,
+                        false,
+                        conn,
+                    )?;
 
                     let proto_paths = if let Some(obj) = obj.clone() {
                         get_paths_proto(
@@ -1454,7 +1500,7 @@ impl Database {
                 if let Some(q_objs) = query_collections {
                     for s_obj in q_objs {
                         if let Some(obj) =
-                            get_object(&s_obj.object_id, &query_collection_id, false, conn)?
+                            get_object(&s_obj.object_id, None, &query_collection_id, false, conn)?
                         {
                             let proto_paths = get_paths_proto(
                                 &obj.object.shared_revision_id,
@@ -1608,21 +1654,7 @@ impl Database {
                     .get_result::<CollectionObject>(conn)?;
 
                 // Construct path string
-                let (s3bucket, s3path) = construct_path_string(
-                    &target_collection_uuid,
-                    &original_object.filename,
-                    &request.sub_path,
-                    conn,
-                )?;
-
-                create_path_db(
-                    &s3bucket,
-                    &s3path,
-                    &original_object.shared_revision_id,
-                    &target_collection_uuid,
-                    conn,
-                )?;
-
+                create_relation(&original_object.id, Some(original_object.clone()), &target_collection_uuid, &request.sub_path, conn)?;
                 Ok(())
             })?;
 
@@ -1647,21 +1679,19 @@ impl Database {
     ///
     pub fn get_references(
         &self,
-        request: &GetReferencesRequest,
+        object_ulid: &diesel_ulid::DieselUlid,
+        with_revisions: bool,
     ) -> Result<GetReferencesResponse, ArunaError> {
-        // Extract (and automagically validate) uuids from request
-        let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
-
         // Transaction time
         let references = self
             .pg_connection
             .get()?
             .transaction::<Vec<ObjectReference>, Error, _>(|conn| {
                 let orig_object = objects
-                    .filter(database::schema::objects::id.eq(object_uuid))
+                    .filter(database::schema::objects::id.eq(object_ulid))
                     .first::<Object>(conn)?;
 
-                if request.with_revisions {
+                if with_revisions {
                     let all_revisions = objects
                         .filter(
                             database::schema::objects::shared_revision_id
@@ -1749,7 +1779,7 @@ impl Database {
         &self,
         request: &CloneObjectRequest,
         creator_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<CloneObjectResponse, ArunaError> {
+    ) -> Result<(ProtoObject, Relation), ArunaError> {
         // Extract (and automagically validate) uuids from request
         let object_uuid = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
         let source_collection_uuid = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
@@ -1757,11 +1787,11 @@ impl Database {
             diesel_ulid::DieselUlid::from_str(&request.target_collection_id)?;
 
         // Transaction time
-        let cloned_object = self
+        let (cloned_object, relation) = self
             .pg_connection
             .get()?
-            .transaction::<ProtoObject, Error, _>(|conn| {
-                let (proto_object, _) = clone_object(
+            .transaction::<(ProtoObject, Relation), Error, _>(|conn| {
+                let (proto_object, _, relation) = clone_object(
                     conn,
                     creator_uuid,
                     object_uuid,
@@ -1769,12 +1799,10 @@ impl Database {
                     target_collection_uuid,
                 )?;
 
-                Ok(proto_object)
+                Ok((proto_object, relation))
             })?;
 
-        Ok(CloneObjectResponse {
-            object: Some(cloned_object),
-        })
+        Ok((cloned_object, relation))
     }
 
     /// This performs a hard delete on the object. The object and all its assets will be
@@ -1797,7 +1825,7 @@ impl Database {
         &self,
         request: DeleteObjectRequest,
         creator_id: diesel_ulid::DieselUlid,
-    ) -> Result<DeleteObjectResponse, ArunaError> {
+    ) -> Result<Relation, ArunaError> {
         //ToDo: - Set status of all affected objects to UNAVAILABLE
         //ToDo: - What do with borrowed child objects?
         /*ToDo: - Delete only possible on latest revision?
@@ -1845,9 +1873,19 @@ impl Database {
         let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id)?;
         let parsed_object_id = diesel_ulid::DieselUlid::from_str(&request.object_id)?;
 
-        self.pg_connection
+        let relation = self
+            .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Relation, ArunaError, _>(|conn| {
+                use crate::database::schema::relations::dsl as relations_dsl;
+
+                // Query single relation of object for notification
+                let relation = relations
+                    .filter(relations_dsl::object_id.eq(&parsed_object_id))
+                    .filter(relations_dsl::collection_id.eq(&parsed_collection_id))
+                    .first::<Relation>(conn)?;
+
+                // Delete object
                 delete_multiple_objects(
                     vec![parsed_object_id],
                     parsed_collection_id,
@@ -1857,17 +1895,17 @@ impl Database {
                     conn,
                 )?;
 
-                Ok(())
+                Ok(relation)
             })?;
 
-        Ok(DeleteObjectResponse {})
+        Ok(relation)
     }
 
     pub fn delete_objects(
         &self,
         request: DeleteObjectsRequest,
         creator_id: diesel_ulid::DieselUlid,
-    ) -> Result<DeleteObjectsResponse, ArunaError> {
+    ) -> Result<Vec<Relation>, ArunaError> {
         //writeable = w+ or w-
         //history   = h+ or h-
         //force     = f+ or f-
@@ -1907,9 +1945,21 @@ impl Database {
             .map(|objid| diesel_ulid::DieselUlid::from_str(objid))
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.pg_connection
+        let obj_relations = self
+            .pg_connection
             .get()?
-            .transaction::<_, ArunaError, _>(|conn| {
+            .transaction::<Vec<Relation>, ArunaError, _>(|conn| {
+                use crate::database::schema::relations::dsl as relations_dsl;
+
+                // Query single relation for each object to be deleted (group_by is not viable here)
+                let distinct_select = relations
+                    .select(Relation::as_select())
+                    .filter(relations_dsl::object_id.eq_any(&parsed_object_ids))
+                    .filter(relations_dsl::collection_id.eq(&parsed_collection_id))
+                    .distinct_on(relations_dsl::object_id)
+                    .load::<Relation>(conn)?;
+
+                // Delete objects
                 delete_multiple_objects(
                     parsed_object_ids,
                     parsed_collection_id,
@@ -1919,9 +1969,9 @@ impl Database {
                     conn,
                 )?;
 
-                Ok(())
+                Ok(distinct_select)
             })?;
-        Ok(DeleteObjectsResponse {})
+        Ok(obj_relations)
     }
 
     /// ToDo: Rust Doc
@@ -1970,7 +2020,7 @@ impl Database {
                     .values(&db_key_values)
                     .execute(conn)?;
 
-                get_object(&parsed_object_id, &parsed_collection_id, true, conn)
+                get_object(&parsed_object_id, None, &parsed_collection_id, true, conn)
                     .map_err(ArunaError::DieselError)
             })?;
 
@@ -2016,7 +2066,7 @@ impl Database {
                     .values(&new_hooks)
                     .execute(conn)?;
 
-                get_object(&parsed_object_id, &parsed_collection_id, true, conn)
+                get_object(&parsed_object_id, None, &parsed_collection_id, true, conn)
             })?;
 
         let mapped = updated_objects
@@ -2039,32 +2089,27 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
-                use crate::database::schema::paths::dsl as paths_dsl;
-
-                // Get the object to aquire shared revision
-                let get_obj = objects
-                    .filter(database::schema::objects::id.eq(obj_id))
-                    .first::<Object>(conn)?;
+                use crate::database::schema::relations::dsl as relations_dsl;
 
                 // Get all paths depending on include_inactive parameter
-                let mut path_query = paths
-                    .filter(paths_dsl::collection_id.eq(col_id))
-                    .filter(paths_dsl::shared_revision_id.eq(&get_obj.shared_revision_id))
+                let mut path_query = relations
+                    .filter(relations_dsl::collection_id.eq(&col_id))
+                    .filter(relations_dsl::object_id.eq(&obj_id))
                     .into_boxed();
 
                 if !request.include_inactive {
-                    path_query = path_query.filter(paths_dsl::active.eq(&true))
+                    path_query = path_query.filter(relations_dsl::path_active.eq(&true))
                 }
 
-                let obj_paths = path_query.order_by(paths_dsl::created_at.desc()).load::<Path>(conn).optional()?;
+                let obj_relations: Option<Vec<Relation>> = path_query.load::<Relation>(conn).optional()?;
 
                 // Filter paths for active / not active, map to protopath
-                match obj_paths {
+                match obj_relations {
                     Some(pths) => {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
+                            if request.include_inactive || p.path_active{
+                                Some(ProtoPath{ path: relation_as_s3_path(p), visibility: p.path_active })
                             }else{
                                 None
                             }
@@ -2091,23 +2136,22 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoPath>, Error, _>(|conn| {
-                use crate::database::schema::paths::dsl as paths_dsl;
+                use crate::database::schema::relations::dsl as relations_dsl;
 
                 // Get all paths for collection
-                let obj_paths = paths
-                    .filter(paths_dsl::collection_id.eq(col_id))
-                    .order_by(paths_dsl::shared_revision_id)
-                    .order_by(paths_dsl::created_at.desc())
-                    .load::<Path>(conn)
+                let obj_relations: Option<Vec<Relation>> = relations
+                    .filter(relations_dsl::collection_id.eq(col_id))
+                    .load::<Relation>(conn)
                     .optional()?;
 
                 // Filter paths fo
-                match obj_paths {
+                // Filter paths for active / not active, map to protopath
+                match obj_relations {
                     Some(pths) => {
                         Ok(pths.iter().filter_map(|p|
                             // If request indicated include inactive -> use all
-                            if request.include_inactive || p.active{
-                                Some(ProtoPath{ path: format!("s3://{}{}", p.bucket, p.path), visibility: p.active })
+                            if request.include_inactive || p.path_active{
+                                Some(ProtoPath{ path: relation_as_s3_path(p), visibility: p.path_active })
                             }else{
                                 None
                             }
@@ -2135,71 +2179,28 @@ impl Database {
             .pg_connection
             .get()?
             .transaction::<Option<ProtoPath>, ArunaError, _>(|conn| {
-                // Get the object to aquire shared revision
-                let get_obj = objects
-                    .filter(database::schema::objects::id.eq(obj_id))
-                    .first::<Object>(conn)?;
-                // Construct path string
-                let (s3bucket, s3path) =
-                    construct_path_string(&col_id, &get_obj.filename, &request.sub_path, conn)?;
-                // Create path in database
-                create_path_db(
-                    &s3bucket,
-                    &s3path,
-                    &get_obj.shared_revision_id,
-                    &col_id,
-                    conn,
-                )?;
-                // Query path
-                Ok(paths
-                    .filter(database::schema::paths::path.eq(&s3path))
-                    .filter(database::schema::paths::bucket.eq(&s3bucket))
-                    .first::<Path>(conn)
-                    .optional()
-                    .map(|res| {
-                        res.map(|elem| ProtoPath {
-                            path: format!("s3://{}{}", elem.bucket, elem.path),
-                            visibility: elem.active,
-                        })
-                    })?)
-            })?;
+                if objects
+                    .select(database::schema::objects::object_status)
+                    .filter(database::schema::objects::id.eq(&obj_id))
+                    .first::<ObjectStatus>(conn)?
+                    == ObjectStatus::AVAILABLE
+                {
+                    // Try create relation containing the new path
+                    let relation =
+                        create_relation(&obj_id, None, &col_id, &request.sub_path, conn)?;
 
+                    // Return path in s3 format
+                    Ok(Some(ProtoPath {
+                        path: relation_as_s3_path(&relation),
+                        visibility: true,
+                    }))
+                } else {
+                    Err(ArunaError::InvalidRequest(
+                        "Cannot create path for object".to_string(),
+                    ))
+                }
+            })?;
         Ok(CreateObjectPathResponse { path: db_path })
-    }
-
-    /// Generates the default path of an object for the specific collection.
-    ///
-    /// ## Arguments:
-    ///
-    /// * `` -
-    /// * `` -
-    ///
-    /// ## Returns:
-    ///
-    /// * `Result<String, ArunaError>` - The
-    ///
-    pub fn generate_object_path(
-        &self,
-        object_uuid: &diesel_ulid::DieselUlid,
-        collection_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<(String, String), ArunaError> {
-        use crate::database::schema::objects::dsl as objects_dsl;
-
-        let (object_bucket, object_key) = self
-            .pg_connection
-            .get()?
-            .transaction::<(String, String), ArunaError, _>(|conn| {
-                // Fetch object filename
-                let file_name = objects
-                    .filter(objects_dsl::id.eq(object_uuid))
-                    .select(objects_dsl::filename)
-                    .first::<String>(conn)?;
-
-                // Generate default path
-                construct_path_string(collection_uuid, file_name.as_str(), "", conn)
-            })?;
-
-        Ok((object_bucket, object_key))
     }
 
     /// ToDo: Rust Doc
@@ -2220,31 +2221,27 @@ impl Database {
                     ));
                 }
 
-                let (s3bucket, s3path) = request.path[5..]
+                let (_, s3path) = request.path[5..]
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let old_path = paths
-                    .filter(database::schema::paths::bucket.eq(s3bucket))
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .first::<Path>(conn)?;
+                let target_id: DieselUlid = relations
+                    .filter(database::schema::relations::collection_id.eq(&col_id))
+                    .filter(database::schema::relations::path.eq(s3path))
+                    .order(database::schema::relations::object_id.desc())
+                    .limit(1)
+                    .select(database::schema::relations::id)
+                    .first::<DieselUlid>(conn)?;
 
-                if old_path.collection_id != col_id {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Path is not part of collection: {col_id}"
-                    )));
-                }
-
-                let res = update(paths)
-                    .filter(database::schema::paths::bucket.eq(s3bucket))
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .set(database::schema::paths::active.eq(request.visibility))
-                    .get_result::<Path>(conn)
+                let res = update(relations)
+                    .filter(database::schema::relations::id.eq(&target_id))
+                    .set(database::schema::relations::path_active.eq(request.visibility))
+                    .get_result::<Relation>(conn)
                     .optional()?;
 
                 Ok(res.map(|p| ProtoPath {
-                    path: format!("s3://{}{}", p.bucket, p.path),
-                    visibility: p.active,
+                    path: format!("s3://{}.{}/{}", p.collection_path, p.project_name, p.path),
+                    visibility: p.path_active,
                 }))
             })?;
 
@@ -2256,7 +2253,7 @@ impl Database {
         &self,
         request: GetObjectsByPathRequest,
     ) -> Result<GetObjectsByPathResponse, ArunaError> {
-        let db_objects = self
+        let proto_objects = self
             .pg_connection
             .get()?
             .transaction::<Vec<ProtoObject>, ArunaError, _>(|conn| {
@@ -2270,81 +2267,27 @@ impl Database {
                     .split_once('/')
                     .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-                let get_path: Path = paths
-                    .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-                    .filter(database::schema::paths::bucket.eq(&s3bucket))
-                    .first::<Path>(conn)?;
+                let (proj_name, col_path) = parse_bucket_path_as_colpath(s3bucket.to_string())?;
 
-                let (_, maybe_collection) =
-                    get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
+                let all_relations: Vec<Relation> = relations
+                    .filter(database::schema::relations::path.eq(s3path))
+                    .filter(database::schema::relations::project_name.eq(&proj_name))
+                    .filter(database::schema::relations::collection_path.eq(&col_path))
+                    .load::<Relation>(conn)?;
 
-                // Only proceed if collection exists
-                let col_id = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
-                    "Collection in path {} does not exist.",
-                    request.path
-                )))?;
-
-                if get_path.collection_id != col_id {
-                    return Err(ArunaError::InvalidRequest(format!(
-                        "Path is not part of collection: {col_id}"
-                    )));
+                if let Some(first_rel) = all_relations.first() {
+                    get_objects_by_relations(&all_relations, Some(first_rel.collection_id), conn)?
+                        .into_iter()
+                        .map(|e| e.try_into())
+                        .collect::<Result<Vec<_>, ArunaError>>()
+                } else {
+                    Ok(Vec::new())
                 }
-
-                let raw_objects = objects
-                    .filter(
-                        database::schema::objects::shared_revision_id
-                            .eq(get_path.shared_revision_id),
-                    )
-                    .order_by(database::schema::objects::revision_number.desc())
-                    .load::<Object>(conn)
-                    .optional()?
-                    .unwrap_or_default();
-
-                let obj_ids = raw_objects
-                    .iter()
-                    .map(|e| e.id)
-                    .collect::<Vec<diesel_ulid::DieselUlid>>();
-
-                let refs = collection_objects
-                    .filter(database::schema::collection_objects::collection_id.eq(&col_id))
-                    .filter(database::schema::collection_objects::object_id.eq_any(&obj_ids))
-                    .load::<CollectionObject>(conn)?;
-
-                let mut obj_with_ref = Vec::new();
-                let mut obj_without_ref = Vec::new();
-                'outer: for object_uuid in obj_ids {
-                    for object_ref in &refs {
-                        if object_uuid == object_ref.object_id {
-                            obj_with_ref.push(object_uuid);
-
-                            if !request.with_revisions {
-                                break 'outer;
-                            } else {
-                                continue 'outer;
-                            }
-                        }
-                    }
-
-                    obj_without_ref.push(object_uuid);
-                }
-
-                let mut results: Vec<ProtoObject> = Vec::new();
-                for ref_obj in obj_with_ref {
-                    let t_obj = get_object(&ref_obj, &col_id, false, conn)?;
-                    if let Some(ob) = t_obj {
-                        results.push(ob.try_into()?)
-                    };
-                }
-                for ref_obj in obj_without_ref {
-                    let t_obj = get_object_ignore_coll(&ref_obj, conn)?;
-                    if let Some(ob) = t_obj {
-                        results.push(ob.try_into()?)
-                    };
-                }
-                Ok(results)
             })?;
 
-        Ok(GetObjectsByPathResponse { object: db_objects })
+        Ok(GetObjectsByPathResponse {
+            object: proto_objects,
+        })
     }
 
     /// Fetch the latest revision of an object via its unique path or create a staging object if
@@ -2562,6 +2505,54 @@ impl Database {
 
         Ok(result)
     }
+
+    /// Get all relations of a specific object.
+    /// Can be optionally filtered by a project and/or collection ulid.
+    ///
+    /// ## Arguments:
+    ///
+    /// * `object_ulid` - The object ulid
+    /// * `project_filter` - Optional project ulid
+    /// * `collection_filter` - Optional collection ulid
+    ///
+    /// ## Returns:
+    ///
+    /// * `Result<Vec<Relation>, ArunaError>` -
+    /// All queried object relations which can also be empty; Error else.
+    ///
+    pub fn get_object_relations(
+        &self,
+        object_ulid: &diesel_ulid::DieselUlid,
+        project_filter: Option<&diesel_ulid::DieselUlid>,
+        collection_filter: Option<&diesel_ulid::DieselUlid>,
+    ) -> Result<Vec<Relation>, ArunaError> {
+        use crate::database::schema::relations::dsl as relations_dsl;
+
+        // Create base query
+        let mut base_query = relations
+            .filter(relations_dsl::object_id.eq(&object_ulid))
+            .into_boxed();
+
+        // Filter by project on demand
+        if let Some(project_ulid) = project_filter {
+            base_query = base_query.filter(relations_dsl::project_id.eq(project_ulid));
+        }
+
+        // Filter by collection on demand
+        if let Some(collection_ulid) = collection_filter {
+            base_query = base_query.filter(relations_dsl::collection_id.eq(collection_ulid));
+        }
+
+        // Load and return relations
+        let result = self
+            .pg_connection
+            .get()?
+            .transaction::<Vec<Relation>, ArunaError, _>(|conn| {
+                Ok(base_query.load::<Relation>(conn)?)
+            })?;
+
+        Ok(result)
+    }
 }
 
 /* ----------------- Section for object specific helper functions ------------------- */
@@ -2659,48 +2650,19 @@ pub fn create_staging_object(
         ));
     };
 
-    // Create and validate path
-    let (s3bucket, s3path) = construct_path_string(
-        &collection_object.collection_id,
-        &object.filename,
+    if let Some(sour) = source {
+        diesel::insert_into(sources).values(&sour).execute(conn)?;
+    }
+    diesel::insert_into(objects).values(&object).execute(conn)?;
+    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
+
+    create_relation(
+        object_uuid,
+        Some(object.clone()),
+        collection_uuid,
         &staging_object.sub_path,
         conn,
     )?;
-
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
-        .optional()?;
-
-    // If it already exists
-    if let Some(existing) = exists {
-        // Check if the existing is not associated with the current shared_revision_id -> Error
-        // else -> do nothing
-        if existing.shared_revision_id != object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
-    }
-
-    // If path not exists -> Add labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: object.id,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
-        key_value_type: KeyValueType::LABEL,
-    });
-
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: object.id,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
-        key_value_type: KeyValueType::LABEL,
-    });
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -2712,11 +2674,6 @@ pub fn create_staging_object(
         });
     }
 
-    if let Some(sour) = source {
-        diesel::insert_into(sources).values(&sour).execute(conn)?;
-    }
-    diesel::insert_into(objects).values(&object).execute(conn)?;
-    diesel::insert_into(hashes).values(&db_hash).execute(conn)?;
     diesel::insert_into(object_key_value)
         .values(&key_value_pairs)
         .execute(conn)?;
@@ -2878,49 +2835,22 @@ pub fn update_object_init(
         ));
     };
 
-    // Get full qualified path
-    let (s3bucket, s3path) = construct_path_string(
-        &collection_object.collection_id,
-        &new_object.filename,
-        &staging_object.sub_path,
-        conn,
-    )?;
+    let s3path = format!("{}/{}", &staging_object.sub_path, &new_object.filename);
 
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+    // Check if relation/path exists for another shared_rev_id
+    let exists = relations
+        .filter(database::schema::relations::path.eq(&s3path))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .filter(database::schema::relations::shared_revision_id.ne(&latest.shared_revision_id))
+        .first::<Relation>(conn)
         .optional()?;
 
-    // If it already exists
-    if let Some(existing) = exists {
-        // Check if the existing is not associated with the current shared_revision_id -> Error
-        // else -> do nothing
-        if existing.shared_revision_id != new_object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
-        // If path not exists -> Add label
+    // If it already exists -> FAIL
+    if exists.is_some() {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
     }
-
-    // Always add internal path labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: staging_object_uuid,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
-        key_value_type: KeyValueType::LABEL,
-    });
-
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: staging_object_uuid,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
-        key_value_type: KeyValueType::LABEL,
-    });
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -2950,6 +2880,15 @@ pub fn update_object_init(
     if source.is_some() {
         diesel::insert_into(sources).values(&source).execute(conn)?;
     }
+
+    // Create relation for staging object
+    create_relation(
+        &new_object.id,
+        Some(new_object.clone()),
+        &collection_uuid,
+        &staging_object.sub_path,
+        conn,
+    )?;
 
     Ok(new_object)
 }
@@ -3118,47 +3057,54 @@ pub fn update_object_in_place(
         ));
     };
 
-    // Add internal labels to key_value_pairs
-    // Get fq_path
-    let (s3bucket, s3path) = construct_path_string(
-        collection_uuid,
-        &stage_object.filename,
-        &stage_object.sub_path,
-        conn,
-    )?;
+    let s3path = format!("{}/{}", &stage_object.sub_path, &stage_object.filename);
 
-    // Check if path already exists
-    let exists = paths
-        .filter(database::schema::paths::path.eq(&s3path))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+    // Check if relation/path exists for another shared_rev_id
+    let conflicting_relation = relations
+        .filter(database::schema::relations::path.eq(&s3path))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .filter(database::schema::relations::shared_revision_id.ne(&old_object.shared_revision_id))
+        .first::<Relation>(conn)
         .optional()?;
-    // If it already exists
-    if let Some(existing) = exists {
-        // Check if the existing is not associated with the current shared_revision_id -> Error
-        // else -> do nothing
-        if existing.shared_revision_id != old_object.shared_revision_id {
-            return Err(ArunaError::InvalidRequest(
-                "Invalid path, already exists for different object hierarchy".to_string(),
-            ));
-        }
+
+    let (projname, colname, colver): (String, String, Option<CollectionVersion>) = collections
+        .filter(database::schema::collections::id.eq(&collection_uuid))
+        .inner_join(database::schema::projects::dsl::projects)
+        .left_join(database::schema::collection_version::dsl::collection_version)
+        .select((
+            database::schema::projects::name,
+            database::schema::collections::name,
+            Option::<CollectionVersion>::as_select(),
+        ))
+        .first::<(String, String, Option<CollectionVersion>)>(conn)?;
+
+    // If it already exists -> FAIL
+    if conflicting_relation.is_some() {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
     }
 
-    // Always add internal labels back to provided staging object labels
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: *object_uuid,
-        key: "app.aruna-storage.org/new_path".to_string(),
-        value: s3path,
-        key_value_type: KeyValueType::LABEL,
-    });
-    key_value_pairs.push(ObjectKeyValue {
-        id: diesel_ulid::DieselUlid::generate(),
-        object_id: *object_uuid,
-        key: "app.aruna-storage.org/bucket".to_string(),
-        value: s3bucket,
-        key_value_type: KeyValueType::LABEL,
-    });
+    // Create collection path part
+    let coll_path = format!(
+        "{}.{}",
+        match colver {
+            Some(v) => {
+                format!("{}.{}.{}", v.major, v.minor, v.patch)
+            }
+            None => "latest".to_string(),
+        },
+        colname,
+    );
+
+    // If it already exists
+    if conflicting_relation.is_some() {
+        // Check if the existing is not associated with the current shared_revision_id -> Error
+        // else -> do nothing
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path, already exists for different object hierarchy".to_string(),
+        ));
+    }
 
     if let Some(endpoint) = endpoint_uuid {
         key_value_pairs.push(ObjectKeyValue {
@@ -3177,6 +3123,21 @@ pub fn update_object_in_place(
         .values(&key_value_pairs)
         .execute(conn)?;
 
+    // Fetch singleton relation of staging object and modify it for update
+    let mut staging_object_relation: Relation = relations
+        .filter(database::schema::relations::object_id.eq(&object_uuid))
+        .filter(database::schema::relations::collection_id.eq(&collection_uuid))
+        .first::<Relation>(conn)?; // There has to be a relation as it is created on staging object init
+
+    staging_object_relation.project_name = projname;
+    staging_object_relation.collection_id = *collection_uuid;
+    staging_object_relation.collection_path = coll_path;
+
+    update(relations)
+        .filter(database::schema::relations::id.eq(&staging_object_relation.id))
+        .set(&staging_object_relation)
+        .execute(conn)?;
+
     // Update remaining object meta in-place
     old_object.filename = stage_object.filename.to_string();
     old_object.content_len = stage_object.content_len;
@@ -3186,7 +3147,7 @@ pub fn update_object_in_place(
 
     // Update the object record in the database
     let updated_obj = update(objects)
-        .filter(database::schema::objects::id.eq(&old_object.id))
+        .filter(database::schema::objects::id.eq(&object_uuid))
         .set(&old_object)
         .get_result::<Object>(conn)?;
 
@@ -3215,7 +3176,33 @@ pub fn clone_object(
     object_uuid: diesel_ulid::DieselUlid,
     source_collection_uuid: diesel_ulid::DieselUlid,
     target_collection_uuid: diesel_ulid::DieselUlid,
-) -> Result<(ProtoObject, diesel_ulid::DieselUlid), Error> {
+) -> Result<(ProtoObject, diesel_ulid::DieselUlid, Relation), ArunaError> {
+    use crate::database::schema::collection_version::dsl as versions_dsl;
+    use crate::database::schema::collections::dsl as collections_dsl;
+
+    // Fetch target collection infos
+    let (target_proj_id, target_proj_name, target_col_name, target_col_ver): (
+        diesel_ulid::DieselUlid,
+        String,
+        String,
+        Option<CollectionVersion>,
+    ) = collections
+        .filter(collections_dsl::id.eq(&target_collection_uuid))
+        .inner_join(database::schema::projects::dsl::projects)
+        .left_join(versions_dsl::collection_version)
+        .select((
+            database::schema::projects::id,
+            database::schema::projects::name,
+            database::schema::collections::name,
+            Option::<CollectionVersion>::as_select(),
+        ))
+        .first::<(
+            diesel_ulid::DieselUlid,
+            String,
+            String,
+            Option<CollectionVersion>,
+        )>(conn)?;
+
     // Get original object, collection_object reference, key_values, hash and source
     let mut db_object: Object = objects
         .filter(database::schema::objects::id.eq(&object_uuid))
@@ -3248,6 +3235,12 @@ pub fn clone_object(
         .filter(database::schema::object_locations::object_id.eq(&object_uuid))
         .load::<ObjectLocation>(conn)?;
 
+    // Get source collection relations of object
+    let mut object_relations: Vec<Relation> = relations
+        .filter(database::schema::relations::object_id.eq(&object_uuid))
+        .filter(database::schema::relations::collection_id.eq(&source_collection_uuid))
+        .load::<Relation>(conn)?;
+
     // Modify object
     db_object.id = diesel_ulid::DieselUlid::generate();
     db_object.shared_revision_id = diesel_ulid::DieselUlid::generate();
@@ -3279,6 +3272,25 @@ pub fn clone_object(
         location.object_id = db_object.id;
     }
 
+    // Modify relations to target collection
+    for relation in &mut object_relations {
+        relation.id = diesel_ulid::DieselUlid::generate();
+        relation.object_id = db_object.id;
+        relation.project_id = target_proj_id;
+        relation.project_name = target_proj_name.clone();
+        relation.collection_id = target_collection_uuid;
+        relation.collection_path = format!(
+            "{}.{}",
+            if let Some(version) = &target_col_ver {
+                format!("{}.{}.{}", version.major, version.minor, version.patch)
+            } else {
+                "latest".to_string()
+            },
+            target_col_name,
+        );
+        relation.shared_revision_id = db_object.shared_revision_id;
+    }
+
     // Insert cloned object, hash, key_Values and references
     insert_into(objects).values(&db_object).execute(conn)?;
     // Insert cloned locations
@@ -3294,6 +3306,10 @@ pub fn clone_object(
     // Insert reference for cloned object
     insert_into(collection_objects)
         .values(&db_collection_object)
+        .execute(conn)?;
+    // Insert modified relations
+    insert_into(relations)
+        .values(&object_relations)
         .execute(conn)?;
 
     // Transform everything into gRPC proto format
@@ -3336,6 +3352,13 @@ pub fn clone_object(
                 .collect::<Vec<_>>(),
         },
         db_object.shared_revision_id,
+        if let Some(relation) = object_relations.first() {
+            relation.clone()
+        } else {
+            return Err(ArunaError::InvalidRequest(
+                "Object did not have any relations ...".to_string(),
+            ));
+        },
     ))
 }
 
@@ -3388,8 +3411,8 @@ pub fn get_latest_obj(
 /// `Result<Object, ArunaError>` - The latest database object revision or error if the request failed.
 pub fn get_object_revision_by_path(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    object_path: &String,
-    object_revision: i64,
+    object_path: &str,
+    _object_revision: i64,
     check_collection: Option<diesel_ulid::DieselUlid>,
     include_staging: bool,
 ) -> Result<Option<Object>, ArunaError> {
@@ -3404,41 +3427,33 @@ pub fn get_object_revision_by_path(
         .split_once('/')
         .ok_or(ArunaError::InvalidRequest("Invalid path".to_string()))?;
 
-    let get_path: Option<Path> = paths
-        .filter(database::schema::paths::path.eq(format!("/{s3path}")))
-        .filter(database::schema::paths::bucket.eq(&s3bucket))
-        .first::<Path>(conn)
+    let (projname, colpath) = parse_bucket_path_as_colpath(s3bucket.to_string())?;
+
+    let get_latest_relation: Option<Relation> = relations
+        .filter(database::schema::relations::path.eq(s3path))
+        .filter(database::schema::relations::project_name.eq(&projname))
+        .filter(database::schema::relations::collection_path.eq(&colpath))
+        .order_by(database::schema::relations::object_id)
+        .first::<Relation>(conn)
         .optional()?;
 
     // Validate that provided collection id and path collection id matches
-    if let Some(collection_validation) = check_collection {
-        let (_, maybe_collection) =
-            get_project_collection_ids_of_bucket_path(conn, s3bucket.to_string())?;
-
-        // Only proceed if collection exists
-        let collection_uuid = maybe_collection.ok_or(ArunaError::InvalidRequest(format!(
-            "Collection in path {object_path} does not exist."
-        )))?;
-
-        if collection_validation != collection_uuid {
-            return Err(ArunaError::InvalidRequest(format!(
-                "Path is not part of collection: {collection_validation}"
-            )));
+    if let Some(check_col_id) = check_collection {
+        if let Some(ref latest_rest) = get_latest_relation {
+            if check_col_id != latest_rest.collection_id {
+                return Err(ArunaError::InvalidRequest(format!(
+                    "Path is not part of collection: {check_col_id}"
+                )));
+            }
         }
     }
 
-    match get_path {
-        Some(p) => {
+    match get_latest_relation {
+        Some(ref p) => {
             // Query the existing path
-            let base_request = objects
-                .filter(database::schema::objects::shared_revision_id.eq(p.shared_revision_id))
+            let mut base_request = objects
+                .filter(database::schema::objects::id.eq(p.object_id))
                 .into_boxed();
-
-            let mut base_request = if object_revision < 0 {
-                base_request // Get the latest revision
-            } else {
-                base_request.filter(database::schema::objects::revision_number.eq(&object_revision))
-            };
 
             if !include_staging {
                 base_request = base_request.filter(
@@ -3447,47 +3462,11 @@ pub fn get_object_revision_by_path(
                 );
             }
 
-            Ok(base_request
-                .order_by(database::schema::objects::revision_number.desc())
-                .first::<Object>(conn)
-                .optional()?)
+            Ok(base_request.first::<Object>(conn).optional()?)
         }
         None => {
-            if !include_staging {
-                return Err(ArunaError::InvalidRequest("Object not found".to_string()));
-            };
-            // Try to query the temp path from labels
-
-            // Get fq_path from label
-            let path_label = object_key_value
-                .filter(database::schema::object_key_value::value.eq(format!("/{s3path}")))
-                .filter(
-                    database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"),
-                )
-                .first::<ObjectKeyValue>(conn)
-                .optional()?;
-
-            let mut target_object_id: Option<diesel_ulid::DieselUlid> = None;
-
-            if let Some(p_lbl) = path_label {
-                target_object_id = object_key_value
-                    .filter(database::schema::object_key_value::object_id.eq(&p_lbl.object_id))
-                    .filter(
-                        database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"),
-                    )
-                    .filter(database::schema::object_key_value::value.eq(s3bucket))
-                    .first::<ObjectKeyValue>(conn)
-                    .optional()?
-                    .map(|e| e.object_id);
-            }
-
-            match target_object_id {
-                Some(ob_id) => Ok(objects
-                    .filter(database::schema::objects::id.eq(ob_id))
-                    .first::<Object>(conn)
-                    .optional()?),
-                None => Ok(None),
-            }
+            //Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
+            Err(ArunaError::InvalidRequest("Object not found".to_string()))
         }
     }
 }
@@ -3515,11 +3494,11 @@ pub fn get_project_collection_ids_of_bucket_path(
     use crate::database::schema::projects::dsl as project_dsl;
 
     // Parse bucket string
-    let (project_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
+    let (proj_name, collection_name, path_version) = parse_bucket_path(bucket_path)?;
 
     // Fetch project by its unique name
     let project_uuid = projects
-        .filter(project_dsl::name.eq(&project_name))
+        .filter(project_dsl::name.eq(&proj_name))
         .select(project_dsl::id)
         .first::<diesel_ulid::DieselUlid>(conn)?;
 
@@ -3603,6 +3582,11 @@ pub fn delete_staging_object(
     delete(collection_objects)
         .filter(database::schema::collection_objects::object_id.eq(object_uuid))
         .filter(database::schema::collection_objects::collection_id.eq(collection_uuid))
+        .execute(conn)?;
+
+    // Delete staging object relations
+    delete(relations)
+        .filter(database::schema::relations::object_id.eq(object_uuid))
         .execute(conn)?;
 
     // Get lowest object revision number
@@ -4334,9 +4318,11 @@ pub fn delete_multiple_objects(
             }
         }
 
-        delete(paths)
-            .filter(database::schema::paths::collection_id.eq(&col_id))
-            .filter(database::schema::paths::shared_revision_id.eq_any(&shared_revisions_to_delete))
+        delete(relations)
+            .filter(database::schema::relations::collection_id.eq(&col_id))
+            .filter(
+                database::schema::relations::shared_revision_id.eq_any(&shared_revisions_to_delete),
+            )
             .execute(conn)?;
     }
 
@@ -4456,13 +4442,17 @@ pub fn get_all_references(
 ///
 pub fn get_object(
     object_uuid: &diesel_ulid::DieselUlid,
+    queried_object: Option<Object>,
     collection_uuid: &diesel_ulid::DieselUlid,
     include_staging: bool,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Option<ObjectDto>, diesel::result::Error> {
-    let object: Object = objects
-        .filter(database::schema::objects::id.eq(&object_uuid))
-        .first::<Object>(conn)?;
+    let object: Object = match queried_object {
+        Some(o) => o,
+        None => objects
+            .filter(database::schema::objects::id.eq(&object_uuid))
+            .first::<Object>(conn)?,
+    };
 
     let object_key_values = ObjectKeyValue::belonging_to(&object).load::<ObjectKeyValue>(conn)?;
     let (labels, hooks) = from_key_values(object_key_values);
@@ -4533,7 +4523,7 @@ pub fn get_object(
 /// * `conn: &mut PooledConnection<ConnectionManager<PgConnection>>` - Database connection
 /// * `object_uuid`: `&diesel_ulid::DieselUlid` - The Uuid of the requested object
 ///
-/// ## Resturns:
+/// ## Returns:
 ///
 /// `Result<use aruna_rust_api::api::storage::models::Object, ArunaError>` -
 /// Database representation of an object
@@ -4579,6 +4569,82 @@ pub fn get_object_ignore_coll(
         latest,
         update: false, // Always false might not include any collection_info
     }))
+}
+
+/// This will query all objects as DTO based on a list of relations
+/// Expects the list to include ALL associated relations per collection
+pub fn get_objects_by_relations(
+    all_relations: &[Relation],
+    single_collection: Option<DieselUlid>,
+    conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+) -> Result<Vec<ObjectDto>, diesel::result::Error> {
+    let object_uuids = all_relations
+        .iter()
+        .map(|rel| rel.object_id)
+        .unique()
+        .collect::<Vec<_>>();
+
+    let objs: Vec<Object> = objects
+        .filter(database::schema::objects::id.eq_any(&object_uuids))
+        .load::<Object>(conn)?;
+
+    let object_key_values: Vec<Vec<ObjectKeyValue>> = ObjectKeyValue::belonging_to(&objs)
+        .load::<ObjectKeyValue>(conn)?
+        .grouped_by(&objs);
+    let object_hashes: Vec<Vec<ApiHash>> = ApiHash::belonging_to(&objs)
+        .load::<ApiHash>(conn)?
+        .grouped_by(&objs);
+
+    #[allow(clippy::type_complexity)]
+    let zipped: Vec<((Object, Vec<ObjectKeyValue>), Vec<Db_Hash>)> = objs
+        .into_iter()
+        .zip(object_key_values)
+        .zip(object_hashes)
+        .collect::<Vec<_>>();
+
+    let mut results = Vec::new();
+
+    for ((obj, kvs), hsh) in zipped {
+        let source: Option<Source> = match &obj.source_id {
+            None => None,
+            Some(src_id) => Some(
+                sources
+                    .filter(database::schema::sources::id.eq(src_id))
+                    .first::<Source>(conn)?,
+            ),
+        };
+
+        let (labels, hooks) = from_key_values(kvs);
+
+        let (update, latest) = match single_collection {
+            Some(cid) => collection_objects
+                .filter(database::schema::collection_objects::object_id.eq(&obj.id))
+                .filter(database::schema::collection_objects::collection_id.eq(&cid))
+                .select((
+                    database::schema::collection_objects::auto_update,
+                    database::schema::collection_objects::is_latest,
+                ))
+                .first::<(bool, bool)>(conn)
+                .optional()
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            None => (false, false),
+        };
+
+        results.push(ObjectDto {
+            object: obj,
+            labels,
+            hooks,
+            object_hashes: hsh,
+            source,
+            latest,
+            update,
+        })
+    }
+
+    results.sort_by(|a, b| b.object.revision_number.cmp(&a.object.revision_number));
+
+    Ok(results)
 }
 
 fn delete_object_and_bump_objectgroups(
@@ -4665,119 +4731,231 @@ pub fn check_if_obj_in_coll(
     result == (object_ids.len() as i64)
 }
 
-pub fn construct_path_string(
-    collection_uuid: &diesel_ulid::DieselUlid,
-    fname: &str,
-    subpath: &str,
+pub fn construct_s3_path(rel: Relation) -> String {
+    format!(
+        "s3://{}.{}/{}",
+        &rel.collection_path, &rel.project_name, &rel.path
+    )
+}
+
+pub fn get_object_by_path(
+    s3path: &str,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<(String, String), ArunaError> {
-    let col = collections
-        .filter(database::schema::collections::id.eq(collection_uuid))
-        .first::<Collection>(conn)?;
+) -> Result<Option<Relation>, ArunaError> {
+    use crate::database::schema::relations::dsl as relations_dsl;
 
-    let version_name = if let Some(v_id) = col.version_id {
-        let v_db = collection_version
-            .filter(database::schema::collection_version::id.eq(v_id))
-            .first::<CollectionVersion>(conn)?;
-        format!("{}.{}.{}", v_db.major, v_db.minor, v_db.patch)
-    } else {
-        "latest".to_string()
-    };
+    // s3://latest.my-collection-blup.project-name/my/super/path.txt
 
-    let proj_name = projects
-        .filter(database::schema::projects::id.eq(col.project_id))
-        .first::<Project>(conn)?
-        .name;
+    if let Some(stripped) = s3path.strip_prefix("s3://") {
+        let (proj_name, coll_name, version) = utils::parse_bucket_path(stripped.to_string())?;
 
-    let col_name = col.name;
-
-    let fq_path = if !subpath.is_empty() {
-        if !PATH_SCHEMA.is_match(subpath) {
-            return Err(ArunaError::InvalidRequest(
-            "Invalid path, Path contains invalid characters. See RFC3986 for detailed information."
-                .to_string(),
-            ));
-        }
-
-        let modified_path = if subpath.starts_with('/') {
-            if subpath.ends_with('/') {
-                subpath.to_string()
-            } else {
-                format!("{subpath}/")
-            }
-        } else if subpath.ends_with('/') {
-            format!("/{subpath}")
-        } else {
-            format!("/{subpath}/")
+        let col_path = match version {
+            Some(v) => format!("{}.{}.{}.{}", v.major, v.minor, v.patch, coll_name),
+            None => format!("latest.{}", coll_name),
         };
 
-        format!("{modified_path}{fname}")
+        let rels: Option<Vec<Relation>> = relations
+            .filter(relations_dsl::collection_path.eq(col_path))
+            .filter(relations_dsl::project_name.eq(proj_name))
+            .load::<Relation>(conn)
+            .optional()?;
+
+        match rels {
+            Some(mut r) => {
+                r.sort_by(|a, b| a.id.cmp(&b.id));
+                Ok(r.pop())
+            }
+            None => Ok(None),
+        }
     } else {
-        format!("/{fname}")
-    };
-
-    Ok((format!("{version_name}.{col_name}.{proj_name}"), fq_path))
+        Err(ArunaError::InvalidRequest("Invalid s3path".to_string()))
+    }
 }
 
-pub fn create_path_db(
-    s3bucket: &str,
-    s3path: &str,
-    shared_rev_id: &diesel_ulid::DieselUlid,
-    collection_uuid: &diesel_ulid::DieselUlid,
+fn _disect_full_object_path(full_path: &str) -> (String, String) {
+    let mut all_parts = full_path.split('/').collect::<Vec<_>>();
+    let fname = all_parts.pop().unwrap_or_default().to_string();
+
+    let subpath = if all_parts.is_empty() {
+        "".to_string()
+    } else {
+        all_parts.join("/")
+    };
+    (subpath, fname)
+}
+
+/// Helper function that queries the necessary information and inserts a new relation.
+/// Ideally this should be executet in a separate transaction.
+///
+/// Will fail if the subpath is already associated with a different object hierarchy
+pub fn create_relation(
+    objid: &DieselUlid,
+    option_obj: Option<Object>,
+    collid: &DieselUlid,
+    subpath: &str,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-) -> Result<(), ArunaError> {
-    let path_obj = Path {
-        id: diesel_ulid::DieselUlid::generate(),
-        bucket: s3bucket.into(),
-        path: s3path.into(),
-        shared_revision_id: *shared_rev_id,
-        collection_id: *collection_uuid,
-        created_at: chrono::Utc::now().naive_utc(),
-        active: true,
+) -> Result<Relation, ArunaError> {
+    let get_object: Object = match option_obj {
+        Some(o) => o,
+        None => objects
+            .filter(crate::database::schema::objects::id.eq(objid))
+            .first::<Object>(conn)?,
+    };
+    // Join Collection x Projects x CollectionVersion to query all necessary infos at once !
+    let (proj_name, project_ulid, collection_name, colver): (
+        String,
+        DieselUlid,
+        String,
+        Option<CollectionVersion>,
+    ) = collections
+        .filter(database::schema::collections::id.eq(&collid))
+        .inner_join(database::schema::projects::dsl::projects)
+        .left_join(database::schema::collection_version::dsl::collection_version)
+        .select((
+            database::schema::projects::name,
+            database::schema::projects::id,
+            database::schema::collections::name,
+            Option::<CollectionVersion>::as_select(),
+        ))
+        .first::<(String, DieselUlid, String, Option<CollectionVersion>)>(conn)?;
+
+    let version_string = match colver {
+        Some(v) => {
+            format!("{}.{}.{}", v.major, v.minor, v.patch)
+        }
+        None => "latest".to_string(),
     };
 
-    // Can be removed because of unique constraint on s3bucket/s3path
-    // if (paths
-    //     .filter(database::schema::paths::bucket.eq(s3bucket))
-    //     .filter(database::schema::paths::path.eq(s3path))
-    //     .first::<Path>(conn)
-    //     .optional()?)
-    // .is_none()
-    // {
-    diesel::insert_into(paths)
-        .values(path_obj)
-        .on_conflict_do_nothing()
-        .execute(conn)?;
-    // };
+    let object_path = if subpath.is_empty() {
+        get_object.filename
+    } else {
+        if subpath.chars().all(|c| c == '/') {
+            return Err(ArunaError::InvalidRequest(
+                "Invalid path/name, violates s3 object key naming scheme".to_string(),
+            ));
+        }
+        let stripped_prefix = match subpath.strip_prefix('/') {
+            Some(stripped) => stripped,
+            None => subpath,
+        };
+        let stripped_suffix = match stripped_prefix.strip_suffix('/') {
+            Some(stripped) => stripped,
+            None => stripped_prefix,
+        };
+        format!("{}/{}", stripped_suffix, get_object.filename)
+    };
 
-    Ok(())
+    if !PATH_SCHEMA.is_match(&object_path) {
+        return Err(ArunaError::InvalidRequest(
+            "Invalid path/name, violates s3 object key naming scheme".to_string(),
+        ));
+    }
+
+    let rel = Relation {
+        id: DieselUlid::generate(),
+        object_id: get_object.id,
+        path: object_path.to_string(),
+        project_id: project_ulid,
+        project_name: proj_name,
+        collection_id: *collid,
+        collection_path: format!("{}.{}", version_string, collection_name),
+        shared_revision_id: get_object.shared_revision_id,
+        path_active: true,
+    };
+
+    // Check if a similar relation exists
+    match relations
+        .filter(crate::database::schema::relations::path.eq(&object_path))
+        .filter(crate::database::schema::relations::collection_id.eq(&collid))
+        .filter(
+            crate::database::schema::relations::shared_revision_id
+                .ne(get_object.shared_revision_id),
+        )
+        .first::<Relation>(conn)
+        .optional()?
+    {
+        Some(_) => Err(ArunaError::InvalidRequest(
+            "Unable to create path relation for another object hierarchy".to_string(),
+        )),
+        None => {
+            match insert_into(relations)
+                .values(&rel)
+                .on_conflict_do_nothing()
+                .get_result::<Relation>(conn)
+                .optional()?
+            {
+                Some(rel) => Ok(rel),
+                None => Ok(relations
+                    .filter(crate::database::schema::relations::object_id.eq(&rel.object_id))
+                    .filter(
+                        crate::database::schema::relations::collection_id.eq(&rel.collection_id),
+                    )
+                    .filter(crate::database::schema::relations::project_id.eq(&rel.project_id))
+                    .first::<Relation>(conn)?),
+            }
+        }
+    }
 }
+
+// pub fn create_path_db(
+//     s3bucket: &str,
+//     s3path: &str,
+//     shared_rev_id: &diesel_ulid::DieselUlid,
+//     collection_uuid: &diesel_ulid::DieselUlid,
+//     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
+// ) -> Result<(), ArunaError> {
+//     let path_obj = Path {
+//         id: diesel_ulid::DieselUlid::generate(),
+//         bucket: s3bucket.into(),
+//         path: s3path.into(),
+//         shared_revision_id: *shared_rev_id,
+//         collection_id: *collection_uuid,
+//         created_at: chrono::Utc::now().naive_utc(),
+//         active: true,
+//     };
+
+//     // Can be removed because of unique constraint on s3bucket/s3path
+//     // if (paths
+//     //     .filter(database::schema::paths::bucket.eq(s3bucket))
+//     //     .filter(database::schema::paths::path.eq(s3path))
+//     //     .first::<Path>(conn)
+//     //     .optional()?)
+//     // .is_none()
+//     // {
+//     diesel::insert_into(paths)
+//         .values(path_obj)
+//         .on_conflict_do_nothing()
+//         .execute(conn)?;
+//     // };
+
+//     Ok(())
+// }
 
 pub fn get_paths_proto(
     shared_rev_id: &diesel_ulid::DieselUlid,
     maybe_collection_uuid: Option<&diesel_ulid::DieselUlid>,
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
 ) -> Result<Vec<ProtoPath>, ArunaError> {
-    use crate::database::schema::paths::dsl as paths_dsl;
+    use crate::database::schema::relations::dsl as rel_dsl;
 
     // Construct query to fetch paths from
-    let mut path_query = paths
-        .filter(paths_dsl::shared_revision_id.eq(shared_rev_id))
-        .filter(paths_dsl::active.eq(&true))
-        .order_by(paths_dsl::created_at.desc())
+    let mut path_query = relations
+        .filter(rel_dsl::shared_revision_id.eq(shared_rev_id))
+        .filter(rel_dsl::path_active.eq(&true))
+        .order_by(rel_dsl::object_id)
         .into_boxed();
 
     if let Some(collection_uuid) = maybe_collection_uuid {
-        path_query = path_query.filter(paths_dsl::collection_id.eq(collection_uuid))
+        path_query = path_query.filter(rel_dsl::collection_id.eq(collection_uuid))
     }
 
-    let active_paths = path_query.load::<Path>(conn)?;
+    let active_paths = path_query.load::<Relation>(conn)?;
 
     Ok(active_paths
         .iter()
         .map(|pth| ProtoPath {
-            path: format!("s3://{}{}", pth.bucket, pth.path),
-            visibility: pth.active,
+            path: relation_as_s3_path(pth),
+            visibility: pth.path_active,
         })
         .collect::<Vec<_>>())
 }
@@ -4822,35 +5000,6 @@ fn set_object_available(
         .filter(database::schema::object_key_value::object_id.eq(object.id))
         .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/endpoint_id"))
         .execute(conn)?;
-
-    // Get fq_path from label
-    let path_label = object_key_value
-        .filter(database::schema::object_key_value::object_id.eq(object.id))
-        .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/new_path"))
-        .first::<ObjectKeyValue>(conn)
-        .optional()?;
-
-    if let Some(p_lbl) = path_label {
-        let bucket_label = object_key_value
-            .filter(database::schema::object_key_value::object_id.eq(object.id))
-            .filter(database::schema::object_key_value::key.eq("app.aruna-storage.org/bucket"))
-            .first::<ObjectKeyValue>(conn)?;
-        create_path_db(
-            &bucket_label.value,
-            &p_lbl.value,
-            &updated_obj.shared_revision_id,
-            coll_uuid,
-            conn,
-        )?;
-        // Delete the path label afterwards
-        delete(object_key_value)
-            .filter(database::schema::object_key_value::id.eq(p_lbl.id))
-            .execute(conn)?;
-        // Delete the bucket label afterwards
-        delete(object_key_value)
-            .filter(database::schema::object_key_value::id.eq(bucket_label.id))
-            .execute(conn)?;
-    };
 
     let orig_id = updated_obj.origin_id;
     // origin_id != object_id => Update

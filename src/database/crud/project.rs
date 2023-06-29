@@ -18,8 +18,8 @@ use aruna_rust_api::api::storage::models::v1::{
     ProjectOverview, ProjectPermission, ProjectPermissionDisplayName, User as gRPCUser,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, CreateProjectResponse,
-    DestroyProjectRequest, DestroyProjectResponse, EditUserPermissionsForProjectRequest,
+    AddUserToProjectRequest, AddUserToProjectResponse, CreateProjectRequest, DestroyProjectRequest,
+    DestroyProjectResponse, EditUserPermissionsForProjectRequest,
     EditUserPermissionsForProjectResponse, GetAllUserPermissionsForProjectResponse,
     GetProjectRequest, GetProjectResponse, GetProjectsRequest, GetProjectsResponse,
     GetUserPermissionsForProjectRequest, GetUserPermissionsForProjectResponse,
@@ -49,7 +49,7 @@ impl Database {
         &self,
         request: CreateProjectRequest,
         user_id: diesel_ulid::DieselUlid,
-    ) -> Result<CreateProjectResponse, ArunaError> {
+    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl as user_perm;
         use diesel::result::Error as dError;
@@ -93,9 +93,7 @@ impl Database {
                     .execute(conn)
             })?;
 
-        Ok(CreateProjectResponse {
-            project_id: project_id.to_string(),
-        })
+        Ok(project_id)
     }
 
     /// Adds an existing user to a project
@@ -564,11 +562,12 @@ impl Database {
                 delete(
                     user_permissions.filter(
                         crate::database::schema::user_permissions::project_id
-                            .eq(p_id)
-                            .and(crate::database::schema::user_permissions::user_id.eq(d_u_id)),
+                            .eq(&p_id)
+                            .and(crate::database::schema::user_permissions::user_id.eq(&d_u_id)),
                     ),
                 )
                 .execute(conn)?;
+
                 Ok(())
             })?;
 

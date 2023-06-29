@@ -55,7 +55,7 @@ async fn create_objects_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint, None).await;
 
     // Create random project
     let random_project = common::functions::create_project(None);
@@ -279,7 +279,8 @@ async fn get_objects_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
-    let collection_service = CollectionServiceImpl::new(db.clone(), authz.clone(), None).await;
+    let collection_service =
+        CollectionServiceImpl::new(db.clone(), authz.clone(), None, None).await;
 
     // Read config relative to binary
     let config = ArunaServerConfig::new();
@@ -290,7 +291,7 @@ async fn get_objects_grpc_test() {
         .init_default_endpoint(config.config.default_endpoint)
         .unwrap();
 
-    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint, None).await;
 
     // Create new collection
 
@@ -437,7 +438,7 @@ async fn update_staging_object_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -627,10 +628,7 @@ async fn update_staging_object_grpc_test() {
     // except internal ...
     'outer: for old_label in rev_0_staging_object.labels {
         for new_label in rev_0_staging_object_updated.labels.clone() {
-            if old_label == new_label
-                || (old_label.key == *"app.aruna-storage.org/new_path"
-                    && new_label.key == *"app.aruna-storage.org/new_path")
-            {
+            if old_label == new_label {
                 continue 'outer;
             }
         }
@@ -881,7 +879,7 @@ async fn update_outdated_revision_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -1031,7 +1029,7 @@ async fn concurrent_update_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -1242,7 +1240,7 @@ async fn object_references_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -1675,7 +1673,7 @@ async fn add_labels_to_object_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -1992,7 +1990,7 @@ async fn clone_object_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -2286,7 +2284,7 @@ async fn delete_object_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -2473,6 +2471,17 @@ async fn delete_object_grpc_test() {
 
     let staging_object_id = init_object_response.unwrap().into_inner().object_id;
 
+    //ToDo: Remove later
+    let relations = db
+        .get_object_relations(
+            &diesel_ulid::DieselUlid::from_str(&staging_object_id).unwrap(),
+            None,
+            Some(&diesel_ulid::DieselUlid::from_str(&random_collection.id).unwrap()),
+        )
+        .unwrap();
+    dbg!(relations);
+    // ---------------------------------------------
+
     let delete_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(DeleteObjectRequest {
             object_id: staging_object_id.to_string(),
@@ -2486,11 +2495,7 @@ async fn delete_object_grpc_test() {
 
     assert!(delete_object_response.is_ok());
 
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        staging_object_id.to_string(),
-        false,
-    );
+    let object_references = common::functions::get_object_references(&staging_object_id, false);
 
     assert!(object_references.is_empty());
 
@@ -2553,6 +2558,17 @@ async fn delete_object_grpc_test() {
 
     let staging_object_id = update_object_response.unwrap().into_inner().object_id;
 
+    //ToDo: Remove later
+    let relations = db
+        .get_object_relations(
+            &diesel_ulid::DieselUlid::from_str(&staging_object_id).unwrap(),
+            None,
+            Some(&diesel_ulid::DieselUlid::from_str(&random_collection.id).unwrap()),
+        )
+        .unwrap();
+    dbg!(relations);
+    // ---------------------------------------------
+
     let delete_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(DeleteObjectRequest {
             object_id: staging_object_id.to_string(),
@@ -2564,13 +2580,10 @@ async fn delete_object_grpc_test() {
     );
     let delete_object_response = object_service.delete_object(delete_object_request).await;
 
+    dbg!(&delete_object_response);
     assert!(delete_object_response.is_ok());
 
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        staging_object_id.to_string(),
-        false,
-    );
+    let object_references = common::functions::get_object_references(&staging_object_id, false);
 
     assert!(object_references.is_empty());
 
@@ -2618,7 +2631,7 @@ async fn delete_object_revisions_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -2690,11 +2703,7 @@ async fn delete_object_revisions_grpc_test() {
     assert_eq!(rev_2_deleted.object_status, ObjectStatus::TRASH); // Validate deletion
 
     // Validate that latest reference should now point to revision 1
-    let object_references = common::functions::get_object_references(
-        random_collection.id.to_string(),
-        rev_2_object.id.to_string(),
-        true,
-    );
+    let object_references = common::functions::get_object_references(&rev_2_object.id, true);
     assert_eq!(object_references.len(), 0); // No references should exist
 
     // Check status of all 3 objects
@@ -2805,7 +2814,7 @@ async fn delete_multiple_objects_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;

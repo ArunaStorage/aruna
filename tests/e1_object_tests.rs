@@ -2,14 +2,14 @@ mod common;
 
 use crate::common::functions::{get_object, get_object_status_raw, TCreateCollection};
 use aruna_rust_api::api::storage::models::v1::{
-    DataClass, Hash as DbHash, Hashalgorithm, KeyValue, PageRequest, Version,
+    DataClass, Hash as DbHash, Hashalgorithm, KeyValue, Object as ProtoObject, PageRequest, Version,
 };
 use aruna_rust_api::api::storage::services::v1::{
     CloneObjectRequest, CreateNewCollectionRequest, CreateObjectReferenceRequest,
     CreateProjectRequest, DeleteObjectRequest, DeleteObjectsRequest, FinishObjectStagingRequest,
     GetLatestObjectRevisionRequest, GetObjectByIdRequest, GetObjectRevisionsRequest,
-    GetObjectsRequest, GetReferencesRequest, InitializeNewObjectRequest, ObjectWithUrl,
-    PinCollectionVersionRequest, StageObject, UpdateObjectRequest,
+    GetObjectsRequest, InitializeNewObjectRequest, ObjectWithUrl, PinCollectionVersionRequest,
+    StageObject, UpdateObjectRequest,
 };
 use aruna_server::database;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
@@ -59,18 +59,15 @@ fn create_object_test() {
         description: "Project created in create_object_test()".to_string(),
     };
 
-    let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id =
-        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
-
-    assert!(!project_id.to_string().is_empty());
+    let project_ulid = db.create_project(create_project_request, creator).unwrap();
+    assert!(!project_ulid.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
         name: "create-object-test-collection".to_string(),
         description: "Test collection used in create_object_test().".to_string(),
         label_ontology: None,
-        project_id: project_id.to_string(),
+        project_id: project_ulid.to_string(),
         labels: vec![],
         hooks: vec![],
         dataclass: DataClass::Private as i32,
@@ -134,8 +131,14 @@ fn create_object_test() {
         auto_update: true,
     };
 
-    let finish_response = db.finish_object_staging(&finish_request, &creator).unwrap();
-    let finished_object = finish_response.object.unwrap();
+    let finished_object: ProtoObject = db
+        .finish_object_staging(&finish_request, &creator)
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
+        .unwrap();
+
     assert_eq!(finished_object.id, new_object_id.to_string());
     assert!(matches!(
         grpc_to_db_object_status(&finished_object.status),
@@ -464,9 +467,9 @@ fn update_object_get_references_test() {
         collection_id: rand_collection.id.to_string(),
         ..Default::default()
     });
+    let object_rev_0_ulid = diesel_ulid::DieselUlid::from_str(&object.id).unwrap();
 
     // Create auto_updating reference in col 2
-
     let create_ref = CreateObjectReferenceRequest {
         object_id: object.id.clone(),
         collection_id: rand_collection.id.clone(),
@@ -479,7 +482,7 @@ fn update_object_get_references_test() {
     let _resp = db.create_object_reference(create_ref).unwrap();
 
     let update_1 = common::functions::update_object(&TCreateUpdate {
-        original_object: object.clone(),
+        original_object: object,
         collection_id: rand_collection.id.to_string(),
         new_name: "SuperName".to_string(),
         ..Default::default()
@@ -488,11 +491,12 @@ fn update_object_get_references_test() {
     // Update Object again
     let update_2 = common::functions::update_object(&TCreateUpdate {
         original_object: update_1,
-        collection_id: rand_collection.id.to_string(),
+        collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
         content_len: 123456,
         ..Default::default()
     });
+    let object_rev_2_ulid = diesel_ulid::DieselUlid::from_str(&update_2.id).unwrap();
 
     // Validate update
     assert!(matches!(
@@ -505,7 +509,6 @@ fn update_object_get_references_test() {
     assert!(update_2.auto_update);
 
     // Get auto_updated object
-
     let get_obj = GetObjectsRequest {
         collection_id: rand_collection_2.id,
         page_request: None,
@@ -519,25 +522,12 @@ fn update_object_get_references_test() {
     assert_eq!(some_object.object.unwrap().id, update_2.id);
 
     // Get references test
-
-    let get_refs = GetReferencesRequest {
-        collection_id: rand_collection.id.to_string(),
-        object_id: update_2.id,
-        with_revisions: true,
-    };
-
-    let get_refs_resp_1 = db.get_references(&get_refs).unwrap();
+    let get_refs_resp_1 = db.get_references(&object_rev_2_ulid, true).unwrap();
 
     println!("Refs: {:#?}", get_refs_resp_1.references);
     assert_eq!(get_refs_resp_1.references.len(), 2);
 
-    let get_refs = GetReferencesRequest {
-        collection_id: rand_collection.id,
-        object_id: object.id,
-        with_revisions: true,
-    };
-
-    let get_refs_resp_2 = db.get_references(&get_refs).unwrap();
+    let get_refs_resp_2 = db.get_references(&object_rev_0_ulid, true).unwrap();
 
     println!("Refs: {:#?}", get_refs_resp_2.references);
     assert!(get_refs_resp_2.references.len() == 2);
@@ -632,7 +622,7 @@ fn delete_object_test() {
         .update_object(updatereq, &creator, new_id, &endpoint_id)
         .unwrap();
 
-    let staging_finished = db
+    let finished_object: ProtoObject = db
         .finish_object_staging(
             &FinishObjectStagingRequest {
                 object_id: update_response.object_id,
@@ -645,6 +635,10 @@ fn delete_object_test() {
             },
             &creator,
         )
+        .unwrap()
+        .map(|e| e.try_into())
+        .map_or(Ok(None), |r| r.map(Some))
+        .unwrap()
         .unwrap();
 
     // Simple delete with revisions / with force
@@ -661,13 +655,13 @@ fn delete_object_test() {
     // Should error because single_id is "old" revision
     assert!(resp.is_err());
 
-    delreq.object_id = staging_finished.clone().object.unwrap().id;
+    delreq.object_id = finished_object.id.to_string();
 
     //println!("\nAbout to delete all revisions with the revision 0 id of an object.");
     let _resp = db.delete_object(delreq, creator).unwrap();
 
     // Revision Should also be deleted
-    let raw_db_object = get_object_status_raw(&staging_finished.object.unwrap().id);
+    let raw_db_object = get_object_status_raw(&finished_object.id);
 
     // Should delete the object
     assert_eq!(raw_db_object.object_status, ObjectStatus::TRASH);
@@ -1012,9 +1006,7 @@ fn clone_object_test() {
         target_collection_id: random_collection2.id,
     };
 
-    let resp = db.clone_object(&clone_req, &creator).unwrap();
-
-    let cloned = resp.object.unwrap();
+    let (cloned, _) = db.clone_object(&clone_req, &creator).unwrap();
 
     assert_ne!(cloned.id, update_2.id);
     assert_eq!(cloned.rev_number, 0);

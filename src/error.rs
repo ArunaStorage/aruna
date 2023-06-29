@@ -8,6 +8,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use tokio::task::JoinError as AsyncJoinError;
 use tonic::metadata::errors::ToStrError as TonicToStrError;
+use tonic::transport::Error as TransportError;
 use tonic::Status as GrpcError;
 use uuid::Error as UuidError;
 
@@ -193,6 +194,7 @@ impl StdError for ArunaError {}
 pub enum ConnectionError {
     DbConnectionError(DieselR2d2Error),
     DbConnectionPoolError(R2d2Error),
+    TonicConnectionError(TransportError),
 }
 
 impl Display for ConnectionError {
@@ -202,6 +204,7 @@ impl Display for ConnectionError {
             ConnectionError::DbConnectionPoolError(con_pool_error) => {
                 write!(f, "{}", con_pool_error)
             }
+            ConnectionError::TonicConnectionError(con_error) => write!(f, "{}", con_error),
         }
     }
 }

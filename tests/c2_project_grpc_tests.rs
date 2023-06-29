@@ -32,7 +32,7 @@ async fn create_project_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Create gPC Request for project creation
     let create_project_request = common::grpc_helpers::add_token(
@@ -78,7 +78,7 @@ async fn get_projects_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation
     let project_001 = common::functions::create_project(None);
@@ -168,7 +168,7 @@ async fn update_project_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation
     let orig_project = common::functions::create_project(None);
@@ -222,8 +222,8 @@ async fn destroy_project_grpc_test() {
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db.clone(), authz.clone()).await;
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let project_service = ProjectServiceImpl::new(db.clone(), authz.clone(), None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -301,7 +301,7 @@ async fn add_remove_project_user_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;
@@ -492,7 +492,7 @@ async fn edit_project_user_grpc_test() {
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
     let user_service = UserServiceImpl::new(db.clone(), authz.clone(), None).await;
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Fast track project creation
     let project_id = common::functions::create_project(None).id;

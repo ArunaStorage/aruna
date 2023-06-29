@@ -6,7 +6,7 @@ use super::traits::IsKeyValue;
 use super::traits::ToDbKeyValue;
 use crate::database::schema::*;
 
-#[derive(Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(Queryable, Insertable, Identifiable, Debug, Clone, Selectable)]
 #[diesel(table_name = collection_version)]
 pub struct CollectionVersion {
     pub id: diesel_ulid::DieselUlid,
@@ -128,7 +128,7 @@ pub struct CollectionObject {
     pub reference_status: ReferenceStatus,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Clone)]
+#[derive(Associations, Queryable, Insertable, Identifiable, Selectable, Debug, Clone)]
 #[diesel(belongs_to(Collection))]
 #[diesel(belongs_to(ObjectGroup))]
 pub struct CollectionObjectGroup {

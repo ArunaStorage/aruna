@@ -14,6 +14,10 @@ MCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=
 -----END PUBLIC KEY-----
 """
 
+[event_notifications]
+emitter_host = 'http://localhost:50053'
+emitter_token = 'ThisIsASecretToken'
+
 [loc_version]
 location        = 'FOO'
 components = [

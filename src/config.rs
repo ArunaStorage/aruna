@@ -22,8 +22,16 @@ pub struct Config {
     pub database_url: String,
     pub oauth_realminfo: String,
     pub default_endpoint: DefaultEndpoint,
+    pub event_notifications: EventNotifications,
     pub loc_version: LocationVersion,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EventNotifications {
+    pub emitter_host: String,
+    pub emitter_token: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct DefaultEndpoint {
     pub ep_type: EndpointType,
@@ -103,7 +111,8 @@ impl ArunaServerConfig {
     /// ## Behaviour:
     ///
     /// Tries to load all specified environmental variables specified in the function body.
-    /// If the parameter is mandatory the
+    /// If the parameter is mandatory any error stops the execution. Optional parameters are
+    /// filled with a specified default value if not set.
     ///
     fn load_config_env() -> Result<EnvConfig, VarError> {
         //let env_var = env::var("ENV_VAR")?; //Note: Mandatory

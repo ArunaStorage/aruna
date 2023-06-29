@@ -140,7 +140,7 @@ pub async fn add_project_permission(
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Validate format of provided ids
     let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
@@ -196,7 +196,7 @@ pub async fn edit_project_permission(
         "postgres://root:test123@localhost:26257/test",
     ));
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
-    let project_service = ProjectServiceImpl::new(db, authz).await;
+    let project_service = ProjectServiceImpl::new(db, authz, None).await;
 
     // Validate format of provided ids
     let project_id = diesel_ulid::DieselUlid::from_str(project_uuid).unwrap();
@@ -255,7 +255,7 @@ pub async fn try_get_collection(
     let authz = Arc::new(Authz::new(db.clone(), ArunaServerConfig::default()).await);
 
     // Init collection service
-    let collection_service = CollectionServiceImpl::new(db, authz, None).await;
+    let collection_service = CollectionServiceImpl::new(db, authz, None, None).await;
 
     // Validate format of provided ids
     let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();
@@ -301,7 +301,7 @@ pub async fn try_get_object(
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db, authz, default_endpoint, None).await;
 
     // Validate format of provided ids
     let collection_id = diesel_ulid::DieselUlid::from_str(collection_uuid.as_str()).unwrap();

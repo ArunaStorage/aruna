@@ -861,22 +861,12 @@ fn delete_collection_test() {
 
     let _obj_grp_res = db.create_object_group(&obj_grp, &creator).unwrap();
 
-    let delete_req_normal = DeleteCollectionRequest {
-        collection_id: col_id.to_string(),
-        force: false,
-    };
-
-    let res = db.delete_collection(delete_req_normal, creator);
+    let res = db.delete_collection(&col_id, creator, false);
     // This should fail !
     assert!(res.is_err());
 
-    let delete_req_force = DeleteCollectionRequest {
-        collection_id: col_id.to_string(),
-        force: true,
-    };
-
     // Should not fail
-    let _res = db.delete_collection(delete_req_force, creator).unwrap();
+    let _res = db.delete_collection(&col_id, creator, true);
 }
 
 #[test]
@@ -905,18 +895,15 @@ pub fn test_collection_materialized_views_stats() {
             .to_string(),
     };
 
-    let create_project_response = db.create_project(create_project_request, creator).unwrap();
-    let project_id =
-        diesel_ulid::DieselUlid::from_str(&create_project_response.project_id).unwrap();
-
-    assert!(!project_id.to_string().is_empty());
+    let project_ulid = db.create_project(create_project_request, creator).unwrap();
+    assert!(!project_ulid.to_string().is_empty());
 
     // Create Collection
     let create_collection_request = CreateNewCollectionRequest {
         name: "test-collection-materialized-views-stats-collection".to_string(),
         description: "Test collection used in materialized view stats test.".to_string(),
         label_ontology: None,
-        project_id: project_id.to_string(),
+        project_id: project_ulid.to_string(),
         labels: vec![],
         hooks: vec![],
         dataclass: DataClass::Private as i32,

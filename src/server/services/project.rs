@@ -4,15 +4,24 @@ use std::str::FromStr;
 use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
+use aruna_rust_api::api::internal::v1::{EmittedResource, ProjectResource};
+use aruna_rust_api::api::notification::services::v1::EventType;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v1::*;
+use tokio::task;
 
 use std::sync::Arc;
 use tonic::Response;
 
 // ProjectServiceImpl struct
-crate::impl_grpc_server!(ProjectServiceImpl);
+crate::impl_grpc_server!(
+    ProjectServiceImpl,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {
@@ -33,14 +42,44 @@ impl ProjectService for ProjectServiceImpl {
         log::info!("Received CreateProjectRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
         // Authorize as global admin
-        let user_id = self.authz.admin_authorize(request.metadata()).await?;
+        let user_id = self.authz.admin_authorize(&metadata).await?;
 
         // Create new project and respond with overview
-        let response = Response::new(
-            self.database
-                .create_project(request.into_inner(), user_id)?,
-        );
+        let project_ulid = self.database.create_project(inner_request, user_id)?;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        project_ulid.to_string(),
+                        ResourceType::Project,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: project_ulid.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create gRPC response
+        let response = Response::new(CreateProjectResponse {
+            project_id: project_ulid.to_string(),
+        });
 
         log::info!("Sending CreateProjectResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -176,15 +215,45 @@ impl ProjectService for ProjectServiceImpl {
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
 
-        // Execute request and return response
-        let response = Response::new(
-            self.database
-                .destroy_project(request.into_inner(), _user_id)?,
-        );
+        // Try to delete project
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.destroy_project(request.into_inner(), _user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        parsed_project_id.to_string(),
+                        ResourceType::Project,
+                        EventType::Deleted,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: parsed_project_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Return gRPC response
+        let grpc_response = Response::new(response);
 
         log::info!("Sending DestroyProjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     /// UpdateProject updates a project and all associated user_permissions.
@@ -214,15 +283,45 @@ impl ProjectService for ProjectServiceImpl {
             .project_authorize(request.metadata(), parsed_project_id, UserRights::ADMIN)
             .await?;
 
-        // Execute request and return response
-        let response = Response::new(
-            self.database
-                .update_project(request.into_inner(), user_id)?,
-        );
+        // Create project
+        let database_clone = self.database.clone();
+        let response = task::spawn_blocking(move || {
+            database_clone.update_project(request.into_inner(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        parsed_project_id.to_string(),
+                        ResourceType::Project,
+                        EventType::Updated,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Project(ProjectResource {
+                                project_id: parsed_project_id.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
+        }
+
+        // Return gRPC response
+        let grpc_response = Response::new(response);
 
         log::info!("Sending UpdateProjectResponse back to client.");
-        log::debug!("{}", format_grpc_response(&response));
-        Ok(response)
+        log::debug!("{}", format_grpc_response(&grpc_response));
+        Ok(grpc_response)
     }
 
     /// RemoveUserFromProject removes a specific user from the project

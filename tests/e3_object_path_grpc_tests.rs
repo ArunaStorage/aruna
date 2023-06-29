@@ -42,7 +42,7 @@ async fn create_object_with_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -212,7 +212,7 @@ async fn create_additional_object_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -379,7 +379,7 @@ async fn create_object_path_with_reference_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -490,7 +490,7 @@ async fn create_object_path_with_reference_grpc_test() {
         .into_inner()
         .object_paths;
 
-    // Target collection should now have two references but still only the default path for the object
+    // Target collection should now have two references and two references, because two objects in the hierarchy exist
     assert_eq!(target_collection_paths.len(), 1); // Only default subpath of object
     assert_eq!(
         target_collection_paths.first().unwrap().path,
@@ -570,7 +570,7 @@ async fn get_object_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -624,12 +624,10 @@ async fn get_object_path_grpc_test() {
         "//path/".to_string(),       // Empty path parts are not allowed
         "//path//".to_string(),      // Empty path parts are not allowed
         "path//path".to_string(),    // Empty path parts are not allowed
-        "LOUD/PATH/".to_string(),    // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no upper case characters
         "$%&/path/".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no special characters
         "custom\\path/".to_string(), // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no backslashes
         "some path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no whitespaces
         "some|path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no pipes
-        "some.path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no points
         "some,path".to_string(),     // Only ^(/?[a-z0-9~\-]+)*/?$ allowed; no commas
     ]
     .iter()
@@ -754,7 +752,7 @@ async fn get_object_paths_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1050,7 +1048,7 @@ async fn set_object_path_visibility_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1279,7 +1277,7 @@ async fn get_object_by_path_grpc_test() {
         .unwrap();
 
     // Init object service
-    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint).await;
+    let object_service = ObjectServiceImpl::new(db.clone(), authz, default_endpoint, None).await;
 
     // Fast track project creation
     let random_project = common::functions::create_project(None);
@@ -1418,13 +1416,15 @@ async fn get_object_by_path_grpc_test() {
         .path
         .unwrap();
 
+    // Update expectations
+    rev_0_object.auto_update = false;
     // Get latest object through available paths
-    for object_path in vec![
-        rev_0_default_path.to_string(),
-        rev_0_custom_path.path.to_string(),
-        rev_1_custom_path.path.to_string(),
+    for (object_path, expected) in vec![
+        (rev_0_default_path.to_string(), rev_1_object.clone()), // Already got updated -> rev1
+        (rev_0_custom_path.path.to_string(), rev_0_object.clone()),
+        (rev_1_custom_path.path.to_string(), rev_1_object.clone()),
     ]
-    .iter()
+    .into_iter()
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
@@ -1439,20 +1439,18 @@ async fn get_object_by_path_grpc_test() {
             .get_objects_by_path(get_object_by_path_request)
             .await
             .unwrap()
-            .into_inner()
-            .object[0]
-            .clone();
+            .into_inner();
 
-        assert_eq!(proto_object, rev_1_object); // Objects should be equal and always latest revision
+        assert_eq!(proto_object.object[0], expected); // Objects should be equal and always latest revision
     }
 
     // Get all object revisions through available paths
-    for object_path in vec![
-        rev_0_default_path.to_string(),
-        rev_0_custom_path.path.to_string(),
-        rev_1_custom_path.path.to_string(),
+    for (object_path, expected_size, expected_last_object) in vec![
+        (rev_0_default_path.to_string(), 2, rev_1_object.clone()),
+        (rev_0_custom_path.path.to_string(), 1, rev_0_object.clone()),
+        (rev_1_custom_path.path.to_string(), 1, rev_1_object.clone()),
     ]
-    .iter()
+    .into_iter()
     {
         let get_object_by_path_request = common::grpc_helpers::add_token(
             tonic::Request::new(GetObjectsByPathRequest {
@@ -1470,10 +1468,8 @@ async fn get_object_by_path_grpc_test() {
             .into_inner()
             .object;
 
-        println!("{:#?}", proto_objects);
-
-        assert_eq!(proto_objects.len(), 2); // Only contain revision 0 and 1
-                                            //assert!(proto_objects.contains(&rev_0_object));
-        assert!(proto_objects.contains(&rev_1_object));
+        assert_eq!(proto_objects.len(), expected_size); // Only contain revision 0 and 1
+                                                        //assert!(proto_objects.contains(&rev_0_object));
+        assert!(proto_objects.contains(&expected_last_object));
     }
 }

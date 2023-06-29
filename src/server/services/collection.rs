@@ -5,8 +5,14 @@ use crate::database::connection::Database;
 use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
-use crate::server::kube_client::KubeClient;
+use crate::server::clients::event_emit_client::NotificationEmitClient;
+use crate::server::clients::kube_client::KubeClient;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
+use aruna_rust_api::api::internal::v1::CollectionResource;
+use aruna_rust_api::api::internal::v1::EmittedResource;
+use aruna_rust_api::api::notification::services::v1::EventType;
+use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
 use tokio::task;
@@ -16,7 +22,11 @@ use tonic::Response;
 use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
-crate::impl_grpc_server!(CollectionServiceImpl, kube_client: Option<KubeClient>);
+crate::impl_grpc_server!(
+    CollectionServiceImpl,
+    kube_client: Option<KubeClient>,
+    event_emitter: Option<NotificationEmitClient>
+);
 
 #[tonic::async_trait]
 impl CollectionService for CollectionServiceImpl {
@@ -70,6 +80,33 @@ impl CollectionService for CollectionServiceImpl {
                 }
             }
             None => {}
+        }
+
+        // Try to emit event notification
+        let collection_ulid_clone = response.collection_id.clone();
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        collection_ulid_clone.clone(),
+                        ResourceType::Collection,
+                        EventType::Created,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Collection(CollectionResource {
+                                project_id: project_id.to_string(),
+                                collection_id: collection_ulid_clone,
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
+            })
+            .await
+            .map_err(ArunaError::from)?;
         }
 
         let response = Response::new(response);
@@ -232,7 +269,7 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let (response, bucket) = task::spawn_blocking(move || {
+        let (response, bucket, project_ulid) = task::spawn_blocking(move || {
             db.update_collection(request.get_ref().to_owned(), user_id)
         })
         .await
@@ -247,6 +284,39 @@ impl CollectionService for CollectionServiceImpl {
             None => {}
         }
 
+        // Try to emit event notification
+        match &response.collection {
+            Some(collection) => {
+                let collection_clone = collection.clone();
+                if let Some(emit_client) = &self.event_emitter {
+                    let event_emitter_clone = emit_client.clone();
+                    task::spawn(async move {
+                        if let Err(err) = event_emitter_clone
+                            .emit_event(
+                                collection_clone.id.clone(),
+                                ResourceType::Collection,
+                                EventType::Updated,
+                                vec![EmittedResource {
+                                    resource: Some(Resource::Collection(CollectionResource {
+                                        project_id: project_ulid.to_string(),
+                                        collection_id: collection_clone.id,
+                                    })),
+                                }],
+                            )
+                            .await
+                        {
+                            // Only log error but do not crash function execution at this point
+                            log::error!("Failed to emit notification: {}", err)
+                        }
+                    })
+                    .await
+                    .map_err(ArunaError::from)?;
+                }
+            }
+            None => {} // Do nothing if no collection in response.
+        }
+
+        // Create gRPC response
         let response = Response::new(response);
 
         log::info!("Sending UpdateCollectionResponse back to client.");
@@ -293,13 +363,11 @@ impl CollectionService for CollectionServiceImpl {
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let (response, bucket) = task::spawn_blocking(move || {
+        let (response, project_ulid, bucket) = task::spawn_blocking(move || {
             db.pin_collection_version(request.get_ref().to_owned(), user_id)
         })
         .await
         .map_err(ArunaError::from)??;
-
-        let response = Response::new(response);
 
         match &self.kube_client {
             Some(kc) => {
@@ -309,6 +377,41 @@ impl CollectionService for CollectionServiceImpl {
             }
             None => {}
         }
+
+        // Try to emit event notification
+        match &response.collection {
+            Some(collection) => {
+                let collection_clone = collection.clone();
+                if let Some(emit_client) = &self.event_emitter {
+                    let event_emitter_clone = emit_client.clone();
+                    task::spawn(async move {
+                        if let Err(err) = event_emitter_clone
+                            .emit_event(
+                                collection_clone.id.clone(),
+                                ResourceType::Collection,
+                                EventType::Created,
+                                vec![EmittedResource {
+                                    resource: Some(Resource::Collection(CollectionResource {
+                                        project_id: project_ulid.to_string(),
+                                        collection_id: collection_clone.id,
+                                    })),
+                                }],
+                            )
+                            .await
+                        {
+                            // Only log error but do not crash function execution at this point
+                            log::error!("Failed to emit notification: {}", err)
+                        }
+                    })
+                    .await
+                    .map_err(ArunaError::from)?;
+                }
+            }
+            None => {} // Do nothing if no collection in response.
+        }
+
+        // Create gRPC response
+        let response = Response::new(response);
 
         log::info!("Sending PinCollectionVersionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
@@ -346,35 +449,61 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Received DeleteCollectionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user_id = if request.get_ref().force {
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Parse the inner request parameter
+        let collection_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.collection_id)
+            .map_err(ArunaError::from)?;
+        let force_delete = inner_request.force;
+
+        // Validate user permissions for collection deletion
+        let user_id = if force_delete {
             self.authz
-                .project_authorize_by_collectionid(
-                    request.metadata(),
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                    UserRights::ADMIN,
-                )
+                .project_authorize_by_collectionid(&metadata, collection_ulid, UserRights::ADMIN)
                 .await?
         } else {
             self.authz
-                .collection_authorize(
-                    request.metadata(),
-                    diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                        .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                    UserRights::WRITE,
-                )
+                .collection_authorize(&metadata, collection_ulid, UserRights::WRITE)
                 .await?
         };
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                db.delete_collection(request.get_ref().to_owned(), user_id)
+        let project_ulid = task::spawn_blocking(move || {
+            db.delete_collection(&collection_ulid, user_id, force_delete)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        // Try to emit event notification
+        if let Some(emit_client) = &self.event_emitter {
+            let event_emitter_clone = emit_client.clone();
+            task::spawn(async move {
+                if let Err(err) = event_emitter_clone
+                    .emit_event(
+                        collection_ulid.to_string(),
+                        ResourceType::Collection,
+                        EventType::Deleted,
+                        vec![EmittedResource {
+                            resource: Some(Resource::Collection(CollectionResource {
+                                project_id: project_ulid.to_string(),
+                                collection_id: collection_ulid.to_string(),
+                            })),
+                        }],
+                    )
+                    .await
+                {
+                    // Only log error but do not crash function execution at this point
+                    log::error!("Failed to emit notification: {}", err)
+                }
             })
             .await
-            .map_err(ArunaError::from)??,
-        );
+            .map_err(ArunaError::from)?;
+        }
+
+        // Create and send gRPC response
+        let response = Response::new(DeleteCollectionResponse {});
 
         log::info!("Sending DeleteCollectionResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));

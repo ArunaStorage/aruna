@@ -1,47 +1,47 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types {
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "dataclass"))]
     pub struct Dataclass;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "endpoint_status"))]
     pub struct EndpointStatus;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "endpoint_type"))]
     pub struct EndpointType;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "hash_type"))]
     pub struct HashType;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "identity_provider_type"))]
     pub struct IdentityProviderType;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "key_value_type"))]
     pub struct KeyValueType;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "object_status"))]
     pub struct ObjectStatus;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "reference_status"))]
     pub struct ReferenceStatus;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "resources"))]
     pub struct Resources;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "source_type"))]
     pub struct SourceType;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "user_rights"))]
     pub struct UserRights;
 }
@@ -284,18 +284,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    paths (id) {
-        id -> Uuid,
-        bucket -> Text,
-        path -> Text,
-        shared_revision_id -> Uuid,
-        collection_id -> Uuid,
-        created_at -> Timestamp,
-        active -> Bool,
-    }
-}
-
-diesel::table! {
     projects (id) {
         id -> Uuid,
         name -> Text,
@@ -310,6 +298,20 @@ diesel::table! {
     pub_keys (id) {
         id -> Int8,
         pubkey -> Text,
+    }
+}
+
+diesel::table! {
+    relations (id) {
+        id -> Uuid,
+        object_id -> Uuid,
+        path -> Varchar,
+        project_id -> Uuid,
+        project_name -> Varchar,
+        collection_id -> Uuid,
+        collection_path -> Varchar,
+        shared_revision_id -> Uuid,
+        path_active -> Bool,
     }
 }
 
@@ -400,8 +402,10 @@ diesel::joinable!(object_locations -> endpoints (endpoint_id));
 diesel::joinable!(object_locations -> objects (object_id));
 diesel::joinable!(objects -> sources (source_id));
 diesel::joinable!(objects -> users (created_by));
-diesel::joinable!(paths -> collections (collection_id));
 diesel::joinable!(projects -> users (created_by));
+diesel::joinable!(relations -> collections (collection_id));
+diesel::joinable!(relations -> objects (object_id));
+diesel::joinable!(relations -> projects (project_id));
 diesel::joinable!(required_labels -> collections (collection_id));
 diesel::joinable!(user_permissions -> projects (project_id));
 diesel::joinable!(user_permissions -> users (user_id));
@@ -425,9 +429,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     object_key_value,
     object_locations,
     objects,
-    paths,
     projects,
     pub_keys,
+    relations,
     required_labels,
     sources,
     user_permissions,
