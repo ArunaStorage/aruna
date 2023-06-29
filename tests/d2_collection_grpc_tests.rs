@@ -1181,5 +1181,42 @@ async fn delete_collection_grpc_test() {
         common::oidc::REGULARTOKEN
     )
     .await
-    .is_none())
+    .is_none());
+
+    // Try to delete collection with label_ontology
+    let random_collection = common::functions::create_collection(TCreateCollection {
+        project_id: random_project.id.to_string(),
+        num_labels: 0,
+        num_hooks: 0,
+        col_override: Some(CreateNewCollectionRequest {
+            name: "label-ontology-collection".to_string(),
+            description: "Some description".to_string(),
+            project_id: random_project.id.to_string(),
+            labels: vec![],
+            hooks: vec![KeyValue {
+                key: "required".to_string(),
+                value: "true".to_string(),
+            }],
+            label_ontology: Some(LabelOntology {
+                required_label_keys: vec!["required".to_string()],
+            }),
+            dataclass: 1,
+        }),
+        creator_id: Some(user_id.to_string()),
+    });
+
+    let delete_collection_request = common::grpc_helpers::add_token(
+        tonic::Request::new(DeleteCollectionRequest {
+            collection_id: random_collection.id.to_string(),
+            force: true,
+        }),
+        common::oidc::REGULARTOKEN,
+    );
+    let delete_collection_response = collection_service
+        .delete_collection(delete_collection_request)
+        .await;
+
+    println!("{:#?}", delete_collection_response);
+
+    delete_collection_response.unwrap();
 }
