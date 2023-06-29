@@ -22,6 +22,7 @@ use crate::database::models::object::{Object, ObjectKeyValue, Relation};
 use crate::database::models::object_group::{ObjectGroup, ObjectGroupKeyValue, ObjectGroupObject};
 use crate::database::models::views::CollectionStat;
 use crate::database::schema::collections::dsl::collections;
+use crate::database::schema::required_labels;
 use crate::error::{ArunaError, TypeConversionError};
 use aruna_rust_api::api::storage::models::v1::DataClass;
 use aruna_rust_api::api::storage::models::v1::{
@@ -757,10 +758,17 @@ impl Database {
                     )?;
                 //}
             }
+
+            // Delete associated label_ontologies before labels
+            delete(database::schema::required_labels::dsl::required_labels.filter(
+                required_labels::collection_id.eq(&collection_ulid)
+            )).execute(conn)?;
+
             // Delete all collection_key_values
             delete(
                 colkv::collection_key_value.filter(colkv::collection_id.eq(&collection_ulid))
             ).execute(conn)?;
+
             // Delete the collection
             delete(col::collections.filter(col::id.eq(&collection_ulid))).execute(conn)?;
 
