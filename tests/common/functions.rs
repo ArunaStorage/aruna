@@ -296,15 +296,24 @@ pub fn create_collection(tccol: TCreateCollection) -> CollectionOverview {
         get_col_resp.version.clone().unwrap(),
         collection_overview::Version::Latest(true)
     );
-    assert!(
-        // Should be empty vec
-        get_col_resp
-            .label_ontology
-            .clone()
-            .unwrap()
-            .required_label_keys
-            .is_empty()
-    );
+
+    // Required labels should be empty if no label ontology was provided
+    if create_collection_request_test
+        .request
+        .label_ontology
+        .is_none()
+    {
+        assert!(
+            // Should be empty vec
+            get_col_resp
+                .label_ontology
+                .clone()
+                .unwrap()
+                .required_label_keys
+                .is_empty()
+        );
+    }
+
     // Labels / Hooks should be the same
     assert!({
         get_col_resp
