@@ -222,9 +222,37 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// each service account is bound to a specific project
     async fn get_service_accounts_by_project(
         &self,
-        _request: tonic::Request<GetServiceAccountsByProjectRequest>,
+        request: tonic::Request<GetServiceAccountsByProjectRequest>,
     ) -> Result<tonic::Response<GetServiceAccountsByProjectResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountsByProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        self.authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_accounts_by_project(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountsByProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccountToken
     ///

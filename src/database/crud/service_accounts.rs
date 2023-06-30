@@ -6,7 +6,8 @@ use aruna_rust_api::api::storage::{
         CreateServiceAccountRequest, CreateServiceAccountResponse,
         CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse,
         GetServiceAccountTokenRequest, GetServiceAccountTokenResponse,
-        GetServiceAccountTokensRequest, GetServiceAccountTokensResponse, ServiceAccount,
+        GetServiceAccountTokensRequest, GetServiceAccountTokensResponse,
+        GetServiceAccountsByProjectRequest, GetServiceAccountsByProjectResponse, ServiceAccount,
         SetServiceAccountPermissionRequest, SetServiceAccountPermissionResponse,
     },
 };
@@ -18,7 +19,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use crate::{
     database::{
         connection::Database,
-        crud::utils::map_permissions,
+        crud::utils::{map_permissions, map_permissions_rev},
         models::auth::{ApiToken, User, UserPermission},
     },
     error::ArunaError,
@@ -252,6 +253,51 @@ impl Database {
                     .map(Token::try_from)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(GetServiceAccountTokensResponse { token: as_grpc })
+            })
+    }
+
+    pub fn get_service_accounts_by_project(
+        &self,
+        request: GetServiceAccountsByProjectRequest,
+    ) -> Result<GetServiceAccountsByProjectResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
+
+        let parse_p_id = DieselUlid::from_str(&request.project_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<GetServiceAccountsByProjectResponse, ArunaError, _>(|conn| {
+                let perms: Vec<UserPermission> = user_permissions
+                    .filter(crate::database::schema::user_permissions::project_id.eq(&parse_p_id))
+                    .load::<UserPermission>(conn)?;
+
+                let uids = perms.iter().map(|e| e.id).collect::<Vec<_>>();
+
+                let svc_acc_users: Vec<User> = users
+                    .filter(crate::database::schema::users::id.eq_any(&uids))
+                    .filter(crate::database::schema::users::is_service_account.eq(true))
+                    .load::<User>(conn)?;
+
+                let mut mapped_svc_accounts = Vec::with_capacity(svc_acc_users.len());
+
+                'outer: for perm in perms {
+                    for svc in &svc_acc_users {
+                        if perm.user_id == svc.id {
+                            mapped_svc_accounts.push(ServiceAccount {
+                                svc_account_id: svc.id.to_string(),
+                                project_id: parse_p_id.to_string(),
+                                name: svc.display_name.to_string(),
+                                permission: map_permissions_rev(Some(perm.user_right)),
+                            });
+                            continue 'outer;
+                        }
+                    }
+                }
+                Ok(GetServiceAccountsByProjectResponse {
+                    svc_accounts: mapped_svc_accounts,
+                })
             })
     }
 }
