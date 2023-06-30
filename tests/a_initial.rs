@@ -6,7 +6,7 @@ pub fn up_database() {
     let startup_output = Command::new("tests/sources/startup.sh")
         .output()
         .expect("failed to execute startup");
-    println!("{:?}", startup_output);
+    println!("{startup_output:?}");
     assert!(startup_output.status.success())
 }
 
@@ -15,7 +15,7 @@ pub fn load_sql() {
         .output()
         .expect("failed to execute load_db");
 
-    println!("{:?}", load_output);
+    println!("{load_output:?}");
     assert!(load_output.status.success())
 }
 

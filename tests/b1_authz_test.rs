@@ -99,7 +99,7 @@ fn register_user_test() {
     let req = RegisterUserRequest {
         display_name: "test_user_1".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     // Create new user
     let _resp = db
@@ -118,7 +118,7 @@ fn activate_user_test() {
     let req_2 = RegisterUserRequest {
         display_name: "test_user_2".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     // Create new user
     let resp_2 = db
@@ -144,7 +144,7 @@ fn create_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_3".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_3_oidc".to_string())
@@ -167,8 +167,8 @@ fn create_api_token_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u1_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -178,8 +178,8 @@ fn create_api_token_test() {
 
     // Create personal token with timestamp
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u1_token".to_string(),
         expires_at: Some(ExpiresAt {
             timestamp: Some(prost_types::Timestamp::default()),
@@ -218,7 +218,7 @@ fn get_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -241,8 +241,8 @@ fn get_api_token_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u2_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -260,7 +260,7 @@ fn get_api_token_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
+        project_id: String::new(),
         collection_id: col.id,
         name: "collection_token".to_string(),
         expires_at: None,
@@ -281,7 +281,7 @@ fn get_api_token_test() {
 
     // Get the token (failure / empty)
     let get_api_token_req_id = GetApiTokenRequest {
-        token_id: "".to_string(),
+        token_id: String::new(),
     };
     let get_token_by_id = db.get_api_token(get_api_token_req_id, user_id);
     assert!(get_token_by_id.is_err());
@@ -297,7 +297,7 @@ fn get_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -320,8 +320,8 @@ fn get_api_tokens_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -332,8 +332,8 @@ fn get_api_tokens_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 2,
@@ -368,7 +368,7 @@ fn delete_api_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -391,8 +391,8 @@ fn delete_api_token_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -431,7 +431,7 @@ fn delete_api_tokens_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -454,8 +454,8 @@ fn delete_api_tokens_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 1,
@@ -466,8 +466,8 @@ fn delete_api_tokens_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 2,
@@ -505,7 +505,7 @@ fn get_user_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -554,7 +554,7 @@ fn get_not_activated_users_test() {
         let req_2 = RegisterUserRequest {
             display_name: format!("test_user_{}", x),
             email: "e@mail.dev".to_string(),
-            project: "".to_string(),
+            project: String::new(),
         };
         // Create new user
         let _resp_2 = db
@@ -579,9 +579,7 @@ fn get_not_activated_users_test() {
     ];
 
     for u in resp.users {
-        if !names.contains(&u.display_name) {
-            panic!("Unknown displayname: {}", u.display_name);
-        }
+        assert!(names.contains(&u.display_name), "Unknown displayname: {}", u.display_name);
     }
 }
 
@@ -595,7 +593,7 @@ fn update_user_display_name_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -646,7 +644,7 @@ fn get_user_projects_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -719,7 +717,7 @@ fn get_checked_user_id_from_token_test() {
     let user_req = RegisterUserRequest {
         display_name: "test_user_4".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     };
     let user_resp = db
         .register_user(user_req, "test_user_4_oidc".to_string())
@@ -736,7 +734,7 @@ fn get_checked_user_id_from_token_test() {
     // Create project as admin
     let crt_proj_req = CreateProjectRequest {
         name: "testproj-1".to_string(),
-        description: "".to_string(),
+        description: String::new(),
     };
     let proj_1_ulid = db
         .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
@@ -756,7 +754,7 @@ fn get_checked_user_id_from_token_test() {
     // Create project as user -> Should be "admin"
     let crt_proj_req_2 = CreateProjectRequest {
         name: "testproj-2".to_string(),
-        description: "".to_string(),
+        description: String::new(),
     };
     // This should add the user automatically
     let _proj_2_ulid = db.create_project(crt_proj_req_2, user_id).unwrap();
@@ -772,8 +770,8 @@ fn get_checked_user_id_from_token_test() {
 
     // Create personal token for the user
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
-        collection_id: "".to_string(),
+        project_id: String::new(),
+        collection_id: String::new(),
         name: "personal_u2_token".to_string(),
         expires_at: None,
         permission: 3, // "APPEND permissions" -> Should be ignored
@@ -791,7 +789,7 @@ fn get_checked_user_id_from_token_test() {
     // Project scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
         project_id: proj_1_ulid.to_string(),
-        collection_id: "".to_string(),
+        collection_id: String::new(),
         name: "personal_u3_token".to_string(),
         expires_at: None,
         permission: 2, // READ permissions
@@ -804,7 +802,7 @@ fn get_checked_user_id_from_token_test() {
     // Project scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
         project_id: _proj_2_ulid.to_string(),
-        collection_id: "".to_string(),
+        collection_id: String::new(),
         name: "personal_u4_token".to_string(),
         expires_at: None,
         permission: 5, // ADMIN permissions
@@ -819,7 +817,7 @@ fn get_checked_user_id_from_token_test() {
     // Create collection in proj_1 --> Admin
     let ccoll_1_req = CreateNewCollectionRequest {
         name: "test-col-1".to_string(),
-        description: "".to_string(),
+        description: String::new(),
         label_ontology: None,
         project_id: proj_1_ulid.to_string(),
         labels: Vec::new(),
@@ -831,7 +829,7 @@ fn get_checked_user_id_from_token_test() {
     // Create collection in proj_1 --> Admin
     let ccoll_2_req = CreateNewCollectionRequest {
         name: "test-col-2".to_string(),
-        description: "".to_string(),
+        description: String::new(),
         label_ontology: None,
         project_id: _proj_2_ulid.to_string(),
         labels: Vec::new(),
@@ -843,7 +841,7 @@ fn get_checked_user_id_from_token_test() {
 
     // Collection scoped token with "READ" permissions
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
+        project_id: String::new(),
         collection_id: col_2.clone().0.collection_id,
         name: "personal_u5_token".to_string(),
         expires_at: None,
@@ -855,7 +853,7 @@ fn get_checked_user_id_from_token_test() {
     let col_token_with_read = diesel_ulid::DieselUlid::from_str(&col_token_with_read.id).unwrap();
     // Collection scoped token with "ADMIN" permissions
     let req = CreateApiTokenRequest {
-        project_id: "".to_string(),
+        project_id: String::new(),
         collection_id: col_1.0.collection_id,
         name: "personal_u5_token".to_string(),
         expires_at: None,

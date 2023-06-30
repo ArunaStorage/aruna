@@ -33,7 +33,7 @@ fn init_default_endpoint_test() {
         }],
         endpoint_bundler: true,
         endpoint_serial: 10,
-        endpoint_pubkey: "".to_string(),
+        endpoint_pubkey: String::new(),
         endpoint_public: true,
         endpoint_docu: None,
     };
@@ -200,8 +200,6 @@ fn get_endpoints_test() {
             "Default Data Proxy".to_string(),
         ];
 
-        if !ep_names.contains(&ep.name) {
-            panic!("Wrong endpoint name: {:#?}", ep.name);
-        }
+        assert!(ep_names.contains(&ep.name), "Wrong endpoint name: {:#?}", ep.name);
     }
 }

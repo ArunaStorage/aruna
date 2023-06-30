@@ -322,7 +322,7 @@ fn get_collections_test() {
             ids: Vec::new(),
         }),
         page_request: Some(PageRequest {
-            last_uuid: "".to_string(),
+            last_uuid: String::new(),
             page_size: 1,
         }),
     };
@@ -615,7 +615,7 @@ fn pin_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -652,7 +652,7 @@ fn pin_collection_test() {
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -766,7 +766,7 @@ fn delete_collection_test() {
     let new_obj_1 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_1_del".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 5,
             source: None,
             dataclass: 2,
@@ -805,14 +805,14 @@ fn delete_collection_test() {
         target_collection_id: result_2.0.collection_id,
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
     let _obj_ref = db.create_object_reference(obj_ref_req);
     // Add some objects and an objectgroup
     let new_obj_2 = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "test_obj_2".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 10,
             source: None,
             dataclass: 2,
@@ -916,12 +916,12 @@ pub fn test_collection_materialized_views_stats() {
 
     // Create Object
     let new_object_id = diesel_ulid::DieselUlid::generate();
-    let upload_id = "".to_string();
+    let upload_id = String::new();
 
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 1337,
             source: None,
             dataclass: DataClass::Private as i32,

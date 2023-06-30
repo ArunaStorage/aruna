@@ -6,7 +6,7 @@ pub fn cleanup() {
     let teardown_output = Command::new("tests/sources/down.sh")
         .output()
         .expect("failed to execute process");
-    println!("{:?}", teardown_output);
+    println!("{teardown_output:?}");
     assert!(teardown_output.status.success())
 }
 

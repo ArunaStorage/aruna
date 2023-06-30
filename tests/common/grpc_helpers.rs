@@ -32,8 +32,8 @@ use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 pub fn add_token<T>(mut req: tonic::Request<T>, token: &str) -> tonic::Request<T> {
     let metadata = req.metadata_mut();
     metadata.append(
-        AsciiMetadataKey::from_bytes("Authorization".as_bytes()).unwrap(),
-        AsciiMetadataValue::try_from(format!("Bearer {}", token)).unwrap(),
+        AsciiMetadataKey::from_bytes(b"Authorization").unwrap(),
+        AsciiMetadataValue::try_from(format!("Bearer {token}")).unwrap(),
     );
     req
 }
@@ -65,7 +65,7 @@ pub async fn create_api_token(create_token: &TCreateToken) -> Token {
     };
 
     let expires = if create_token.expires_at == 0 {
-        Utc::now().timestamp() + 111111111
+        Utc::now().timestamp() + 111_111_111
     } else {
         create_token.expires_at
     };
@@ -114,7 +114,7 @@ pub async fn get_token_user_id(token: &str) -> String {
     // Fetch user information associated with token
     let get_user_request = add_token(
         tonic::Request::new(GetUserRequest {
-            user_id: "".to_string(),
+            user_id: String::new(),
         }),
         token,
     );

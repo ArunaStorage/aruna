@@ -6,7 +6,6 @@ use crate::error::{ArunaError, TypeConversionError};
 use serde::Deserialize;
 
 /// This struct contains all parsed configuration parameters of the ArunaServer
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct ArunaServerConfig {
     pub config: Config,
@@ -14,12 +13,10 @@ pub struct ArunaServerConfig {
 }
 
 /// This struct contains all values collected from environmental variables
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct EnvConfig {}
 
 /// This struct is used as template to parse the ArunaServer config.toml file
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub database_url: String,
@@ -67,7 +64,6 @@ pub struct LocationVersion {
     pub components: Vec<ComponentVersion>,
 }
 
-///
 impl ArunaServerConfig {
     pub fn new() -> Self {
         let config =
@@ -95,7 +91,6 @@ impl ArunaServerConfig {
     ///
     /// It will also return an error if the deserialization of the content into the Config struct fails.
     ///
-
     fn load_config_file() -> Result<Config, ArunaError> {
         // Read config file content
         let content = fs::read_to_string("./config/config.toml")

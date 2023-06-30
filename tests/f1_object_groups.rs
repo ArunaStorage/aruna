@@ -79,8 +79,8 @@ fn create_object_group_test() {
         object_group_description.to_string()
     );
     assert_eq!(object_group.rev_number, 0);
-    assert_eq!(object_group.labels, vec!());
-    assert_eq!(object_group.hooks, vec!());
+    assert_eq!(object_group.labels, vec![]);
+    assert_eq!(object_group.hooks, vec![]);
 
     // Get ObjectGroup
     let get_group_request = GetObjectGroupByIdRequest {
@@ -98,8 +98,8 @@ fn create_object_group_test() {
         object_group_description.to_string()
     );
     assert_eq!(group_overview.rev_number, 0);
-    assert_eq!(group_overview.labels, vec!());
-    assert_eq!(group_overview.hooks, vec!());
+    assert_eq!(group_overview.labels, vec![]);
+    assert_eq!(group_overview.hooks, vec![]);
 
     // Get all Objects in ObjectGroup
     let get_all_request = GetObjectGroupObjectsRequest {
@@ -219,8 +219,8 @@ fn update_object_group_test() {
         updated_description.to_string()
     );
     assert_eq!(object_group_rev_1.rev_number, 1);
-    assert_eq!(object_group_rev_1.labels, vec!());
-    assert_eq!(object_group_rev_1.hooks, vec!());
+    assert_eq!(object_group_rev_1.labels, vec![]);
+    assert_eq!(object_group_rev_1.hooks, vec![]);
 
     // Update ObjectGroup labels to generate third revision
     let updated_labels = vec![KeyValue {
@@ -250,7 +250,7 @@ fn update_object_group_test() {
     );
     assert_eq!(object_group_rev_2.rev_number, 2);
     assert_eq!(object_group_rev_2.labels, updated_labels);
-    assert_eq!(object_group_rev_2.hooks, vec!());
+    assert_eq!(object_group_rev_2.hooks, vec![]);
 
     // Update ObjectGroup object ids to generate fourth revision
     let removed_object = object_ids.choose(&mut thread_rng()).unwrap().clone();
@@ -279,7 +279,7 @@ fn update_object_group_test() {
     );
     assert_eq!(object_group_rev_3.rev_number, 3);
     assert_eq!(object_group_rev_3.labels, updated_labels);
-    assert_eq!(object_group_rev_3.hooks, vec!());
+    assert_eq!(object_group_rev_3.hooks, vec![]);
 
     let all_object_group_objects = db
         .get_object_group_objects(GetObjectGroupObjectsRequest {

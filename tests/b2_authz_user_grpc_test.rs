@@ -30,7 +30,7 @@ async fn register_user_grpc_test() {
     let req = tonic::Request::new(RegisterUserRequest {
         display_name: "This is a test user".to_string(),
         email: "e@mail.dev".to_string(),
-        project: "".to_string(),
+        project: String::new(),
     });
 
     let resp = userservice.register_user(req).await;
@@ -44,7 +44,7 @@ async fn register_user_grpc_test() {
         tonic::Request::new(RegisterUserRequest {
             display_name: "This is a test user".to_string(),
             email: "e@mail.dev".to_string(),
-            project: "".to_string(),
+            project: String::new(),
         }),
         common::oidc::REGULAREXPIRED,
     );
@@ -58,7 +58,7 @@ async fn register_user_grpc_test() {
         tonic::Request::new(RegisterUserRequest {
             display_name: "This is a test user".to_string(),
             email: "e@mail.dev".to_string(),
-            project: "".to_string(),
+            project: String::new(),
         }),
         common::oidc::REGULARINVALID,
     );
@@ -72,7 +72,7 @@ async fn register_user_grpc_test() {
         tonic::Request::new(RegisterUserRequest {
             display_name: "This is a test user".to_string(),
             email: "e@mail.dev".to_string(),
-            project: "".to_string(),
+            project: String::new(),
         }),
         common::oidc::REGULAROIDC,
     );
@@ -139,7 +139,7 @@ async fn activate_user_grpc_test() {
         tonic::Request::new(RegisterUserRequest {
             display_name: "This is a test user2".to_string(),
             email: "e@mail.dev".to_string(),
-            project: "".to_string(),
+            project: String::new(),
         }),
         common::oidc::USER2OIDC,
     );
@@ -182,8 +182,8 @@ async fn create_api_token_grpc_test() {
     // Working test
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "".to_string(),
-            collection_id: "".to_string(),
+            project_id: String::new(),
+            collection_id: String::new(),
             name: "test_token".to_string(),
             expires_at: None,
             permission: 0,
@@ -199,7 +199,7 @@ async fn create_api_token_grpc_test() {
     assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
     assert_eq!(tok.name.to_string(), "test_token".to_string());
-    assert_eq!(tok.collection_id, "".to_string());
+    assert_eq!(tok.collection_id, String::new());
 
     // Broken test with collection and project
     let req = common::grpc_helpers::add_token(
@@ -223,7 +223,7 @@ async fn create_api_token_grpc_test() {
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
             project_id: regular_project_ulid.to_string(),
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             name: "test_token_foreign".to_string(),
             expires_at: None,
             permission: 4,
@@ -240,13 +240,13 @@ async fn create_api_token_grpc_test() {
     assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
     assert_eq!(tok.name.to_string(), "test_token_foreign".to_string());
-    assert_eq!(tok.collection_id, "".to_string());
+    assert_eq!(tok.collection_id, String::new());
 
     // Should fail for "regular user": Token for foreign collection (as_admin)
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
             project_id: regular_project_ulid.to_string(),
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             name: "test_token_foreign".to_string(),
             expires_at: None,
             permission: 4,
@@ -265,7 +265,7 @@ async fn create_api_token_grpc_test() {
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
             project_id: regular_project_ulid.to_string(),
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             name: "test_token_foreign_fail".to_string(),
             expires_at: None,
             permission: 4,
@@ -283,8 +283,8 @@ async fn create_api_token_grpc_test() {
     // Should work for "regular user": OIDCToken for personal token
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "".to_string(),
-            collection_id: "".to_string(),
+            project_id: String::new(),
+            collection_id: String::new(),
             name: "test_personal_oidc".to_string(),
             expires_at: None,
             permission: 4,
@@ -301,8 +301,8 @@ async fn create_api_token_grpc_test() {
     assert!(resp.token_secret != *"");
     let tok = resp.token.unwrap();
     assert_eq!(tok.name, "test_personal_oidc".to_string());
-    assert_eq!(tok.collection_id, "".to_string());
-    assert_eq!(tok.project_id, "".to_string());
+    assert_eq!(tok.collection_id, String::new());
+    assert_eq!(tok.project_id, String::new());
 }
 
 #[ignore]
@@ -319,7 +319,7 @@ async fn get_api_token_grpc_test() {
     // Get User
     let get_req = common::grpc_helpers::add_token(
         tonic::Request::new(GetUserRequest {
-            user_id: "".to_string(),
+            user_id: String::new(),
         }),
         common::oidc::REGULAROIDC,
     );
@@ -328,8 +328,8 @@ async fn get_api_token_grpc_test() {
     // First Create a token
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "".to_string(),
-            collection_id: "".to_string(),
+            project_id: String::new(),
+            collection_id: String::new(),
             name: "test_personal_oidc".to_string(),
             expires_at: None,
             permission: 4,
@@ -373,8 +373,8 @@ async fn get_api_tokens_grpc_test() {
     // First Create a token
     let req = common::grpc_helpers::add_token(
         tonic::Request::new(CreateApiTokenRequest {
-            project_id: "".to_string(),
-            collection_id: "".to_string(),
+            project_id: String::new(),
+            collection_id: String::new(),
             name: "test_personal_oidc".to_string(),
             expires_at: None,
             permission: 4,

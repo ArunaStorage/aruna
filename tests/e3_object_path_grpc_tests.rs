@@ -121,7 +121,7 @@ async fn create_object_with_path_grpc_test() {
                 hooks: vec![],
             }),
             collection_id: random_collection.id.to_string(),
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -254,7 +254,7 @@ async fn create_additional_object_path_grpc_test() {
         tonic::Request::new(CreateObjectPathRequest {
             collection_id: random_collection.id.to_string(),
             object_id: random_object.id.to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -424,7 +424,7 @@ async fn create_object_path_with_reference_grpc_test() {
         target_collection_id: target_collection.id.to_string(),
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
     let default_path_reference_request = common::grpc_helpers::add_token(
         tonic::Request::new(inner_create_reference_request.clone()),
@@ -612,7 +612,7 @@ async fn get_object_path_grpc_test() {
     let mut inner_create_path_request = CreateObjectPathRequest {
         collection_id: random_collection.id.to_string(),
         object_id: random_object.id.to_string(),
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     // Requests with invalid paths
@@ -654,7 +654,7 @@ async fn get_object_path_grpc_test() {
 
     // Requests with valid paths in different formats
     for valid_path in vec![
-        "".to_string(), // Duplicate of existing default path are ignored
+        String::new(), // Duplicate of existing default path are ignored
         "single-part".to_string(),
         "multi/part".to_string(),
         "/slash/front".to_string(),
@@ -1090,7 +1090,7 @@ async fn set_object_path_visibility_grpc_test() {
     let mut inner_create_path_request = CreateObjectPathRequest {
         collection_id: random_collection.id.to_string(),
         object_id: random_object.id.to_string(),
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     for valid_path in vec![
@@ -1121,7 +1121,7 @@ async fn set_object_path_visibility_grpc_test() {
     // Set visibility of some paths to inactive
     let mut inner_set_visibility_request = SetObjectPathVisibilityRequest {
         collection_id: random_collection.id.to_string(),
-        path: "".to_string(),
+        path: String::new(),
         visibility: false,
     };
 

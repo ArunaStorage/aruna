@@ -46,7 +46,7 @@ async fn create_collection_grpc_test() {
     // Create gRPC request to fetch user associated with token
     let get_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(GetUserRequest {
-            user_id: "".to_string(),
+            user_id: String::new(),
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -76,7 +76,7 @@ async fn create_collection_grpc_test() {
     // Create gRPC request for collection creation
     let mut create_collection_request = CreateNewCollectionRequest {
         name: "test-collection".to_string(),
-        description: "".to_string(),
+        description: String::new(),
         project_id: random_project.id.to_string(),
         labels: vec![KeyValue {
             key: "station_id".to_string(),
@@ -301,7 +301,7 @@ async fn get_collections_grpc_test() {
             },
             KeyValue {
                 key: "deprecated".to_string(),
-                value: "".to_string(),
+                value: String::new(),
             },
         ],
         vec![KeyValue {
@@ -315,7 +315,7 @@ async fn get_collections_grpc_test() {
             },
             KeyValue {
                 key: "deprecated".to_string(),
-                value: "".to_string(),
+                value: String::new(),
             },
         ],
         vec![KeyValue {
@@ -430,7 +430,7 @@ async fn get_collections_grpc_test() {
                 labels: Some(LabelFilter {
                     labels: vec![KeyValue {
                         key: "deprecated".to_string(),
-                        value: "".to_string(),
+                        value: String::new(),
                     }],
                     and_or_or: false,
                     keys_only: true,
@@ -542,7 +542,7 @@ async fn get_collections_grpc_test() {
     }));
     assert!(collections[0].labels.contains(&KeyValue {
         key: "deprecated".to_string(),
-        value: "".to_string(),
+        value: String::new(),
     }));
     assert_eq!(collections[0].hooks, vec![]);
     assert_eq!(
@@ -839,7 +839,7 @@ async fn pin_collection_grpc_test() {
     // Try to pin collection without collection_id --> Error
     let pin_collection_grpc_request = common::grpc_helpers::add_token(
         tonic::Request::new(PinCollectionVersionRequest {
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             version: Some(Version {
                 major: 1,
                 minor: 0,
@@ -1040,7 +1040,7 @@ async fn delete_collection_grpc_test() {
     // Try delete non-existing collection --> Error
     let delete_collection_request = common::grpc_helpers::add_token(
         tonic::Request::new(DeleteCollectionRequest {
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             force: false,
         }),
         common::oidc::ADMINTOKEN,

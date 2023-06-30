@@ -1,11 +1,9 @@
+use crate::error::ArunaError;
 use base64::{engine::general_purpose, Engine};
+use diesel_ulid::DieselUlid;
 use hmac::{digest::CtOutput, Hmac, Mac};
 use sha2::Sha256;
-use std::{fmt::Debug, process::Output};
-
-use diesel_ulid::DieselUlid;
-
-use crate::error::{ArunaError, TypeConversionError};
+use std::fmt::Debug;
 
 /// This functions unpacks the header metadata and the inner request
 /// and formats them together in a string.

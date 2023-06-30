@@ -181,9 +181,8 @@ impl Database {
                     if req_ctx.personal {
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
                             return Ok((Some(api_token.creator_user_id), api_token));
-                        } else {
-                            return Err(dError::NotFound);
                         }
+                        return Err(dError::NotFound);
                     }
 
                     // If the requested context / scope is of type COLLECTION
@@ -343,7 +342,7 @@ impl Database {
                     ) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
-                        if backoff > 100000 {
+                        if backoff > 100_000 {
                             log::warn!("Backoff reached for auth retries!");
                             break;
                         }
