@@ -579,7 +579,11 @@ fn get_not_activated_users_test() {
     ];
 
     for u in resp.users {
-        assert!(names.contains(&u.display_name), "Unknown displayname: {}", u.display_name);
+        assert!(
+            names.contains(&u.display_name),
+            "Unknown displayname: {}",
+            u.display_name
+        );
     }
 }
 

@@ -200,6 +200,10 @@ fn get_endpoints_test() {
             "Default Data Proxy".to_string(),
         ];
 
-        assert!(ep_names.contains(&ep.name), "Wrong endpoint name: {:#?}", ep.name);
+        assert!(
+            ep_names.contains(&ep.name),
+            "Wrong endpoint name: {:#?}",
+            ep.name
+        );
     }
 }
