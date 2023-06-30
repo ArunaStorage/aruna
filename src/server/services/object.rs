@@ -1,6 +1,4 @@
-use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::notification::services::v1::EventType;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,8 +18,7 @@ use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::internal::v1::internal_proxy_service_client::InternalProxyServiceClient;
 use aruna_rust_api::api::internal::v1::{
-    EmittedResource, FinishMultipartUploadRequest, InitMultipartUploadRequest, Location,
-    ObjectResource, PartETag,
+    FinishMultipartUploadRequest, InitMultipartUploadRequest, Location, PartETag,
 };
 use aruna_rust_api::api::storage::models::v1::{
     LabelOrIdQuery, Object as ProtoObject, ResourceType,
@@ -456,18 +453,11 @@ impl ObjectService for ObjectServiceImpl {
                 let event_emitter_clone = emit_client.clone();
                 task::spawn(async move {
                     if let Err(err) = event_emitter_clone
-                        .emit_event(
-                            object_ulid.to_string(),
+                        .emit_event_with_relation(
+                            &object_ulid.to_string(),
                             ResourceType::Object,
                             EventType::Created,
-                            vec![EmittedResource {
-                                resource: Some(Resource::Object(ObjectResource {
-                                    project_id: relation.project_id.to_string(),
-                                    collection_id: collection_ulid.to_string(),
-                                    shared_object_id: relation.shared_revision_id.to_string(),
-                                    object_id: object_ulid.to_string(),
-                                })),
-                            }],
+                            &relation,
                         )
                         .await
                     {
@@ -481,20 +471,11 @@ impl ObjectService for ObjectServiceImpl {
                         for old_rel in old_relations {
                             if !already_notified.contains(&old_rel.collection_id) {
                                 if let Err(err) = event_emitter_clone
-                                    .emit_event(
-                                        old_rel.object_id.to_string(),
+                                    .emit_event_with_relation(
+                                        &old_rel.object_id.to_string(),
                                         ResourceType::Object,
                                         EventType::Updated,
-                                        vec![EmittedResource {
-                                            resource: Some(Resource::Object(ObjectResource {
-                                                project_id: old_rel.project_id.to_string(),
-                                                collection_id: old_rel.collection_id.to_string(),
-                                                shared_object_id: old_rel
-                                                    .shared_revision_id
-                                                    .to_string(),
-                                                object_id: old_rel.object_id.to_string(),
-                                            })),
-                                        }],
+                                        &old_rel,
                                     )
                                     .await
                                 {
@@ -756,18 +737,11 @@ impl ObjectService for ObjectServiceImpl {
             let event_emitter_clone = emit_client.clone();
             task::spawn(async move {
                 if let Err(err) = event_emitter_clone
-                    .emit_event(
-                        relation.object_id.to_string(),
+                    .emit_event_with_relation(
+                        &relation.object_id.to_string(),
                         ResourceType::Object,
                         EventType::Created,
-                        vec![EmittedResource {
-                            resource: Some(Resource::Object(ObjectResource {
-                                project_id: relation.project_id.to_string(),
-                                collection_id: relation.collection_id.to_string(),
-                                shared_object_id: relation.shared_revision_id.to_string(),
-                                object_id: relation.object_id.to_string(),
-                            })),
-                        }],
+                        &relation,
                     )
                     .await
                 {
@@ -830,35 +804,17 @@ impl ObjectService for ObjectServiceImpl {
                 .await
                 .map_err(ArunaError::from)??;
 
-        // Generate EmittedResource for each relation
-        let emitted_resources: HashMap<diesel_ulid::DieselUlid, EmittedResource> = relations
-            .into_iter()
-            .map(|relation| {
-                (
-                    relation.object_id,
-                    EmittedResource {
-                        resource: Some(Resource::Object(ObjectResource {
-                            project_id: relation.project_id.to_string(),
-                            collection_id: relation.collection_id.to_string(),
-                            shared_object_id: relation.shared_revision_id.to_string(),
-                            object_id: relation.object_id.to_string(),
-                        })),
-                    },
-                )
-            })
-            .collect();
-
         // Try to emit event notification for each deleted object
         if let Some(emit_client) = &self.event_emitter {
             let event_emitter_clone = emit_client.clone();
             task::spawn(async move {
-                for (object_ulid, emitted_resource) in emitted_resources {
+                for relation in relations {
                     if let Err(err) = event_emitter_clone
-                        .emit_event(
-                            object_ulid.to_string(), // Which resource id with multiple emitted resources?
+                        .emit_event_with_relation(
+                            &relation.object_id.to_string(), // Which resource id with multiple emitted resources?
                             ResourceType::Object,
                             EventType::Deleted,
-                            vec![emitted_resource],
+                            &relation,
                         )
                         .await
                     {
@@ -925,18 +881,11 @@ impl ObjectService for ObjectServiceImpl {
             let event_emitter_clone = emit_client.clone();
             task::spawn(async move {
                 if let Err(err) = event_emitter_clone
-                    .emit_event(
-                        relation.object_id.to_string(),
+                    .emit_event_with_relation(
+                        &relation.object_id.to_string(),
                         ResourceType::Object,
                         EventType::Deleted,
-                        vec![EmittedResource {
-                            resource: Some(Resource::Object(ObjectResource {
-                                project_id: relation.project_id.to_string(),
-                                collection_id: relation.collection_id.to_string(),
-                                shared_object_id: relation.shared_revision_id.to_string(),
-                                object_id: relation.object_id.to_string(),
-                            })),
-                        }],
+                        &relation,
                     )
                     .await
                 {
