@@ -1,11 +1,11 @@
 use base64::{engine::general_purpose, Engine};
-use hmac::{Hmac, Mac};
+use hmac::{digest::CtOutput, Hmac, Mac};
 use sha2::Sha256;
-use std::fmt::Debug;
+use std::{fmt::Debug, process::Output};
 
 use diesel_ulid::DieselUlid;
 
-use crate::error::ArunaError;
+use crate::error::{ArunaError, TypeConversionError};
 
 /// This functions unpacks the header metadata and the inner request
 /// and formats them together in a string.
@@ -70,8 +70,13 @@ pub fn create_bundle_id(
         xor_in_place(&mut data, &o.as_byte_array())
     }
     mac.update(&data);
-    let result = mac.finalize();
-    Ok(general_purpose::URL_SAFE.encode(result.into_bytes()))
+    let result: CtOutput<_> = mac.finalize();
+    let mut result_as_bytes = result.into_bytes();
+    let (a, b) = result_as_bytes.split_at_mut(16);
+    assert!(a.len() == b.len());
+    let im_b = &*b;
+    xor_in_place(a.try_into()?, im_b.try_into()?);
+    Ok(general_purpose::URL_SAFE_NO_PAD.encode(a))
 }
 
 #[inline(always)]
