@@ -4,7 +4,9 @@ use aruna_rust_api::api::storage::{
     models::v1::Token,
     services::v1::{
         CreateServiceAccountRequest, CreateServiceAccountResponse,
-        CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse, ServiceAccount,
+        CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse,
+        GetServiceAccountTokenRequest, GetServiceAccountTokenResponse,
+        GetServiceAccountTokensRequest, GetServiceAccountTokensResponse, ServiceAccount,
         SetServiceAccountPermissionRequest, SetServiceAccountPermissionResponse,
     },
 };
@@ -77,7 +79,6 @@ impl Database {
     pub fn create_service_account_token(
         &self,
         request: CreateServiceAccountTokenRequest,
-        creator: DieselUlid,
         pubkey_ref: i64,
     ) -> Result<CreateServiceAccountTokenResponse, ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
@@ -112,7 +113,7 @@ impl Database {
 
         let token_to_insert = ApiToken {
             id: DieselUlid::generate(),
-            creator_user_id: creator,
+            creator_user_id: svc_account_id,
             pub_key: pubkey_ref,
             name: match request.name.is_empty() {
                 true => None,
@@ -204,6 +205,53 @@ impl Database {
                         permission: request.new_permission,
                     }),
                 })
+            })
+    }
+
+    pub fn get_service_account_token(
+        &self,
+        request: GetServiceAccountTokenRequest,
+    ) -> Result<GetServiceAccountTokenResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+
+        let account_id = DieselUlid::from_str(&request.svc_account_id)?;
+        let token_id = DieselUlid::from_str(&request.token_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<GetServiceAccountTokenResponse, ArunaError, _>(|conn| {
+                let atoken: ApiToken = api_tokens
+                    .filter(crate::database::schema::api_tokens::id.eq(&token_id))
+                    .filter(crate::database::schema::api_tokens::creator_user_id.eq(&account_id))
+                    .first::<ApiToken>(conn)?;
+
+                Ok(GetServiceAccountTokenResponse {
+                    token: Some(Token::try_from(atoken)?),
+                })
+            })
+    }
+
+    pub fn get_service_account_tokens(
+        &self,
+        request: GetServiceAccountTokensRequest,
+    ) -> Result<GetServiceAccountTokensResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+
+        let account_id = DieselUlid::from_str(&request.svc_account_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<GetServiceAccountTokensResponse, ArunaError, _>(|conn| {
+                let atoken: Vec<ApiToken> = api_tokens
+                    .filter(crate::database::schema::api_tokens::creator_user_id.eq(&account_id))
+                    .load::<ApiToken>(conn)?;
+                let as_grpc = atoken
+                    .into_iter()
+                    .map(Token::try_from)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(GetServiceAccountTokensResponse { token: as_grpc })
             })
     }
 }

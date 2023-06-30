@@ -83,8 +83,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
             .map_err(ArunaError::from)?;
 
         // Authorize user
-        let admin_user = self
-            .authz
+        self.authz
             .project_authorize(
                 request.metadata(),
                 parsed_project_id,
@@ -96,11 +95,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         let decoding_serial = self.authz.get_decoding_serial().await;
         let database_clone = self.database.clone();
         let mut token_response = task::spawn_blocking(move || {
-            database_clone.create_service_account_token(
-                request.into_inner(),
-                admin_user,
-                decoding_serial,
-            )
+            database_clone.create_service_account_token(request.into_inner(), decoding_serial)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -152,15 +147,40 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
     /// GetServiceAccountToken
     ///
     /// This requests the overall information about a specifc service account token (by id)
     /// it will not contain the token itself.
     async fn get_service_account_token(
         &self,
-        _request: tonic::Request<GetServiceAccountTokenRequest>,
+        request: tonic::Request<GetServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<GetServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_account_token(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// GetServiceAccountTokens
     ///
@@ -168,9 +188,33 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// it will not contain the token itself.
     async fn get_service_account_tokens(
         &self,
-        _request: tonic::Request<GetServiceAccountTokensRequest>,
+        request: tonic::Request<GetServiceAccountTokensRequest>,
     ) -> Result<tonic::Response<GetServiceAccountTokensResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountTokensRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_account_tokens(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountTokensResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// GetServiceAccountsByProject
     ///
