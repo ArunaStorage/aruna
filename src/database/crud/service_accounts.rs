@@ -5,6 +5,9 @@ use aruna_rust_api::api::storage::{
     services::v1::{
         CreateServiceAccountRequest, CreateServiceAccountResponse,
         CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse,
+        DeleteServiceAccountRequest, DeleteServiceAccountResponse,
+        DeleteServiceAccountTokenRequest, DeleteServiceAccountTokenResponse,
+        DeleteServiceAccountTokensRequest, DeleteServiceAccountTokensResponse,
         GetServiceAccountTokenRequest, GetServiceAccountTokenResponse,
         GetServiceAccountTokensRequest, GetServiceAccountTokensResponse,
         GetServiceAccountsByProjectRequest, GetServiceAccountsByProjectResponse, ServiceAccount,
@@ -12,7 +15,9 @@ use aruna_rust_api::api::storage::{
     },
 };
 use chrono::Utc;
-use diesel::{insert_into, BelongingToDsl, Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::{
+    delete, insert_into, BelongingToDsl, Connection, ExpressionMethods, QueryDsl, RunQueryDsl,
+};
 use diesel_ulid::DieselUlid;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
@@ -298,6 +303,76 @@ impl Database {
                 Ok(GetServiceAccountsByProjectResponse {
                     svc_accounts: mapped_svc_accounts,
                 })
+            })
+    }
+
+    pub fn delete_service_account_token(
+        &self,
+        request: DeleteServiceAccountTokenRequest,
+    ) -> Result<DeleteServiceAccountTokenResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+
+        let svc_account = DieselUlid::from_str(&request.svc_account_id)?;
+        let token_id = DieselUlid::from_str(&request.token_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<DeleteServiceAccountTokenResponse, ArunaError, _>(|conn| {
+                delete(api_tokens)
+                    .filter(crate::database::schema::api_tokens::id.eq(&token_id))
+                    .filter(crate::database::schema::api_tokens::creator_user_id.eq(&svc_account))
+                    .execute(conn)?;
+                Ok(DeleteServiceAccountTokenResponse {})
+            })
+    }
+
+    pub fn delete_service_account_tokens(
+        &self,
+        request: DeleteServiceAccountTokensRequest,
+    ) -> Result<DeleteServiceAccountTokensResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+
+        let svc_account = DieselUlid::from_str(&request.svc_account_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<DeleteServiceAccountTokensResponse, ArunaError, _>(|conn| {
+                delete(api_tokens)
+                    .filter(crate::database::schema::api_tokens::creator_user_id.eq(&svc_account))
+                    .execute(conn)?;
+                Ok(DeleteServiceAccountTokensResponse {})
+            })
+    }
+
+    pub fn delete_service_account(
+        &self,
+        request: DeleteServiceAccountRequest,
+    ) -> Result<DeleteServiceAccountResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+        use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
+
+        let svc_account = DieselUlid::from_str(&request.svc_account_id)?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<DeleteServiceAccountResponse, ArunaError, _>(|conn| {
+                delete(api_tokens)
+                    .filter(crate::database::schema::api_tokens::creator_user_id.eq(&svc_account))
+                    .execute(conn)?;
+
+                delete(user_permissions)
+                    .filter(crate::database::schema::user_permissions::user_id.eq(&svc_account))
+                    .execute(conn)?;
+
+                delete(users)
+                    .filter(crate::database::schema::users::id.eq(&svc_account))
+                    .execute(conn)?;
+
+                Ok(DeleteServiceAccountResponse {})
             })
     }
 }

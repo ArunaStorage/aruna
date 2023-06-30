@@ -259,26 +259,98 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// Deletes one service account token by ID
     async fn delete_service_account_token(
         &self,
-        _request: tonic::Request<DeleteServiceAccountTokenRequest>,
+        request: tonic::Request<DeleteServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account_token(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccountTokens
     ///
     /// Deletes all service account tokens
     async fn delete_service_account_tokens(
         &self,
-        _request: tonic::Request<DeleteServiceAccountTokensRequest>,
+        request: tonic::Request<DeleteServiceAccountTokensRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountTokensResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountTokensRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account_tokens(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountTokensResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccount
     ///
     /// Deletes a service account (by id)
     async fn delete_service_account(
         &self,
-        _request: tonic::Request<DeleteServiceAccountRequest>,
+        request: tonic::Request<DeleteServiceAccountRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 }
