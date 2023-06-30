@@ -17,7 +17,6 @@ use crate::{
         connection::Database,
         crud::utils::map_permissions,
         models::auth::{ApiToken, User, UserPermission},
-        schema::api_tokens,
     },
     error::ArunaError,
 };
@@ -100,12 +99,15 @@ impl Database {
             .map(char::from)
             .collect();
 
+        let perm_to_insert = map_permissions(request.permission());
+
         let (proj, col) = match request.collection_id.is_empty() {
-            true => (Some(DieselUlid::from_str(&request.project_id)?), None),
+            true => match perm_to_insert {
+                Some(_) => (Some(DieselUlid::from_str(&request.project_id)?), None),
+                None => (None, None),
+            },
             false => (None, Some(DieselUlid::from_str(&request.collection_id)?)),
         };
-
-        let perm_to_insert = map_permissions(request.permission());
 
         let token_to_insert = ApiToken {
             id: DieselUlid::generate(),

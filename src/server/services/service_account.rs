@@ -95,17 +95,24 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
 
         let decoding_serial = self.authz.get_decoding_serial().await;
         let database_clone = self.database.clone();
-        let response = Response::new(
-            task::spawn_blocking(move || {
-                database_clone.create_service_account_token(
-                    request.into_inner(),
-                    admin_user,
-                    decoding_serial,
-                )
-            })
-            .await
-            .map_err(ArunaError::from)??,
-        );
+        let mut token_response = task::spawn_blocking(move || {
+            database_clone.create_service_account_token(
+                request.into_inner(),
+                admin_user,
+                decoding_serial,
+            )
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        if let Some(t) = &token_response.token {
+            token_response.token_secret = self
+                .authz
+                .sign_new_token(&t.id, t.expires_at.clone())
+                .await?;
+        }
+
+        let response = Response::new(token_response);
 
         log::info!("Sending CreateServiceAccountTokenResponse back to client.");
         log::debug!("{}", format_grpc_response(&response));
