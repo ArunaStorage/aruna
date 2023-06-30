@@ -9,10 +9,16 @@ use aruna_rust_api::api::storage::services::v1::{
     GetServiceAccountTokensResponse, GetServiceAccountsByProjectRequest,
     GetServiceAccountsByProjectResponse,
 };
+use tokio::task;
+use tonic::Response;
 
 use super::authz::Authz;
-use crate::database::connection::Database;
-use std::sync::Arc;
+use crate::{
+    database::{connection::Database, models::enums::UserRights},
+    error::ArunaError,
+    server::services::utils::{format_grpc_request, format_grpc_response},
+};
+use std::{str::FromStr, sync::Arc};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ServiceAccountServiceImpl);
@@ -26,10 +32,40 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// it will be a global service account that can interact with any resource
     async fn create_service_account(
         &self,
-        _request: tonic::Request<CreateServiceAccountRequest>,
+        request: tonic::Request<CreateServiceAccountRequest>,
     ) -> Result<tonic::Response<CreateServiceAccountResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received CreateServiceAccountRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        let _admin_user = self
+            .authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.create_service_account(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending CreateServiceAccountResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// CreateServiceAccountToken
     ///
     /// Creates a token for a service account
