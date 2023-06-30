@@ -8,6 +8,7 @@ use crate::error::{ArunaError, AuthorizationError};
 use crate::server::services::authz::Context;
 use diesel::insert_into;
 use diesel::{prelude::*, sql_query, sql_types::Uuid};
+use diesel_ulid::DieselUlid;
 
 impl Database {
     /// Method to query all public keys from the Database
@@ -402,6 +403,46 @@ impl Database {
             }
             None => Ok(None),
         }
+    }
+
+    pub fn validate_user_perm_for_svc_account(
+        &self,
+        token_id: &DieselUlid,
+        svc_account_id: &DieselUlid,
+    ) -> Result<(), ArunaError> {
+        use crate::database::schema::api_tokens::dsl::*;
+        use crate::database::schema::user_permissions::dsl::*;
+
+        self.pg_connection
+            .get()?
+            .transaction::<_, ArunaError, _>(|conn| {
+                // Get the API token, if this errors -> no corresponding database token object could be found
+                let api_token: ApiToken = api_tokens
+                    .filter(crate::database::schema::api_tokens::id.eq(token_id))
+                    .first::<ApiToken>(conn)?;
+
+                let user_perms: Vec<UserPermission> = user_permissions
+                    .filter(
+                        crate::database::schema::user_permissions::user_id
+                            .eq(api_token.creator_user_id),
+                    )
+                    .load::<UserPermission>(conn)?;
+
+                let admin_perms = user_perms
+                    .into_iter()
+                    .filter(|p| p.user_right >= UserRights::ADMIN)
+                    .map(|e| e.project_id)
+                    .collect::<Vec<_>>();
+
+                user_permissions
+                    .filter(crate::database::schema::user_permissions::user_id.eq(svc_account_id))
+                    .filter(
+                        crate::database::schema::user_permissions::project_id.eq_any(&admin_perms),
+                    )
+                    .first::<UserPermission>(conn)?;
+
+                Ok(())
+            })
     }
 }
 

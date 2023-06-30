@@ -8,6 +8,7 @@ use crate::error::{ArunaError, AuthorizationError};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use chrono::prelude::*;
+use diesel_ulid::DieselUlid;
 use dotenv::dotenv;
 use http::Method;
 use jsonwebtoken::{
@@ -315,6 +316,18 @@ impl Authz {
                 Ok((creator_uuid, Some(api_token)))
             }
         }
+    }
+
+    /// This function authorizes a user
+    pub async fn authorize_for_service_account(
+        &self,
+        metadata: &MetadataMap,
+        svc_account_id: &DieselUlid,
+    ) -> Result<(), ArunaError> {
+        let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+        self.db
+            .validate_user_perm_for_svc_account(&token_uuid, svc_account_id)?;
+        Ok(())
     }
 
     /// This is a wrapper that runs the authorize function with a `personal` context

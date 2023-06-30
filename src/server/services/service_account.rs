@@ -119,14 +119,38 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         return Ok(response);
     }
 
-    /// EditServiceAccountPermission
+    /// SetServiceAccountPermission
     ///
     /// Overwrites the project specific permissions for a service account
     async fn set_service_account_permission(
         &self,
-        _request: tonic::Request<SetServiceAccountPermissionRequest>,
+        request: tonic::Request<SetServiceAccountPermissionRequest>,
     ) -> Result<tonic::Response<SetServiceAccountPermissionResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received SetServiceAccountPermissionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.set_service_account_permission(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending SetServiceAccountPermissionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// GetServiceAccountToken
     ///

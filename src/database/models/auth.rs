@@ -49,7 +49,16 @@ pub struct Project {
     pub created_by: diesel_ulid::DieselUlid,
 }
 
-#[derive(Associations, Queryable, Insertable, Identifiable, Debug, Selectable, QueryableByName)]
+#[derive(
+    Associations,
+    Queryable,
+    Insertable,
+    Identifiable,
+    Debug,
+    Selectable,
+    QueryableByName,
+    AsChangeset,
+)]
 #[diesel(table_name = user_permissions)]
 #[diesel(belongs_to(User))]
 #[diesel(belongs_to(Project))]

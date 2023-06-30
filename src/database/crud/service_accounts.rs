@@ -5,6 +5,7 @@ use aruna_rust_api::api::storage::{
     services::v1::{
         CreateServiceAccountRequest, CreateServiceAccountResponse,
         CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse, ServiceAccount,
+        SetServiceAccountPermissionRequest, SetServiceAccountPermissionResponse,
     },
 };
 use chrono::Utc;
@@ -162,5 +163,47 @@ impl Database {
             s3_access_key: token_to_insert.id.to_string(),
             s3_secret_key: token_to_insert.secretkey.to_string(),
         })
+    }
+
+    pub fn set_service_account_permission(
+        &self,
+        request: SetServiceAccountPermissionRequest,
+    ) -> Result<SetServiceAccountPermissionResponse, ArunaError> {
+        use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
+
+        let account_id = DieselUlid::from_str(&request.svc_account_id)?;
+        let new_perm = map_permissions(request.new_permission()).ok_or_else(|| {
+            ArunaError::InvalidRequest(
+                "Invalid permission handle for svc account update".to_string(),
+            )
+        })?;
+
+        // Insert the user and return the user_id
+        self.pg_connection
+            .get()?
+            .transaction::<SetServiceAccountPermissionResponse, ArunaError, _>(|conn| {
+                let old_permission: UserPermission = user_permissions
+                    .filter(crate::database::schema::user_permissions::user_id.eq(&account_id))
+                    .first::<UserPermission>(conn)?;
+
+                let new_perm = diesel::update(user_permissions)
+                    .filter(crate::database::schema::user_permissions::id.eq(&old_permission.id))
+                    .set(crate::database::schema::user_permissions::user_right.eq(new_perm))
+                    .get_result::<UserPermission>(conn)?;
+
+                let get_svc_account: User = users
+                    .filter(crate::database::schema::users::id.eq(&new_perm.user_id))
+                    .first::<User>(conn)?;
+
+                Ok(SetServiceAccountPermissionResponse {
+                    service_account: Some(ServiceAccount {
+                        svc_account_id: new_perm.user_id.to_string(),
+                        project_id: new_perm.project_id.to_string(),
+                        name: get_svc_account.display_name,
+                        permission: request.new_permission,
+                    }),
+                })
+            })
     }
 }
