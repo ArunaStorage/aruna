@@ -186,6 +186,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     personal: false,
                     oidc_context: false,
+                    allow_service_accounts: true,
                 },
             )
             .await?
@@ -944,6 +945,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     personal: false,
                     oidc_context: false,
+                    allow_service_accounts: true,
                 },
             )
             .await?
@@ -1018,6 +1020,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     personal: false,
                     oidc_context: false,
+                    allow_service_accounts: true,
                 },
             )
             .await?
@@ -1103,6 +1106,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     personal: false,
                     oidc_context: false,
+                    allow_service_accounts: true,
                 },
             )
             .await?
@@ -1187,6 +1191,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     personal: false,
                     oidc_context: false,
+                    allow_service_accounts: true,
                 },
             )
             .await?
@@ -1368,6 +1373,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     oidc_context: false,
                     personal: false,
+                    allow_service_accounts: true,
                 }),
             )
             .await?
@@ -1440,6 +1446,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     oidc_context: false,
                     personal: false,
+                    allow_service_accounts: true,
                 }),
             )
             .await?
@@ -1540,6 +1547,7 @@ impl ObjectService for ObjectServiceImpl {
                     admin: false,
                     oidc_context: false,
                     personal: false,
+                    allow_service_accounts: true,
                 }),
             )
             .await?
@@ -1873,6 +1881,7 @@ impl ObjectService for ObjectServiceImpl {
                     &grpc_metadata,
                     project_uuid,     // This is the project uuid context for the object
                     UserRights::READ, // User needs at least read permission to get ids
+                    true,
                 )
                 .await?;
         }

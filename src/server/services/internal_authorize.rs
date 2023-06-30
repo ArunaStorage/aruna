@@ -108,12 +108,12 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
                     ResourceAction::Append => false,      // Invalid type/action combination
                     ResourceAction::Update | ResourceAction::Delete => self
                         .authz
-                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::ADMIN)
+                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::ADMIN, true)
                         .await
                         .is_ok(),
                     ResourceAction::Read => self
                         .authz
-                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::READ)
+                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::READ, true)
                         .await
                         .is_ok(),
                 },
@@ -121,7 +121,7 @@ impl InternalAuthorizeService for InternalAuthorizeServiceImpl {
                     ResourceAction::Unspecified => false, // This arm should never be processed
                     ResourceAction::Create => self
                         .authz
-                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::WRITE)
+                        .project_authorize(&grpc_metadata, resource_ulid, UserRights::WRITE, true)
                         .await
                         .is_ok(),
                     ResourceAction::Append => false, // Invalid type/action combination

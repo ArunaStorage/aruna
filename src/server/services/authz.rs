@@ -102,6 +102,8 @@ pub struct Context {
     // All other fields will be ignored, this should only be used for
     // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
+    // Allow service accounts
+    pub allow_service_accounts: bool,
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -330,6 +332,7 @@ impl Authz {
                 admin: false,
                 personal: true,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .await
@@ -350,6 +353,7 @@ impl Authz {
                 admin: true,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .await
@@ -372,6 +376,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: true,
             }),
         )
         .await
@@ -384,6 +389,7 @@ impl Authz {
         metadata: &MetadataMap,
         project_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
+        allow_service_accounts: bool,
     ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
@@ -394,6 +400,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts,
             }),
         )
         .await
@@ -418,6 +425,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: true,
             }),
         )
         .await
@@ -452,7 +460,7 @@ impl Authz {
             }
             ResourceType::Project => {
                 // Authorize against project
-                self.project_authorize(&metadata, resource_ulid, UserRights::READ)
+                self.project_authorize(&metadata, resource_ulid, UserRights::READ, true)
                     .await?
             }
             ResourceType::Collection => {

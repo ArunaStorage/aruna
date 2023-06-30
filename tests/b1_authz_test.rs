@@ -880,6 +880,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: true,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -897,6 +898,7 @@ fn get_checked_user_id_from_token_test() {
             admin: true,
             personal: false,
             oidc_context: false,
+            allow_service_accounts: false,
         }),
     );
     assert!(res.is_err());
@@ -911,6 +913,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -926,6 +929,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -941,6 +945,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -956,6 +961,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: true,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -970,6 +976,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: true,
             oidc_context: false,
+            allow_service_accounts: false,
         }),
     );
     assert!(res.is_err());
@@ -985,6 +992,7 @@ fn get_checked_user_id_from_token_test() {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .unwrap();
@@ -999,6 +1007,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: false,
             oidc_context: false,
+            allow_service_accounts: false,
         }),
     );
     assert!(res.is_err());
@@ -1012,6 +1021,7 @@ fn get_checked_user_id_from_token_test() {
             admin: false,
             personal: false,
             oidc_context: false,
+            allow_service_accounts: false,
         }),
     );
     assert!(res.is_err());

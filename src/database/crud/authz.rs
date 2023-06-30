@@ -131,22 +131,33 @@ impl Database {
     ) -> Result<(diesel_ulid::DieselUlid, ApiToken), ArunaError> {
         use crate::database::schema::api_tokens::dsl::*;
         use crate::database::schema::collections::dsl::*;
+        use crate::database::schema::users::dsl::*;
         //use crate::database::schema::projects::dsl::*;
         use crate::database::schema::user_permissions::dsl::*;
-        use diesel::result::Error as dError;
 
         let mut backoff = 2;
-        let mut transaction_result: Result<(Option<diesel_ulid::DieselUlid>, ApiToken), dError>;
+        let mut transaction_result: Result<
+            (Option<diesel_ulid::DieselUlid>, ApiToken),
+            ArunaError,
+        >;
         let mut connection = self.pg_connection.get()?;
         // Insert all defined objects into the database
 
         loop {
             transaction_result = connection
-                .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), dError, _>(|conn| {
+                .transaction::<(Option<diesel_ulid::DieselUlid>, ApiToken), ArunaError, _>(|conn| {
                     // Get the API token, if this errors -> no corresponding database token object could be found
                     let api_token = api_tokens
                         .filter(crate::database::schema::api_tokens::id.eq(ctx_token))
                         .first::<ApiToken>(conn)?;
+
+                    let user: User = users
+                        .filter(crate::database::schema::users::id.eq(&api_token.creator_user_id))
+                        .first(conn)?;
+
+                    if user.is_service_account && !req_ctx.allow_service_accounts {
+                        return Err(ArunaError::AuthorizationError(AuthorizationError::PERMISSIONDENIED))
+                    }
 
                     // Case 1:
                     // This is checked first because all other checks can be omitted if this succeeds
@@ -182,7 +193,7 @@ impl Database {
                         if api_token.project_id.is_none() && api_token.collection_id.is_none() {
                             return Ok((Some(api_token.creator_user_id), api_token));
                         }
-                        return Err(dError::NotFound);
+                        return Err(ArunaError::AuthorizationError(AuthorizationError::PERMISSIONDENIED));
                     }
 
                     // If the requested context / scope is of type COLLECTION
@@ -335,11 +346,11 @@ impl Database {
                     break;
                 }
                 Err(err) => match err {
-                    dError::SerializationError(_)
-                    | dError::DatabaseError(
+                    ArunaError::DieselError(diesel::result::Error::SerializationError(_))
+                    | ArunaError::DieselError(diesel::result::Error::DatabaseError(
                         diesel::result::DatabaseErrorKind::SerializationFailure,
                         _,
-                    ) => {
+                    )) => {
                         thread::sleep(time::Duration::from_millis(backoff as u64));
                         backoff = i32::pow(backoff, 2);
                         if backoff > 100_000 {
@@ -431,6 +442,7 @@ fn option_uuid_helper(
             admin: false,
             oidc_context: false,
             personal: false,
+            allow_service_accounts: true,
         });
     }
     // Otherwise return None
