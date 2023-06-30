@@ -4,10 +4,10 @@ use aruna_rust_api::api::storage::services::v1::{
     CreateServiceAccountTokenResponse, DeleteServiceAccountRequest, DeleteServiceAccountResponse,
     DeleteServiceAccountTokenRequest, DeleteServiceAccountTokenResponse,
     DeleteServiceAccountTokensRequest, DeleteServiceAccountTokensResponse,
-    EditServiceAccountPermissionRequest, EditServiceAccountPermissionResponse,
     GetServiceAccountTokenRequest, GetServiceAccountTokenResponse, GetServiceAccountTokensRequest,
     GetServiceAccountTokensResponse, GetServiceAccountsByProjectRequest,
-    GetServiceAccountsByProjectResponse,
+    GetServiceAccountsByProjectResponse, SetServiceAccountPermissionRequest,
+    SetServiceAccountPermissionResponse,
 };
 use tokio::task;
 use tonic::Response;
@@ -73,17 +73,52 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// service account
     async fn create_service_account_token(
         &self,
-        _request: tonic::Request<CreateServiceAccountTokenRequest>,
+        request: tonic::Request<CreateServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<CreateServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received CreateServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        let admin_user = self
+            .authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let decoding_serial = self.authz.get_decoding_serial().await;
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.create_service_account_token(
+                    request.into_inner(),
+                    admin_user,
+                    decoding_serial,
+                )
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending CreateServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// EditServiceAccountPermission
     ///
     /// Overwrites the project specific permissions for a service account
-    async fn edit_service_account_permission(
+    async fn set_service_account_permission(
         &self,
-        _request: tonic::Request<EditServiceAccountPermissionRequest>,
-    ) -> Result<tonic::Response<EditServiceAccountPermissionResponse>, tonic::Status> {
+        _request: tonic::Request<SetServiceAccountPermissionRequest>,
+    ) -> Result<tonic::Response<SetServiceAccountPermissionResponse>, tonic::Status> {
         todo!()
     }
     /// GetServiceAccountToken

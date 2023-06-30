@@ -271,18 +271,7 @@ impl Database {
 
         // Create the response
         Ok((
-            Token {
-                id: api_token.id.to_string(),
-                name: api_token.name.unwrap_or_default(),
-                token_type: token_type as i32,
-                created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
-                expires_at: expires_at_time,
-                collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
-                project_id: option_to_string(api_token.project_id).unwrap_or_default(),
-                permission: map_permissions_rev(api_token.user_right),
-                is_session: api_token.is_session,
-                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
-            },
+            Token::try_from(api_token)?,
             api_token.id.to_string(),
             secret_key,
         ))
@@ -355,18 +344,7 @@ impl Database {
 
         // Build the response message
         Ok(GetApiTokenResponse {
-            token: Some(Token {
-                id: api_token.id.to_string(),
-                name: api_token.name.unwrap_or_default(),
-                token_type,
-                created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
-                expires_at: expires_at_time,
-                collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
-                project_id: option_to_string(api_token.project_id).unwrap_or_default(),
-                permission: map_permissions_rev(api_token.user_right),
-                is_session: api_token.is_session,
-                used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
-            }),
+            token: Some(Token::try_from(api_token)?),
         })
     }
 
@@ -449,24 +427,7 @@ impl Database {
                     };
 
                 // Return gRPC formatted token
-                Ok(Token {
-                    id: api_token.id.to_string(),
-                    // Abomination made by borrow_checker
-                    // if someone knows a better way, feel free to add a PR
-                    name: api_token
-                        .name
-                        .as_ref()
-                        .unwrap_or(&"".to_string())
-                        .to_string(),
-                    token_type,
-                    created_at: Some(naivedatetime_to_prost_time(api_token.created_at)?),
-                    expires_at: expires_at_time,
-                    collection_id: option_to_string(api_token.collection_id).unwrap_or_default(),
-                    project_id: option_to_string(api_token.project_id).unwrap_or_default(),
-                    permission: map_permissions_rev(api_token.user_right),
-                    is_session: api_token.is_session,
-                    used_at: Some(naivedatetime_to_prost_time(api_token.used_at)?),
-                })
+                Ok(Token::try_from(*api_token)?)
             })
             .collect::<Result<Vec<_>, ArunaError>>()?;
 
