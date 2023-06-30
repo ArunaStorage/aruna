@@ -14,10 +14,7 @@ use crate::database::models::auth::{ApiToken, Project as ProjectDB, User, UserPe
 use crate::database::models::enums::UserRights;
 use crate::database::schema::api_tokens::dsl::api_tokens;
 use crate::error::ArunaError;
-
-use aruna_rust_api::api::storage::models::v1::{
-    ProjectPermission, Token, TokenType, User as gRPCUser,
-};
+use aruna_rust_api::api::storage::models::v1::{ProjectPermission, Token, User as gRPCUser};
 use aruna_rust_api::api::storage::services::v1::{
     ActivateUserRequest, CreateApiTokenRequest, DeleteApiTokenRequest, DeleteApiTokenResponse,
     DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersResponse, GetApiTokenRequest,
@@ -215,11 +212,8 @@ impl Database {
         let parsed_collection_id = diesel_ulid::DieselUlid::from_str(&request.collection_id).ok();
         // Parse the permissions, should already be validated by the request
         let user_right_db: Option<UserRights> = map_permissions(request.permission());
-        // Create a token_type variable for the response
-        let mut token_type = TokenType::Personal;
         // If on of collection_id or project_id is not empty this is a scoped token
         if parsed_collection_id.is_some() || parsed_project_id.is_some() {
-            token_type = TokenType::Scoped;
             // Either collection or project should be set, not both!
             if parsed_collection_id.is_some() == parsed_project_id.is_some() {
                 return Err(ArunaError::InvalidRequest(
@@ -263,18 +257,9 @@ impl Database {
                 insert_into(api_tokens).values(&new_token).get_result(conn)
             })?;
 
-        // Parse the returned time to prost_type::Timestamp
-        let expires_at_time = match api_token.expires_at {
-            Some(time) => Some(naivedatetime_to_prost_time(time)?),
-            None => None,
-        };
-
+        let token_id = api_token.id.to_string();
         // Create the response
-        Ok((
-            Token::try_from(api_token)?,
-            api_token.id.to_string(),
-            secret_key,
-        ))
+        Ok((Token::try_from(api_token)?, token_id, secret_key))
     }
 
     /// Gets a specific API Token by id from the user. Users can get the ID either from their signed token or
@@ -328,19 +313,6 @@ impl Database {
                     Err(dError::NotFound)
                 }
             })?;
-
-        // Parse the expiry time to be prost_type format
-        let expires_at_time = match api_token.expires_at {
-            Some(time) => Some(naivedatetime_to_prost_time(time)?),
-            None => None,
-        };
-
-        // Parse the token_type
-        let token_type = if api_token.collection_id.is_some() || api_token.project_id.is_some() {
-            2
-        } else {
-            1
-        };
 
         // Build the response message
         Ok(GetApiTokenResponse {
@@ -410,25 +382,8 @@ impl Database {
 
         // Convert all db tokens to gRPC format
         let converted = atoken_result
-            .iter()
-            .map(|api_token| {
-                // Parse expiry_time
-                let expires_at_time = match api_token.expires_at {
-                    Some(time) => Some(naivedatetime_to_prost_time(time)?),
-                    None => None,
-                };
-
-                // Parse token_type
-                let token_type =
-                    if api_token.collection_id.is_some() || api_token.project_id.is_some() {
-                        2
-                    } else {
-                        1
-                    };
-
-                // Return gRPC formatted token
-                Ok(Token::try_from(*api_token)?)
-            })
+            .into_iter()
+            .map(Token::try_from)
             .collect::<Result<Vec<_>, ArunaError>>()?;
 
         // return the converted gRPC token_list
