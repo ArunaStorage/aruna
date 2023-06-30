@@ -1,7 +1,4 @@
-use crate::{
-    backends::storage_backend::StorageBackend,
-    data_server::utils::debug_transformer::DebugTransformer,
-};
+use crate::backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
@@ -145,7 +142,6 @@ async fn get_bundle(
             rx_clone.clone(),
             AsyncSenderSink::new(final_sender_clone.clone()),
         )
-        .add_transformer(DebugTransformer::new("First".to_string()))
         .add_transformer(ChaCha20Dec::new(None).map_err(|e| {
             log::error!("[BUNDLER] ChaCha20 Dec failed: {e}");
             e

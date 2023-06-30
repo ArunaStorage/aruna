@@ -11,6 +11,7 @@ pub struct DebugTransformer {
 }
 
 impl DebugTransformer {
+    #[allow(dead_code)]
     pub fn new(id: String) -> Self {
         DebugTransformer { id, _counter: 0 }
     }
