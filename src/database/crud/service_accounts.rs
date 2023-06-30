@@ -51,9 +51,9 @@ impl Database {
         let user_perm = UserPermission {
             id: diesel_ulid::DieselUlid::generate(),
             user_id: db_user.id,
-            user_right: map_permissions(request.permission().clone()).ok_or(
-                ArunaError::InvalidRequest("Invalid svc account permission".to_string()),
-            )?,
+            user_right: map_permissions(request.permission()).ok_or(ArunaError::InvalidRequest(
+                "Invalid svc account permission".to_string(),
+            ))?,
             project_id: diesel_ulid::DieselUlid::from_str(&request.project_id)?,
         };
 
@@ -77,7 +77,7 @@ impl Database {
                 svc_account_id: uid.to_string(),
                 project_id: request.project_id.to_string(),
                 name: request.name.to_string(),
-                permission: request.permission.clone(),
+                permission: request.permission,
             }),
         })
     }
@@ -93,12 +93,10 @@ impl Database {
         // Get the svc account ulid
         let svc_account_id = diesel_ulid::DieselUlid::from_str(&request.svc_account_id)?;
 
-        let exp_time = match &request.expires_at {
-            Some(t) => {
-                Some(chrono::NaiveDateTime::from_timestamp_opt(t.seconds, 0).unwrap_or_default())
-            }
-            None => None,
-        };
+        let exp_time = request
+            .expires_at
+            .as_ref()
+            .map(|t| chrono::NaiveDateTime::from_timestamp_opt(t.seconds, 0).unwrap_or_default());
 
         // Create random access_key
         let secret_key: String = thread_rng()
@@ -123,13 +121,13 @@ impl Database {
             pub_key: pubkey_ref,
             name: match request.name.is_empty() {
                 true => None,
-                false => Some(request.name.to_string()),
+                false => Some(request.name),
             },
             created_at: Utc::now().naive_local(),
             expires_at: exp_time,
             project_id: proj,
             collection_id: col,
-            user_right: perm_to_insert.clone(),
+            user_right: perm_to_insert,
             secretkey: secret_key,
             used_at: Utc::now().naive_local(),
             is_session: false,
@@ -152,10 +150,8 @@ impl Database {
                 let perm: UserPermission =
                     UserPermission::belonging_to(&account).first::<UserPermission>(conn)?;
                 if let Some(p) = perm_to_insert {
-                    if proj.is_some() {
-                        if perm.user_right < p {
-                            return Err(ArunaError::InvalidRequest("Invalid permission, service account has lower global project permissions.".to_string()))
-                        }
+                    if proj.is_some() && perm.user_right < p {
+                        return Err(ArunaError::InvalidRequest("Invalid permission, service account has lower global project permissions.".to_string()))
                     }
                 };
 
@@ -168,7 +164,7 @@ impl Database {
             token: Some(Token::try_from(token_to_insert.clone())?),
             token_secret: String::new(),
             s3_access_key: token_to_insert.id.to_string(),
-            s3_secret_key: token_to_insert.secretkey.to_string(),
+            s3_secret_key: token_to_insert.secretkey,
         })
     }
 

@@ -125,8 +125,7 @@ impl TryFrom<ApiToken> for Token {
             created_at: Some(naivedatetime_to_prost_time(value.created_at)?),
             expires_at: value
                 .expires_at
-                .map(|v| naivedatetime_to_prost_time(v).ok())
-                .flatten(),
+                .and_then(|v| naivedatetime_to_prost_time(v).ok()),
             collection_id: option_to_string(value.collection_id).unwrap_or_default(),
             project_id: option_to_string(value.project_id).unwrap_or_default(),
             permission: map_permissions_rev(value.user_right),
