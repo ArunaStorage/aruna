@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::fmt::Debug;
@@ -69,7 +70,8 @@ pub fn create_bundle_id(
         xor_in_place(&mut data, &o.as_byte_array())
     }
     mac.update(&data);
-    Ok(hex::encode(mac.finalize().into_bytes()))
+    let result = mac.finalize();
+    Ok(general_purpose::URL_SAFE.encode(result.into_bytes()))
 }
 
 #[inline(always)]
