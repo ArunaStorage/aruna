@@ -114,7 +114,6 @@ impl Database {
     ) -> Result<AddUserToProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
         use crate::database::schema::users::dsl::*;
-        use diesel::result::Error as dError;
         // Map grpc_perm because it is an Option by default
         let grpc_perm = request.user_permission.ok_or_else(|| {
             ArunaError::InvalidRequest(
@@ -565,6 +564,7 @@ impl Database {
         _req_user_id: diesel_ulid::DieselUlid,
     ) -> Result<RemoveUserFromProjectResponse, ArunaError> {
         use crate::database::schema::user_permissions::dsl::*;
+        use crate::database::schema::users::dsl::*;
         // Get project_id
         let p_id = diesel_ulid::DieselUlid::from_str(&request.project_id)?;
         let d_u_id = diesel_ulid::DieselUlid::from_str(&request.user_id)?;
@@ -573,6 +573,16 @@ impl Database {
         self.pg_connection
             .get()?
             .transaction::<_, ArunaError, _>(|conn| {
+                let get_user: User = users
+                    .filter(crate::database::schema::users::id.eq(&d_u_id))
+                    .first::<User>(conn)?;
+
+                if get_user.is_service_account {
+                    return Err(ArunaError::InvalidRequest(
+                        "Cannot add service_account to project, use service account API instead"
+                            .to_string(),
+                    ));
+                }
                 // Delete user_permissions
                 delete(
                     user_permissions.filter(
