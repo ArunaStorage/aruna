@@ -5,14 +5,14 @@ use crate::ServiceSettings;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
-use aruna_file::helpers::notifications_helper::parse_size_from_notifications;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
+use aruna_file::transformer::ReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
-use aruna_file::transformers::compressor::ZstdEnc;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::footer::FooterGenerator;
 use aruna_file::transformers::size_probe::SizeProbe;
+use aruna_file::transformers::zstd_comp::ZstdEnc;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient;
 use aruna_rust_api::api::internal::v1::FinalizeObjectRequest;
 use aruna_rust_api::api::internal::v1::GetOrCreateEncryptionKeyRequest;
@@ -20,6 +20,8 @@ use aruna_rust_api::api::internal::v1::Location as ArunaLocation;
 use aruna_rust_api::api::internal::v1::PartETag;
 use aruna_rust_api::api::storage::models::v1::Hash;
 use aruna_rust_api::api::storage::models::v1::Hashalgorithm;
+use async_channel::Receiver;
+use async_channel::Sender;
 use futures::future;
 use futures::StreamExt;
 use md5::{Digest, Md5};
@@ -77,7 +79,7 @@ impl DataHandler {
 
         to.bucket = format!(
             "{}-{}",
-            self.settings.endpoint_id.to_string(),
+            self.settings.endpoint_id.to_string().to_lowercase(),
             &sha_hash.hash[0..2]
         );
         to.path = sha_hash.hash[2..].to_string();
@@ -104,7 +106,10 @@ impl DataHandler {
         let mut to_clone = to.clone();
 
         if !existing {
-            let (tx_send, tx_receive) = async_channel::bounded(10);
+            let (tx_send, tx_receive): (
+                Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
+                Receiver<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
+            ) = async_channel::bounded(10);
 
             let backend_clone = self.backend.clone();
             let settings_clone = self.settings.clone();
@@ -112,9 +117,24 @@ impl DataHandler {
 
             let awr_handle = tokio::spawn(async move {
                 let mut awr = ArunaStreamReadWriter::new_with_sink(
-                    tx_receive.map(Ok),
-                    BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None),
+                    tx_receive,
+                    BufferedS3Sink::new(backend_clone, to.clone(), None, None, false, None).0,
                 );
+
+                awr = awr.add_transformer(ChaCha20Dec::new(Some(
+                    to.encryption_key.as_bytes().to_vec(),
+                ))?);
+
+                if settings_clone.compressing {
+                    if temp_size > 5242880 + 80 * 28 {
+                        log::debug!("Added footer !");
+                        // Add padding if a footer is generated
+                        awr = awr.add_transformer(ZstdEnc::new(false));
+                        awr = awr.add_transformer(FooterGenerator::new(None));
+                    } else {
+                        awr = awr.add_transformer(ZstdEnc::new(true));
+                    }
+                }
 
                 if settings_clone.encrypting {
                     awr = awr.add_transformer(
@@ -129,19 +149,6 @@ impl DataHandler {
                         )?,
                     );
                 }
-
-                if settings_clone.compressing {
-                    if temp_size > 5242880 + 80 * 28 {
-                        log::debug!("Added footer !");
-                        awr = awr.add_transformer(FooterGenerator::new(None, true));
-                        // Add padding if a footer is generated
-                        awr = awr.add_transformer(ZstdEnc::new(0, false));
-                    } else {
-                        awr = awr.add_transformer(ZstdEnc::new(0, true));
-                    }
-                }
-
-                awr = awr.add_transformer(ChaCha20Dec::new(to.encryption_key.as_bytes().to_vec())?);
 
                 awr.process().await
             });
@@ -184,19 +191,17 @@ impl DataHandler {
         let aswr_handle = tokio::spawn(async move {
             // Bind to variable to extend the lifetime of arsw to the end of the function
             let mut asr = ArunaStreamReadWriter::new_with_sink(
-                tx_receive.clone().map(Ok),
+                tx_receive.clone(),
                 AsyncSenderSink::new(transform_send),
             );
-
-            asr = asr.add_transformer(SizeProbe::new(1));
-            asr = asr.add_transformer(ChaCha20Dec::new(clone_key)?);
+            let (probe, size_stream) = SizeProbe::new();
+            asr = asr.add_transformer(ChaCha20Dec::new(Some(clone_key))?);
+            asr = asr.add_transformer(probe);
 
             asr.process().await?;
 
-            let notes = asr.query_notifications().await?;
-
             match 1 {
-                1 => Ok(parse_size_from_notifications(notes, 1)?),
+                1 => Ok(size_stream.try_recv()?),
                 _ => Err(anyhow!("Will not occur")),
             }
         });
@@ -270,7 +275,10 @@ impl DataHandler {
             .clone()
             .finish_multipart_upload(
                 ArunaLocation {
-                    bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                    bucket: format!(
+                        "{}-temp",
+                        self.settings.endpoint_id.to_string().to_lowercase()
+                    ),
                     path: format!("{}/{}", collection_id, object_id),
                     ..Default::default()
                 },
@@ -292,14 +300,20 @@ impl DataHandler {
             mover_clone
                 .move_encode(
                     ArunaLocation {
-                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                        bucket: format!(
+                            "{}-temp",
+                            self.settings.endpoint_id.to_string().to_lowercase()
+                        ),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         encryption_key: enc_key.clone(),
                         ..Default::default()
                     },
                     ArunaLocation {
-                        bucket: format!("{}-temp", self.settings.endpoint_id.to_string()),
+                        bucket: format!(
+                            "{}-temp",
+                            self.settings.endpoint_id.to_string().to_lowercase()
+                        ),
                         path: format!("{}/{}", collection_id, object_id),
                         is_encrypted: encrypting,
                         is_compressed: compressing,

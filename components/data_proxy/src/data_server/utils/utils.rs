@@ -46,7 +46,7 @@ pub fn create_location_from_hash(
         (
             // For now we do not compress temp values
             Location {
-                bucket: format!("{}-temp", endpoint_id),
+                bucket: format!("{}-temp", endpoint_id.to_lowercase()),
                 is_compressed: false,
                 is_encrypted: encrypting,
                 encryption_key,
@@ -61,7 +61,7 @@ pub fn create_location_from_hash(
         if !exists {
             (
                 Location {
-                    bucket: format!("{}-{}", endpoint_id, &sha256_hash[0..2]),
+                    bucket: format!("{}-{}", endpoint_id.to_lowercase(), &sha256_hash[0..2]),
                     path: sha256_hash[2..].to_string(),
                     is_compressed: compressing,
                     is_encrypted: encrypting,
@@ -76,7 +76,7 @@ pub fn create_location_from_hash(
             (
                 // For now we do not compress temp values
                 Location {
-                    bucket: format!("{}-temp", endpoint_id),
+                    bucket: format!("{}-temp", endpoint_id.to_lowercase()),
                     is_compressed: false,
                     is_encrypted: encrypting,
                     encryption_key,

@@ -5,28 +5,37 @@ use futures::try_join;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
 
-use crate::data_server::{
-    data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
+use crate::{
+    bundler::{
+        bundler::Bundler, bundler_web_server::run_axum,
+        internal_bundler_service::InternalBundlerServiceImpl,
+    },
+    data_server::{
+        data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
+    },
 };
 
 mod backends;
+mod bundler;
 mod data_server;
 mod helpers;
 mod service_server;
 
 #[tokio::main]
 async fn main() {
-    dotenv::from_filename(".env").ok();
+    dotenvy::from_filename(".env").ok();
 
-    let hostname = dotenv::var("PROXY_HOSTNAME").unwrap();
+    let hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
     // External S3 server
-    let proxy_data_host = dotenv::var("PROXY_DATA_HOST").unwrap();
+    let proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
     // ULID of the endpoint
-    let endpoint_id = dotenv::var("ENDPOINT_ID").unwrap();
+    let endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
     // Aruna Backend
-    let backend_host = dotenv::var("BACKEND_HOST").unwrap();
+    let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
     // Internal backchannel Aruna -> Dproxy
-    let internal_backend_host = dotenv::var("BACKEND_HOST_INTERNAL").unwrap();
+    let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
+    // Optional Bundler URL
+    let external_bundler_url = dotenvy::var("BUNDLER_URL").ok();
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -68,10 +77,10 @@ async fn main() {
     let data_server = S3Server::new(
         &proxy_data_host,
         hostname,
-        backend_host,
+        backend_host.to_string(),
         storage_backend.clone(),
         data_handler.clone(),
-        endpoint_id,
+        endpoint_id.to_string(),
     )
     .await
     .unwrap();
@@ -82,17 +91,49 @@ async fn main() {
             .unwrap();
     let internal_proxy_socket = internal_backend_host.parse().unwrap();
 
-    let internal_proxy_server =
-        ProxyServer::new(Arc::new(internal_proxy_server), internal_proxy_socket)
+    match external_bundler_url {
+        Some(bundler_url) => {
+            let bundl = Bundler::new(backend_host, endpoint_id).await.unwrap();
+
+            let internal_bundler = InternalBundlerServiceImpl::new(bundl.clone());
+
+            let internal_proxy_server = ProxyServer::new(
+                Some(Arc::new(internal_bundler)),
+                Arc::new(internal_proxy_server),
+                internal_proxy_socket,
+            )
             .await
             .unwrap();
 
-    log::info!("Starting proxy and dataserver");
-    let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
-        Ok(value) => value,
-        Err(err) => {
-            log::error!("{}", err);
-            return;
+            let axum_handle = run_axum(bundler_url, bundl.clone(), storage_backend.clone());
+
+            log::info!("Starting proxy, dataserver and axum server");
+            let _end = match try_join!(
+                data_server.run(),
+                internal_proxy_server.serve(),
+                axum_handle
+            ) {
+                Ok(value) => value,
+                Err(err) => {
+                    log::error!("{}", err);
+                    return;
+                }
+            };
         }
-    };
+        None => {
+            let internal_proxy_server =
+                ProxyServer::new(None, Arc::new(internal_proxy_server), internal_proxy_socket)
+                    .await
+                    .unwrap();
+
+            log::info!("Starting proxy and dataserver");
+            let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
+                Ok(value) => value,
+                Err(err) => {
+                    log::error!("{}", err);
+                    return;
+                }
+            };
+        }
+    }
 }

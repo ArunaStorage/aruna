@@ -1,41 +1,36 @@
 use anyhow::Result;
-use aruna_file::transformer::{AddTransformer, Notifications, Transformer};
+use aruna_file::{
+    notifications::{Message, Response},
+    transformer::Transformer,
+};
 
-pub struct DebugTransformer<'a> {
-    next: Option<Box<dyn Transformer + Send + 'a>>,
+#[derive(Default)]
+pub struct DebugTransformer {
+    _counter: u64,
+    id: String,
 }
 
-impl DebugTransformer<'_> {
-    pub fn _new() -> Self {
-        Self { next: None }
+impl DebugTransformer {
+    #[allow(dead_code)]
+    pub fn new(id: String) -> Self {
+        DebugTransformer { id, _counter: 0 }
     }
 }
 
-impl<'a> AddTransformer<'a> for DebugTransformer<'a> {
-    fn add_transformer(&mut self, t: Box<dyn Transformer + Send + 'a>) {
-        self.next = Some(t)
-    }
-}
 #[async_trait::async_trait]
-impl Transformer for DebugTransformer<'_> {
-    async fn process_bytes(&mut self, buf: &mut bytes::Bytes, finished: bool) -> Result<bool> {
-        // Try to write the buf to the "next" in the chain, even if the buf is empty
-        if let Some(next) = &mut self.next {
-            // Should be called even if bytes.len() == 0 to drive underlying Transformer to completion
-            log::debug!(
-                "DebugTransformer: processed: {} Bytes, finished: {}",
-                buf.len(),
-                finished
-            );
-            return next.process_bytes(buf, finished).await;
-        }
-        Ok(false)
+impl Transformer for DebugTransformer {
+    async fn process_bytes(
+        &mut self,
+        buf: &mut bytes::BytesMut,
+        finished: bool,
+        should_flush: bool,
+    ) -> Result<bool> {
+        dbg!((buf.len(), &self.id, finished, should_flush));
+        Ok(finished)
     }
-
-    async fn notify(&mut self, notes: &mut Vec<Notifications>) -> Result<()> {
-        if let Some(next) = &mut self.next {
-            next.notify(notes).await?
-        }
-        Ok(())
+    #[allow(unused_variables)]
+    async fn notify(&mut self, message: &Message) -> Result<Response> {
+        //dbg!(message, &self.id);
+        Ok(Response::Ok)
     }
 }

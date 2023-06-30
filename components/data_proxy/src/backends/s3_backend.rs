@@ -20,7 +20,7 @@ pub struct S3Backend {
 
 impl S3Backend {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let s3_endpoint = dotenv::var("AWS_S3_HOST").unwrap();
+        let s3_endpoint = dotenvy::var("AWS_S3_HOST").unwrap();
 
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)
@@ -80,7 +80,7 @@ impl StorageBackend for S3Backend {
         &self,
         location: Location,
         range: Option<String>,
-        sender: Sender<bytes::Bytes>,
+        sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()> {
         let object = self
             .s3_client
@@ -98,7 +98,7 @@ impl StorageBackend for S3Backend {
         };
 
         while let Some(bytes) = object_request.body.next().await {
-            sender.send(bytes?).await?;
+            sender.send(Ok(bytes?)).await?;
         }
         return Ok(());
     }
