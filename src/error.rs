@@ -186,7 +186,7 @@ impl From<AuthorizationError> for ArunaError {
 }
 
 impl From<TryFromSliceError> for ArunaError {
-    fn from(e: TryFromSliceError) -> Self {
+    fn from(_: TryFromSliceError) -> Self {
         ArunaError::TypeConversionError(TypeConversionError::TRYFROMSLICE)
     }
 }

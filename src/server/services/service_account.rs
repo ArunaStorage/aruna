@@ -4,15 +4,21 @@ use aruna_rust_api::api::storage::services::v1::{
     CreateServiceAccountTokenResponse, DeleteServiceAccountRequest, DeleteServiceAccountResponse,
     DeleteServiceAccountTokenRequest, DeleteServiceAccountTokenResponse,
     DeleteServiceAccountTokensRequest, DeleteServiceAccountTokensResponse,
-    EditServiceAccountPermissionRequest, EditServiceAccountPermissionResponse,
     GetServiceAccountTokenRequest, GetServiceAccountTokenResponse, GetServiceAccountTokensRequest,
     GetServiceAccountTokensResponse, GetServiceAccountsByProjectRequest,
-    GetServiceAccountsByProjectResponse,
+    GetServiceAccountsByProjectResponse, SetServiceAccountPermissionRequest,
+    SetServiceAccountPermissionResponse,
 };
+use tokio::task;
+use tonic::Response;
 
 use super::authz::Authz;
-use crate::database::connection::Database;
-use std::sync::Arc;
+use crate::{
+    database::{connection::Database, models::enums::UserRights},
+    error::ArunaError,
+    server::services::utils::{format_grpc_request, format_grpc_response},
+};
+use std::{str::FromStr, sync::Arc};
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(ServiceAccountServiceImpl);
@@ -26,10 +32,40 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// it will be a global service account that can interact with any resource
     async fn create_service_account(
         &self,
-        _request: tonic::Request<CreateServiceAccountRequest>,
+        request: tonic::Request<CreateServiceAccountRequest>,
     ) -> Result<tonic::Response<CreateServiceAccountResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received CreateServiceAccountRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        let _admin_user = self
+            .authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.create_service_account(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending CreateServiceAccountResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// CreateServiceAccountToken
     ///
     /// Creates a token for a service account
@@ -37,28 +73,114 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// service account
     async fn create_service_account_token(
         &self,
-        _request: tonic::Request<CreateServiceAccountTokenRequest>,
+        request: tonic::Request<CreateServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<CreateServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received CreateServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        self.authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let decoding_serial = self.authz.get_decoding_serial().await;
+        let database_clone = self.database.clone();
+        let mut token_response = task::spawn_blocking(move || {
+            database_clone.create_service_account_token(request.into_inner(), decoding_serial)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        if let Some(t) = &token_response.token {
+            token_response.token_secret = self
+                .authz
+                .sign_new_token(&t.id, t.expires_at.clone())
+                .await?;
+        }
+
+        let response = Response::new(token_response);
+
+        log::info!("Sending CreateServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
-    /// EditServiceAccountPermission
+
+    /// SetServiceAccountPermission
     ///
     /// Overwrites the project specific permissions for a service account
-    async fn edit_service_account_permission(
+    async fn set_service_account_permission(
         &self,
-        _request: tonic::Request<EditServiceAccountPermissionRequest>,
-    ) -> Result<tonic::Response<EditServiceAccountPermissionResponse>, tonic::Status> {
-        todo!()
+        request: tonic::Request<SetServiceAccountPermissionRequest>,
+    ) -> Result<tonic::Response<SetServiceAccountPermissionResponse>, tonic::Status> {
+        log::info!("Received SetServiceAccountPermissionRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.set_service_account_permission(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending SetServiceAccountPermissionResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
+
     /// GetServiceAccountToken
     ///
     /// This requests the overall information about a specifc service account token (by id)
     /// it will not contain the token itself.
     async fn get_service_account_token(
         &self,
-        _request: tonic::Request<GetServiceAccountTokenRequest>,
+        request: tonic::Request<GetServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<GetServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_account_token(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// GetServiceAccountTokens
     ///
@@ -66,9 +188,33 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// it will not contain the token itself.
     async fn get_service_account_tokens(
         &self,
-        _request: tonic::Request<GetServiceAccountTokensRequest>,
+        request: tonic::Request<GetServiceAccountTokensRequest>,
     ) -> Result<tonic::Response<GetServiceAccountTokensResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountTokensRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_account_tokens(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountTokensResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// GetServiceAccountsByProject
     ///
@@ -76,35 +222,135 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     /// each service account is bound to a specific project
     async fn get_service_accounts_by_project(
         &self,
-        _request: tonic::Request<GetServiceAccountsByProjectRequest>,
+        request: tonic::Request<GetServiceAccountsByProjectRequest>,
     ) -> Result<tonic::Response<GetServiceAccountsByProjectResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received GetServiceAccountsByProjectRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parsed_project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
+            .map_err(ArunaError::from)?;
+
+        // Authorize user
+        self.authz
+            .project_authorize(
+                request.metadata(),
+                parsed_project_id,
+                UserRights::ADMIN,
+                false,
+            )
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.get_service_accounts_by_project(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending GetServiceAccountsByProjectResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccountToken
     ///
     /// Deletes one service account token by ID
     async fn delete_service_account_token(
         &self,
-        _request: tonic::Request<DeleteServiceAccountTokenRequest>,
+        request: tonic::Request<DeleteServiceAccountTokenRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountTokenResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountTokenRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account_token(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountTokenResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccountTokens
     ///
     /// Deletes all service account tokens
     async fn delete_service_account_tokens(
         &self,
-        _request: tonic::Request<DeleteServiceAccountTokensRequest>,
+        request: tonic::Request<DeleteServiceAccountTokensRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountTokensResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountTokensRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account_tokens(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountTokensResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
     /// DeleteServiceAccount
     ///
     /// Deletes a service account (by id)
     async fn delete_service_account(
         &self,
-        _request: tonic::Request<DeleteServiceAccountRequest>,
+        request: tonic::Request<DeleteServiceAccountRequest>,
     ) -> Result<tonic::Response<DeleteServiceAccountResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteServiceAccountRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        // Parse the project Uuid
+        let parse_svc_account_id =
+            diesel_ulid::DieselUlid::from_str(&request.get_ref().svc_account_id)
+                .map_err(ArunaError::from)?;
+
+        // Authorize that this user is admin in the svc account project
+        self.authz
+            .authorize_for_service_account(request.metadata(), &parse_svc_account_id)
+            .await?;
+
+        let database_clone = self.database.clone();
+        let response = Response::new(
+            task::spawn_blocking(move || {
+                database_clone.delete_service_account(request.into_inner())
+            })
+            .await
+            .map_err(ArunaError::from)??,
+        );
+
+        log::info!("Sending DeleteServiceAccountResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        return Ok(response);
     }
 }

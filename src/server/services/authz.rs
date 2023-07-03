@@ -8,6 +8,7 @@ use crate::error::{ArunaError, AuthorizationError};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use chrono::prelude::*;
+use diesel_ulid::DieselUlid;
 use dotenv::dotenv;
 use http::Method;
 use jsonwebtoken::{
@@ -102,6 +103,8 @@ pub struct Context {
     // All other fields will be ignored, this should only be used for
     // register and the initial creation / deletion of private access tokens
     pub oidc_context: bool,
+    // Allow service accounts
+    pub allow_service_accounts: bool,
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -315,6 +318,18 @@ impl Authz {
         }
     }
 
+    /// This function authorizes a user
+    pub async fn authorize_for_service_account(
+        &self,
+        metadata: &MetadataMap,
+        svc_account_id: &DieselUlid,
+    ) -> Result<(), ArunaError> {
+        let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
+        self.db
+            .validate_user_perm_for_svc_account(&token_uuid, svc_account_id)?;
+        Ok(())
+    }
+
     /// This is a wrapper that runs the authorize function with a `personal` context
     /// a convenience function if this request is `personal` scoped
     pub async fn personal_authorize(
@@ -330,6 +345,7 @@ impl Authz {
                 admin: false,
                 personal: true,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .await
@@ -350,6 +366,7 @@ impl Authz {
                 admin: true,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: false,
             }),
         )
         .await
@@ -372,6 +389,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: true,
             }),
         )
         .await
@@ -384,6 +402,7 @@ impl Authz {
         metadata: &MetadataMap,
         project_id: diesel_ulid::DieselUlid,
         user_right: UserRights,
+        allow_service_accounts: bool,
     ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
         self.authorize(
             metadata,
@@ -394,6 +413,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts,
             }),
         )
         .await
@@ -418,6 +438,7 @@ impl Authz {
                 admin: false,
                 personal: false,
                 oidc_context: false,
+                allow_service_accounts: true,
             }),
         )
         .await
@@ -452,7 +473,7 @@ impl Authz {
             }
             ResourceType::Project => {
                 // Authorize against project
-                self.project_authorize(&metadata, resource_ulid, UserRights::READ)
+                self.project_authorize(&metadata, resource_ulid, UserRights::READ, true)
                     .await?
             }
             ResourceType::Collection => {

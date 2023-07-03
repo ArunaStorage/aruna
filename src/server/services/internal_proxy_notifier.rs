@@ -362,6 +362,7 @@ impl InternalProxyNotifierService for InternalProxyNotifierServiceImpl {
                         admin: false,
                         personal: false,
                         oidc_context: false,
+                        allow_service_accounts: true,
                     },
                 )?;
 

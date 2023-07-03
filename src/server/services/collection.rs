@@ -62,7 +62,7 @@ impl CollectionService for CollectionServiceImpl {
         // Authorize the request
         let creator_id = self
             .authz
-            .project_authorize(request.metadata(), project_id, UserRights::WRITE)
+            .project_authorize(request.metadata(), project_id, UserRights::WRITE, true)
             .await?;
 
         // Execute request in spawn_blocking task to prevent blocking the API server
@@ -208,6 +208,7 @@ impl CollectionService for CollectionServiceImpl {
                 diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
                     .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
                 UserRights::READ,
+                true,
             )
             .await?;
 
