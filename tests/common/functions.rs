@@ -121,6 +121,7 @@ pub fn create_project(creator_id: Option<String>) -> ProjectOverview {
     let create_request = CreateProjectRequest {
         name: project_name.clone(),
         description: project_description.clone(),
+        ..Default::default()
     };
 
     // Test if project_id is parseable

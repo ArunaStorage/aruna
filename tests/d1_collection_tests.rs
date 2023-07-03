@@ -893,6 +893,7 @@ pub fn test_collection_materialized_views_stats() {
         name: "test-collection-materialized-views-stats-project".to_string(),
         description: "Collection created for test_collection_materialized_views_stats()"
             .to_string(),
+        ..Default::default()
     };
 
     let project_ulid = db.create_project(create_project_request, creator).unwrap();

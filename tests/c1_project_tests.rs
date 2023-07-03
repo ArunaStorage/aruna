@@ -31,6 +31,7 @@ fn create_project_test() {
     let request = CreateProjectRequest {
         name: "create-project-test-project".to_string(),
         description: "Project created in create_project_test()".to_string(),
+        ..Default::default()
     };
 
     let proj_ulid = db.create_project(request, creator).unwrap();
@@ -65,6 +66,7 @@ fn update_project_test() {
         project_id: project_id.to_string(),
         name: updated_name.to_string(),
         description: updated_description.to_string(),
+        ..Default::default()
     };
 
     let update_response = db.update_project(update_request.clone(), creator).unwrap();
@@ -183,6 +185,7 @@ fn add_remove_project_user_test() {
     let create_request = CreateProjectRequest {
         name: "add-remove-project-user-test-project".to_string(),
         description: "Project created for add_remove_project_user_test()".to_string(),
+        ..Default::default()
     };
     let proj_ulid = db.create_project(create_request, creator).unwrap();
 
@@ -268,6 +271,7 @@ fn edit_project_user_permissions_test() {
     let create_request = CreateProjectRequest {
         name: "edit-project-user-permissions-test-project".to_string(),
         description: "Project created in edit_project_user_permissions_test()".to_string(),
+        ..Default::default()
     };
     let proj_ulid = db.create_project(create_request, creator).unwrap();
 

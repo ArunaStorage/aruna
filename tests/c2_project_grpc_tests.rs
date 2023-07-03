@@ -39,6 +39,7 @@ async fn create_project_grpc_test() {
         tonic::Request::new(CreateProjectRequest {
             name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
+            ..Default::default()
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -58,6 +59,7 @@ async fn create_project_grpc_test() {
         tonic::Request::new(CreateProjectRequest {
             name: "test-project".to_string(),
             description: "This project was created in create_project_grpc_test().".to_string(),
+            ..Default::default()
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -179,6 +181,7 @@ async fn update_project_grpc_test() {
             project_id: orig_project.id.to_string(),
             name: "updated-project".to_string(),
             description: "This project was updated in update_project_grpc_test().".to_string(),
+            ..Default::default()
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -204,6 +207,7 @@ async fn update_project_grpc_test() {
             project_id: orig_project.id.to_string(),
             name: "updated-project".to_string(),
             description: "This update should have been failed...".to_string(),
+            ..Default::default()
         }),
         common::oidc::REGULARTOKEN,
     );

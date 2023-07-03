@@ -666,6 +666,7 @@ fn get_user_projects_test() {
     let crt_proj_req = CreateProjectRequest {
         name: "get-user-projects-test-project-001".to_string(),
         description: "First project created in get_user_projects_test()".to_string(),
+        ..Default::default()
     };
     let proj_1_ulid = db
         .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
@@ -686,6 +687,7 @@ fn get_user_projects_test() {
     let crt_proj_req_2 = CreateProjectRequest {
         name: "get-user-projects-test-project-002".to_string(),
         description: "Second project created in get_user_projects_test()".to_string(),
+        ..Default::default()
     };
     // This should add the user automatically
     let _proj_2_ulid = db.create_project(crt_proj_req_2, user_id).unwrap();
@@ -739,6 +741,7 @@ fn get_checked_user_id_from_token_test() {
     let crt_proj_req = CreateProjectRequest {
         name: "testproj-1".to_string(),
         description: String::new(),
+        ..Default::default()
     };
     let proj_1_ulid = db
         .create_project(crt_proj_req, common::functions::get_admin_user_ulid())
@@ -759,6 +762,7 @@ fn get_checked_user_id_from_token_test() {
     let crt_proj_req_2 = CreateProjectRequest {
         name: "testproj-2".to_string(),
         description: String::new(),
+        ..Default::default()
     };
     // This should add the user automatically
     let _proj_2_ulid = db.create_project(crt_proj_req_2, user_id).unwrap();

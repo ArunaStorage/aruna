@@ -57,6 +57,7 @@ fn create_object_test() {
     let create_project_request = CreateProjectRequest {
         name: "create-object-test-project-001".to_string(),
         description: "Project created in create_object_test()".to_string(),
+        ..Default::default()
     };
 
     let project_ulid = db.create_project(create_project_request, creator).unwrap();

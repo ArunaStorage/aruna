@@ -69,7 +69,7 @@ impl Database {
             id: project_id,
             name: request.name,
             description: request.description,
-            flag: 0, // For now this should be 0, additional flag option will come later
+            flag: request.flag,
             created_at: Utc::now().naive_utc(),
             created_by: user_id,
         };
@@ -233,6 +233,7 @@ impl Database {
                         .iter()
                         .map(|elem| elem.to_string())
                         .collect::<Vec<_>>(),
+                    flags: project_info.flag,
                 })
             }
             // Return None if project does not exist
@@ -358,6 +359,7 @@ impl Database {
                 description: pinfo.0.description.to_string(),
                 collection_ids: pinfo.1.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
                 user_ids: pinfo.2.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+                flags: pinfo.0.flag,
             })
             .collect::<Vec<_>>();
         // Return empty response
@@ -535,6 +537,7 @@ impl Database {
                         .iter()
                         .map(|elem| elem.to_string())
                         .collect::<Vec<_>>(),
+                    flags: project_info.flag,
                 })
             }
             // Return None if project does not exist
