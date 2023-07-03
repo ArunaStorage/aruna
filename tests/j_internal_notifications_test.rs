@@ -189,8 +189,8 @@ async fn get_shared_revision_test() {
             &CreateObjectGroupRequest {
                 name: object_group_name.to_string(),
                 description: object_group_description.to_string(),
-                collection_id: random_collection.id.to_string(),
-                object_ids: vec![proto_object.id.to_string()],
+                collection_id: random_collection.id,
+                object_ids: vec![proto_object.id],
                 meta_object_ids: vec![],
                 labels: vec![],
                 hooks: vec![],
