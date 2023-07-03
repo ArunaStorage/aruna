@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     database::{
         connection::Database,
@@ -6,13 +8,17 @@ use crate::{
             auth::{ApiToken, Project, User},
             collection::{Collection, CollectionKeyValue},
         },
+        schema::api_tokens,
     },
     error::ArunaError,
 };
-use aruna_rust_api::api::storage::services::v1::{CreateWorkspaceRequest, CreateWorkspaceResponse};
+use aruna_rust_api::api::storage::services::v1::{
+    CreateWorkspaceRequest, CreateWorkspaceResponse, DeleteWorkspaceRequest,
+    DeleteWorkspaceResponse,
+};
 use chrono::Months;
 use diesel::{
-    insert_into, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
+    delete, insert_into, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
@@ -127,7 +133,7 @@ impl Database {
                     project_id: None,
                     collection_id: Some(workspace_id),
                     user_right: Some(crate::database::models::enums::UserRights::WRITE),
-                    secretkey: secret_key,
+                    secretkey: secret_key.to_string(),
                     used_at: chrono::Utc::now().naive_utc(),
                     is_session: false,
                 };
@@ -142,6 +148,36 @@ impl Database {
                     access_key: token_id.to_string(),
                     secret_key: secret_key.to_string(),
                 })
+            })
+    }
+
+    pub fn delete_workspace(
+        &self,
+        request: DeleteWorkspaceRequest,
+        user_id: diesel_ulid::DieselUlid,
+    ) -> Result<DeleteWorkspaceResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl as tokens_dsl;
+        use crate::database::schema::users::dsl as user_dsl;
+
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.workspace_id)?;
+
+        // Deletes collection + objects and everything related
+        self.delete_collection(&collection_id, user_id, true)?;
+
+        self.pg_connection
+            .get()?
+            .transaction::<DeleteWorkspaceResponse, ArunaError, _>(|conn| {
+                // Delete tokens
+                delete(tokens_dsl::api_tokens)
+                    .filter(tokens_dsl::creator_user_id.eq(&user_id))
+                    .execute(conn)?;
+
+                // Delete user
+                delete(user_dsl::users)
+                    .filter(user_dsl::id.eq(&user_id))
+                    .execute(conn)?;
+
+                Ok(DeleteWorkspaceResponse {})
             })
     }
 }

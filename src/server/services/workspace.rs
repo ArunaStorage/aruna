@@ -1,5 +1,6 @@
 use crate::database::crud::utils::naivedatetime_to_prost_time;
-use crate::error::ArunaError;
+use crate::database::models::enums::UserRights;
+use crate::error::{ArunaError, TypeConversionError};
 use crate::server::services::authz::Authz;
 use crate::server::services::utils::format_grpc_response;
 use crate::{database::connection::Database, server::services::utils::format_grpc_request};
@@ -9,6 +10,7 @@ use aruna_rust_api::api::storage::services::v1::{
     DeleteWorkspaceResponse, MoveWorkspaceDataRequest, MoveWorkspaceDataResponse,
 };
 use chrono::Months;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task;
 
@@ -69,11 +71,37 @@ impl WorkspaceService for WorkspaceServiceImpl {
     /// Delete a workspace
     async fn delete_workspace(
         &self,
-        _request: tonic::Request<DeleteWorkspaceRequest>,
+        request: tonic::Request<DeleteWorkspaceRequest>,
     ) -> std::result::Result<tonic::Response<DeleteWorkspaceResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteWorkspaceRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let user_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().workspace_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::WRITE,
+            )
+            .await?;
+
+        // Authorize collection - READ
+        let database_clone = self.database.clone();
+        let decoding_serial = self.authz.get_decoding_serial().await;
+
+        let resp = task::spawn_blocking(move || {
+            database_clone.delete_workspace(request.into_inner(), user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        let response = tonic::Response::new(resp);
+        log::info!("Sending DeleteWorkspaceResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
-    /// DeleteWorkspace
+    /// ClaimWorkspace
     ///
     /// Status: ALPHA
     ///
