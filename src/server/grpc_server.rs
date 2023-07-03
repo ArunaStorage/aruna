@@ -1,6 +1,5 @@
-use std::env;
-use std::sync::Arc;
-
+use super::services::collection::CollectionServiceImpl;
+use super::services::object::ObjectServiceImpl;
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
 use crate::database::cron::{Scheduler, Task};
@@ -33,10 +32,9 @@ use aruna_rust_api::api::storage::services::v1::resource_info_service_server::Re
 use aruna_rust_api::api::storage::services::v1::service_account_service_server::ServiceAccountServiceServer;
 use aruna_rust_api::api::storage::services::v1::storage_info_service_server::StorageInfoServiceServer;
 use aruna_rust_api::api::storage::services::v1::user_service_server::UserServiceServer;
+use std::env;
+use std::sync::Arc;
 use tonic::transport::Server;
-
-use super::services::collection::CollectionServiceImpl;
-use super::services::object::ObjectServiceImpl;
 
 pub struct ServiceServer {}
 

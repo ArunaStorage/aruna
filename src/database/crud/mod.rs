@@ -11,3 +11,4 @@ pub mod project;
 pub mod service_accounts;
 pub mod user;
 pub mod utils;
+pub mod workspace;

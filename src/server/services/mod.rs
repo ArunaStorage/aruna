@@ -9,6 +9,7 @@ pub mod project;
 pub mod service_account;
 pub mod user;
 pub mod utils;
+pub mod workspace;
 // ----- INTERNAL Services -----
 
 pub mod internal_authorize;

@@ -117,6 +117,7 @@ dependencies = [
  "tokio-stream",
  "toml",
  "tonic",
+ "tower",
  "url",
  "uuid",
 ]

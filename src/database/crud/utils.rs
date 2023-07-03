@@ -505,6 +505,13 @@ pub fn parse_bucket_path_as_colpath(bucket_path: String) -> Result<(String, Stri
     Ok((proj, colpath))
 }
 
+/// Helper function that checks if a specific bit is set
+/// Used to check bitflags for projects
+/// Works for  
+pub fn is_bit_set(input: i64, pos: usize) -> bool {
+    ((input >> pos) & 1) != 0
+}
+
 pub fn grpc_to_db_dataclass(grpcdclass: &i32) -> Dataclass {
     match grpcdclass {
         0 => Dataclass::PRIVATE, // Unspecified
