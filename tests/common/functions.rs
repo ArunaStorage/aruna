@@ -17,9 +17,11 @@ use aruna_rust_api::api::storage::{
 };
 
 use aruna_server::database;
+use aruna_server::database::crud::objectgroups::query_object_group;
 use aruna_server::database::crud::utils::grpc_to_db_object_status;
 use aruna_server::database::models::enums::{ObjectStatus, ReferenceStatus};
 use aruna_server::database::models::object::Object as DbObject;
+use aruna_server::database::models::object_group::ObjectGroup as DbObjectGroup;
 use aruna_server::database::schema::objects::dsl::objects;
 
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
@@ -571,7 +573,28 @@ pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
         .unwrap()
 }
 
-/// `GetReferences` wrapper for simplified use in tests.
+/// QueryObjectGroup wrapper for simplified use in tests.
+#[allow(dead_code)]
+pub fn get_raw_db_object_group_by_id(object_group_id: &str) -> DbObjectGroup {
+    use diesel::prelude::*;
+
+    let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
+
+    let object_group_ulid = diesel_ulid::DieselUlid::from_str(object_group_id).unwrap();
+
+    db.pg_connection
+        .get()
+        .unwrap()
+        .transaction::<DbObjectGroup, Error, _>(|conn| {
+            Ok(query_object_group(object_group_ulid, conn)
+                .unwrap()
+                .unwrap()
+                .object_group)
+        })
+        .unwrap()
+}
+
+/// GetReferences wrapper for simplified use in tests.
 #[allow(dead_code)]
 pub fn get_object_references(object_ulid: &str, with_revisions: bool) -> Vec<ObjectReference> {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
