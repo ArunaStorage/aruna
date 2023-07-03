@@ -11,7 +11,7 @@ use crate::database::connection::Database;
 use crate::database::crud::utils::grpc_to_db_object_status;
 use crate::database::models::auth::ApiToken;
 use crate::database::models::enums::{ObjectStatus, Resources, UserRights};
-use crate::database::models::object::{Endpoint, Relation};
+use crate::database::models::object::{DataProxyFeature, Endpoint, Relation};
 use crate::error::ArunaError;
 use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::services::authz::{sign_download_url, sign_url, Authz, Context};
@@ -37,41 +37,6 @@ crate::impl_grpc_server!(
 
 ///
 impl ObjectServiceImpl {
-    /// This helper method tries to establish a connection to the default data proxy endpoint defined in the config.
-    ///
-    /// ## Results
-    ///
-    /// `InternalProxyServiceClient<Channel>` - Open connection to the default data proxy endpoint
-    ///
-    /// ## Behaviour
-    ///
-    /// On success returns the open connection to the data proxy endpoint.
-    /// On failure returns an `ArunaError::DataProxyError`.
-    ///
-    async fn _try_connect_default_endpoint(
-        &self,
-    ) -> Result<InternalProxyServiceClient<Channel>, ArunaError> {
-        // Evaluate endpoint url
-        /*
-        let endpoint_url = match &self.default_endpoint.is_public {
-            true => &self.default_endpoint.proxy_hostname,
-            false => &self.default_endpoint.internal_hostname,
-        };
-        */
-        let endpoint_url = &self.default_endpoint.internal_hostname;
-
-        // Try to establish connection to endpoint
-        let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
-
-        match data_proxy {
-            Ok(dp) => Ok(dp),
-            Err(_) => Err(ArunaError::DataProxyError(Status::new(
-                Code::Internal,
-                "Could not connect to default data proxy endpoint",
-            ))),
-        }
-    }
-
     /// This helper method tries to establish a connection to a specific data proxy endpoint.
     ///
     /// ## Arguments
@@ -87,6 +52,7 @@ impl ObjectServiceImpl {
     /// On success returns the open connection to the specific data proxy endpoint.
     /// On failure returns an `ArunaError::DataProxyError`.
     ///
+
     async fn try_connect_endpoint(
         &self,
         _endpoint_uuid: &diesel_ulid::DieselUlid,
@@ -98,7 +64,9 @@ impl ObjectServiceImpl {
             false => &self.default_endpoint.internal_hostname,
         };
         */
-        let endpoint_url = &self.default_endpoint.internal_hostname;
+        let (endpoint_url, _) = &self
+            .default_endpoint
+            .get_primary_url(DataProxyFeature::PROXY)?;
 
         // Try to establish connection to endpoint
         let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
@@ -111,69 +79,10 @@ impl ObjectServiceImpl {
             ))),
         }
     }
-
-    /// This helper method tries to establish a connection to one of the endpoints associated with the specific object.
-    ///
-    /// ## Arguments
-    ///
-    /// `object_uuid` - Unique object id
-    ///
-    /// ## Results
-    ///
-    /// `(InternalProxyServiceClient<Channel>, ProtoLocation)` - Open connection to one of the objects data proxy endpoints with its corresponding location
-    ///
-    /// ## Behaviour
-    ///
-    /// The first attempt is always made with the primary endpoint of the object. If this fails, the other endpoints are tried in no particular order.
-    /// * On success returns the open connection to the internal data proxy with its corresponding location.
-    /// * On failure returns an `ArunaError::DataProxyError`.
-    ///
-    async fn _try_connect_object_endpoint(
-        &self,
-        object_uuid: &diesel_ulid::DieselUlid,
-    ) -> Result<(InternalProxyServiceClient<Channel>, Location), ArunaError> {
-        // Get primary location with its endpoint from database
-        let (location, endpoint, encryption_key) = self
-            .database
-            .get_primary_object_location_with_endpoint(object_uuid)?;
-
-        /*
-        let endpoint_url = match &self.default_endpoint.is_public {
-            true => &self.default_endpoint.proxy_hostname,
-            false => &self.default_endpoint.internal_hostname,
-        };
-        */
-        let endpoint_url = &self.default_endpoint.internal_hostname;
-
-        // Try to establish connection to endpoint
-        let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
-
-        match data_proxy {
-            Ok(dp) => {
-                let proto_location = Location {
-                    r#type: endpoint.endpoint_type as i32,
-                    bucket: location.bucket,
-                    path: location.path,
-                    endpoint_id: self.default_endpoint.id.to_string(),
-                    is_compressed: location.is_compressed,
-                    is_encrypted: location.is_encrypted,
-                    encryption_key: if let Some(key) = encryption_key {
-                        key.encryption_key
-                    } else {
-                        "".to_string()
-                    }, // ...
-                };
-                Ok((dp, proto_location))
-            }
-            Err(_) => Err(ArunaError::DataProxyError(Status::new(
-                Code::Internal,
-                "Could not connect to objects primary data proxy endpoint",
-            ))),
-        }
-    }
 }
 
 ///ToDo: Rust Doc
+
 #[tonic::async_trait]
 impl ObjectService for ObjectServiceImpl {
     async fn initialize_new_object(
@@ -338,12 +247,14 @@ impl ObjectService for ObjectServiceImpl {
 
             let s3bucket = format!("{}.{}", relation.collection_path, relation.project_name);
 
-            let endpoint_proxy_hostname = if let Some(endpoint_uuid) = endpoint_option {
+            let (endpoint_proxy_hostname, ssl) = if let Some(endpoint_uuid) = endpoint_option {
                 let ep_uuid =
                     diesel_ulid::DieselUlid::from_str(&endpoint_uuid).map_err(ArunaError::from)?;
-                database_clone.get_endpoint(&ep_uuid)?.proxy_hostname
+                database_clone
+                    .get_endpoint(&ep_uuid)?
+                    .get_primary_url(DataProxyFeature::PROXY)?
             } else {
-                endpoint_clone.proxy_hostname
+                endpoint_clone.get_primary_url(DataProxyFeature::PROXY)?
             };
 
             Ok(GetUploadUrlResponse {
@@ -352,7 +263,7 @@ impl ObjectService for ObjectServiceImpl {
                         Method::PUT,
                         &api_token.id.to_string(),
                         &api_token.secretkey,
-                        endpoint_proxy_hostname.starts_with("https://"),
+                        ssl,
                         inner_request.multipart,
                         part_number,
                         &inner_request.upload_id,
@@ -1980,6 +1891,19 @@ impl ObjectService for ObjectServiceImpl {
         log::debug!("{}", format_grpc_response(&response));
         return Ok(response);
     }
+
+    /// GetObjectsAsListV2
+    ///
+    /// Status: ALPHA
+    ///
+    /// Gets a list of objects represented similar to a S3 ListObjectsV2 request
+    /// !! Paths are collection specific !!
+    async fn get_objects_as_list_v2(
+        &self,
+        _request: tonic::Request<GetObjectsAsListV2Request>,
+    ) -> std::result::Result<tonic::Response<GetObjectsAsListV2Response>, tonic::Status> {
+        Err(tonic::Status::unimplemented("Currently unimplemented!"))
+    }
 }
 
 // This is a moveable version of the connect_object_endpoint
@@ -1992,14 +1916,11 @@ pub async fn try_connect_object_endpoint_moveable(
     let (location, endpoint, encryption_key) =
         database.get_primary_object_location_with_endpoint(object_uuid)?;
 
-    // Evaluate endpoint url
-    let endpoint_url = match &endpoint.is_public {
-        true => &endpoint.proxy_hostname,
-        false => &endpoint.internal_hostname,
-    };
-
     // Try to establish connection to endpoint
-    let data_proxy = InternalProxyServiceClient::connect(endpoint_url.to_string()).await;
+    let data_proxy = InternalProxyServiceClient::connect(
+        endpoint.get_primary_url(DataProxyFeature::INTERNAL)?.0,
+    )
+    .await;
 
     match data_proxy {
         Ok(dp) => {
@@ -2026,6 +1947,7 @@ pub async fn try_connect_object_endpoint_moveable(
 }
 
 /// Helper function to encapsulate the creation of presigned download urls
+
 fn get_object_download_url(
     database: Arc<Database>,
     object_uuid: &diesel_ulid::DieselUlid,
@@ -2074,13 +1996,15 @@ fn get_object_download_url(
         )
     };
 
+    let (url_name, ssl) = endpoint.get_primary_url(DataProxyFeature::PROXY)?;
+
     Ok(sign_download_url(
         &api_token.id.to_string(),
         &api_token.secretkey,
-        endpoint.proxy_hostname.starts_with("https://"),
+        ssl,
         &object_bucket,
         &object_key,
-        &endpoint.proxy_hostname, // Will be "sanitized" in the sign_url(...) function
+        &url_name, // Will be "sanitized" in the sign_url(...) function
     )
     .map_err(|err| tonic::Status::new(Code::Internal, format!("Url signing failed: {err}")))?)
 }

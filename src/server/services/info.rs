@@ -80,6 +80,7 @@ impl StorageInfoService for StorageInfoServiceImpl {
     ///
     /// A request to get the current version of the server application
     /// String representation and https://semver.org/
+
     async fn get_storage_version(
         &self,
         _request: tonic::Request<GetStorageVersionRequest>,

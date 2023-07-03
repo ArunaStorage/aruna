@@ -82,15 +82,15 @@ async fn create_objects_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "file.test".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
                 hooks: vec![],
             }),
-            collection_id: "".to_string(),
-            preferred_endpoint_id: "".to_string(),
+            collection_id: String::new(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -108,7 +108,7 @@ async fn create_objects_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: None,
             collection_id: random_collection.id.to_string(),
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -146,15 +146,15 @@ async fn create_objects_grpc_test() {
             tonic::Request::new(InitializeNewObjectRequest {
                 object: Some(StageObject {
                     filename: format!("created_with_{:?}.file", permission).to_string(),
-                    sub_path: "".to_string(),
-                    content_len: 123456,
+                    sub_path: String::new(),
+                    content_len: 123_456,
                     source: None,
                     dataclass: DataClass::Private as i32,
                     labels: vec![],
                     hooks: vec![],
                 }),
                 collection_id: random_collection.id.to_string(),
-                preferred_endpoint_id: "".to_string(),
+                preferred_endpoint_id: String::new(),
                 multipart: false,
                 is_specification: false,
                 hash: None,
@@ -321,7 +321,7 @@ async fn get_objects_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "TestObject".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -329,7 +329,7 @@ async fn get_objects_grpc_test() {
                 hooks: vec![],
             }),
             collection_id: collection_id.clone(),
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -370,7 +370,7 @@ async fn get_objects_grpc_test() {
             collection_id: collection_id.clone(),
             object: Some(StageObject {
                 filename: "UpdatedTestObject".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -378,7 +378,7 @@ async fn get_objects_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -458,7 +458,7 @@ async fn update_staging_object_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "original.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -466,7 +466,7 @@ async fn update_staging_object_grpc_test() {
                 hooks: vec![],
             }),
             collection_id: random_collection.id.clone(),
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -505,7 +505,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: init_object_response.collection_id.clone(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -513,7 +513,7 @@ async fn update_staging_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -652,7 +652,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: update_object_response.collection_id.clone(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -675,7 +675,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -686,7 +686,7 @@ async fn update_staging_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -706,7 +706,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -740,7 +740,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -751,7 +751,7 @@ async fn update_staging_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -794,7 +794,7 @@ async fn update_staging_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -805,7 +805,7 @@ async fn update_staging_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -909,8 +909,8 @@ async fn update_outdated_revision_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "file.name".to_string(),
-                sub_path: "".to_string(),
-                content_len: 123456,
+                sub_path: String::new(),
+                content_len: 123_456,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![KeyValue {
@@ -920,7 +920,7 @@ async fn update_outdated_revision_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -940,7 +940,7 @@ async fn update_outdated_revision_grpc_test() {
             collection_id: update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -975,8 +975,8 @@ async fn update_outdated_revision_grpc_test() {
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
             filename: "file.name".to_string(),
-            sub_path: "".to_string(),
-            content_len: 123456,
+            sub_path: String::new(),
+            content_len: 123_456,
             source: None,
             dataclass: DataClass::Private as i32,
             labels: vec![KeyValue {
@@ -989,7 +989,7 @@ async fn update_outdated_revision_grpc_test() {
             }],
         }),
         reupload: false,
-        preferred_endpoint_id: "".to_string(),
+        preferred_endpoint_id: String::new(),
         multi_part: false,
         is_specification: false,
         hash: None,
@@ -1061,8 +1061,8 @@ async fn concurrent_update_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "file.name".to_string(),
-                sub_path: "".to_string(),
-                content_len: 123456,
+                sub_path: String::new(),
+                content_len: 123_456,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![KeyValue {
@@ -1075,7 +1075,7 @@ async fn concurrent_update_grpc_test() {
                 }],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1095,8 +1095,8 @@ async fn concurrent_update_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "force.update".to_string(),
-                sub_path: "".to_string(),
-                content_len: 654321,
+                sub_path: String::new(),
+                content_len: 654_321,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![KeyValue {
@@ -1109,7 +1109,7 @@ async fn concurrent_update_grpc_test() {
                 }],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1129,8 +1129,8 @@ async fn concurrent_update_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "force.update".to_string(),
-                sub_path: "".to_string(),
-                content_len: 654321,
+                sub_path: String::new(),
+                content_len: 654_321,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![KeyValue {
@@ -1143,7 +1143,7 @@ async fn concurrent_update_grpc_test() {
                 }],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1164,7 +1164,7 @@ async fn concurrent_update_grpc_test() {
             collection_id: outdated_update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -1282,7 +1282,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_st_collection.id.to_string(),
             writeable: false,
             auto_update: false,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1300,7 +1300,7 @@ async fn object_references_grpc_test() {
             target_collection_id: wr_st_collection.id.to_string(),
             writeable: true,
             auto_update: false,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1318,7 +1318,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_au_collection.id.to_string(),
             writeable: false,
             auto_update: true,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1336,7 +1336,7 @@ async fn object_references_grpc_test() {
             target_collection_id: wr_au_collection.id.to_string(),
             writeable: true,
             auto_update: true,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1391,15 +1391,15 @@ async fn object_references_grpc_test() {
             collection_id: source_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "reference.update.01".to_string(),
-                sub_path: "".to_string(),
-                content_len: 111222,
+                sub_path: String::new(),
+                content_len: 111_222,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1419,7 +1419,7 @@ async fn object_references_grpc_test() {
             collection_id: update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -1486,15 +1486,15 @@ async fn object_references_grpc_test() {
             collection_id: wr_au_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "reference.update.02".to_string(),
-                sub_path: "".to_string(),
-                content_len: 222111,
+                sub_path: String::new(),
+                content_len: 222_111,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1514,7 +1514,7 @@ async fn object_references_grpc_test() {
             collection_id: update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -1582,7 +1582,7 @@ async fn object_references_grpc_test() {
             target_collection_id: ro_st_collection.id.to_string(),
             writeable: false,
             auto_update: false,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1599,15 +1599,15 @@ async fn object_references_grpc_test() {
             collection_id: wr_st_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "outdated.reference.update".to_string(),
-                sub_path: "".to_string(),
-                content_len: 121212,
+                sub_path: String::new(),
+                content_len: 121_212,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1625,15 +1625,15 @@ async fn object_references_grpc_test() {
             collection_id: ro_au_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "read-only.reference.update".to_string(),
-                sub_path: "".to_string(),
-                content_len: 212121,
+                sub_path: String::new(),
+                content_len: 212_121,
                 source: None,
                 dataclass: DataClass::Private as i32,
                 labels: vec![],
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1720,7 +1720,7 @@ async fn add_labels_to_object_grpc_test() {
             target_collection_id: read_only_collection.id.to_string(),
             writeable: false,
             auto_update: true,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1738,7 +1738,7 @@ async fn add_labels_to_object_grpc_test() {
             target_collection_id: writeable_collection.id.to_string(),
             writeable: true,
             auto_update: true,
-            sub_path: "".to_string(),
+            sub_path: String::new(),
         }),
         common::oidc::ADMINTOKEN,
     );
@@ -1879,7 +1879,7 @@ async fn add_labels_to_object_grpc_test() {
             collection_id: source_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "updated.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -1887,7 +1887,7 @@ async fn add_labels_to_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -1907,7 +1907,7 @@ async fn add_labels_to_object_grpc_test() {
             collection_id: update_object_response.collection_id.to_string(),
             hash: Some(Hash {
                 alg: Hashalgorithm::Sha256 as i32,
-                hash: "".to_string(), // No upload ¯\_(ツ)_/¯
+                hash: String::new(), // No upload ¯\_(ツ)_/¯
             }),
             no_upload: true,
             completed_parts: vec![],
@@ -2251,7 +2251,7 @@ async fn clone_object_grpc_test() {
         original_object: clone_rev_0_object.clone(),
         collection_id: target_collection.id.to_string(),
         new_name: "clone.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -2322,7 +2322,7 @@ async fn delete_object_grpc_test() {
     // Try to delete non-existing object
     let delete_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(DeleteObjectRequest {
-            object_id: "".to_string(),
+            object_id: String::new(),
             collection_id: random_collection.id.to_string(),
             with_revisions: false,
             force: false,
@@ -2337,7 +2337,7 @@ async fn delete_object_grpc_test() {
     let delete_object_request = common::grpc_helpers::add_token(
         tonic::Request::new(DeleteObjectRequest {
             object_id: random_object.id.to_string(),
-            collection_id: "".to_string(),
+            collection_id: String::new(),
             with_revisions: false,
             force: false,
         }),
@@ -2448,7 +2448,7 @@ async fn delete_object_grpc_test() {
         tonic::Request::new(InitializeNewObjectRequest {
             object: Some(StageObject {
                 filename: "stage.object".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 0,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -2456,7 +2456,7 @@ async fn delete_object_grpc_test() {
                 hooks: vec![],
             }),
             collection_id: random_collection.id.to_string(),
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multipart: false,
             is_specification: false,
             hash: None,
@@ -2537,7 +2537,7 @@ async fn delete_object_grpc_test() {
             collection_id: random_collection.id.to_string(),
             object: Some(StageObject {
                 filename: "stage.update".to_string(),
-                sub_path: "".to_string(),
+                sub_path: String::new(),
                 content_len: 1234,
                 source: None,
                 dataclass: DataClass::Private as i32,
@@ -2545,7 +2545,7 @@ async fn delete_object_grpc_test() {
                 hooks: vec![],
             }),
             reupload: false,
-            preferred_endpoint_id: "".to_string(),
+            preferred_endpoint_id: String::new(),
             multi_part: false,
             is_specification: false,
             hash: None,
@@ -2678,7 +2678,7 @@ async fn delete_object_revisions_grpc_test() {
 
     update_meta.original_object = rev_1_object.clone();
     update_meta.new_name = "rev2.object".to_string();
-    update_meta.content_len = 123456;
+    update_meta.content_len = 123_456;
 
     let rev_2_object = common::functions::update_object(&update_meta);
 
@@ -2975,7 +2975,7 @@ async fn delete_multiple_objects_grpc_test() {
                     original_object: source_object.clone(),
                     collection_id: random_collection.id.to_string(),
                     new_name: format!("update.{}.{}", source_object.id, update_num).to_string(),
-                    content_len: rng.gen_range(1234..123456),
+                    content_len: rng.gen_range(1234..123_456),
                     ..Default::default()
                 });
 

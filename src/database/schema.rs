@@ -1,47 +1,47 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types {
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "dataclass"))]
     pub struct Dataclass;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "endpoint_status"))]
     pub struct EndpointStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "endpoint_type"))]
     pub struct EndpointType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "hash_type"))]
     pub struct HashType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "identity_provider_type"))]
     pub struct IdentityProviderType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "key_value_type"))]
     pub struct KeyValueType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "object_status"))]
     pub struct ObjectStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "reference_status"))]
     pub struct ReferenceStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "resources"))]
     pub struct Resources;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "source_type"))]
     pub struct SourceType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "user_rights"))]
     pub struct UserRights;
 }
@@ -60,9 +60,22 @@ diesel::table! {
         project_id -> Nullable<Uuid>,
         collection_id -> Nullable<Uuid>,
         user_right -> Nullable<UserRights>,
+        #[max_length = 0]
         secretkey -> Varchar,
         used_at -> Timestamp,
         is_session -> Bool,
+    }
+}
+
+diesel::table! {
+    bundles (id) {
+        id -> Uuid,
+        #[max_length = 0]
+        bundle_id -> Varchar,
+        object_id -> Uuid,
+        endpoint_id -> Uuid,
+        collection_id -> Uuid,
+        expires_at -> Nullable<Timestamp>,
     }
 }
 
@@ -73,7 +86,9 @@ diesel::table! {
     collection_key_value (id) {
         id -> Uuid,
         collection_id -> Uuid,
+        #[max_length = 0]
         key -> Varchar,
+        #[max_length = 0]
         value -> Varchar,
         key_value_type -> KeyValueType,
     }
@@ -150,11 +165,11 @@ diesel::table! {
         id -> Uuid,
         endpoint_type -> EndpointType,
         name -> Text,
-        proxy_hostname -> Varchar,
-        internal_hostname -> Varchar,
         documentation_path -> Nullable<Text>,
         is_public -> Bool,
         status -> EndpointStatus,
+        is_bundler -> Bool,
+        host_config -> Jsonb,
     }
 }
 
@@ -210,7 +225,9 @@ diesel::table! {
     object_group_key_value (id) {
         id -> Uuid,
         object_group_id -> Uuid,
+        #[max_length = 0]
         key -> Varchar,
+        #[max_length = 0]
         value -> Varchar,
         key_value_type -> KeyValueType,
     }
@@ -244,7 +261,9 @@ diesel::table! {
     object_key_value (id) {
         id -> Uuid,
         object_id -> Uuid,
+        #[max_length = 0]
         key -> Varchar,
+        #[max_length = 0]
         value -> Varchar,
         key_value_type -> KeyValueType,
     }
@@ -305,10 +324,13 @@ diesel::table! {
     relations (id) {
         id -> Uuid,
         object_id -> Uuid,
+        #[max_length = 0]
         path -> Varchar,
         project_id -> Uuid,
+        #[max_length = 0]
         project_name -> Varchar,
         collection_id -> Uuid,
+        #[max_length = 0]
         collection_path -> Varchar,
         shared_revision_id -> Uuid,
         path_active -> Bool,
@@ -319,6 +341,7 @@ diesel::table! {
     required_labels (id) {
         id -> Uuid,
         collection_id -> Uuid,
+        #[max_length = 0]
         label_key -> Varchar,
     }
 }
@@ -353,6 +376,7 @@ diesel::table! {
         display_name -> Text,
         active -> Bool,
         is_service_account -> Bool,
+        #[max_length = 0]
         email -> Varchar,
     }
 }
@@ -380,6 +404,9 @@ diesel::joinable!(api_tokens -> collections (collection_id));
 diesel::joinable!(api_tokens -> projects (project_id));
 diesel::joinable!(api_tokens -> pub_keys (pub_key));
 diesel::joinable!(api_tokens -> users (creator_user_id));
+diesel::joinable!(bundles -> collections (collection_id));
+diesel::joinable!(bundles -> endpoints (endpoint_id));
+diesel::joinable!(bundles -> objects (object_id));
 diesel::joinable!(collection_key_value -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> collections (collection_id));
 diesel::joinable!(collection_object_groups -> object_groups (object_group_id));
@@ -412,6 +439,7 @@ diesel::joinable!(user_permissions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     api_tokens,
+    bundles,
     collection_key_value,
     collection_object_groups,
     collection_objects,

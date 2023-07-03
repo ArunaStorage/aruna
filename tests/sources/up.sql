@@ -167,8 +167,8 @@ CREATE TABLE endpoints (
     id UUID PRIMARY KEY,
     endpoint_type ENDPOINT_TYPE NOT NULL,
     name TEXT NOT NULL,
-    proxy_hostname VARCHAR(255) NOT NULL,
-    internal_hostname VARCHAR(255) NOT NULL,
+    is_bundler BOOL NOT NULL DEFAULT FALSE,
+    host_config JSONB NOT NULL,
     documentation_path TEXT DEFAULT NULL,
     is_public BOOL NOT NULL DEFAULT TRUE,
     status ENDPOINT_STATUS NOT NULL DEFAULT 'AVAILABLE'
@@ -221,7 +221,6 @@ CREATE TABLE object_groups (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL,
     PRIMARY KEY (id),
-    is_service_account BOOL NOT NULL DEFAULT FALSE,
     UNIQUE(shared_revision_id, revision_number),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -332,6 +331,19 @@ CREATE TABLE relations (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,
     UNIQUE(object_id, path, project_name, collection_path)
+);
+
+CREATE TABLE bundles (
+    id UUID PRIMARY KEY NOT NULL,
+    bundle_id VARCHAR(511) NOT NULL,
+    object_id UUID NOT NULL,
+    endpoint_id UUID NOT NULL,
+    collection_id UUID NOT NULL,
+    expires_at TIMESTAMP DEFAULT NULL,
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE,
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,
+    UNIQUE(object_id, bundle_id)
 );
 
 CREATE INDEX rel_ob_id ON relations (object_id);
@@ -456,13 +468,11 @@ INSERT INTO endpoints (
         id,
         endpoint_type,
         name,
-        proxy_hostname,
-        internal_hostname
+        host_config
     )
 VALUES (
         '12345678-6666-6666-6666-999999999999',
         'S3',
         'demo_endpoint',
-        'http://localhost:1337',
-        'http://localhost:8081'
+        '[{"url": "localhost:1337", "is_primary": false, "ssl": false, "public": true, "feature": "PROXY"}]'
     );

@@ -11,7 +11,5 @@ CREATE TABLE paths (
     UNIQUE (bucket, path)
 );
 
--- Add unique constraint for collection name and project_id 
-ALTER TABLE collections ADD CONSTRAINT uniqe_collection_name_project_id UNIQUE (project_id, name, version_id);
 -- Add unique constraint for project name
 ALTER TABLE projects ADD CONSTRAINT unique_project_name UNIQUE (name);

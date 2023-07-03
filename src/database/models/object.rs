@@ -4,6 +4,16 @@ use super::traits::IsKeyValue;
 use super::traits::ToDbKeyValue;
 use crate::database::models::collection::Collection;
 use crate::database::schema::*;
+use crate::error::ArunaError;
+use aruna_rust_api::api::storage::models::v1::EndpointHostConfig;
+use diesel::deserialize;
+use diesel::deserialize::FromSql;
+use diesel::pg::sql_types::Jsonb;
+use diesel::pg::Pg;
+use diesel::pg::PgValue;
+use diesel::serialize;
+use diesel::serialize::Output;
+use diesel::serialize::ToSql;
 
 #[derive(Queryable, Insertable, Identifiable, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Source {
@@ -45,16 +55,119 @@ pub struct Object {
     pub origin_id: diesel_ulid::DieselUlid,
 }
 
-#[derive(Queryable, Insertable, Identifiable, Clone, Debug)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Default, Clone, AsExpression, PartialEq, PartialOrd,
+)]
+#[diesel(sql_type = Jsonb)]
+pub enum DataProxyFeature {
+    #[default]
+    PROXY,
+    INTERNAL,
+    BUNDLER,
+}
+
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Default, Clone, AsExpression, PartialEq, PartialOrd,
+)]
+#[diesel(sql_type = Jsonb)]
+pub struct HostConfig {
+    pub url: String,
+    pub is_primary: bool,
+    pub ssl: bool,
+    pub public: bool,
+    pub feature: DataProxyFeature,
+}
+
+impl FromSql<Jsonb, Pg> for HostConfig {
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <serde_json::Value as FromSql<Jsonb, Pg>>::from_sql(value)?;
+        Ok(serde_json::from_value(value)?)
+    }
+}
+
+impl ToSql<Jsonb, Pg> for HostConfig {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        let mut out = Output::reborrow(out);
+        let value = serde_json::to_value(self)?;
+        <serde_json::Value as ToSql<Jsonb, Pg>>::to_sql(&value, &mut out)
+    }
+}
+
+#[derive(FromSqlRow, AsExpression, serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
+#[diesel(sql_type = Jsonb)]
+#[serde(transparent)]
+pub struct HostConfigs {
+    pub configs: Vec<HostConfig>,
+}
+
+impl FromSql<Jsonb, Pg> for HostConfigs {
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <serde_json::Value as FromSql<Jsonb, Pg>>::from_sql(value)?;
+        Ok(serde_json::from_value(value)?)
+    }
+}
+
+impl ToSql<Jsonb, Pg> for HostConfigs {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        let mut out = Output::reborrow(out);
+        let value = serde_json::to_value(self)?;
+        <serde_json::Value as ToSql<Jsonb, Pg>>::to_sql(&value, &mut out)
+    }
+}
+
+#[derive(AsChangeset, Queryable, Insertable, Identifiable, Debug, Clone)]
 pub struct Endpoint {
     pub id: diesel_ulid::DieselUlid,
     pub endpoint_type: EndpointType,
     pub name: String,
-    pub proxy_hostname: String,
-    pub internal_hostname: String,
     pub documentation_path: Option<String>,
     pub is_public: bool,
     pub status: EndpointStatus,
+    pub is_bundler: bool,
+    pub host_config: HostConfigs,
+}
+
+impl Endpoint {
+    pub fn get_primary_url(&self, feature: DataProxyFeature) -> Result<(String, bool), ArunaError> {
+        for hconf in self.host_config.configs.iter() {
+            if hconf.is_primary && hconf.feature == feature {
+                return Ok((hconf.url.to_string(), hconf.ssl));
+            }
+        }
+        Err(ArunaError::InvalidRequest(
+            "Unable to find proxy url".to_string(),
+        ))
+    }
+}
+
+impl TryFrom<i32> for DataProxyFeature {
+    type Error = ArunaError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DataProxyFeature::PROXY),
+            2 => Ok(DataProxyFeature::INTERNAL),
+            3 => Ok(DataProxyFeature::BUNDLER),
+            _ => Err(ArunaError::InvalidRequest(
+                "Invalid dataproxy feature".to_string(),
+            )),
+        }
+    }
+}
+
+impl From<EndpointHostConfig> for HostConfig {
+    fn from(value: EndpointHostConfig) -> Self {
+        HostConfig {
+            url: value.url,
+            is_primary: value.is_primary,
+            ssl: value.ssl,
+            public: value.public,
+            feature: value
+                .host_type
+                .try_into()
+                .unwrap_or(DataProxyFeature::PROXY),
+        }
+    }
 }
 
 #[derive(AsChangeset, Associations, Queryable, Insertable, Identifiable, Debug)]

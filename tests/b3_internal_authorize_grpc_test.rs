@@ -144,7 +144,7 @@ async fn internal_authorize_grpc_test() {
             resource: ResourceType::Project as i32,
             identifier: Some(Identifier {
                 idtype: IdType::Uuid as i32,
-                name: "".to_string(),
+                name: String::new(),
             }),
             resource_action: ResourceAction::Create as i32,
         }),

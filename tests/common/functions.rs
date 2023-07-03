@@ -368,14 +368,14 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
     } else {
-        "".to_string()
+        String::new()
     };
 
     // Initialize Object with random values
     let object_id = diesel_ulid::DieselUlid::generate();
     let object_filename = format!("DummyFile.{}", rand_string(5));
-    let object_length = thread_rng().gen_range(1..1073741824);
-    let upload_id = "".to_string();
+    let object_length = thread_rng().gen_range(1..1_073_741_824);
+    let upload_id = String::new();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
             key: format!("label_key_{:?}_{:?}", num, rand_string(5)),
@@ -430,7 +430,7 @@ pub fn create_object(object_info: &TCreateObject) -> Object {
     let finished_object: Object = db
         .finish_object_staging(&finish_request, &creator_id)
         .unwrap()
-        .map(|e| e.try_into())
+        .map(std::convert::TryInto::try_into)
         .map_or(Ok(None), |r| r.map(Some))
         .unwrap()
         .unwrap();
@@ -470,13 +470,13 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     let sub_path = if let Some(whatev) = &object_info.sub_path {
         whatev.to_string()
     } else {
-        "".to_string()
+        String::new()
     };
 
     // Initialize Object with random values
     let object_id = diesel_ulid::DieselUlid::generate();
     let object_filename = format!("DummyFile.{}", rand_string(5));
-    let object_length = thread_rng().gen_range(1..1073741824);
+    let object_length = thread_rng().gen_range(1..1_073_741_824);
     let _upload_id = diesel_ulid::DieselUlid::generate();
     let dummy_labels = (0..object_info.num_labels)
         .map(|num| KeyValue {
@@ -534,7 +534,7 @@ pub fn create_staging_object(object_info: &TCreateObject) -> Object {
     staging_object
 }
 
-/// GetObjectById wrapper for simplified use in tests.
+/// `GetObjectById` wrapper for simplified use in tests.
 #[allow(dead_code)]
 pub fn get_object(collection_id: String, object_id: String) -> Object {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
@@ -550,7 +550,7 @@ pub fn get_object(collection_id: String, object_id: String) -> Object {
     object.object.unwrap()
 }
 
-/// GetObjectById wrapper for simplified use in tests.
+/// `GetObjectById` wrapper for simplified use in tests.
 #[allow(dead_code)]
 pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
     use diesel::prelude::*;
@@ -571,7 +571,7 @@ pub fn get_raw_db_object_by_id(object_id: &str) -> DbObject {
         .unwrap()
 }
 
-/// GetReferences wrapper for simplified use in tests.
+/// `GetReferences` wrapper for simplified use in tests.
 #[allow(dead_code)]
 pub fn get_object_references(object_ulid: &str, with_revisions: bool) -> Vec<ObjectReference> {
     let db = database::connection::Database::new("postgres://root:test123@localhost:26257/test");
@@ -640,7 +640,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     };
 
     let update_len = if update.content_len == 0 {
-        rand_int(123555)
+        rand_int(123_555)
     } else {
         update.content_len
     };
@@ -648,7 +648,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     let sub_path = if let Some(whatev) = &update.new_sub_path {
         whatev.to_string()
     } else {
-        "".to_string()
+        String::new()
     };
     // Update Object
     let updated_object_id_001 = diesel_ulid::DieselUlid::generate();
@@ -694,7 +694,7 @@ pub fn update_object(update: &TCreateUpdate) -> Object {
     let updated_object: Object = db
         .finish_object_staging(&updated_finish_request, &creator)
         .unwrap()
-        .map(|e| e.try_into())
+        .map(std::convert::TryInto::try_into)
         .map_or(Ok(None), |r| r.map(Some))
         .unwrap()
         .unwrap();

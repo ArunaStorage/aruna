@@ -329,7 +329,7 @@ async fn add_remove_project_user_grpc_test() {
     // Create gRPC request to fetch user associated with token
     let get_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(GetUserRequest {
-            user_id: "".to_string(),
+            user_id: String::new(),
         }),
         common::oidc::REGULARTOKEN,
     );
@@ -500,7 +500,7 @@ async fn edit_project_user_grpc_test() {
     // Create gRPC request to fetch user associated with token
     let get_user_request = common::grpc_helpers::add_token(
         tonic::Request::new(GetUserRequest {
-            user_id: "".to_string(),
+            user_id: String::new(),
         }),
         common::oidc::REGULARTOKEN,
     );

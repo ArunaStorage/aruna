@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod bundle;
 pub mod collection;
 pub mod enums;
 pub mod notifications;

@@ -284,13 +284,13 @@ async fn update_object_group_grpc_test() {
             .choose_multiple(&mut rand::thread_rng(), 3)
             .collect::<Vec<_>>()
             .iter()
-            .map(|sample| sample.to_string())
+            .map(|sample| (*sample).to_string())
             .collect();
         let modified_meta_object_ids: Vec<_> = meta_object_ids
             .choose_multiple(&mut rand::thread_rng(), 3)
             .collect::<Vec<_>>()
             .iter()
-            .map(|sample| sample.to_string())
+            .map(|sample| (*sample).to_string())
             .collect();
 
         let update_object_group_request = common::grpc_helpers::add_token(

@@ -1,11 +1,13 @@
 use std::str::FromStr;
 
-use aruna_rust_api::api::storage::models::v1::EndpointType as ProtoEndpointType;
+use aruna_rust_api::api::storage::models::v1::{
+    EndpointHostConfig, EndpointType as ProtoEndpointType,
+};
 use aruna_rust_api::api::storage::services::v1::AddEndpointRequest;
 use aruna_server::config::DefaultEndpoint;
 use aruna_server::database;
 use aruna_server::database::models::enums::EndpointType;
-use aruna_server::database::models::object::Endpoint;
+use aruna_server::database::models::object::{Endpoint, HostConfig};
 use serial_test::serial;
 
 mod common;
@@ -20,10 +22,18 @@ fn init_default_endpoint_test() {
     let default_endpoint = DefaultEndpoint {
         ep_type: EndpointType::S3,
         endpoint_name: "Default_Endpoint".to_string(),
-        endpoint_host: "internal_server_name".to_string(),
-        endpoint_proxy: "data_proxy.example.com".to_string(),
+        //endpoint_host: "internal_server_name".to_string(),
+        //endpoint_proxy: "data_proxy.example.com".to_string(),
+        endpoint_host_config: vec![HostConfig {
+            url: "internal_server_name".to_string(),
+            is_primary: true,
+            ssl: false,
+            public: true,
+            feature: database::models::object::DataProxyFeature::PROXY,
+        }],
+        endpoint_bundler: true,
         endpoint_serial: 10,
-        endpoint_pubkey: "".to_string(),
+        endpoint_pubkey: String::new(),
         endpoint_public: true,
         endpoint_docu: None,
     };
@@ -32,11 +42,6 @@ fn init_default_endpoint_test() {
     // Validate default endpoint creation
     assert!(matches!(db_endpoint.endpoint_type, EndpointType::S3));
     assert_eq!(db_endpoint.name, default_endpoint.endpoint_name);
-    assert_eq!(
-        db_endpoint.internal_hostname,
-        default_endpoint.endpoint_host
-    );
-    assert_eq!(db_endpoint.proxy_hostname, default_endpoint.endpoint_proxy);
     assert_eq!(
         db_endpoint.documentation_path,
         default_endpoint.endpoint_docu
@@ -54,12 +59,12 @@ fn init_default_endpoint_test() {
     );
     assert_eq!(db_endpoint.name, another_db_endpoint.name);
     assert_eq!(
-        db_endpoint.proxy_hostname,
-        another_db_endpoint.proxy_hostname
-    );
-    assert_eq!(
-        db_endpoint.internal_hostname,
-        another_db_endpoint.internal_hostname
+        db_endpoint
+            .get_primary_url(database::models::object::DataProxyFeature::PROXY)
+            .unwrap(),
+        another_db_endpoint
+            .get_primary_url(database::models::object::DataProxyFeature::PROXY)
+            .unwrap()
     );
     assert_eq!(
         db_endpoint.documentation_path,
@@ -78,8 +83,24 @@ fn add_endpoint_test() {
     let add_request = AddEndpointRequest {
         name: "DummyEndpoint_001".to_string(),
         ep_type: ProtoEndpointType::S3 as i32,
-        proxy_hostname: "https://proxy.aruna.uni-giessen.de".to_string(),
-        internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
+        is_bundler: false,
+        host_configs: vec![
+            EndpointHostConfig{
+                url: "https://proxy.aruna.uni-giessen.de".to_string(), 
+                is_primary: true,
+                ssl: true,
+                public: true,
+                host_type: 1
+            },
+            EndpointHostConfig{
+                url: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
+                is_primary: true,
+                ssl: true,
+                public: true,
+                host_type: 2
+            }],
+        //proxy_hostname: "https://proxy.aruna.uni-giessen.de".to_string(),
+        //internal_hostname: "https://proxy-internal.aruna.uni-giessen.de".to_string(),
         documentation_path: "/somewhere/else/docu.pdf".to_string(),
         is_public: true,
         pubkey: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQRcVuLEdJcrsduL4hU0PtpNPubYVIgx8kZVV/Elv9dI=\n-----END PUBLIC KEY-----".to_string(),
@@ -91,11 +112,10 @@ fn add_endpoint_test() {
             id,
             endpoint_type,
             name,
-            proxy_hostname,
-            internal_hostname,
             documentation_path,
             is_public,
             status: _,
+            ..
         },
         pubkey_serial,
     ) = db.add_endpoint(&add_request).unwrap();
@@ -105,8 +125,6 @@ fn add_endpoint_test() {
     assert!(pubkey_serial > 0);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, add_request.name);
-    assert_eq!(proxy_hostname, add_request.proxy_hostname);
-    assert_eq!(internal_hostname, add_request.internal_hostname);
     assert_eq!(documentation_path.unwrap(), add_request.documentation_path);
     assert_eq!(is_public, add_request.is_public);
 }
@@ -123,19 +141,16 @@ fn get_endpoint_test() {
         id,
         endpoint_type,
         name,
-        proxy_hostname,
-        internal_hostname,
         documentation_path,
         is_public,
         status: _,
+        ..
     } = db.get_endpoint(&endpoint_uuid).unwrap();
 
     // Validate returned endpoint
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "http://localhost:1337");
-    assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
 }
@@ -153,19 +168,16 @@ fn get_endpoint_by_name_test() {
         id,
         endpoint_type,
         name,
-        proxy_hostname,
-        internal_hostname,
         documentation_path,
         is_public,
         status: _,
+        ..
     } = db.get_endpoint_by_name(endpoint_name).unwrap();
 
     // Validate returned endpoint
     assert_eq!(endpoint_uuid, id);
     assert!(matches!(endpoint_type, EndpointType::S3));
     assert_eq!(name, "demo_endpoint");
-    assert_eq!(proxy_hostname, "http://localhost:1337");
-    assert_eq!(internal_hostname, "http://localhost:8081");
     assert!(documentation_path.is_none());
     assert!(is_public);
 }
@@ -188,8 +200,10 @@ fn get_endpoints_test() {
             "Default Data Proxy".to_string(),
         ];
 
-        if !ep_names.contains(&ep.name) {
-            panic!("Wrong endpoint name: {:#?}", ep.name);
-        }
+        assert!(
+            ep_names.contains(&ep.name),
+            "Wrong endpoint name: {:#?}",
+            ep.name
+        );
     }
 }

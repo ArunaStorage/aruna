@@ -743,7 +743,7 @@ impl Database {
     ///
     /// * `Result<aruna_server::database::models::object::Object, ArunaError>` -
     /// Database model object if the object with the provided id exists in the database.
-    ///
+
     pub fn get_object_by_id(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
@@ -823,6 +823,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+
     pub fn get_primary_object_location(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
@@ -870,6 +871,7 @@ impl Database {
     }
 
     ///ToDo: Rust Doc
+
     pub fn get_primary_object_location_with_endpoint(
         &self,
         object_uuid: &diesel_ulid::DieselUlid,
@@ -3465,8 +3467,10 @@ pub fn get_object_revision_by_path(
             Ok(base_request.first::<Object>(conn).optional()?)
         }
         None => {
-            //Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
-            Err(ArunaError::InvalidRequest("Object not found".to_string()))
+            // Note: This should just be the case if the path does not exist and has nothing to do anymore with staging
+            // Err(ArunaError::InvalidRequest("Object not found".to_string()))
+            // Note2: This can happen on data proxy GetOrCreateObjectByPath requests...
+            Ok(None)
         }
     }
 }

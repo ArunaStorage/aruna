@@ -4,6 +4,7 @@ use diesel::r2d2::Error as DieselR2d2Error;
 use jsonwebtoken::errors::Error as jwterror;
 use r2d2::Error as R2d2Error;
 use reqwest::Error as Rqwerror;
+use std::array::TryFromSliceError;
 use std::error::Error as StdError;
 use std::fmt::Display;
 use tokio::task::JoinError as AsyncJoinError;
@@ -184,6 +185,12 @@ impl From<AuthorizationError> for ArunaError {
     }
 }
 
+impl From<TryFromSliceError> for ArunaError {
+    fn from(e: TryFromSliceError) -> Self {
+        ArunaError::TypeConversionError(TypeConversionError::TRYFROMSLICE)
+    }
+}
+
 impl StdError for ArunaError {}
 
 // ----------------- Sub-error-types --------------------------------------
@@ -222,6 +229,7 @@ pub enum TypeConversionError {
     PARSECONFIG,
     PROTOCONVERSION,
     STRINGTOINT,
+    TRYFROMSLICE,
 }
 
 impl Display for TypeConversionError {
@@ -248,6 +256,9 @@ impl Display for TypeConversionError {
             }
             TypeConversionError::STRINGTOINT => {
                 write!(f, "Typeconversion from String to Int failed")
+            }
+            TypeConversionError::TRYFROMSLICE => {
+                write!(f, "Typeconversion from slice failed")
             }
         }
     }

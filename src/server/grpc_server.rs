@@ -8,16 +8,20 @@ use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::clients::kube_client::KubeClient;
 use crate::server::clients::mail_client::MailClient;
 use crate::server::services::authz::Authz;
+use crate::server::services::bundler::BundlerServiceImpl;
 use crate::server::services::endpoint::EndpointServiceImpl;
 use crate::server::services::info::{ResourceInfoServiceImpl, StorageInfoServiceImpl};
 use crate::server::services::internal_authorize::InternalAuthorizeServiceImpl;
+use crate::server::services::internal_bundler::InternalBundlerBackwardsChannelImpl;
 use crate::server::services::internal_notifications::InternalEventServiceImpl;
 use crate::server::services::internal_proxy_notifier::InternalProxyNotifierServiceImpl;
 use crate::server::services::objectgroup::ObjectGroupServiceImpl;
 use crate::server::services::project::ProjectServiceImpl;
 use crate::server::services::service_account::ServiceAccountServiceImpl;
 use crate::server::services::user::UserServiceImpl;
+use aruna_rust_api::api::bundler::services::v1::bundler_service_server::BundlerServiceServer;
 use aruna_rust_api::api::internal::v1::internal_authorize_service_server::InternalAuthorizeServiceServer;
+use aruna_rust_api::api::internal::v1::internal_bundler_backchannel_service_server::InternalBundlerBackchannelServiceServer;
 use aruna_rust_api::api::internal::v1::internal_event_service_server::InternalEventServiceServer;
 use aruna_rust_api::api::internal::v1::internal_proxy_notifier_service_server::InternalProxyNotifierServiceServer;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionServiceServer;
@@ -169,6 +173,10 @@ impl ServiceServer {
             InternalProxyNotifierServiceImpl::new(db_ref.clone(), authz.clone(), event_emit_client)
                 .await;
 
+        let external_bundler_service = BundlerServiceImpl::new(db_ref.clone(), authz.clone()).await;
+        let internal_bundler_service =
+            InternalBundlerBackwardsChannelImpl::new(db_ref.clone(), authz.clone()).await;
+
         log::info!("ArunaServer (external) listening on {}", addr);
 
         let main_server = tokio::spawn(async move {
@@ -182,6 +190,7 @@ impl ServiceServer {
                 .add_service(ResourceInfoServiceServer::new(resource_info_service))
                 .add_service(StorageInfoServiceServer::new(storage_info_service))
                 .add_service(ServiceAccountServiceServer::new(service_account_service))
+                .add_service(BundlerServiceServer::new(external_bundler_service))
                 .serve(addr)
                 .await
         });
@@ -197,6 +206,9 @@ impl ServiceServer {
                 .add_service(InternalEventServiceServer::new(internal_event_service))
                 .add_service(InternalAuthorizeServiceServer::new(
                     internal_authorize_service,
+                ))
+                .add_service(InternalBundlerBackchannelServiceServer::new(
+                    internal_bundler_service,
                 ))
                 .serve(other_addr)
                 .await

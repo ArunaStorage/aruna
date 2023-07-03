@@ -1,14 +1,9 @@
-use std::str::FromStr;
-
-use diesel::insert_into;
-use diesel::prelude::*;
-use diesel::result::Error;
-
 use crate::config::DefaultEndpoint;
 use crate::database;
 use crate::database::connection::Database;
 use crate::database::models::auth::PubKeyInsert;
 use crate::database::models::enums::EndpointType;
+use crate::database::models::object::HostConfigs;
 use crate::database::models::object::{Endpoint, ObjectLocation};
 use crate::database::schema::endpoints::dsl::*;
 use crate::database::schema::object_locations::dsl::*;
@@ -18,6 +13,10 @@ use aruna_rust_api::api::storage::models::v1::Endpoint as ProtoEndpoint;
 use aruna_rust_api::api::storage::services::v1::{
     AddEndpointRequest, GetObjectEndpointsRequest, GetObjectEndpointsResponse,
 };
+use diesel::insert_into;
+use diesel::prelude::*;
+use diesel::result::Error;
+use std::str::FromStr;
 
 impl Database {
     /// This is a helper method to ensure that at least the endpoint defined in the config exists in the
@@ -38,50 +37,65 @@ impl Database {
     /// will be returned; else an endpoint with the values from the config will be inserted in the
     /// database and the newly generated uuid will be returned.
     ///
+
     pub fn init_default_endpoint(
         &self,
         default_endpoint: DefaultEndpoint,
     ) -> Result<Endpoint, ArunaError> {
         // Check if endpoint defined in the config already exists in the database
-        let endpoint = self
+        let all_endpoints_result = self
             .pg_connection
             .get()?
-            .transaction::<Endpoint, Error, _>(|conn| {
-                let result = endpoints
-                    .filter(
-                        database::schema::endpoints::endpoint_type.eq(&default_endpoint.ep_type),
-                    )
-                    .filter(
-                        database::schema::endpoints::proxy_hostname
-                            .eq(&default_endpoint.endpoint_proxy),
-                    )
-                    .filter(
-                        database::schema::endpoints::internal_hostname
-                            .eq(&default_endpoint.endpoint_host),
-                    )
-                    .filter(
-                        database::schema::endpoints::is_public.eq(default_endpoint.endpoint_public),
-                    )
-                    .first::<Endpoint>(conn)?;
-
+            .transaction::<Vec<Endpoint>, Error, _>(|conn| {
+                let result = endpoints.load::<Endpoint>(conn)?;
                 Ok(result)
             });
 
         // Return endpoint if already exists; else insert endpoint into database and then return
-        match endpoint {
-            Ok(endpoint) => Ok(endpoint),
+        match all_endpoints_result {
+            Ok(eps) => {
+                for ep in eps {
+                    if ep.host_config.configs == default_endpoint.endpoint_host_config {
+                        return Ok(ep);
+                    }
+                }
+                let endpoint = Endpoint {
+                    id: diesel_ulid::DieselUlid::generate(),
+                    endpoint_type: default_endpoint.ep_type,
+                    name: default_endpoint.endpoint_name.to_string(),
+                    documentation_path: default_endpoint.endpoint_docu,
+                    is_public: default_endpoint.endpoint_public,
+                    status: database::models::enums::EndpointStatus::AVAILABLE,
+                    is_bundler: default_endpoint.endpoint_bundler,
+                    host_config: HostConfigs {
+                        configs: default_endpoint.endpoint_host_config,
+                    },
+                };
+
+                self.pg_connection
+                    .get()?
+                    .transaction::<_, Error, _>(|conn| {
+                        diesel::insert_into(endpoints)
+                            .values(&endpoint)
+                            .execute(conn)?;
+                        Ok(())
+                    })?;
+
+                Ok(endpoint)
+            }
             Err(_) => {
                 let endpoint = Endpoint {
                     id: diesel_ulid::DieselUlid::generate(),
                     endpoint_type: default_endpoint.ep_type,
-                    proxy_hostname: default_endpoint.endpoint_proxy,
-                    name: default_endpoint.endpoint_name,
-                    internal_hostname: default_endpoint.endpoint_host,
+                    name: default_endpoint.endpoint_name.to_string(),
                     documentation_path: default_endpoint.endpoint_docu,
                     is_public: default_endpoint.endpoint_public,
                     status: database::models::enums::EndpointStatus::AVAILABLE,
+                    is_bundler: default_endpoint.endpoint_bundler,
+                    host_config: HostConfigs {
+                        configs: default_endpoint.endpoint_host_config,
+                    },
                 };
-
                 self.pg_connection
                     .get()?
                     .transaction::<_, Error, _>(|conn| {
@@ -108,22 +122,29 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
+
     pub fn add_endpoint(
         &self,
         request: &AddEndpointRequest,
     ) -> Result<(Endpoint, i64), ArunaError> {
+        let mut temp_conf = Vec::new();
+
+        for ep_config in request.host_configs.clone() {
+            temp_conf.push(ep_config.into())
+        }
+
         let db_endpoint = Endpoint {
             id: diesel_ulid::DieselUlid::generate(),
             endpoint_type: EndpointType::from_i32(request.ep_type)?,
             name: request.name.to_string(),
-            proxy_hostname: request.proxy_hostname.to_string(),
-            internal_hostname: request.internal_hostname.to_string(),
             documentation_path: match request.documentation_path.is_empty() {
                 true => None,
                 false => Some(request.documentation_path.to_string()),
             },
             is_public: request.is_public,
             status: database::models::enums::EndpointStatus::AVAILABLE,
+            is_bundler: request.is_bundler,
+            host_config: HostConfigs { configs: temp_conf },
         };
 
         let db_pubkey = PubKeyInsert {
@@ -162,6 +183,7 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
+
     pub fn get_endpoint(
         &self,
         endpoint_uuid: &diesel_ulid::DieselUlid,
@@ -188,6 +210,7 @@ impl Database {
     ///   - **On success**: A vector of database endpoint models
     ///   - **On failure**: Aruna error with failure details
     ///
+
     pub fn get_endpoints(&self) -> Result<Vec<Endpoint>, ArunaError> {
         let pub_endpoints = self
             .pg_connection
@@ -215,6 +238,7 @@ impl Database {
     ///   - **On success**: Database endpoint model
     ///   - **On failure**: Aruna error with failure details
     ///
+
     pub fn get_endpoint_by_name(&self, endpoint_name: &str) -> Result<Endpoint, ArunaError> {
         let endpoint = self
             .pg_connection
@@ -242,6 +266,7 @@ impl Database {
     ///   - **On success**: Response containing a vector of proto endpoints
     ///   - **On failure**: Aruna error with failure details
     ///
+
     pub fn get_object_endpoints(
         &self,
         request: GetObjectEndpointsRequest,
@@ -278,8 +303,7 @@ impl Database {
                     id: ep.id.to_string(),
                     ep_type: ep.endpoint_type as i32,
                     name: ep.name.to_string(),
-                    proxy_hostname: ep.proxy_hostname.to_string(),
-                    internal_hostname: ep.internal_hostname.to_string(),
+                    is_bundler: ep.is_bundler,
                     documentation_path: ep
                         .documentation_path
                         .as_ref()
@@ -288,6 +312,7 @@ impl Database {
                     is_public: ep.is_public,
                     is_default,
                     status: ep.status as i32,
+                    host_configs: ep.host_config.clone().into(),
                 }
             })
             .collect::<Vec<_>>();

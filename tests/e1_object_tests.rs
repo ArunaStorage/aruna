@@ -35,7 +35,7 @@ impl PartialEq for MyObjectWithUrl {
     }
 }
 
-/// Implement hash for MyObjectWithUrl but only include proto object id ...
+/// Implement hash for `MyObjectWithUrl` but only include proto object id ...
 impl Hash for MyObjectWithUrl {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match &self.0.object {
@@ -80,12 +80,12 @@ fn create_object_test() {
 
     // Create Object
     let new_object_id = diesel_ulid::DieselUlid::generate();
-    let upload_id = "".to_string();
+    let upload_id = String::new();
 
     let init_object_request = InitializeNewObjectRequest {
         object: Some(StageObject {
             filename: "File.file".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 1234,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -134,7 +134,7 @@ fn create_object_test() {
     let finished_object: ProtoObject = db
         .finish_object_staging(&finish_request, &creator)
         .unwrap()
-        .map(|e| e.try_into())
+        .map(std::convert::TryInto::try_into)
         .map_or(Ok(None), |r| r.map(Some))
         .unwrap()
         .unwrap();
@@ -186,7 +186,7 @@ fn update_object_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -197,7 +197,7 @@ fn update_object_test() {
     ));
     assert_eq!(update_2.rev_number, 2);
     assert_eq!(update_2.filename, "File.next.update".to_string());
-    assert_eq!(update_2.content_len, 123456);
+    assert_eq!(update_2.content_len, 123_456);
     assert!(update_2.auto_update);
 }
 
@@ -239,7 +239,7 @@ fn update_object_with_reference_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -256,7 +256,7 @@ fn update_object_with_reference_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -267,7 +267,7 @@ fn update_object_with_reference_test() {
     ));
     assert_eq!(update_2.rev_number, 2);
     assert_eq!(update_2.filename, "File.next.update".to_string());
-    assert_eq!(update_2.content_len, 123456);
+    assert_eq!(update_2.content_len, 123_456);
     assert!(update_2.auto_update);
 
     // Get auto_updated object
@@ -322,7 +322,7 @@ fn object_revision_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -333,7 +333,7 @@ fn object_revision_test() {
     ));
     assert_eq!(update_2.rev_number, 2);
     assert_eq!(update_2.filename, "File.next.update".to_string());
-    assert_eq!(update_2.content_len, 123456);
+    assert_eq!(update_2.content_len, 123_456);
     assert!(update_2.auto_update);
 
     // Test Revisions
@@ -389,7 +389,7 @@ fn object_revisions_test() {
         original_object: update_1,
         collection_id: rand_collection.id.to_string(),
         new_name: "File.next.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -400,7 +400,7 @@ fn object_revisions_test() {
     ));
     assert_eq!(update_2.rev_number, 2);
     assert_eq!(update_2.filename, "File.next.update".to_string());
-    assert_eq!(update_2.content_len, 123456);
+    assert_eq!(update_2.content_len, 123_456);
     assert!(update_2.auto_update);
 
     // Test Revisions
@@ -433,8 +433,8 @@ fn object_revisions_test() {
     assert!(resp_2.len() == 3);
 
     assert!(common::functions::compare_it(
-        resp_1.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>(),
-        resp_2.into_iter().map(MyObjectWithUrl).collect::<Vec<_>>()
+        resp_1.into_iter().map(MyObjectWithUrl),
+        resp_2.into_iter().map(MyObjectWithUrl)
     ))
 }
 
@@ -476,7 +476,7 @@ fn update_object_get_references_test() {
         target_collection_id: rand_collection_2.id.clone(),
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     let _resp = db.create_object_reference(create_ref).unwrap();
@@ -493,7 +493,7 @@ fn update_object_get_references_test() {
         original_object: update_1,
         collection_id: rand_collection.id,
         new_name: "File.next.update".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
     let object_rev_2_ulid = diesel_ulid::DieselUlid::from_str(&update_2.id).unwrap();
@@ -505,7 +505,7 @@ fn update_object_get_references_test() {
     ));
     assert_eq!(update_2.rev_number, 2);
     assert_eq!(update_2.filename, "File.next.update".to_string());
-    assert_eq!(update_2.content_len, 123456);
+    assert_eq!(update_2.content_len, 123_456);
     assert!(update_2.auto_update);
 
     // Get auto_updated object
@@ -603,7 +603,7 @@ fn delete_object_test() {
         collection_id: random_collection.id.to_string(),
         object: Some(StageObject {
             filename: "Update".to_string(),
-            sub_path: "".to_string(),
+            sub_path: String::new(),
             content_len: 0,
             source: None,
             dataclass: DataClass::Private as i32,
@@ -612,7 +612,7 @@ fn delete_object_test() {
         }),
         reupload: false,
         is_specification: false,
-        preferred_endpoint_id: "".to_string(),
+        preferred_endpoint_id: String::new(),
         multi_part: false,
         hash: None, // Note: Maybe has to be refactored for future hash validation
     };
@@ -636,7 +636,7 @@ fn delete_object_test() {
             &creator,
         )
         .unwrap()
-        .map(|e| e.try_into())
+        .map(std::convert::TryInto::try_into)
         .map_or(Ok(None), |r| r.map(Some))
         .unwrap()
         .unwrap();
@@ -712,7 +712,7 @@ fn delete_object_references_test() {
         target_collection_id: target_collection.id.to_string(),
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     })
     .unwrap();
 
@@ -772,7 +772,7 @@ fn get_objects_test() {
     let get_request = GetObjectsRequest {
         collection_id: random_collection.id,
         page_request: Some(PageRequest {
-            last_uuid: "".to_string(),
+            last_uuid: String::new(),
             page_size: 64,
         }),
         label_id_filter: None,
@@ -996,7 +996,7 @@ fn clone_object_test() {
         original_object: new_obj.clone(),
         collection_id: random_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -1059,7 +1059,7 @@ fn delete_multiple_objects_test() {
         target_collection_id: target_collection.id.clone(),
         writeable: false,
         auto_update: false,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     db.create_object_reference(create_ref_01).unwrap();
@@ -1069,7 +1069,7 @@ fn delete_multiple_objects_test() {
         original_object: rnd_obj_1_rev_0.clone(),
         collection_id: source_collection.id.to_string(),
         new_name: "File.next.update2".to_string(),
-        content_len: 123456,
+        content_len: 123_456,
         ..Default::default()
     });
 
@@ -1104,7 +1104,7 @@ fn delete_multiple_objects_test() {
         target_collection_id: target_collection.id.clone(),
         writeable: true,
         auto_update: true,
-        sub_path: "".to_string(),
+        sub_path: String::new(),
     };
 
     db.create_object_reference(create_ref_02).unwrap();

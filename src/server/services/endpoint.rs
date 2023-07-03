@@ -5,10 +5,10 @@ use tonic::{Code, Request, Response, Status};
 use super::authz::Authz;
 
 use crate::database::connection::Database;
-use crate::database::models::object::Endpoint;
+use crate::database::models::object::{Endpoint, HostConfigs};
 use crate::error::{ArunaError, TypeConversionError};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
-use aruna_rust_api::api::storage::models::v1::Endpoint as ProtoEndpoint;
+use aruna_rust_api::api::storage::models::v1::{Endpoint as ProtoEndpoint, EndpointHostConfig};
 use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointService;
 use aruna_rust_api::api::storage::services::v1::{
     AddEndpointRequest, AddEndpointResponse, DeleteEndpointRequest, DeleteEndpointResponse,
@@ -34,6 +34,7 @@ impl EndpointService for EndpointServiceImpl {
     ///   - **On success**: Response with the newly generated endpoint including its unique id
     ///   - **On failure**: Status error with failure details
     ///
+
     async fn add_endpoint(
         &self,
         request: Request<AddEndpointRequest>,
@@ -75,6 +76,7 @@ impl EndpointService for EndpointServiceImpl {
     ///   - **On success**: Response with the endpoint info
     ///   - **On failure**: Status error with failure details
     ///
+
     async fn get_endpoint(
         &self,
         request: Request<GetEndpointRequest>,
@@ -137,6 +139,7 @@ impl EndpointService for EndpointServiceImpl {
     ///   - **On success**: Response with the endpoint info of all public endpoints
     ///   - **On failure**: Status error with failure details
     ///
+
     async fn get_endpoints(
         &self,
         request: Request<GetEndpointsRequest>,
@@ -153,8 +156,8 @@ impl EndpointService for EndpointServiceImpl {
         // Transform database endpoints to proto endpoints
         let proto_endpoints: Vec<ProtoEndpoint> = db_endpoints
             .into_iter()
-            .map(ProtoEndpoint::try_from)
-            .collect::<Result<Vec<ProtoEndpoint>, _>>()?;
+            .map(ProtoEndpoint::from)
+            .collect::<Vec<ProtoEndpoint>>();
 
         // Return gRPC response after everything succeeded
         let response = Response::new(GetEndpointsResponse {
@@ -178,6 +181,7 @@ impl EndpointService for EndpointServiceImpl {
     ///   - **On success**: Empty response signalling deletion success
     ///   - **On failure**: Status error with failure details
     ///
+
     async fn delete_endpoint(
         &self,
         request: Request<DeleteEndpointRequest>,
@@ -203,6 +207,7 @@ impl EndpointService for EndpointServiceImpl {
     ///   - **On success**:  Response with the endpoint info of the default endpoint
     ///   - **On failure**: Status error with failure details
     ///
+
     async fn get_default_endpoint(
         &self,
         request: Request<GetDefaultEndpointRequest>,
@@ -227,23 +232,36 @@ impl EndpointService for EndpointServiceImpl {
 }
 
 // ----- Helper functions for endpoint service implementation ----------
-impl TryFrom<Endpoint> for ProtoEndpoint {
-    type Error = ArunaError;
+impl From<Endpoint> for ProtoEndpoint {
+    fn from(value: Endpoint) -> Self {
+        ProtoEndpoint {
+            id: value.id.to_string(),
+            ep_type: value.endpoint_type as i32,
+            name: value.name.to_string(),
+            documentation_path: value.documentation_path.unwrap_or_default(),
+            is_public: value.is_public,
+            is_default: true,
+            status: value.status as i32,
+            is_bundler: value.is_bundler,
+            host_configs: value.host_config.into(),
+        }
+    }
+}
 
-    fn try_from(db_endpoint: Endpoint) -> Result<Self, Self::Error> {
-        Ok(ProtoEndpoint {
-            id: db_endpoint.id.to_string(),
-            ep_type: db_endpoint.endpoint_type as i32,
-            name: db_endpoint.name.to_string(),
-            proxy_hostname: db_endpoint.proxy_hostname.to_string(),
-            internal_hostname: db_endpoint.internal_hostname.to_string(),
-            documentation_path: match db_endpoint.documentation_path {
-                None => "".to_string(),
-                Some(path) => path,
-            },
-            is_public: db_endpoint.is_public,
-            is_default: false,
-            status: db_endpoint.status as i32, //ToDo: How to to know default from outside?
-        })
+impl From<HostConfigs> for Vec<EndpointHostConfig> {
+    fn from(value: HostConfigs) -> Self {
+        let mut temp_vec = Vec::new();
+
+        for cfg in value.configs {
+            temp_vec.push(EndpointHostConfig {
+                url: cfg.url.to_string(),
+                is_primary: cfg.is_primary,
+                ssl: cfg.ssl,
+                public: cfg.public,
+                host_type: cfg.feature as i32,
+            })
+        }
+
+        temp_vec
     }
 }

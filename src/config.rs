@@ -1,4 +1,4 @@
-use crate::database::models::enums::EndpointType;
+use crate::database::models::{enums::EndpointType, object::HostConfig};
 use std::env::VarError;
 use std::fs;
 
@@ -36,8 +36,8 @@ pub struct EventNotifications {
 pub struct DefaultEndpoint {
     pub ep_type: EndpointType,
     pub endpoint_name: String,
-    pub endpoint_host: String,
-    pub endpoint_proxy: String,
+    pub endpoint_host_config: Vec<HostConfig>,
+    pub endpoint_bundler: bool,
     pub endpoint_public: bool,
     pub endpoint_docu: Option<String>,
     pub endpoint_serial: i64,
@@ -64,7 +64,6 @@ pub struct LocationVersion {
     pub components: Vec<ComponentVersion>,
 }
 
-///
 impl ArunaServerConfig {
     pub fn new() -> Self {
         let config =
