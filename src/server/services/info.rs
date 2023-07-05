@@ -1,7 +1,7 @@
 use super::authz::{Authz, CtxTarget};
 use crate::database::connection::Database;
 use crate::{config::LocationVersion, error::ArunaError};
-use aruna_policy::ape::structs::ResourceTarget;
+use aruna_policy::ape::structs::{PermissionLevel, ResourceTarget};
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::{
     resource_info_service_server::ResourceInfoService,
@@ -35,7 +35,7 @@ impl ResourceInfoService for ResourceInfoServiceImpl {
             .authorize(
                 request.metadata(),
                 CtxTarget {
-                    action: ResourceType::Read,
+                    action: PermissionLevel::READ,
                     target: ResourceTarget::Object(diesel_ulid::DieselUlid::generate()),
                 },
             )
@@ -47,7 +47,7 @@ impl ResourceInfoService for ResourceInfoServiceImpl {
         // Extract other request fields
         let resource_ulid = diesel_ulid::DieselUlid::from_str(&request.get_ref().resource_id)
             .map_err(ArunaError::from)?;
-        let resource_type = ResourceType::from_i32(&request.get_ref().resource_type)
+        let resource_type = ResourceType::from_i32(request.get_ref().resource_type)
             .ok_or_else(|| ArunaError::InvalidRequest("Invalid resource type".to_string()))?;
 
         // Fetch resource hierarchy
