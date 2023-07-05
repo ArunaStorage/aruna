@@ -51,6 +51,7 @@ hmac = "0.12.1"
 hex = "0.4.3"
 base64 = "0.21.2"
 tower = "0.4.13"
+aruna_policy = "0.1.2"
 
 [dev-dependencies]
 serial_test = "2.0.0"

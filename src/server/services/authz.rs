@@ -1,12 +1,13 @@
 use crate::config::ArunaServerConfig;
 use crate::database::connection::Database;
-use crate::database::models::auth::{ApiToken, PubKey};
-use crate::database::models::enums::{Resources, UserRights};
+use crate::database::models::auth::PubKey;
 use crate::error::GrpcNotFoundError;
 use crate::error::{ArunaError, AuthorizationError};
-
 use anyhow::Result;
-use aruna_rust_api::api::storage::models::v1::ResourceType;
+use aruna_policy::ape::attribute_cache::AttributeCache;
+use aruna_policy::ape::structs::{
+    Constraint, Context, PermissionLevel, ResourceTarget, TokenSubject,
+};
 use chrono::prelude::*;
 use diesel_ulid::DieselUlid;
 use dotenv::dotenv;
@@ -23,7 +24,6 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
-use tokio::task;
 use tonic::metadata::MetadataMap;
 use url::Url;
 
@@ -45,6 +45,7 @@ pub struct Authz {
     signing_key: Arc<Mutex<(i64, EncodingKey, DecodingKey)>>,
     db: Arc<Database>,
     oidc_realminfo: String,
+    attribute_cache: AttributeCache,
 }
 
 /// This contains claims for ArunaTokens
@@ -56,7 +57,31 @@ pub struct Authz {
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     sub: String,
+    user: String,
     exp: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CtxTarget {
+    pub action: PermissionLevel,
+    pub target: ResourceTarget,
+}
+
+impl CtxTarget {
+    pub fn into_ctx(self, user_id: DieselUlid, token_id: DieselUlid) -> Context {
+        Context {
+            subject: TokenSubject { user_id, token_id },
+            operation: self.action,
+            target: self.target,
+        }
+    }
+
+    pub fn is_personal(&self, target_id: DieselUlid) -> bool {
+        match self.target {
+            ResourceTarget::Personal(id) => target_id == id,
+            _ => false,
+        }
+    }
 }
 
 /// This is a helper struct to deserialize the JSON response from Keycloak
@@ -82,29 +107,6 @@ impl KeyCloakResponse {
             "-----BEGIN PUBLIC KEY-----", self.public_key, "-----END PUBLIC KEY-----"
         )
     }
-}
-
-/// This struct represents a request "Context" it is used to specify the
-/// accessed resource_type and id as well as the needed permissions
-pub struct Context {
-    pub user_right: UserRights,
-    pub resource_type: Resources,
-    pub resource_id: diesel_ulid::DieselUlid,
-    // These requests need admin rights
-    // For this the user needs to be part of a projects with the admin flag 1
-    pub admin: bool,
-
-    // Some requests can only be authorized for personal access
-    // for example querying or modifying personal tokens
-    pub personal: bool,
-
-    // Some requests can be authorized using only oidc tokens
-    // If oidc_context is true and the token is an oidc token this request will succeed
-    // All other fields will be ignored, this should only be used for
-    // register and the initial creation / deletion of private access tokens
-    pub oidc_context: bool,
-    // Allow service accounts
-    pub allow_service_accounts: bool,
 }
 
 /// Implementations for the Authz struct contain methods to create and check
@@ -179,6 +181,8 @@ impl Authz {
             .expect("Current decoding key not found")
             .clone();
 
+        let user_policies = db.load_attribute_cache();
+
         // return the Authz struct
         Authz {
             pub_keys: Arc::new(RwLock::new(result)),
@@ -190,6 +194,7 @@ impl Authz {
                     .expect("Unable to create EncodingKey from pem"),
                 decoding_key,
             ))),
+            attribute_cache: AttributeCache::new(user_policies),
         }
     }
     /// Converts a Database pubkey to the correct HashMap for the Authz struct.
@@ -249,14 +254,14 @@ impl Authz {
     pub async fn authorize(
         &self,
         metadata: &MetadataMap,
-        context: &Context,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+        context: CtxTarget,
+    ) -> Result<(diesel_ulid::DieselUlid, Vec<Constraint>), ArunaError> {
         let oidc_user = self.check_if_oidc(metadata).await?;
 
         match oidc_user {
             Some(u) => {
-                if context.personal {
-                    Ok(u)
+                if context.is_personal(u) {
+                    Ok((u, Vec::new()))
                 } else {
                     Err(ArunaError::AuthorizationError(
                         AuthorizationError::PERMISSIONDENIED,
@@ -264,279 +269,21 @@ impl Authz {
                 }
             }
             None => {
-                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
-                Ok(self
-                    .db
-                    .get_checked_user_id_from_token(&token_uuid, context)?
-                    .0)
-            }
-        }
-    }
+                let (user_id, token_id) = self.validate_and_query_token_from_md(metadata).await?;
 
-    /// The `authorize_verbose` method is used to check if the supplied user token has enough permissions
-    /// to fullfill the gRPC request the `db.get_checked_user_id_from_token()` method will check if the token and its
-    /// associated permissions permissions are sufficient enough to execute the request.
-    ///
-    /// ## Arguments
-    ///
-    /// - Metadata of the request containing a token
-    /// - Context that specifies which ressource is accessed and which permissions are requested
-    ///
-    /// ## Return
-    ///
-    /// This returns an Result<(UUID, Option<ApiToken>)> or an Error.
-    /// If it returns an Error the authorization failed otherwise.
-    /// The uuid is the user_id of the user that owns the token.
-    /// This user_id will for example be used to specify the "created_by" field in the database.
-    /// The ApiToken only additionally returns if no OIDC token was used for authorization.
-    ///
-    pub async fn authorize_verbose(
-        &self,
-        metadata: &MetadataMap,
-        context: &Context,
-    ) -> Result<(diesel_ulid::DieselUlid, Option<ApiToken>), ArunaError> {
-        let oidc_user = self.check_if_oidc(metadata).await?;
-
-        match oidc_user {
-            Some(u) => {
-                if context.personal {
-                    Ok((u, None))
-                } else {
-                    Err(ArunaError::AuthorizationError(
-                        AuthorizationError::PERMISSIONDENIED,
-                    ))
-                }
-            }
-            None => {
-                let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
-                let (creator_uuid, api_token) = self
-                    .db
-                    .get_checked_user_id_from_token(&token_uuid, context)?;
-
-                Ok((creator_uuid, Some(api_token)))
-            }
-        }
-    }
-
-    /// This function authorizes a user
-    pub async fn authorize_for_service_account(
-        &self,
-        metadata: &MetadataMap,
-        svc_account_id: &DieselUlid,
-    ) -> Result<(), ArunaError> {
-        let token_uuid = self.validate_and_query_token_from_md(metadata).await?;
-        self.db
-            .validate_user_perm_for_svc_account(&token_uuid, svc_account_id)?;
-        Ok(())
-    }
-
-    /// This is a wrapper that runs the authorize function with a `personal` context
-    /// a convenience function if this request is `personal` scoped
-    pub async fn personal_authorize(
-        &self,
-        metadata: &MetadataMap,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        self.authorize(
-            metadata,
-            &(Context {
-                user_right: UserRights::READ,
-                resource_type: Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::default(),
-                admin: false,
-                personal: true,
-                oidc_context: false,
-                allow_service_accounts: false,
-            }),
-        )
-        .await
-    }
-
-    /// This is a wrapper that runs the authorize function with an `admin` context
-    /// a convenience function if this request is `admin` scoped
-    pub async fn admin_authorize(
-        &self,
-        metadata: &MetadataMap,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        self.authorize(
-            metadata,
-            &(Context {
-                user_right: UserRights::READ,
-                resource_type: Resources::PROJECT,
-                resource_id: diesel_ulid::DieselUlid::default(),
-                admin: true,
-                personal: false,
-                oidc_context: false,
-                allow_service_accounts: false,
-            }),
-        )
-        .await
-    }
-
-    /// This is a wrapper that runs the authorize function with an `collection` context
-    /// a convenience function if this request is `collection` scoped
-    pub async fn collection_authorize(
-        &self,
-        metadata: &MetadataMap,
-        collection_id: diesel_ulid::DieselUlid,
-        user_right: UserRights,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        self.authorize(
-            metadata,
-            &(Context {
-                user_right,
-                resource_type: Resources::COLLECTION,
-                resource_id: collection_id,
-                admin: false,
-                personal: false,
-                oidc_context: false,
-                allow_service_accounts: true,
-            }),
-        )
-        .await
-    }
-
-    /// This is a wrapper that runs the authorize function with an `project` context
-    /// a convenience function if this request is `project` scoped
-    pub async fn project_authorize(
-        &self,
-        metadata: &MetadataMap,
-        project_id: diesel_ulid::DieselUlid,
-        user_right: UserRights,
-        allow_service_accounts: bool,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        self.authorize(
-            metadata,
-            &(Context {
-                user_right,
-                resource_type: Resources::PROJECT,
-                resource_id: project_id,
-                admin: false,
-                personal: false,
-                oidc_context: false,
-                allow_service_accounts,
-            }),
-        )
-        .await
-    }
-
-    /// This is a wrapper that runs the authorize function with an `project` context
-    /// a convenience function if this request is `project` scoped
-    /// this uses a collection_id to determine the associated project
-    pub async fn project_authorize_by_collectionid(
-        &self,
-        metadata: &MetadataMap,
-        collection_id: diesel_ulid::DieselUlid,
-        user_right: UserRights,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        let project_id = self.db.get_project_id_by_collection_id(collection_id)?;
-        self.authorize(
-            metadata,
-            &(Context {
-                user_right,
-                resource_type: Resources::PROJECT,
-                resource_id: project_id,
-                admin: false,
-                personal: false,
-                oidc_context: false,
-                allow_service_accounts: true,
-            }),
-        )
-        .await
-    }
-
-    /// Authorizes an arbitrary resource for read permissions.
-    /// Currently used for streaming group requests authorizations.
-    ///
-    /// ## Arguments:
-    ///
-    /// * `metadata` - Request header metadata containing the authorization token
-    /// * `resource_ulid` - Unique id of the resource
-    /// * `resource_type` - Type of the resource
-    ///
-    /// ## Returns:
-    ///
-    /// * `Result<diesel_ulid::DieselUlid, ArunaError>` -
-    /// Returns the user id associated with the provided authorization token on authorization success;
-    /// Error else.
-    ///
-    pub async fn resource_read_authorize(
-        &self,
-        metadata: MetadataMap,
-        resource_ulid: diesel_ulid::DieselUlid,
-        resource_type: ResourceType,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
-        let authorized = match resource_type {
-            ResourceType::Unspecified => {
-                return Err(ArunaError::InvalidRequest(
-                    "unspecified resource type is not allowed".to_string(),
-                ))
-            }
-            ResourceType::Project => {
-                // Authorize against project
-                self.project_authorize(&metadata, resource_ulid, UserRights::READ, true)
-                    .await?
-            }
-            ResourceType::Collection => {
-                // Authorize against collection
-                self.collection_authorize(&metadata, resource_ulid, UserRights::READ)
-                    .await?
-            }
-            ResourceType::ObjectGroup => {
-                // Authorize against collection
-                let database_clone = self.db.clone();
-                let collection_ulid = task::spawn_blocking(move || {
-                    database_clone.get_object_group_collection_id(&resource_ulid)
-                })
-                .await
-                .map_err(ArunaError::from)??;
-
-                self.collection_authorize(&metadata, collection_ulid, UserRights::READ)
-                    .await?
-            }
-            ResourceType::Object => {
-                // Get all collection ids and auth until success or ids exhausted
-                let database_clone = self.db.clone();
-                let collection_ulids = task::spawn_blocking(move || {
-                    database_clone.get_references(&resource_ulid, false)
-                })
-                .await
-                .map_err(ArunaError::from)??
-                .references
-                .into_iter()
-                .map(|reference| {
-                    diesel_ulid::DieselUlid::from_str(&reference.collection_id)
-                        .map_err(ArunaError::from)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-                let mut authed = None;
-                for collection_ulid in collection_ulids {
-                    if let Ok(token_ulid) = self
-                        .collection_authorize(&metadata, collection_ulid, UserRights::READ)
-                        .await
-                    {
-                        authed = Some(token_ulid);
-                        break;
-                    }
-                }
-
-                match authed {
-                    Some(token_ulid) => token_ulid,
-                    None => {
-                        return Err(ArunaError::AuthorizationError(
-                            AuthorizationError::PERMISSIONDENIED,
-                        ))
+                match self
+                    .attribute_cache
+                    .check_permissions(&context.into_ctx(user_id, token_id))
+                {
+                    aruna_policy::ape::structs::Decision::Deny => Err(
+                        ArunaError::AuthorizationError(AuthorizationError::PERMISSIONDENIED),
+                    ),
+                    aruna_policy::ape::structs::Decision::Allow(constraints) => {
+                        Ok((user_id, constraints))
                     }
                 }
             }
-            ResourceType::All => {
-                return Err(ArunaError::InvalidRequest(
-                    "resource type all not yet supported".to_string(),
-                ))
-            }
-        };
-
-        Ok(authorized)
+        }
     }
 
     pub async fn check_if_oidc(
@@ -562,7 +309,7 @@ impl Authz {
     pub async fn validate_and_query_token_from_md(
         &self,
         metadata: &MetadataMap,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+    ) -> Result<(diesel_ulid::DieselUlid, diesel_ulid::DieselUlid), ArunaError> {
         let token_string = get_token_from_md(metadata)?;
         self.validate_and_query_token(&token_string).await
     }
@@ -570,7 +317,7 @@ impl Authz {
     pub async fn validate_and_query_token(
         &self,
         token_secret: &str,
-    ) -> Result<diesel_ulid::DieselUlid, ArunaError> {
+    ) -> Result<(diesel_ulid::DieselUlid, diesel_ulid::DieselUlid), ArunaError> {
         let header = decode_header(token_secret)?;
 
         let kid = header.kid.ok_or(AuthorizationError::PERMISSIONDENIED)?;
@@ -607,9 +354,10 @@ impl Authz {
                 _ => AuthorizationError::PERMISSIONDENIED,
             })?;
 
-        Ok(diesel_ulid::DieselUlid::from_str(
-            token_data.claims.sub.as_str(),
-        )?)
+        Ok((
+            diesel_ulid::DieselUlid::from_str(token_data.claims.sub.as_str())?,
+            diesel_ulid::DieselUlid::from_str(token_data.claims.user.as_str())?,
+        ))
     }
 
     pub async fn validate_oidc_only(&self, metadata: &MetadataMap) -> Result<String, ArunaError> {
@@ -657,6 +405,7 @@ impl Authz {
     pub async fn sign_new_token(
         &self,
         token_id: &str,
+        user_id: &str,
         expires_at: Option<prost_types::Timestamp>,
     ) -> Result<String, ArunaError> {
         // Gets the signing key / mutex -> if this returns a poison error this should also panic
@@ -665,6 +414,7 @@ impl Authz {
 
         let claim = Claims {
             sub: token_id.to_string(),
+            user: user_id.to_string(),
             exp: if expires_at.is_none() {
                 // Add 10 years to token lifetime
                 (Utc::now().timestamp() as usize) + 315360000

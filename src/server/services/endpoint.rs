@@ -1,3 +1,4 @@
+use aruna_policy::ape::structs::{PermissionLevel, ResourceTarget};
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Code, Request, Response, Status};
@@ -7,6 +8,7 @@ use super::authz::Authz;
 use crate::database::connection::Database;
 use crate::database::models::object::{Endpoint, HostConfigs};
 use crate::error::{ArunaError, TypeConversionError};
+use crate::server::services::authz::CtxTarget;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
 use aruna_rust_api::api::storage::models::v1::{Endpoint as ProtoEndpoint, EndpointHostConfig};
 use aruna_rust_api::api::storage::services::v1::endpoint_service_server::EndpointService;
@@ -42,8 +44,17 @@ impl EndpointService for EndpointServiceImpl {
         log::info!("Received AddEndpointRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // For now only admins can add endpoint data
-        self.authz.admin_authorize(request.metadata()).await?;
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::ADMIN,
+                    target: ResourceTarget::GlobalAdmin,
+                },
+            )
+            .await?;
 
         let inner_request = request.into_inner();
         let (endpoint, pubkey_serial) = self.database.add_endpoint(&inner_request)?;
@@ -84,8 +95,17 @@ impl EndpointService for EndpointServiceImpl {
         log::info!("Received GetEndpointRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // For now only admins can add endpoint data
-        self.authz.admin_authorize(request.metadata()).await?;
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::ADMIN,
+                    target: ResourceTarget::GlobalAdmin,
+                },
+            )
+            .await?;
 
         // Get Endpoint from database
         let inner_request = request.into_inner();
@@ -147,8 +167,17 @@ impl EndpointService for EndpointServiceImpl {
         log::info!("Received GetEndpointsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // For now only admins can add endpoint data
-        self.authz.admin_authorize(request.metadata()).await?;
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::ADMIN,
+                    target: ResourceTarget::GlobalAdmin,
+                },
+            )
+            .await?;
 
         // Get endpoints from database
         let db_endpoints = self.database.get_endpoints()?;
@@ -215,8 +244,17 @@ impl EndpointService for EndpointServiceImpl {
         log::info!("Received GetDefaultEndpointRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // For now only admins can request endpoint data
-        self.authz.admin_authorize(request.metadata()).await?;
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::ADMIN,
+                    target: ResourceTarget::GlobalAdmin,
+                },
+            )
+            .await?;
 
         // Transform database Endpoint to proto Endpoint
         let mut proto_endpoint = ProtoEndpoint::try_from(self.default_endpoint.clone())

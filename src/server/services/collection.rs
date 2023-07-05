@@ -1,13 +1,13 @@
-use std::str::FromStr;
-use std::sync::Arc;
-
+use super::authz::Authz;
 use crate::database::connection::Database;
-use crate::database::models::enums::*;
 use crate::error::ArunaError;
 use crate::error::TypeConversionError;
 use crate::server::clients::event_emit_client::NotificationEmitClient;
 use crate::server::clients::kube_client::KubeClient;
+use crate::server::services::authz::CtxTarget;
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_policy::ape::structs::PermissionLevel;
+use aruna_policy::ape::structs::ResourceTarget;
 use aruna_rust_api::api::internal::v1::emitted_resource::Resource;
 use aruna_rust_api::api::internal::v1::CollectionResource;
 use aruna_rust_api::api::internal::v1::EmittedResource;
@@ -15,11 +15,12 @@ use aruna_rust_api::api::notification::services::v1::EventType;
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v1::*;
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
+use std::sync::Arc;
 use tokio::task;
 use tonic::Request;
 use tonic::Response;
-
-use super::authz::Authz;
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(
@@ -59,16 +60,22 @@ impl CollectionService for CollectionServiceImpl {
         let project_id = diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
             .map_err(ArunaError::from)?;
 
-        // Authorize the request
-        let creator_id = self
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
             .authz
-            .project_authorize(request.metadata(), project_id, UserRights::WRITE, true)
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Project(project_id),
+                },
+            )
             .await?;
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
         let (response, bucket) = task::spawn_blocking(move || {
-            db.create_new_collection(request.get_ref().to_owned(), creator_id)
+            db.create_new_collection(request.get_ref().to_owned(), user_id)
         })
         .await
         .map_err(ArunaError::from)??;
@@ -143,12 +150,17 @@ impl CollectionService for CollectionServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Authorize collection - READ
-        self.authz
-            .collection_authorize(
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::READ,
+                CtxTarget {
+                    action: PermissionLevel::READ,
+                    target: ResourceTarget::Collection(
+                        DieselUlid::from_str(&request.get_ref().collection_id)
+                            .map_err(ArunaError::from)?,
+                    ),
+                },
             )
             .await?;
 
@@ -201,14 +213,18 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Received GetCollectionsRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // Authorize this needs project-level read permissions.
-        self.authz
-            .project_authorize(
+        // Authorize collection - READ
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().project_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::READ,
-                true,
+                CtxTarget {
+                    action: PermissionLevel::READ,
+                    target: ResourceTarget::Project(
+                        DieselUlid::from_str(&request.get_ref().project_id)
+                            .map_err(ArunaError::from)?,
+                    ),
+                },
             )
             .await?;
 
@@ -257,17 +273,20 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Received UpdateCollectionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        // Query the user_permissions -> Needs collection "WRITE" permissions
-        let user_id = self
+        // Authorize collection - READ
+        let (user_id, constraints) = self
             .authz
-            .collection_authorize(
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::WRITE,
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Collection(
+                        DieselUlid::from_str(&request.get_ref().collection_id)
+                            .map_err(ArunaError::from)?,
+                    ),
+                },
             )
             .await?;
-
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();
         let (response, bucket, project_ulid) = task::spawn_blocking(move || {
@@ -352,13 +371,20 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Received PinCollectionVersionRequest.");
         log::debug!("{}", format_grpc_request(&request));
 
-        let user_id = self
+        // Authorize collection - READ
+        let (user_id, constraints) = self
             .authz
-            .collection_authorize(
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::WRITE,
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Collection(
+                        diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                            .map_err(|_| {
+                                ArunaError::TypeConversionError(TypeConversionError::UUID)
+                            })?,
+                    ),
+                },
             )
             .await?;
 
@@ -458,16 +484,17 @@ impl CollectionService for CollectionServiceImpl {
             .map_err(ArunaError::from)?;
         let force_delete = inner_request.force;
 
-        // Validate user permissions for collection deletion
-        let user_id = if force_delete {
-            self.authz
-                .project_authorize_by_collectionid(&metadata, collection_ulid, UserRights::ADMIN)
-                .await?
-        } else {
-            self.authz
-                .collection_authorize(&metadata, collection_ulid, UserRights::WRITE)
-                .await?
-        };
+        // Authorize collection - READ
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Collection(collection_ulid),
+                },
+            )
+            .await?;
 
         // Execute request in spawn_blocking task to prevent blocking the API server
         let db = self.database.clone();

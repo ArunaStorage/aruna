@@ -27,7 +27,6 @@ use crate::database::schema::{
     relations::dsl::*, sources::dsl::*,
 };
 use crate::error::{ArunaError, GrpcNotFoundError};
-use crate::server::services::authz::Context;
 use aruna_rust_api::api::internal::v1::{
     FinalizeObjectRequest, GetOrCreateEncryptionKeyRequest, GetOrCreateObjectByPathRequest,
     GetOrCreateObjectByPathResponse, Location as ProtoLocation, LocationType,
@@ -2358,7 +2357,7 @@ impl Database {
                 )?;
 
                 // Check permissions
-                let (creator_uuid, _) = self.get_checked_user_id_from_token(
+                let (creator_uuid, _) = self.authorize(
                     &access_key,
                     &Context {
                         user_right: if get_object.is_some() && request.object.is_none() {

@@ -1,8 +1,9 @@
+use crate::database::connection::Database;
 use crate::database::models::object::{DataProxyFeature, Endpoint};
-use crate::database::{connection::Database, models::enums::UserRights};
 use crate::error::{ArunaError, TypeConversionError};
-use crate::server::services::authz::Authz;
+use crate::server::services::authz::{Authz, CtxTarget};
 use crate::server::services::utils::{format_grpc_request, format_grpc_response};
+use aruna_policy::ape::structs::{PermissionLevel, ResourceTarget};
 use aruna_rust_api::api::bundler::services::v1::{
     bundler_service_server::BundlerService, CreateBundleRequest, CreateBundleResponse,
     DeleteBundleRequest, DeleteBundleResponse,
@@ -28,12 +29,19 @@ impl BundlerService for BundlerServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Authorize collection - READ
-        self.authz
-            .collection_authorize(
+        let (_, constraints) = self
+            .authz
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::WRITE,
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Collection(
+                        diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                            .map_err(|_| {
+                                ArunaError::TypeConversionError(TypeConversionError::UUID)
+                            })?,
+                    ),
+                },
             )
             .await?;
         let database_clone = self.database.clone();
@@ -89,12 +97,19 @@ impl BundlerService for BundlerServiceImpl {
         log::debug!("{}", format_grpc_request(&request));
 
         // Authorize collection - READ
-        self.authz
-            .collection_authorize(
+        let (_, constraints) = self
+            .authz
+            .authorize(
                 request.metadata(),
-                diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
-                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
-                UserRights::WRITE,
+                CtxTarget {
+                    action: PermissionLevel::WRITE,
+                    target: ResourceTarget::Collection(
+                        diesel_ulid::DieselUlid::from_str(&request.get_ref().collection_id)
+                            .map_err(|_| {
+                                ArunaError::TypeConversionError(TypeConversionError::UUID)
+                            })?,
+                    ),
+                },
             )
             .await?;
         let database_clone = self.database.clone();

@@ -8,13 +8,12 @@ use crate::{
             auth::{ApiToken, Project, User},
             collection::{Collection, CollectionKeyValue},
         },
-        schema::api_tokens,
     },
     error::ArunaError,
 };
 use aruna_rust_api::api::storage::services::v1::{
-    CreateWorkspaceRequest, CreateWorkspaceResponse, DeleteWorkspaceRequest,
-    DeleteWorkspaceResponse,
+    ClaimWorkspaceRequest, ClaimWorkspaceResponse, CreateWorkspaceRequest, CreateWorkspaceResponse,
+    DeleteWorkspaceRequest, DeleteWorkspaceResponse,
 };
 use chrono::Months;
 use diesel::{
@@ -178,6 +177,42 @@ impl Database {
                     .execute(conn)?;
 
                 Ok(DeleteWorkspaceResponse {})
+            })
+    }
+
+    pub fn claim_workspace(
+        &self,
+        request: ClaimWorkspaceRequest,
+        new_token_id: diesel_ulid::DieselUlid,
+        old_user_id: diesel_ulid::DieselUlid,
+    ) -> Result<ClaimWorkspaceResponse, ArunaError> {
+        use crate::database::schema::api_tokens::dsl as tokens_dsl;
+        use crate::database::schema::users::dsl as user_dsl;
+
+        let collection_id = diesel_ulid::DieselUlid::from_str(&request.workspace_id)?;
+
+        self.pg_connection
+            .get()?
+            .transaction::<ClaimWorkspaceResponse, ArunaError, _>(|conn| {
+                let full_new_user_token: ApiToken = tokens_dsl::api_tokens
+                    .filter(tokens_dsl::id.eq(&new_token_id))
+                    .first::<ApiToken>(conn)?;
+                let new_user_id = full_new_user_token.creator_user_id;
+
+
+                
+
+                // Delete old tokens
+                delete(tokens_dsl::api_tokens)
+                    .filter(tokens_dsl::creator_user_id.eq(&old_user_id))
+                    .execute(conn)?;
+
+                // Delete old user
+                delete(user_dsl::users)
+                    .filter(user_dsl::id.eq(&old_user_id))
+                    .execute(conn)?;
+
+                Ok(ClaimWorkspaceResponse {})
             })
     }
 }

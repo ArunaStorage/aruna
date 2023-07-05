@@ -1,6 +1,7 @@
-use super::authz::Authz;
+use super::authz::{Authz, CtxTarget};
 use crate::database::connection::Database;
 use crate::{config::LocationVersion, error::ArunaError};
+use aruna_policy::ape::structs::ResourceTarget;
 use aruna_rust_api::api::storage::models::v1::ResourceType;
 use aruna_rust_api::api::storage::services::v1::{
     resource_info_service_server::ResourceInfoService,
@@ -28,40 +29,31 @@ impl ResourceInfoService for ResourceInfoServiceImpl {
             "Implementation not yet finished.",
         ));
 
-        // Consume gRPC request into its parts
-        let (metadata, _, inner_request) = request.into_parts();
-
-        // Extract provided authorization token
-        let auth_token = metadata
-            .get("Authorization")
-            .ok_or(tonic::Status::new(
-                tonic::Code::PermissionDenied,
-                "request is missing authorization token",
-            ))?
-            .to_str()
-            .map_err(|_| {
-                tonic::Status::new(
-                    tonic::Code::InvalidArgument,
-                    "could not transform token into string",
-                )
-            })?;
-
-        // Validate token
-        let token_ulid = self.authz.validate_and_query_token(auth_token).await?;
+        // Authorize project - WRITE
+        let (user_id, constraints) = self
+            .authz
+            .authorize(
+                request.metadata(),
+                CtxTarget {
+                    action: ResourceType::Read,
+                    target: ResourceTarget::Object(diesel_ulid::DieselUlid::generate()),
+                },
+            )
+            .await?;
 
         //ToDo: How to correctly authorize against resource_id/resource_type without specific action?
         //self.authz.resource_read_authorize(metadata, resource_ulid, resource_type)?;
 
         // Extract other request fields
-        let resource_ulid = diesel_ulid::DieselUlid::from_str(&inner_request.resource_id)
+        let resource_ulid = diesel_ulid::DieselUlid::from_str(&request.get_ref().resource_id)
             .map_err(ArunaError::from)?;
-        let resource_type = ResourceType::from_i32(inner_request.resource_type)
+        let resource_type = ResourceType::from_i32(&request.get_ref().resource_type)
             .ok_or_else(|| ArunaError::InvalidRequest("Invalid resource type".to_string()))?;
 
         // Fetch resource hierarchy
         let database_clone = self.database.clone();
         let response = task::spawn_blocking(move || {
-            database_clone.validate_and_query_hierarchy(token_ulid, &resource_ulid, resource_type)
+            database_clone.validate_and_query_hierarchy(user_id, &resource_ulid, resource_type)
         })
         .await
         .map_err(ArunaError::from)??;

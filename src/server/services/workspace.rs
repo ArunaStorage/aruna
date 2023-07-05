@@ -13,6 +13,7 @@ use chrono::Months;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task;
+use tonic::metadata::MetadataValue;
 
 // This macro automatically creates the Impl struct with all associated fields
 crate::impl_grpc_server!(WorkspaceServiceImpl);
@@ -88,7 +89,6 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
         // Authorize collection - READ
         let database_clone = self.database.clone();
-        let decoding_serial = self.authz.get_decoding_serial().await;
 
         let resp = task::spawn_blocking(move || {
             database_clone.delete_workspace(request.into_inner(), user_id)
@@ -105,12 +105,55 @@ impl WorkspaceService for WorkspaceServiceImpl {
     ///
     /// Status: ALPHA
     ///
-    /// Claims an anonymous workspace, and transfers the owner to a regular user account.
+    /// Claims an anonymous workspace, and transfers ownership to a regular user account.
     async fn claim_workspace(
         &self,
-        _request: tonic::Request<ClaimWorkspaceRequest>,
+        request: tonic::Request<ClaimWorkspaceRequest>,
     ) -> std::result::Result<tonic::Response<ClaimWorkspaceResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received ClaimWorkspaceRequest.");
+        log::debug!("{}", format_grpc_request(&request));
+
+        let metadata = request.metadata_mut();
+        let old_value = metadata
+            .insert(
+                "Authorization",
+                MetadataValue::try_from(request.get_ref().token)
+                    .map_err(|e| tonic::Status::invalid_argument("Unable to utilize token"))?,
+            )
+            .ok_or_else(|| tonic::Status::invalid_argument("Unable to utilize token"))?;
+
+        let token_id = self
+            .authz
+            .validate_and_query_token(
+                old_value
+                    .to_str()
+                    .map_err(|e| tonic::Status::invalid_argument("Unable to utilize token"))?,
+            )
+            .await?;
+
+        let user_id = self
+            .authz
+            .collection_authorize(
+                request.metadata(),
+                diesel_ulid::DieselUlid::from_str(&request.get_ref().workspace_id)
+                    .map_err(|_| ArunaError::TypeConversionError(TypeConversionError::UUID))?,
+                UserRights::WRITE,
+            )
+            .await?;
+
+        // Authorize collection - READ
+        let database_clone = self.database.clone();
+
+        let resp = task::spawn_blocking(move || {
+            database_clone.claim_workspace(request.into_inner(), token_id, user_id)
+        })
+        .await
+        .map_err(ArunaError::from)??;
+
+        let response = tonic::Response::new(resp);
+        log::info!("Sending ClaimWorkspaceResponse back to client.");
+        log::debug!("{}", format_grpc_response(&response));
+        Ok(response)
     }
     /// MoveWorkspaceData
     ///
