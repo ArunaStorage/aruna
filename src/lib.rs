@@ -1,12 +1,6 @@
 #[macro_use]
-extern crate diesel;
-
-#[macro_use]
-extern crate lazy_static;
-
-pub mod config;
+pub mod macros;
+pub mod auth;
 pub mod database;
-pub mod error;
-pub mod server;
-#[macro_use]
-pub mod aruna_macros;
+pub mod grpc;
+pub mod utils;
