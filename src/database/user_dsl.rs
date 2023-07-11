@@ -11,6 +11,7 @@ pub struct User {
     pub display_name: String,
     pub email: String,
     pub attributes: String,
+    pub active: bool,
 }
 
 #[async_trait::async_trait]
@@ -18,9 +19,9 @@ impl CrudDb for User {
     //ToDo: Rust Doc
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
-          (id, display_name, email, attributes) 
+          (id, display_name, email, attributes, active) 
         VALUES 
-          ($1, $2, $3, $4);";
+          ($1, $2, $3, $4, $5);";
 
         let prepared = client.prepare(query).await?;
 

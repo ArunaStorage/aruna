@@ -97,7 +97,8 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) DEFAULT '',
-    attributes JSONB NOT NULL
+    attributes JSONB NOT NULL,
+    active BOOL NOT NULL DEFAULT FALSE,
 );
 
 /* ----- Object Service -------------------------------------------- */
