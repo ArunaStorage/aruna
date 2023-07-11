@@ -1,5 +1,5 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow; //use postgres_types::ToSql;
 use tokio_postgres::Client;
