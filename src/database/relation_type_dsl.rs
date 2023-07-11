@@ -4,13 +4,13 @@ use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
 #[derive(FromRow, Debug)]
-pub struct RelationTypes {
+pub struct RelationType {
     pub id: i16,
     pub relation_name: String,
 }
 
 #[async_trait::async_trait]
-impl CrudDb for RelationTypes {
+impl CrudDb for RelationType {
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO relation_types (id, relation_name) VALUES ($1, $2);";
         let prepared = client.prepare(query).await?;
@@ -26,13 +26,13 @@ impl CrudDb for RelationTypes {
         Ok(client
             .query_opt(&prepared, &[&id])
             .await?
-            .map(|e| RelationTypes::from_row(&e)))
+            .map(|e| RelationType::from_row(&e)))
     }
     async fn all(client: &Client) -> Result<Vec<Self>> {
         let query = "SELECT * FROM relation_types";
         let prepared = client.prepare(query).await?;
         let rows = client.query(&prepared, &[]).await?;
-        Ok(rows.iter().map(RelationTypes::from_row).collect::<Vec<_>>())
+        Ok(rows.iter().map(RelationType::from_row).collect::<Vec<_>>())
     }
 
     async fn delete(&self, id: impl PrimaryKey, client: &Client) -> Result<()> {
