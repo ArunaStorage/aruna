@@ -88,13 +88,13 @@ CREATE TABLE IF NOT EXISTS identity_providers (
 CREATE TABLE IF NOT EXISTS external_user_ids (
     id UUID PRIMARY KEY,
     external_id VARCHAR(511) NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id),
     idp_id UUID NOT NULL,
     FOREIGN KEY (idp_id) REFERENCES identity_providers(id)
 );
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
-    external_idp_id UUID[],
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) DEFAULT '',
     attributes JSONB NOT NULL
