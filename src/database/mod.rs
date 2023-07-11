@@ -1,4 +1,5 @@
 pub mod api_token_dsl;
+pub mod connection;
 pub mod crud;
 pub mod endpoint_dsl;
 pub mod enums;

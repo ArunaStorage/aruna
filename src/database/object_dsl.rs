@@ -12,39 +12,39 @@ use postgres_types::Json;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum KeyValueVariant {
     HOOK,
     LABEL,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
     pub variant: KeyValueVariant,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct KeyValues(pub Vec<KeyValue>);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RelationVariant {
     URL,
     IDENTIFIER,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct ExternalRelation {
     pub name: String,
     pub identifier: String,
     pub variant: RelationVariant,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct ExternalRelations(pub Vec<ExternalRelation>);
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, PartialEq)]
 pub struct Object {
     pub id: DieselUlid,
     pub shared_id: DieselUlid,

@@ -3,7 +3,7 @@ use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-#[derive(Debug, ToSql, FromSql)]
+#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ObjectStatus {
     INITIALIZING,
     VALIDATING,
@@ -27,14 +27,14 @@ impl TryFrom<&[u8]> for ObjectStatus {
     }
 }
 
-#[derive(Debug, ToSql, FromSql)]
+#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DataClass {
     PUBLIC,
     PRIVATE,
     CONFIDENTIAL,
 }
 
-#[derive(Debug, ToSql, FromSql)]
+#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ObjectType {
     PROJECT,
     COLLECTION,
@@ -42,7 +42,7 @@ pub enum ObjectType {
     OBJECT,
 }
 
-#[derive(Debug, ToSql, FromSql)]
+#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum UserRights {
     READ,
     APPEND,
