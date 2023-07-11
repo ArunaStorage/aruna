@@ -40,3 +40,12 @@ pub enum ObjectType {
     DATASET,
     OBJECT,
 }
+
+#[derive(Debug, ToSql, FromSql)]
+pub enum UserRights {
+    READ,
+    APPEND,
+    CASCADING,
+    WRITE,
+    ADMIN,
+}
