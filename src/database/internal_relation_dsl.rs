@@ -9,10 +9,8 @@ use tokio_postgres::Client;
 pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
-    pub origin_did: DieselUlid,
     pub type_id: i32,
     pub target_pid: DieselUlid,
-    pub target_did: DieselUlid,
     pub is_persistent: bool,
 }
 
@@ -31,10 +29,8 @@ impl CrudDb for InternalRelation {
                 &[
                     &self.id,
                     &self.origin_pid,
-                    &self.origin_did,
                     &self.type_id,
                     &self.target_pid,
-                    &self.target_did,
                     &self.is_persistent,
                 ],
             )
