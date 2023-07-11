@@ -1,4 +1,5 @@
 pub mod api_tokens_dsl;
+pub mod connection;
 pub mod crud;
 pub mod enums;
 pub mod external_user_id_dsl;
