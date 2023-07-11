@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS internal_relations (
 CREATE TABLE IF NOT EXISTS api_tokens (
     id UUID PRIMARY KEY NOT NULL,
     user_id UUID NOT NULL,
-    pub_key SERIAL NOT NULL,
+    pub_key SMALLSERIAL NOT NULL REFERENCES pub_keys(id) ON DELETE CASCADE,
     name TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     used_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 
 -- Table for available pubkeys
 CREATE TABLE IF NOT EXISTS pub_keys (
-    id INT PRIMARY KEY, -- This is a serial to make jwt tokens smaller
+    id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
     pubkey TEXT NOT NULL
 );
 
