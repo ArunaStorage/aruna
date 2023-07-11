@@ -13,7 +13,7 @@ pub async fn main() -> Result<()> {
         database_port,
         database_name,
         database_user,
-    );
+    )?;
     db.initialize_db().await?;
     Ok(())
 }

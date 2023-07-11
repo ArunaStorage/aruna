@@ -13,7 +13,7 @@ impl Database {
         database_port: u16,
         database_name: &str,
         database_user: &str,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut cfg = Config::new();
         cfg.host = Some(database_host.to_string());
         cfg.port = Some(database_port);
@@ -22,12 +22,12 @@ impl Database {
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
-        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
+        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
-        Database {
+        Ok(Database {
             connection_pool: pool,
             database_name: database_name.to_string(),
-        }
+        })
     }
 
     pub async fn initialize_db(&self) -> Result<()> {
