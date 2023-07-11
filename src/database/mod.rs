@@ -1,6 +1,7 @@
 pub mod api_tokens_dsl;
 pub mod crud;
 pub mod enums;
+pub mod identity_provider_dsl;
 pub mod internal_relations_dsl;
 pub mod notification_dsl;
 pub mod object_dsl;
