@@ -4,7 +4,6 @@ use tokio_postgres::NoTls;
 
 pub struct Database {
     connection_pool: Pool,
-    database_name: String,
 }
 
 impl Database {
@@ -26,15 +25,11 @@ impl Database {
 
         Ok(Database {
             connection_pool: pool,
-            database_name: database_name.to_string(),
         })
     }
 
     pub async fn initialize_db(&self) -> Result<()> {
         let client = self.connection_pool.get().await?;
-        let _ = client
-            .execute("CREATE DATABASE $1", &[&self.database_name])
-            .await;
         let initial = tokio::fs::read_to_string("./src/database/schema.sql").await?;
         client.batch_execute(&initial).await?;
         Ok(())
