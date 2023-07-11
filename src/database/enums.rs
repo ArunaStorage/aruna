@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use postgres_types::{FromSql, ToSql};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 #[derive(Debug, ToSql, FromSql)]
@@ -48,4 +49,21 @@ pub enum UserRights {
     CASCADING,
     WRITE,
     ADMIN,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
+pub enum DataProxyFeature {
+    #[default]
+    PROXY,
+    INTERNAL,
+    BUNDLER,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, FromSql)]
+pub enum EndpointStatus {
+    INITIALIZING,
+    AVAILABLE,
+    DEGRADED,
+    UNAVAILABLE,
+    MAINTENANCE,
 }

@@ -7,7 +7,7 @@ use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
 #[derive(FromRow, Debug)]
-pub struct APITokens {
+pub struct APIToken {
     pub id: DieselUlid,
     pub user_id: DieselUlid,
     pub pub_key: DieselUlid,
@@ -20,7 +20,7 @@ pub struct APITokens {
 }
 
 #[async_trait::async_trait]
-impl CrudDb for APITokens {
+impl CrudDb for APIToken {
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO api_tokens (id, user_id, pub_key, name, created_at, used_at, expires_at, object_id, user_rights) VALUES (
             $1, $2, $3, $4, $5, $6, $7
@@ -50,13 +50,13 @@ impl CrudDb for APITokens {
         Ok(client
             .query_opt(&prepared, &[&id])
             .await?
-            .map(|e| APITokens::from_row(&e)))
+            .map(|e| APIToken::from_row(&e)))
     }
     async fn all(client: &Client) -> Result<Vec<Self>> {
         let query = "SELECT * FROM api_tokens";
         let prepared = client.prepare(query).await?;
         let rows = client.query(&prepared, &[]).await?;
-        Ok(rows.iter().map(APITokens::from_row).collect::<Vec<_>>())
+        Ok(rows.iter().map(APIToken::from_row).collect::<Vec<_>>())
     }
 
     async fn delete(&self, id: impl PrimaryKey, client: &Client) -> Result<()> {

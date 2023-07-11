@@ -117,6 +117,7 @@ CREATE TABLE internal_relations (
     type_id INT NOT NULL REFERENCES relation_types(id) ON DELETE CASCADE,
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_did UUID -- Cannot be a foreign key 
+    is_persistent: BOOL NOT NULL DEFAULT FALSE,
 );
 
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection

@@ -1,7 +1,9 @@
-pub mod api_tokens_dsl;
+pub mod api_token_dsl;
 pub mod crud;
+pub mod endpoint_dsl;
 pub mod enums;
-pub mod internal_relations_dsl;
+pub mod internal_relation_dsl;
 pub mod object_dsl;
-pub mod pub_keys_dsl;
-pub mod relation_types_dsl;
+pub mod object_location_dsl;
+pub mod pub_key_dsl;
+pub mod relation_type_dsl;
