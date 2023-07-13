@@ -15,7 +15,8 @@
 /// # use aruna_server::*;
 /// # use std::sync::Arc;
 /// # use aruna_server::database::connection::Database;
-/// # use aruna_server::server::services::authz::Authz;
+/// # use aruna_server::auth::Authorizer;
+/// # use aruna_server::caching::cache::Cache;
 ///
 /// // Without any additional argument (only name)
 /// impl_grpc_server!(MyServiceImpl);
@@ -30,20 +31,23 @@
 /// # use aruna_server::*;
 /// # use std::sync::Arc;
 /// # use aruna_server::database::connection::Database;
-/// # use aruna_server::server::services::authz::Authz;
+/// # use aruna_server::auth::Authorizer;
+/// # use aruna_server::caching::cache::Cache;
 ///
 /// pub struct MyFieldsServiceImpl {
 ///     pub database: Arc<Database>,
-///     pub authz: Arc<Authz>,
+///     pub authorizer: Arc<Authorizer>,
+///     pub cache: Arc<Cache>,
 ///     pub variable1: String,
 ///     pub variable2: String,
 /// }
 ///
 /// impl MyFieldsServiceImpl {
-///     pub async fn new(database: Arc<Database>, authz: Arc<Authz>, variable1:String, variable2: String) -> Self {
+///     pub async fn new(database: Arc<Database>, authorizer: Arc<Authorizer>, cache: Arc<Cache>, variable1:String, variable2: String) -> Self {
 ///         MyFieldsServiceImpl {
 ///             database,
-///             authz,
+///             authorizer,
+///             cache,
 ///             variable1,
 ///             variable2,
 ///         }
@@ -56,19 +60,20 @@ macro_rules! impl_grpc_server {
 
     ($struct_name:ident $(, $variable_name:ident:$variable_type:ty )*) => {
         pub struct $struct_name {
-
             pub database: Arc<Database>,
-            pub authz: Arc<Authz>,
+            pub authorizer: Arc<Authorizer>,
+            pub cache: Arc<Cache>,
             $(
                 pub $variable_name:$variable_type,
             )*
         }
 
         impl $struct_name {
-            pub async fn new(database: Arc<Database>, authz: Arc<Authz>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database: Arc<Database>, authorizer: Arc<Authorizer>, cache: Arc<Cache>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
                     database,
-                    authz,
+                    authorizer,
+                    cache,
                     $(
                         $variable_name,
                     )*
