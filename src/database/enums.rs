@@ -44,11 +44,28 @@ pub enum ObjectType {
 
 #[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum PermissionLevels {
+    DENY,
+    NONE,
     READ,
     APPEND,
-    CASCADING,
     WRITE,
     ADMIN,
+}
+
+impl TryFrom<i32> for PermissionLevels {
+    type Error = Box<dyn Error + Sync + Send>;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(PermissionLevels::DENY),
+            2 => Ok(PermissionLevels::NONE),
+            3 => Ok(PermissionLevels::READ),
+            4 => Ok(PermissionLevels::APPEND),
+            5 => Ok(PermissionLevels::WRITE),
+            6 => Ok(PermissionLevels::ADMIN),
+            _ => Err(anyhow!("Unknown permission level").into()),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
