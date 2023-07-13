@@ -74,30 +74,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "aruna_policy"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25e853a244fd6a025abea860f0e6d5c5057c05a6cdd462db80d479841805dea"
-dependencies = [
- "anyhow",
- "diesel-ulid 0.1.3-alpha.2",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aruna_server"
 version = "1.0.0"
 dependencies = [
  "anyhow",
  "aruna-rust-api",
- "aruna_policy",
  "async-trait",
  "base64 0.21.2",
  "bigdecimal",
  "chrono",
  "deadpool-postgres",
- "diesel-ulid 0.2.0",
+ "diesel-ulid",
  "dotenv",
  "futures",
  "hex",
@@ -545,18 +532,6 @@ dependencies = [
  "diesel_derives",
  "itoa",
  "pq-sys",
-]
-
-[[package]]
-name = "diesel-ulid"
-version = "0.1.3-alpha.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44d31899a36dab56f4894b85039c67dd529f36e1272ec8f23030b0e184d77b3e"
-dependencies = [
- "diesel",
- "rusty_ulid",
- "serde",
- "uuid",
 ]
 
 [[package]]

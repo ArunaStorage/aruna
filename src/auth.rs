@@ -1,1 +1,39 @@
+use crate::database::enums::PermissionLevels;
+use anyhow::Result;
+use diesel_ulid::DieselUlid;
 
+pub struct ResourcePermission {
+    id: DieselUlid,
+    level: PermissionLevels,
+    allow_sa: bool,
+}
+impl ResourcePermission {
+    pub fn new(id: DieselUlid, level: PermissionLevels, allow_sa: bool) -> Self {
+        ResourcePermission {
+            id,
+            level,
+            allow_sa,
+        }
+    }
+}
+
+pub enum Context {
+    Project(ResourcePermission),
+    Collection(ResourcePermission),
+    Dataset(ResourcePermission),
+    Object(ResourcePermission),
+    User(DieselUlid),
+    GlobalAdmin,
+}
+
+pub struct Authorizer {}
+
+impl Authorizer {
+    pub fn new() -> Self {
+        Authorizer {}
+    }
+
+    pub fn check_permissions(&self, token: &str, ctx: Context) -> Result<bool> {
+        Ok(false)
+    }
+}
