@@ -17,7 +17,7 @@ $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'DataClass') THEN
-        CREATE TYPE "DataClass" AS ENUM ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL');
+        CREATE TYPE "DataClass" AS ENUM ('PUBLIC', 'PRIVATE', 'WORKSPACE', 'CONFIDENTIAL');
     END IF;
 END
 $$;
@@ -25,15 +25,15 @@ $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'KeyValueType') THEN
-        CREATE TYPE "KeyValueType" AS ENUM ('LABEL', 'HOOK');
+        CREATE TYPE "KeyValueType" AS ENUM ('LABEL', 'STATIC_LABEL', 'HOOK', 'STATIC_HOOK');
     END IF;
 END
 $$;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRights') THEN
-        CREATE TYPE "UserRights" AS ENUM ('READ', 'APPEND', 'CASCADING', 'WRITE', 'ADMIN');
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PermissionLevel') THEN
+        CREATE TYPE "PermissionLevel" AS ENUM ('DENY', 'NONE', 'READ', 'APPEND', 'WRITE', 'ADMIN');
     END IF;
 END
 $$;
@@ -97,8 +97,7 @@ CREATE TABLE IF NOT EXISTS external_user_ids (
     id UUID PRIMARY KEY,
     external_id VARCHAR(511) NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id),
-    idp_id UUID NOT NULL,
-    FOREIGN KEY (idp_id) REFERENCES identity_providers(id)
+    idp_id UUID NOT NULL REFERENCES identity_providers(id)
 );
 
 
@@ -108,10 +107,12 @@ CREATE TABLE IF NOT EXISTS objects (
     id UUID NOT NULL PRIMARY KEY, -- The unique per object id
     shared_id UUID NOT NULL,             -- A shared ID for all updated versions
     revision_number INT NOT NULL,
-    path TEXT NOT NULL,                  -- Filename or subpath
+    name VARCHAR(511) NOT NULL,          -- Filename or subpath
+    description VARCHAR(1023) NOT NULL,                 
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL REFERENCES users(id),
     content_len BIGINT NOT NULL DEFAULT 0,
+    count INT NOT NULL DEFAULT 0,
     key_values JSONB NOT NULL,
     object_status "ObjectStatus" NOT NULL DEFAULT 'INITIALIZING',
     data_class "DataClass" NOT NULL DEFAULT 'PRIVATE',
@@ -129,21 +130,19 @@ CREATE TABLE IF NOT EXISTS endpoints (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     host_config JSONB NOT NULL,
-    documentation_object UUID DEFAULT NULL,
     is_public BOOL NOT NULL DEFAULT TRUE,
     pubkey TEXT NOT NULL,
-    status "EndpointStatus" NOT NULL DEFAULT 'AVAILABLE'
+    status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING'
 );
 
 -- Table with object locations which describe
 CREATE TABLE IF NOT EXISTS object_locations (
     id UUID PRIMARY KEY,
     endpoint_id UUID NOT NULL REFERENCES endpoints(id),
-    object_id UUID NOT NULL,
+    object_id UUID NOT NULL REFERENCES objects(id),
     is_primary BOOL NOT NULL DEFAULT TRUE,
     -- TRUE if TRUE otherwise NULL
-    UNIQUE (object_id, is_primary),
-    FOREIGN KEY (object_id) REFERENCES objects(id)
+    UNIQUE (object_id, is_primary)
 );
 /* ----- Object Relations ------------------------------------------ */
 -- Table to store custom relation types
@@ -161,6 +160,9 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     is_persistent BOOL NOT NULL DEFAULT FALSE
 );
 
+CREATE INDEX IF NOT EXISTS origin_pid_idx ON internal_relations (origin_pid);
+CREATE INDEX IF NOT EXISTS target_pid_idx ON internal_relations (target_pid);
+
 -- Table for available pubkeys
 CREATE TABLE IF NOT EXISTS pub_keys (
     id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
@@ -170,23 +172,20 @@ CREATE TABLE IF NOT EXISTS pub_keys (
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection
 CREATE TABLE IF NOT EXISTS api_tokens (
     id UUID PRIMARY KEY NOT NULL,
-    user_id UUID NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id),
     pub_key SMALLSERIAL NOT NULL REFERENCES pub_keys(id) ON DELETE CASCADE,
     name TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     used_at TIMESTAMP NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP,
-    object_id UUID DEFAULT NULL,
-    user_right "UserRights",
-    FOREIGN KEY (object_id) REFERENCES objects(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    object_id UUID DEFAULT NULL REFERENCES objects(id),
+    user_right "PermissionLevel"
 );
 
 /* ----- Notification Service -------------------------------------- */
 -- Table for the notification service to persist consumer
-CREATE TABLE IF NOT EXISTS notification_stream_groups (
+CREATE TABLE IF NOT EXISTS stream_consumers (
     id UUID PRIMARY KEY,
-    resource_id UUID NOT NULL,
-    subject TEXT NOT NULL,
-    notify_on_sub_resources BOOL NOT NULL DEFAULT FALSE
+    user_id UUID REFERENCES users(id),
+    config JSONB NOT NULL
 );
