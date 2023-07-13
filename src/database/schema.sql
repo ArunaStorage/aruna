@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS identity_providers (
     url TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    email VARCHAR(511) DEFAULT '',
+    attributes JSONB NOT NULL,
+    active BOOL NOT NULL DEFAULT FALSE
+);
+
 CREATE TABLE IF NOT EXISTS external_user_ids (
     id UUID PRIMARY KEY,
     external_id VARCHAR(511) NOT NULL,
@@ -93,13 +101,6 @@ CREATE TABLE IF NOT EXISTS external_user_ids (
     FOREIGN KEY (idp_id) REFERENCES identity_providers(id)
 );
 
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY,
-    display_name TEXT NOT NULL DEFAULT '',
-    email VARCHAR(511) DEFAULT '',
-    attributes JSONB NOT NULL,
-    active BOOL NOT NULL DEFAULT FALSE,
-);
 
 /* ----- Object Service -------------------------------------------- */
 -- Table with objects which represent individual data blobs
@@ -160,6 +161,12 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     is_persistent BOOL NOT NULL DEFAULT FALSE
 );
 
+-- Table for available pubkeys
+CREATE TABLE IF NOT EXISTS pub_keys (
+    id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
+    pubkey TEXT NOT NULL
+);
+
 -- Table with api tokens which are used to authorize user actions in a specific project and/or collection
 CREATE TABLE IF NOT EXISTS api_tokens (
     id UUID PRIMARY KEY NOT NULL,
@@ -173,12 +180,6 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     user_right "UserRights",
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- Table for available pubkeys
-CREATE TABLE IF NOT EXISTS pub_keys (
-    id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
-    pubkey TEXT NOT NULL
 );
 
 /* ----- Notification Service -------------------------------------- */

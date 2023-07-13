@@ -1,10 +1,11 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use crate::database::enums::UserRights;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
+
+use super::enums::PermissionLevels;
 
 #[derive(FromRow, Debug)]
 pub struct APIToken {
@@ -16,7 +17,7 @@ pub struct APIToken {
     pub used_at: NaiveDateTime,
     pub expires_at: Option<NaiveDateTime>,
     pub object_id: DieselUlid,
-    pub user_rights: UserRights,
+    pub user_rights: PermissionLevels,
 }
 
 #[async_trait::async_trait]

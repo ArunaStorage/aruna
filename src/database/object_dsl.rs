@@ -44,7 +44,7 @@ pub struct ExternalRelation {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct ExternalRelations(pub Vec<ExternalRelation>);
 
-#[derive(FromRow, Debug, PartialEq)]
+#[derive(FromRow, Debug)]
 pub struct Object {
     pub id: DieselUlid,
     pub shared_id: DieselUlid,
@@ -179,3 +179,60 @@ impl Object {
         Ok(())
     }
 }
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.created_at, other.created_at) {
+            (Some(_), None) => {
+                self.id == other.id
+                    && self.revision_number == other.revision_number
+                    && self.created_by == other.created_by
+                    && self.content_len == other.content_len
+                    && self.key_values == other.key_values
+                    && self.object_status == other.object_status
+                    && self.data_class == other.data_class
+                    && self.object_type == other.object_type
+                    && self.external_relations == other.external_relations
+                    && self.hashes == other.hashes
+            }
+            (Some(_), Some(_)) => {
+                self.id == other.id
+                    && self.revision_number == other.revision_number
+                    && self.created_by == other.created_by
+                    && self.created_at == other.created_at
+                    && self.content_len == other.content_len
+                    && self.key_values == other.key_values
+                    && self.object_status == other.object_status
+                    && self.data_class == other.data_class
+                    && self.object_type == other.object_type
+                    && self.external_relations == other.external_relations
+                    && self.hashes == other.hashes
+            }
+            (None, Some(_)) => {
+                self.id == other.id
+                    && self.revision_number == other.revision_number
+                    && self.created_by == other.created_by
+                    && self.content_len == other.content_len
+                    && self.key_values == other.key_values
+                    && self.object_status == other.object_status
+                    && self.data_class == other.data_class
+                    && self.object_type == other.object_type
+                    && self.external_relations == other.external_relations
+                    && self.hashes == other.hashes
+            }
+            (None, None) => {
+                self.id == other.id
+                    && self.revision_number == other.revision_number
+                    && self.created_by == other.created_by
+                    && self.content_len == other.content_len
+                    && self.key_values == other.key_values
+                    && self.object_status == other.object_status
+                    && self.data_class == other.data_class
+                    && self.object_type == other.object_type
+                    && self.external_relations == other.external_relations
+                    && self.hashes == other.hashes
+            }
+        }
+    }
+}
+impl Eq for Object {}

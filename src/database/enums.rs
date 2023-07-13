@@ -42,8 +42,8 @@ pub enum ObjectType {
     OBJECT,
 }
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum UserRights {
+#[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum PermissionLevels {
     READ,
     APPEND,
     CASCADING,
