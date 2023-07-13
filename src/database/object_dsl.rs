@@ -49,10 +49,12 @@ pub struct Object {
     pub id: DieselUlid,
     pub shared_id: DieselUlid,
     pub revision_number: i32,
-    pub path: String,
+    pub name: String,
+    pub description: String,
     pub created_at: Option<NaiveDateTime>,
     pub created_by: DieselUlid,
     pub content_len: i64,
+    pub count: i32,
     pub key_values: Json<KeyValues>,
     pub object_status: ObjectStatus,
     pub data_class: DataClass,
@@ -64,8 +66,8 @@ pub struct Object {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, shared_id, revision_number, path, created_by, content_len, key_values, object_status, data_class, object_type, external_relations, hashes) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+        let query = "INSERT INTO objects (id, shared_id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
         );";
 
         let prepared = client.prepare(query).await?;
@@ -77,9 +79,11 @@ impl CrudDb for Object {
                     &self.id,
                     &self.shared_id,
                     &self.revision_number,
-                    &self.path,
+                    &self.name,
+                    &self.description,
                     &self.created_by,
                     &self.content_len,
+                    &self.count,
                     &self.key_values,
                     &self.object_status,
                     &self.data_class,

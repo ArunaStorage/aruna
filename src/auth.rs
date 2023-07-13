@@ -3,9 +3,9 @@ use anyhow::Result;
 use diesel_ulid::DieselUlid;
 
 pub struct ResourcePermission {
-    id: DieselUlid,
-    level: PermissionLevels,
-    allow_sa: bool,
+    pub id: DieselUlid,
+    pub level: PermissionLevels,
+    pub allow_sa: bool,
 }
 impl ResourcePermission {
     pub fn new(id: DieselUlid, level: PermissionLevels, allow_sa: bool) -> Self {
