@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS objects (
     data_class "DataClass" NOT NULL DEFAULT 'PRIVATE',
     object_type "ObjectType" NOT NULL DEFAULT 'PROJECT',
     external_relations JSONB NOT NULL,
-    hashes TEXT[] NOT NULL,
+    hashes JSONB NOT NULL DEFAULT '{}',
     UNIQUE(shared_id, revision_number)
 );
 CREATE INDEX IF NOT EXISTS objects_shared_rev_idx ON objects (shared_id, revision_number);

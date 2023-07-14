@@ -16,6 +16,7 @@ use tokio_postgres::Client;
 pub enum KeyValueVariant {
     HOOK,
     LABEL,
+    STATIC_LABEL,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -35,14 +36,34 @@ pub enum RelationVariant {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub enum RelationVariantVariant {
+    DEFINED(RelationVariant),
+    CUSTOM(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct ExternalRelation {
-    pub name: String,
     pub identifier: String,
-    pub variant: RelationVariant,
+    pub variant: RelationVariantVariant,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct ExternalRelations(pub Vec<ExternalRelation>);
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+pub struct Hashes(pub Vec<Hash>);
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+pub struct Hash {
+    pub alg: Algorithm,
+    pub hash: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+pub enum Algorithm {
+    MD5,
+    SHA256,
+}
 
 #[derive(FromRow, Debug)]
 pub struct Object {
@@ -60,7 +81,7 @@ pub struct Object {
     pub data_class: DataClass,
     pub object_type: ObjectType,
     pub external_relations: Json<ExternalRelations>,
-    pub hashes: Vec<String>,
+    pub hashes: Json<Hashes>,
 }
 
 #[async_trait::async_trait]
@@ -180,6 +201,35 @@ impl Object {
 
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&element, &self.id]).await?;
+        Ok(())
+    }
+    pub async fn finish_object_staging(
+        id: &DieselUlid,
+        client: &Client,
+        hashes: Option<Hashes>,
+        content_len: i64,
+        object_status: ObjectStatus,
+    ) -> Result<()> {
+        match hashes {
+            Some(h) => {
+                let query_some = "UPDATE objects 
+            SET hashes = $1, content_len = $2, object_status = $3
+            WHERE id = $4;";
+                let prepared = client.prepare(query_some).await?;
+                client
+                    .execute(&prepared, &[&Json(h), &content_len, &object_status, id])
+                    .await?
+            }
+            None => {
+                let query_none = "UPDATE objects 
+            SET content_len = $1, object_status = $2
+            WHERE id = $3;";
+                let prepared = client.prepare(query_none).await?;
+                client
+                    .execute(&prepared, &[&content_len, &object_status, id])
+                    .await?
+            }
+        };
         Ok(())
     }
 }

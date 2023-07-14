@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1.0.71"
-aruna-rust-api = "2.0.0-alpha.2"
+aruna-rust-api = "2.0.0-alpha.3"
 bigdecimal = "0.3.1"
 chrono = "0.4.26"
 dotenv = "0.15.0"

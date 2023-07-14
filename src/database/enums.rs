@@ -8,29 +8,16 @@ pub enum ObjectStatus {
     INITIALIZING,
     VALIDATING,
     AVAILABLE,
+    UNAVAILABLE,
     ERROR,
     DELETED,
-}
-
-impl TryFrom<&[u8]> for ObjectStatus {
-    type Error = Box<dyn Error + Sync + Send>;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        match String::from_utf8_lossy(value).as_ref() {
-            "INIALIZING" => Ok(ObjectStatus::INITIALIZING),
-            "VALIDATING" => Ok(ObjectStatus::VALIDATING),
-            "AVAILABLE" => Ok(ObjectStatus::AVAILABLE),
-            "ERROR" => Ok(ObjectStatus::ERROR),
-            "DELETED" => Ok(ObjectStatus::DELETED),
-            _ => Err(anyhow!("Unknown type").into()),
-        }
-    }
 }
 
 #[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DataClass {
     PUBLIC,
     PRIVATE,
+    WORKSPACE,
     CONFIDENTIAL,
 }
 
@@ -52,6 +39,23 @@ pub enum PermissionLevels {
     ADMIN,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
+pub enum DataProxyFeature {
+    #[default]
+    PROXY,
+    INTERNAL,
+    BUNDLER,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, FromSql)]
+pub enum EndpointStatus {
+    INITIALIZING,
+    AVAILABLE,
+    DEGRADED,
+    UNAVAILABLE,
+    MAINTENANCE,
+}
+
 impl TryFrom<i32> for PermissionLevels {
     type Error = Box<dyn Error + Sync + Send>;
 
@@ -68,19 +72,17 @@ impl TryFrom<i32> for PermissionLevels {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
-pub enum DataProxyFeature {
-    #[default]
-    PROXY,
-    INTERNAL,
-    BUNDLER,
-}
+impl TryFrom<&[u8]> for ObjectStatus {
+    type Error = Box<dyn Error + Sync + Send>;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, FromSql)]
-pub enum EndpointStatus {
-    INITIALIZING,
-    AVAILABLE,
-    DEGRADED,
-    UNAVAILABLE,
-    MAINTENANCE,
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        match String::from_utf8_lossy(value).as_ref() {
+            "INIALIZING" => Ok(ObjectStatus::INITIALIZING),
+            "VALIDATING" => Ok(ObjectStatus::VALIDATING),
+            "AVAILABLE" => Ok(ObjectStatus::AVAILABLE),
+            "ERROR" => Ok(ObjectStatus::ERROR),
+            "DELETED" => Ok(ObjectStatus::DELETED),
+            _ => Err(anyhow!("Unknown type").into()),
+        }
+    }
 }
