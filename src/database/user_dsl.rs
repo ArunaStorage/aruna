@@ -24,11 +24,13 @@ pub struct UserAttributes {
     pub custom_attributes: Vec<CustomAttributes>,
     pub permissions: Vec<Permission>,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct CustomAttributes {
     pub attribute_name: String,
     pub attribute_value: String,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Permission {
     pub resource_id: DieselUlid,
@@ -85,6 +87,125 @@ impl CrudDb for User {
         let query = "DELETE FROM users WHERE id = $1";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&id]).await?;
+        Ok(())
+    }
+}
+
+impl User {
+    //ToDo: Rust Doc
+    pub async fn update_display_name<S: Into<String>>(
+        client: &Client,
+        user_id: &DieselUlid,
+        display_name: S,
+    ) -> Result<()> {
+        let query = "UPDATE users
+        SET display_name = $1
+        WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&display_name.into(), user_id])
+            .await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn update_email<S: Into<String>>(
+        client: &Client,
+        user_id: &DieselUlid,
+        email: S,
+    ) -> Result<()> {
+        let query = "UPDATE users
+        SET email = $1
+        WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&email.into(), user_id]).await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn set_user_attributes(
+        client: &Client,
+        user_id: &DieselUlid,
+        user_attributes: Json<UserAttributes>,
+    ) -> Result<()> {
+        let query = "UPDATE users
+        SET attributes = $1
+        WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&user_attributes, user_id])
+            .await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn set_user_global_admin(
+        client: &Client,
+        user_id: &DieselUlid,
+        is_admin: bool,
+    ) -> Result<()> {
+        let query = "UPDATE users
+        SET attributes = JSONB_SET(attributes, '{global_admin}', to_jsonb($1::bool))
+        WHERE id = $2;";
+
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &[&is_admin, user_id]).await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn set_user_service_account(
+        client: &Client,
+        user_id: &DieselUlid,
+        is_service_account: bool,
+    ) -> Result<()> {
+        let query = "UPDATE users
+        SET attributes = JSONB_SET(attributes, '{service_account}', to_jsonb($1::bool))
+        WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&is_service_account, user_id])
+            .await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn add_user_permission(
+        client: &Client,
+        user_id: &DieselUlid,
+        user_perm: Permission,
+    ) -> Result<()> {
+        let query = "";
+
+        todo!();
+        //let prepared = client.prepare(query).await?;
+        //client.execute(&prepared, &[&is_service_account, id]).await?;
+
+        Ok(())
+    }
+
+    //ToDo: Rust Doc
+    pub async fn remove_user_permission(
+        client: &Client,
+        user_id: &DieselUlid,
+        user_perm: Permission,
+    ) -> Result<()> {
+        let query = "";
+
+
+        todo!();
+        //let prepared = client.prepare(query).await?;
+        //client.execute(&prepared, &[&is_service_account, id]).await?;
+
         Ok(())
     }
 }
