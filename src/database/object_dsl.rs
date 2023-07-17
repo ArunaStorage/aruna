@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[allow(non_camel_case_types)]
 pub enum KeyValueVariant {
     HOOK,
     LABEL,
@@ -231,6 +232,18 @@ impl Object {
             }
         };
         Ok(())
+    }
+    pub async fn get_latest_object_by_dynamic_id(
+        id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Object> {
+        let query = "SELECT * FROM objects WHERE shared_id = $1, revision_number = (SELECT MAX (revision_number) FROM objects WHERE shared_id = $1);";
+        let prepared = client.prepare(query).await?;
+        let object: Object = client
+            .query_one(&prepared, &[&id])
+            .await
+            .map(|e| Object::from_row(&e))?;
+        Ok(object)
     }
 }
 

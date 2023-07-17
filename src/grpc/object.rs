@@ -9,7 +9,8 @@ use crate::database::object_dsl::{
 };
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::{
-    relation::Relation as RelationEnum, Object as GRPCObject, Relation,
+    relation::Relation as RelationEnum, InternalRelation as APIInternalRelation,
+    Object as GRPCObject, Relation,
 };
 use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as CreateParent;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
@@ -45,18 +46,21 @@ impl ObjectService for ObjectServiceImpl {
         })?;
 
         let inner_request = request.into_inner();
-        let parent_id = match inner_request.parent {
+        let (parent_id, variant) = match inner_request.parent {
             Some(parent) => {
                 // TODO: Parent validation needed
-                let id = match parent {
-                    CreateParent::ProjectId(id) => id,
-                    CreateParent::CollectionId(id) => id,
-                    CreateParent::DatasetId(id) => id,
+                let (id, var) = match parent {
+                    CreateParent::ProjectId(id) => (id, 1),
+                    CreateParent::CollectionId(id) => (id, 2),
+                    CreateParent::DatasetId(id) => (id, 3),
                 };
-                DieselUlid::from_str(&id).map_err(|e| {
-                    log::debug!("{}", e);
-                    tonic::Status::internal("ULID parsing error")
-                })?
+                (
+                    DieselUlid::from_str(&id).map_err(|e| {
+                        log::debug!("{}", e);
+                        tonic::Status::internal("ULID parsing error")
+                    })?,
+                    var,
+                )
             }
             None => return Err(tonic::Status::invalid_argument("Object has no parent")),
         };
@@ -159,7 +163,16 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::aborted("Database transaction failed.")
             })?;
 
-        // Needs mut for internal relation push
+        let parent_relation = Some(RelationEnum::Internal(APIInternalRelation {
+            resource_id: create_object.id.to_string(),
+            resource_variant: variant,
+            direction: 2,
+            variant:
+                Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(
+                    1,
+                )),
+        }));
+
         let mut relations: Vec<Relation> = external_relations
             .0
             .into_iter()
@@ -167,10 +180,9 @@ impl ObjectService for ObjectServiceImpl {
                 relation: Some(RelationEnum::External(r.into())),
             })
             .collect();
-        // TODO!
-        // relations.push(Relation {
-        //     relation: Some(RelationEnum::Internal(create_relation.into())),
-        // });
+        relations.push(Relation {
+            relation: parent_relation,
+        });
         let grpc_object = GRPCObject {
             id: create_object.id.to_string(),
             name: create_object.name,
@@ -334,6 +346,7 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner();
 
         let ctx = Context::Object(ResourcePermission {
+            // Is the parent_id relevant here?
             id: DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
                 log::error!("{}", e);
                 tonic::Status::internal("ULID conversion error")
@@ -345,7 +358,7 @@ impl ObjectService for ObjectServiceImpl {
         let user_id = match &self.authorizer.check_permissions(&token, ctx) {
             Ok(b) => {
                 if *b {
-                    // ToDo!
+                    // TODO!
                     // PLACEHOLDER!
                     DieselUlid::generate()
                 } else {
@@ -375,9 +388,9 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         let data_class = match inner_request.data_class {
-            Some(0) => Ok(old_object.data_class),
-            Some(dc) => dc.try_into(),
-            None => return Err(tonic::Status::internal("Invalid dataclass.")),
+            0 => Ok(old_object.data_class),
+            1..=5 => inner_request.data_class.try_into(),
+            _ => return Err(tonic::Status::internal("Invalid dataclass.")),
         }
         .map_err(|e| {
             log::error!("{}", e);
