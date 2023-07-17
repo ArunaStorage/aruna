@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
-    external_relation::Variant, ExternalRelation, Hash, InternalRelation, KeyValue,
+    external_relation::Variant as ExternalVariant, internal_relation::Variant as InternalVariant,
+    ExternalRelation, Hash, InternalRelation, KeyValue, Relation, RelationDirection,
 };
 use tonic::metadata::MetadataMap;
 
@@ -112,15 +113,15 @@ impl TryFrom<ExternalRelation> for DBExternalRelation {
     }
 }
 
-impl TryFrom<Variant> for RelationVariantVariant {
+impl TryFrom<ExternalVariant> for RelationVariantVariant {
     type Error = anyhow::Error;
-    fn try_from(var: Variant) -> Result<Self> {
+    fn try_from(var: ExternalVariant) -> Result<Self> {
         match var {
-            Variant::DefinedVariant(v) => {
+            ExternalVariant::DefinedVariant(v) => {
                 let def_var = v.try_into()?;
                 Ok(RelationVariantVariant::DEFINED(def_var))
             }
-            Variant::CustomVariant(s) => Ok(RelationVariantVariant::CUSTOM(s)),
+            ExternalVariant::CustomVariant(s) => Ok(RelationVariantVariant::CUSTOM(s)),
         }
     }
 }
@@ -194,19 +195,12 @@ impl From<DBExternalRelation> for ExternalRelation {
             identifier: r.identifier,
             variant: match r.variant {
                 RelationVariantVariant::DEFINED(v) => match v {
-                    RelationVariant::URL => Some(Variant::DefinedVariant(1)),
-                    RelationVariant::IDENTIFIER => Some(Variant::DefinedVariant(2)),
+                    RelationVariant::URL => Some(ExternalVariant::DefinedVariant(1)),
+                    RelationVariant::IDENTIFIER => Some(ExternalVariant::DefinedVariant(2)),
                 },
-                RelationVariantVariant::CUSTOM(s) => Some(Variant::CustomVariant(s)),
+                RelationVariantVariant::CUSTOM(s) => Some(ExternalVariant::CustomVariant(s)),
             },
         }
-    }
-}
-
-impl From<DBInternalRelation> for InternalRelation {
-    fn from(i: DBInternalRelation) -> Self {
-        // Needs to exchange origin_pid with shared_origin_id (via cache)
-        todo!()
     }
 }
 

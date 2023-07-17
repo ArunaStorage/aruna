@@ -1,5 +1,6 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use aruna_rust_api::api::storage::models::v2::InternalRelation as APIInternalRelation;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow; //use postgres_types::ToSql;
 use tokio_postgres::Client;
@@ -81,5 +82,48 @@ impl InternalRelation {
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
+    }
+    pub async fn get_filtered_by_id(
+        id: DieselUlid,
+        client: &Client,
+    ) -> Result<(Vec<InternalRelation>, Option<Vec<InternalRelation>>)> {
+        let from_query = "SELECT * FROM internal_relations 
+            WHERE origin_pid = $1;";
+        let to_query = "SELECT * FROM internal_relations 
+            WHERE target_pid = $1;";
+        let to_prepared = client.prepare(to_query).await?;
+        let from_prepared = client.prepare(from_query).await?;
+        let to_object = client
+            .query(&to_prepared, &[&id])
+            .await?
+            .iter()
+            .map(|e| InternalRelation::from_row(&e))
+            .collect();
+        let from_object = Some(
+            client
+                .query(&from_prepared, &[&id])
+                .await?
+                .iter()
+                .map(|e| InternalRelation::from_row(&e))
+                .collect(),
+        );
+        Ok((to_object, from_object))
+    }
+
+    pub fn from_internal_db_relation_outbound(internal: InternalRelation) -> APIInternalRelation {
+        APIInternalRelation {
+            resource_id: internal.origin_pid.to_string(),
+            resource_variant: 0, // TODO: Placeholder!
+            direction: 2,
+            variant: Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(1)), //TODO: Placeholder!
+        }
+    }
+    pub fn from_internal_db_relation_inbound(internal: InternalRelation) -> APIInternalRelation {
+        APIInternalRelation {
+            resource_id: internal.target_pid.to_string(),
+            resource_variant: 0, // TODO: Placeholder!
+            direction: 2,
+            variant: Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(1)), //TODO: Placeholder!
+        }
     }
 }

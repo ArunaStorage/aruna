@@ -47,6 +47,7 @@ impl ObjectService for ObjectServiceImpl {
         let inner_request = request.into_inner();
         let parent_id = match inner_request.parent {
             Some(parent) => {
+                // TODO: Parent validation needed
                 let id = match parent {
                     CreateParent::ProjectId(id) => id,
                     CreateParent::CollectionId(id) => id,
@@ -409,6 +410,7 @@ impl ObjectService for ObjectServiceImpl {
         let transaction_client = transaction.client();
         match inner_request.parent {
             Some(p) => {
+                // TODO: Parent validation needed!
                 let p = match p {
                     UpdateParent::ProjectId(p) => p,
                     UpdateParent::DatasetId(p) => p,
@@ -525,7 +527,109 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetObjectRequest>,
     ) -> Result<Response<GetObjectResponse>> {
-        todo!()
+        log::info!("Recieved CreateObjectRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::READ, // append?
+            allow_sa: true,
+        });
+
+        let _user_id = match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let get_object = match Object::get(object_id, &client).await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database read error.")
+        })? {
+            Some(o) => o,
+            None => return Err(tonic::Status::not_found("Object not found")),
+        };
+
+        let (to_relations, from_relations) =
+            InternalRelation::get_filtered_by_id(object_id, &client)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database read error.")
+                })?;
+        let mut from_relations = match from_relations {
+            Some(r) => r
+                .into_iter()
+                .map(|r| Relation {
+                    relation: Some(RelationEnum::Internal(
+                        InternalRelation::from_internal_db_relation_outbound(r),
+                    )),
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        let mut to_relations = to_relations
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::Internal(
+                    InternalRelation::from_internal_db_relation_inbound(r),
+                )),
+            })
+            .collect();
+        let mut relations: Vec<Relation> = get_object
+            .external_relations
+            .0
+             .0
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::External(r.into())),
+            })
+            .collect();
+        relations.append(&mut to_relations);
+        relations.append(&mut from_relations);
+
+        let grpc_object = GRPCObject {
+            id: object_id.to_string(),
+            content_len: get_object.content_len,
+            name: get_object.name,
+            description: get_object.description,
+            created_at: None, //TODO
+            created_by: get_object.created_by.to_string(),
+            data_class: get_object.data_class.into(),
+            dynamic: false,
+            hashes: get_object.hashes.0.into(),
+            key_values: get_object.key_values.0.into(),
+            status: get_object.object_status.into(),
+            relations,
+        };
+
+        Ok(tonic::Response::new(GetObjectResponse {
+            object: Some(grpc_object),
+        }))
     }
     async fn get_objects(
         &self,
