@@ -222,7 +222,7 @@ impl ObjectService for ObjectServiceImpl {
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
         });
-        let _user_id = self
+        let user_id = self
             .authorizer
             .check_permissions(&token, ctx)
             .map_err(|e| {
@@ -252,7 +252,7 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::internal("Hash conversion error.")
             })?;
             if !to_update_object.hashes.0 .0.is_empty() {
-                let comp_hashes = to_update_object.hashes.0;
+                let comp_hashes = to_update_object.hashes.0.clone();
 
                 if comp_hashes != req_hashes {
                     return Err(tonic::Status::internal("Hashes diverge."));
@@ -274,7 +274,7 @@ impl ObjectService for ObjectServiceImpl {
         Object::finish_object_staging(
             &object_pid,
             &client,
-            hashes,
+            hashes.clone(),
             inner_request.content_len,
             crate::database::enums::ObjectStatus::AVAILABLE,
         )
@@ -284,24 +284,35 @@ impl ObjectService for ObjectServiceImpl {
             tonic::Status::aborted("Database update failed.")
         })?;
 
-        todo!()
-        // let grpc_object = GRPCObject {
-        //     id: to_update_object.id.to_string(),
-        //     name: to_update_object.name,
-        //     description: to_update_object.description,
-        //     key_values: to_update_object.key_values.into(),
-        //     relations: to_update_object.external_relations.into(),
-        //     content_len: create_object.content_len,
-        //     data_class: create_object.data_class.into(),
-        //     created_at: None, // TODO
-        //     created_by: user_id.to_string(),
-        //     status: create_object.object_status.into(),
-        //     dynamic: false,
-        //     hashes: hashes.into(),
-        // };
-        // Ok(tonic::Response::new(FinishObjectStagingResponse {
-        //     object: Some(grpc_object),
-        // }))
+        //todo!();
+        let grpc_object = GRPCObject {
+            id: to_update_object.id.to_string(),
+            name: to_update_object.name,
+            description: to_update_object.description,
+            key_values: to_update_object.key_values.0.into(),
+            relations: to_update_object
+                .external_relations
+                .0
+                 .0
+                .into_iter()
+                .map(|r| Relation {
+                    relation: Some(RelationEnum::External(r.into())),
+                })
+                .collect(),
+            content_len: inner_request.content_len,
+            data_class: to_update_object.data_class.into(),
+            created_at: None, // TODO
+            created_by: user_id.to_string(),
+            status: 3,
+            dynamic: false,
+            hashes: match hashes {
+                Some(h) => h.into(),
+                None => to_update_object.hashes.0.into(),
+            },
+        };
+        Ok(tonic::Response::new(FinishObjectStagingResponse {
+            object: Some(grpc_object),
+        }))
     }
     async fn update_object(
         &self,
