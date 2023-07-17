@@ -54,7 +54,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
 impl TryFrom<Vec<KeyValue>> for KeyValues {
     type Error = anyhow::Error;
     fn try_from(key_val: Vec<KeyValue>) -> Result<Self> {
-        let mut key_vals: Vec<DBKeyValue>;
+        let mut key_vals: Vec<DBKeyValue> = Vec::new();
         for kv in key_val {
             let kv = kv.try_into()?;
             key_vals.push(kv);
@@ -89,7 +89,7 @@ impl TryFrom<i32> for KeyValueVariant {
 impl TryFrom<Vec<ExternalRelation>> for ExternalRelations {
     type Error = anyhow::Error;
     fn try_from(ex_rels: Vec<ExternalRelation>) -> Result<Self> {
-        let mut relations: Vec<DBExternalRelation>;
+        let mut relations: Vec<DBExternalRelation> = Vec::new();
         for r in ex_rels {
             let rs = r.try_into()?;
             relations.push(rs);

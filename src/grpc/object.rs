@@ -2,14 +2,18 @@ use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
+use crate::database::enums::ObjectType;
 use crate::database::internal_relation_dsl::InternalRelation;
-use crate::database::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
+use crate::database::object_dsl::{
+    ExternalRelations, Hashes, KeyValue as DBKeyValue, KeyValues, Object,
+};
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Object as GRPCObject, Relation,
 };
-use aruna_rust_api::api::storage::services::v2::create_object_request::Parent;
+use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as CreateParent;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
+use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
 use aruna_rust_api::api::storage::services::v2::{
     CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
     DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
@@ -44,9 +48,9 @@ impl ObjectService for ObjectServiceImpl {
         let parent_id = match inner_request.parent {
             Some(parent) => {
                 let id = match parent {
-                    Parent::ProjectId(id) => id,
-                    Parent::CollectionId(id) => id,
-                    Parent::DatasetId(id) => id,
+                    CreateParent::ProjectId(id) => id,
+                    CreateParent::CollectionId(id) => id,
+                    CreateParent::DatasetId(id) => id,
                 };
                 DieselUlid::from_str(&id).map_err(|e| {
                     log::debug!("{}", e);
@@ -318,7 +322,192 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>> {
-        todo!()
+        log::info!("Recieved CreateObjectRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+
+        let ctx = Context::Object(ResourcePermission {
+            id: DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("ULID conversion error")
+            })?,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        let user_id = match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let old_object_pid = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error.")
+        })?;
+        let old_object = match Object::get(old_object_pid, &client).await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database call failed.")
+        })? {
+            Some(o) => o,
+            None => return Err(tonic::Status::aborted("Database call failed.")),
+        };
+
+        let data_class = match inner_request.data_class {
+            Some(0) => Ok(old_object.data_class),
+            Some(dc) => dc.try_into(),
+            None => return Err(tonic::Status::internal("Invalid dataclass.")),
+        }
+        .map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("Invalid dataclass.")
+        })?;
+
+        let remove_kv: KeyValues = inner_request.remove_key_values.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("KeyValue conversion error.")
+        })?;
+        let mut add_kv: KeyValues = inner_request.add_key_values.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("KeyValue conversion error.")
+        })?;
+        let mut key_values: Vec<DBKeyValue> = old_object
+            .key_values
+            .0
+             .0
+            .into_iter()
+            .filter(|l| !remove_kv.0.contains(l))
+            .collect();
+        key_values.append(&mut add_kv.0);
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let new_version_object_id = DieselUlid::generate();
+
+        let transaction_client = transaction.client();
+        match inner_request.parent {
+            Some(p) => {
+                let p = match p {
+                    UpdateParent::ProjectId(p) => p,
+                    UpdateParent::DatasetId(p) => p,
+                    UpdateParent::CollectionId(p) => p,
+                };
+                let parent = DieselUlid::from_str(&p).map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::internal("ULID conversion error.")
+                })?;
+                let create_relation = InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid: parent,
+                    is_persistent: false,
+                    target_pid: new_version_object_id,
+                    type_id: 1,
+                };
+                create_relation
+                    .create(&transaction_client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction failed.")
+                    })?;
+            }
+            None => (),
+        };
+
+        let new_version_object = Object {
+            id: new_version_object_id,
+            content_len: old_object.content_len,
+            shared_id: old_object.shared_id,
+            count: 1,
+            created_at: None,
+            created_by: user_id,
+            revision_number: old_object.revision_number + 1,
+            object_status: old_object.object_status,
+            object_type: ObjectType::OBJECT,
+            description: match inner_request.description {
+                Some(d) => d,
+                None => old_object.description,
+            },
+            name: match inner_request.name {
+                Some(n) => n,
+                None => old_object.name,
+            },
+            hashes: match inner_request.hashes.is_empty() {
+                false => Json(inner_request.hashes.try_into().map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::internal("Invalid hashes.")
+                })?),
+                true => old_object.hashes.into(),
+            },
+            data_class,
+            key_values: Json(KeyValues(key_values)),
+            external_relations: old_object.external_relations.clone(),
+        };
+        new_version_object
+            .create(&transaction_client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database transaction failed.")
+            })?;
+        let external_relations: ExternalRelations =
+            old_object.external_relations.0.try_into().map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("ExternalRelation conversion error.")
+            })?;
+
+        // Needs mut for internal relation push
+        let mut relations: Vec<Relation> = external_relations
+            .0
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::External(r.into())),
+            })
+            .collect();
+        // TODO! Push internal relations into relation vec
+        // relations.push(Relation {
+        //     relation: Some(RelationEnum::Internal(create_relation.into())),
+        // });
+        let grpc_object = GRPCObject {
+            id: new_version_object_id.to_string(),
+            name: new_version_object.name,
+            description: new_version_object.description,
+            key_values: new_version_object.key_values.0.into(),
+            relations,
+            content_len: new_version_object.content_len,
+            data_class: new_version_object.data_class.into(),
+            created_at: None, // TODO
+            created_by: user_id.to_string(),
+            status: new_version_object.object_status.into(),
+            dynamic: false,
+            hashes: new_version_object.hashes.0.into(),
+        };
+        Ok(tonic::Response::new(UpdateObjectResponse {
+            object: Some(grpc_object),
+            new_revision: true,
+        }))
     }
     async fn clone_object(
         &self,
