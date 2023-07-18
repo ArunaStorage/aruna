@@ -245,6 +245,10 @@ impl Object {
             .map(|e| Object::from_row(&e))?;
         Ok(object)
     }
+    pub async fn get_all_revisions(id: &DieselUlid, client: &Client) -> Result<Vec<Object>> {
+        let query = "SELECT * FROM objects WHERE shared_id = $1";
+        todo!()
+    }
 }
 
 impl PartialEq for Object {

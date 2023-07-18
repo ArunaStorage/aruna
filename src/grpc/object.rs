@@ -118,7 +118,6 @@ impl ObjectService for ObjectServiceImpl {
             count: 1, // Objects always have count 1,
             key_values: Json(key_values.clone()),
             object_status: crate::database::enums::ObjectStatus::INITIALIZING,
-            // ToDo!
             data_class: inner_request.data_class.try_into().map_err(|e| {
                 log::error!("{}", e);
                 tonic::Status::internal("DataClass conversion error.")
@@ -201,22 +200,7 @@ impl ObjectService for ObjectServiceImpl {
             object: Some(grpc_object),
         }))
     }
-    async fn get_upload_url(
-        &self,
-        request: Request<GetUploadUrlRequest>,
-    ) -> Result<Response<GetUploadUrlResponse>> {
-        Err(tonic::Status::unimplemented(
-            "GetUploadURL is not yet implemented.",
-        ))
-    }
-    async fn get_download_url(
-        &self,
-        request: Request<GetDownloadUrlRequest>,
-    ) -> Result<Response<GetDownloadUrlResponse>> {
-        Err(tonic::Status::unimplemented(
-            "GetDownloadURL is not yet implemented.",
-        ))
-    }
+
     async fn finish_object_staging(
         &self,
         request: Request<FinishObjectStagingRequest>,
@@ -301,7 +285,6 @@ impl ObjectService for ObjectServiceImpl {
             tonic::Status::aborted("Database update failed.")
         })?;
 
-        //todo!();
         let grpc_object = GRPCObject {
             id: to_update_object.id.to_string(),
             name: to_update_object.name,
@@ -421,7 +404,7 @@ impl ObjectService for ObjectServiceImpl {
         let new_version_object_id = DieselUlid::generate();
 
         let transaction_client = transaction.client();
-        match inner_request.parent {
+        let parent_relation = match inner_request.parent {
             Some(p) => {
                 // TODO: Parent validation needed!
                 let p = match p {
@@ -433,6 +416,32 @@ impl ObjectService for ObjectServiceImpl {
                     log::error!("{}", e);
                     tonic::Status::internal("ULID conversion error.")
                 })?;
+
+                let ctx = Context::Object(ResourcePermission {
+                    // Is the parent_id relevant here?
+                    id: DieselUlid::from_str(&p).map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::internal("ULID conversion error")
+                    })?,
+                    level: crate::database::enums::PermissionLevels::APPEND,
+                    allow_sa: true,
+                });
+
+                match &self.authorizer.check_permissions(&token, ctx) {
+                    Ok(b) => {
+                        if *b {
+                            // TODO!
+                            // PLACEHOLDER!
+                            DieselUlid::generate()
+                        } else {
+                            return Err(tonic::Status::permission_denied("Not allowed."));
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("{}", e);
+                        return Err(tonic::Status::permission_denied("Not allowed."));
+                    }
+                };
                 let create_relation = InternalRelation {
                     id: DieselUlid::generate(),
                     origin_pid: parent,
@@ -447,8 +456,9 @@ impl ObjectService for ObjectServiceImpl {
                         log::error!("{}", e);
                         tonic::Status::aborted("Database transaction failed.")
                     })?;
+                Some(create_relation)
             }
-            None => (),
+            None => None,
         };
 
         let new_version_object = Object {
@@ -493,7 +503,6 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::internal("ExternalRelation conversion error.")
             })?;
 
-        // Needs mut for internal relation push
         let mut relations: Vec<Relation> = external_relations
             .0
             .into_iter()
@@ -501,10 +510,16 @@ impl ObjectService for ObjectServiceImpl {
                 relation: Some(RelationEnum::External(r.into())),
             })
             .collect();
-        // TODO! Push internal relations into relation vec
-        // relations.push(Relation {
-        //     relation: Some(RelationEnum::Internal(create_relation.into())),
-        // });
+        match parent_relation {
+            Some(r) => {
+                relations.push(Relation {
+                    relation: Some(RelationEnum::Internal(
+                        InternalRelation::from_db_internal_relation(r, false, 1),
+                    )),
+                });
+            }
+            None => (),
+        };
         let grpc_object = GRPCObject {
             id: new_version_object_id.to_string(),
             name: new_version_object.name,
@@ -524,17 +539,92 @@ impl ObjectService for ObjectServiceImpl {
             new_revision: true,
         }))
     }
-    async fn clone_object(
-        &self,
-        request: Request<CloneObjectRequest>,
-    ) -> Result<Response<CloneObjectResponse>> {
-        todo!()
-    }
+
     async fn delete_object(
         &self,
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>> {
-        todo!()
+        log::info!("Recieved CreateObjectRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // delete?
+            allow_sa: false,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+
+        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error.")
+        })?;
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction_client = transaction.client();
+        let object = Object::get(object_id, &transaction_client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unavailable("Database call failed.")
+            })?
+            .ok_or(tonic::Status::not_found("Object not found."))?;
+        match inner_request.with_revisions {
+            true => {
+                let revisions = Object::get_all_revisions(&object.shared_id, &transaction_client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::unavailable("Revisions not found")
+                    })?;
+                for r in revisions {
+                    r.delete(r.id, &transaction_client).await.map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database delete transaction failed.")
+                    })?;
+                }
+            }
+            false => {
+                object
+                    .delete(object.id, &transaction_client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database delete transaction failed.")
+                    })?;
+            }
+        };
+        Ok(tonic::Response::new(DeleteObjectResponse {}))
     }
     async fn get_object(
         &self,
@@ -559,7 +649,7 @@ impl ObjectService for ObjectServiceImpl {
             allow_sa: true,
         });
 
-        let _user_id = match &self.authorizer.check_permissions(&token, ctx) {
+        match &self.authorizer.check_permissions(&token, ctx) {
             Ok(b) => {
                 if *b {
                     // ToDo!
@@ -599,7 +689,7 @@ impl ObjectService for ObjectServiceImpl {
                 .into_iter()
                 .map(|r| Relation {
                     relation: Some(RelationEnum::Internal(
-                        InternalRelation::from_internal_db_relation_outbound(r),
+                        InternalRelation::from_db_internal_relation(r, true, 4),
                     )),
                 })
                 .collect(),
@@ -609,7 +699,7 @@ impl ObjectService for ObjectServiceImpl {
             .into_iter()
             .map(|r| Relation {
                 relation: Some(RelationEnum::Internal(
-                    InternalRelation::from_internal_db_relation_inbound(r),
+                    InternalRelation::from_db_internal_relation(r, false, 4),
                 )),
             })
             .collect();
@@ -648,6 +738,36 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>> {
-        todo!()
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "GetObjects is not implemented.",
+        ))
+    }
+    async fn get_upload_url(
+        &self,
+        request: Request<GetUploadUrlRequest>,
+    ) -> Result<Response<GetUploadUrlResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "GetUploadURL is not implemented.",
+        ))
+    }
+    async fn get_download_url(
+        &self,
+        request: Request<GetDownloadUrlRequest>,
+    ) -> Result<Response<GetDownloadUrlResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "GetDownloadURL is not implemented.",
+        ))
+    }
+    async fn clone_object(
+        &self,
+        request: Request<CloneObjectRequest>,
+    ) -> Result<Response<CloneObjectResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "CloneObject is not implemented.",
+        ))
     }
 }

@@ -1,5 +1,6 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::internal_relation::Variant as APIInternalRelationVariant;
 use aruna_rust_api::api::storage::models::v2::InternalRelation as APIInternalRelation;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow; //use postgres_types::ToSql;
@@ -13,6 +14,14 @@ pub struct InternalRelation {
     pub target_pid: DieselUlid,
     pub is_persistent: bool,
 }
+// enum TypeID {
+//   INTERNAL_RELATION_VARIANT_UNSPECIFIED = 0;
+//   INTERNAL_RELATION_VARIANT_BELONGS_TO = 1;
+//   INTERNAL_RELATION_VARIANT_ORIGIN = 2;
+//   INTERNAL_RELATION_VARIANT_DERIVED = 3;
+//   INTERNAL_RELATION_VARIANT_METADATA = 4;
+//   INTERNAL_RELATION_VARIANT_POLICY = 5;
+// }
 
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
@@ -110,20 +119,18 @@ impl InternalRelation {
         Ok((to_object, from_object))
     }
 
-    pub fn from_internal_db_relation_outbound(internal: InternalRelation) -> APIInternalRelation {
+    pub fn from_db_internal_relation(
+        internal: InternalRelation,
+        resource_is_origin: bool,
+        resource_variant: i32,
+    ) -> APIInternalRelation {
+        let direction = if resource_is_origin { 1 } else { 2 };
         APIInternalRelation {
             resource_id: internal.origin_pid.to_string(),
-            resource_variant: 0, // TODO: Placeholder!
-            direction: 2,
-            variant: Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(1)), //TODO: Placeholder!
-        }
-    }
-    pub fn from_internal_db_relation_inbound(internal: InternalRelation) -> APIInternalRelation {
-        APIInternalRelation {
-            resource_id: internal.target_pid.to_string(),
-            resource_variant: 0, // TODO: Placeholder!
-            direction: 2,
-            variant: Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(1)), //TODO: Placeholder!
+            resource_variant,
+            direction, // 1 for inbound, 2 for outbound
+            // Database only has defined variants
+            variant: Some(APIInternalRelationVariant::DefinedVariant(internal.type_id)),
         }
     }
 }
