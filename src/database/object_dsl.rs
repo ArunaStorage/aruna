@@ -3,13 +3,15 @@ use crate::database::{
     enums::{DataClass, ObjectStatus, ObjectType},
 };
 
+use crate::database::internal_relation_dsl::InternalRelation;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
-use postgres_types::Json;
+use postgres_types::{FromSql, Json};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use tokio_postgres::Client;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -31,21 +33,17 @@ pub struct KeyValue {
 pub struct KeyValues(pub Vec<KeyValue>);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub enum RelationVariant {
+pub enum DefinedVariant {
     URL,
     IDENTIFIER,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub enum RelationVariantVariant {
-    DEFINED(RelationVariant),
-    CUSTOM(String),
+    CUSTOM,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct ExternalRelation {
     pub identifier: String,
-    pub variant: RelationVariantVariant,
+    pub defined_variant: DefinedVariant,
+    pub custom_variant: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
@@ -66,7 +64,7 @@ pub enum Algorithm {
     SHA256,
 }
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, FromSql, Debug, Clone)]
 pub struct Object {
     pub id: DieselUlid,
     pub shared_id: DieselUlid,
@@ -85,6 +83,25 @@ pub struct Object {
     pub hashes: Json<Hashes>,
 }
 
+#[derive(FromRow, Debug, FromSql, Clone)]
+pub struct ObjectWithRelations {
+    pub object: Object,
+    pub inbound: Json<Inbound>,
+    pub outbound: Json<Outbound>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct Inbound(pub Vec<InternalRelation>);
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct Outbound(pub Vec<InternalRelation>);
+#[derive(Serialize, Deserialize, FromRow, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct InternalRelationWithULIDsAsStrings {
+    pub id: String,
+    pub origin_pid: String,
+    pub type_id: i32,
+    pub target_pid: String,
+    pub is_persistent: bool,
+}
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
@@ -247,7 +264,67 @@ impl Object {
     }
     pub async fn get_all_revisions(id: &DieselUlid, client: &Client) -> Result<Vec<Object>> {
         let query = "SELECT * FROM objects WHERE shared_id = $1";
-        todo!()
+        let prepared = client.prepare(query).await?;
+        let object: Vec<Object> = client
+            .query(&prepared, &[&id])
+            .await?
+            .iter()
+            .map(Object::from_row)
+            .collect();
+        Ok(object)
+    }
+    pub async fn get_object_with_relations(
+        id: &DieselUlid,
+        client: &Client,
+    ) -> Result<ObjectWithRelations> {
+        let query = "SELECT o.*,
+            JSON_AGG(ir1.*) FILTER (WHERE ir1.target_pid = o.id) inbound,
+            JSON_AGG(ir1.*) FILTER (WHERE ir1.origin_pid = o.id) outbound
+            FROM objects o
+            LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+            WHERE o.id = $1
+            GROUP BY o.id;";
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[&id]).await;
+        let object = row.map(|e| -> Result<ObjectWithRelations> {
+            //let inbound: Json<Inbound> = ;
+            let inbound = Json(Inbound(
+                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(15)
+                    .0
+                    .into_iter()
+                    .map(|i| -> Result<InternalRelation> {
+                        Ok(InternalRelation {
+                            id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
+                            origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
+                            type_id: i.type_id,
+                            target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
+                            is_persistent: i.is_persistent,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ));
+            let outbound = Json(Outbound(
+                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(16)
+                    .0
+                    .into_iter()
+                    .map(|i| -> Result<InternalRelation> {
+                        Ok(InternalRelation {
+                            id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
+                            origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
+                            type_id: i.type_id,
+                            target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
+                            is_persistent: i.is_persistent,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ));
+            Ok(ObjectWithRelations {
+                object: Object::from_row(&e),
+                inbound,
+                outbound,
+            })
+        })?;
+        Ok(object?)
     }
 }
 
@@ -307,3 +384,20 @@ impl PartialEq for Object {
     }
 }
 impl Eq for Object {}
+impl PartialEq for ObjectWithRelations {
+    fn eq(&self, other: &Self) -> bool {
+        // Faster than comparing vecs
+        let self_inbound_set: HashSet<_> = self.inbound.0 .0.iter().cloned().collect();
+        let other_inbound_set: HashSet<_> = other.inbound.0 .0.iter().cloned().collect();
+        let self_outbound_set: HashSet<_> = self.outbound.0 .0.iter().cloned().collect();
+        let other_outbound_set: HashSet<_> = other.outbound.0 .0.iter().cloned().collect();
+        self.object == other.object
+            && self_inbound_set
+                .iter()
+                .all(|item| other_inbound_set.contains(item))
+            && self_outbound_set
+                .iter()
+                .all(|item| other_outbound_set.contains(item))
+    }
+}
+impl Eq for ObjectWithRelations {}

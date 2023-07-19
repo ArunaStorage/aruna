@@ -166,10 +166,8 @@ impl ObjectService for ObjectServiceImpl {
             resource_id: create_object.id.to_string(),
             resource_variant: variant,
             direction: 2,
-            variant:
-                Some(aruna_rust_api::api::storage::models::v2::internal_relation::Variant::DefinedVariant(
-                    1,
-                )),
+            defined_variant: 1,
+            custom_variant: None,
         }));
 
         let mut relations: Vec<Relation> = external_relations
@@ -405,6 +403,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let transaction_client = transaction.client();
         let parent_relation = match inner_request.parent {
+            // Can only add new parents
             Some(p) => {
                 // TODO: Parent validation needed!
                 let p = match p {
@@ -514,7 +513,17 @@ impl ObjectService for ObjectServiceImpl {
             Some(r) => {
                 relations.push(Relation {
                     relation: Some(RelationEnum::Internal(
-                        InternalRelation::from_db_internal_relation(r, false, 1),
+                        InternalRelation::from_db_internal_relation(
+                            r,
+                            false,
+                            1,
+                            &transaction_client,
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::internal("Internal custom type conversion error.")
+                        })?,
                     )),
                 });
             }
@@ -599,6 +608,7 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::unavailable("Database call failed.")
             })?
             .ok_or(tonic::Status::not_found("Object not found."))?;
+        // Should only mark as deleted
         match inner_request.with_revisions {
             true => {
                 let revisions = Object::get_all_revisions(&object.shared_id, &transaction_client)
@@ -664,11 +674,16 @@ impl ObjectService for ObjectServiceImpl {
                 return Err(tonic::Status::permission_denied("Not allowed."));
             }
         };
-        let client = self.database.get_client().await.map_err(|e| {
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction = client.transaction().await.map_err(|e| {
             log::error!("{}", e);
             tonic::Status::unavailable("Database not avaliable.")
         })?;
 
+        let client = transaction.client();
         let get_object = match Object::get(object_id, &client).await.map_err(|e| {
             log::error!("{}", e);
             tonic::Status::aborted("Database read error.")
@@ -685,24 +700,40 @@ impl ObjectService for ObjectServiceImpl {
                     tonic::Status::aborted("Database read error.")
                 })?;
         let mut from_relations = match from_relations {
-            Some(r) => r
-                .into_iter()
-                .map(|r| Relation {
-                    relation: Some(RelationEnum::Internal(
-                        InternalRelation::from_db_internal_relation(r, true, 4),
-                    )),
-                })
-                .collect(),
+            Some(r) => {
+                let mut relations: Vec<Relation> = Vec::new();
+                for relation in r.into_iter() {
+                    relations.push(Relation {
+                        relation: Some(RelationEnum::Internal(
+                            InternalRelation::from_db_internal_relation(relation, true, 4, &client)
+                                .await
+                                .map_err(|e| {
+                                    log::error!("{}", e);
+                                    tonic::Status::internal(
+                                        "Internal custom type conversion error.",
+                                    )
+                                })?,
+                        )),
+                    });
+                }
+                relations
+            }
             None => Vec::new(),
         };
-        let mut to_relations = to_relations
-            .into_iter()
-            .map(|r| Relation {
+
+        let mut to_relations_converted: Vec<Relation> = Vec::new();
+        for relation in to_relations.into_iter() {
+            to_relations_converted.push(Relation {
                 relation: Some(RelationEnum::Internal(
-                    InternalRelation::from_db_internal_relation(r, false, 4),
+                    InternalRelation::from_db_internal_relation(relation, false, 4, &client)
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::internal("Internal custom type conversion error.")
+                        })?,
                 )),
-            })
-            .collect();
+            });
+        }
         let mut relations: Vec<Relation> = get_object
             .external_relations
             .0
@@ -712,7 +743,7 @@ impl ObjectService for ObjectServiceImpl {
                 relation: Some(RelationEnum::External(r.into())),
             })
             .collect();
-        relations.append(&mut to_relations);
+        relations.append(&mut to_relations_converted);
         relations.append(&mut from_relations);
 
         let grpc_object = GRPCObject {

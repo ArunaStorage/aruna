@@ -1,12 +1,19 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
-use aruna_rust_api::api::storage::models::v2::internal_relation::Variant as APIInternalRelationVariant;
+//use aruna_rust_api::api::storage::models::v2::internal_relation::Variant as APIInternalRelationVariant;
+use crate::database::relation_type_dsl::RelationType;
 use aruna_rust_api::api::storage::models::v2::InternalRelation as APIInternalRelation;
 use diesel_ulid::DieselUlid;
-use postgres_from_row::FromRow; //use postgres_types::ToSql;
+use postgres_from_row::FromRow;
+use postgres_types::{FromSql, ToSql};
+//use postgres_types::ToSql;
+use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug)]
+#[derive(
+    Serialize, Deserialize, Hash, ToSql, FromRow, Debug, FromSql, Clone, PartialEq, Eq, PartialOrd,
+)]
 pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
@@ -14,20 +21,22 @@ pub struct InternalRelation {
     pub target_pid: DieselUlid,
     pub is_persistent: bool,
 }
+
 // enum TypeID {
 //   INTERNAL_RELATION_VARIANT_UNSPECIFIED = 0;
 //   INTERNAL_RELATION_VARIANT_BELONGS_TO = 1;
 //   INTERNAL_RELATION_VARIANT_ORIGIN = 2;
-//   INTERNAL_RELATION_VARIANT_DERIVED = 3;
+//   INTERNAL_RELATION_VARIANT_VERSION = 3;
 //   INTERNAL_RELATION_VARIANT_METADATA = 4;
 //   INTERNAL_RELATION_VARIANT_POLICY = 5;
+//   INTERNAL_RELATION_VARIANT_CUSTOM = 6;
 // }
 
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_did, type_id, target_pid, target_did, is_persistent) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+        let query = "INSERT INTO internal_relations (id, origin_pid, type_id, target_pid, is_persistent) VALUES (
+            $1, $2, $3, $4, $5
         );";
 
         let prepared = client.prepare(query).await?;
@@ -119,18 +128,34 @@ impl InternalRelation {
         Ok((to_object, from_object))
     }
 
-    pub fn from_db_internal_relation(
+    pub async fn from_db_internal_relation(
         internal: InternalRelation,
         resource_is_origin: bool,
         resource_variant: i32,
-    ) -> APIInternalRelation {
+        client: &Client,
+    ) -> Result<APIInternalRelation> {
         let direction = if resource_is_origin { 1 } else { 2 };
-        APIInternalRelation {
+        let (defined_variant, custom_variant) = match internal.type_id {
+            0 => return Err(anyhow!("RelationVariant conversion error.")),
+            1..=5 => (internal.type_id, None),
+            _ => {
+                let query = "SELECT * FROM relation_types WHERE id = $1";
+                let prepared = client.prepare(query).await?;
+                let custom_variant = client
+                    .query_opt(&prepared, &[&internal.type_id])
+                    .await?
+                    .map(|e| RelationType::from_row(&e))
+                    .ok_or(anyhow!("Custom relation type not found."))?;
+                (internal.type_id, Some(custom_variant.relation_name))
+            }
+        };
+        Ok(APIInternalRelation {
             resource_id: internal.origin_pid.to_string(),
             resource_variant,
             direction, // 1 for inbound, 2 for outbound
             // Database only has defined variants
-            variant: Some(APIInternalRelationVariant::DefinedVariant(internal.type_id)),
-        }
+            defined_variant,
+            custom_variant,
+        })
     }
 }

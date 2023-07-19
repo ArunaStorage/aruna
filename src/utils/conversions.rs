@@ -1,17 +1,12 @@
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::{
-    external_relation::Variant as ExternalVariant, internal_relation::Variant as InternalVariant,
-    ExternalRelation, Hash, InternalRelation, KeyValue, Relation, RelationDirection,
-};
+use aruna_rust_api::api::storage::models::v2::{ExternalRelation, Hash, KeyValue};
 use tonic::metadata::MetadataMap;
 
 use crate::database::{
     enums::{DataClass, ObjectStatus},
-    internal_relation_dsl::InternalRelation as DBInternalRelation,
     object_dsl::{
-        Algorithm, ExternalRelation as DBExternalRelation, ExternalRelations, Hash as DBHash,
-        Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, RelationVariant,
-        RelationVariantVariant,
+        Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
+        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
     },
 };
 
@@ -102,40 +97,43 @@ impl TryFrom<Vec<ExternalRelation>> for ExternalRelations {
 impl TryFrom<ExternalRelation> for DBExternalRelation {
     type Error = anyhow::Error;
     fn try_from(ex_rel: ExternalRelation) -> Result<Self> {
-        let variant = match ex_rel.variant {
-            Some(v) => v.try_into(),
-            None => return Err(anyhow!("Relation variant not defined.")),
-        }?;
+        let (defined_variant, custom_variant) = match ex_rel.defined_variant {
+            1 => (DefinedVariant::URL, None),
+            2 => (DefinedVariant::IDENTIFIER, None),
+            3 => (DefinedVariant::CUSTOM, ex_rel.custom_variant),
+            _ => return Err(anyhow!("Relation variant not defined.")),
+        };
         Ok(DBExternalRelation {
             identifier: ex_rel.identifier,
-            variant,
+            defined_variant,
+            custom_variant,
         })
     }
 }
 
-impl TryFrom<ExternalVariant> for RelationVariantVariant {
-    type Error = anyhow::Error;
-    fn try_from(var: ExternalVariant) -> Result<Self> {
-        match var {
-            ExternalVariant::DefinedVariant(v) => {
-                let def_var = v.try_into()?;
-                Ok(RelationVariantVariant::DEFINED(def_var))
-            }
-            ExternalVariant::CustomVariant(s) => Ok(RelationVariantVariant::CUSTOM(s)),
-        }
-    }
-}
-
-impl TryFrom<i32> for RelationVariant {
-    type Error = anyhow::Error;
-    fn try_from(var: i32) -> Result<Self> {
-        match var {
-            1 => Ok(RelationVariant::URL),
-            2 => Ok(RelationVariant::IDENTIFIER),
-            _ => return Err(anyhow!("Not defined.")),
-        }
-    }
-}
+// impl TryFrom<ExternalVariant> for RelationVariantVariant {
+//     type Error = anyhow::Error;
+//     fn try_from(var: ExternalVariant) -> Result<Self> {
+//         match var {
+//             ExternalVariant::DefinedVariant(v) => {
+//                 let def_var = v.try_into()?;
+//                 Ok(RelationVariantVariant::DEFINED(def_var))
+//             }
+//             ExternalVariant::CustomVariant(s) => Ok(RelationVariantVariant::CUSTOM(s)),
+//         }
+//     }
+// }
+//
+// impl TryFrom<i32> for RelationVariant {
+//     type Error = anyhow::Error;
+//     fn try_from(var: i32) -> Result<Self> {
+//         match var {
+//             1 => Ok(RelationVariant::URL),
+//             2 => Ok(RelationVariant::IDENTIFIER),
+//             _ => return Err(anyhow!("Not defined.")),
+//         }
+//     }
+// }
 
 impl TryFrom<i32> for DataClass {
     type Error = anyhow::Error;
@@ -191,15 +189,15 @@ impl From<KeyValues> for Vec<KeyValue> {
 
 impl From<DBExternalRelation> for ExternalRelation {
     fn from(r: DBExternalRelation) -> Self {
+        let (defined_variant, custom_variant) = match r.defined_variant {
+            DefinedVariant::CUSTOM => (3, r.custom_variant),
+            DefinedVariant::IDENTIFIER => (2, None),
+            DefinedVariant::URL => (1, None),
+        };
         ExternalRelation {
             identifier: r.identifier,
-            variant: match r.variant {
-                RelationVariantVariant::DEFINED(v) => match v {
-                    RelationVariant::URL => Some(ExternalVariant::DefinedVariant(1)),
-                    RelationVariant::IDENTIFIER => Some(ExternalVariant::DefinedVariant(2)),
-                },
-                RelationVariantVariant::CUSTOM(s) => Some(ExternalVariant::CustomVariant(s)),
-            },
+            defined_variant,
+            custom_variant,
         }
     }
 }

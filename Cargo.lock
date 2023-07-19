@@ -61,9 +61,9 @@ checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
 
 [[package]]
 name = "aruna-rust-api"
-version = "2.0.0-alpha.5"
+version = "2.0.0-alpha.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f3d4852a011377d13f2d3eb81018bd390517dc4b4dfa07ef0f435aec428e92"
+checksum = "44687ac8e99848ee619e3183d6f8e9942c2d87f1fd9e9fbf4b36c257dae85fce"
 dependencies = [
  "prost",
  "prost-types",
@@ -100,6 +100,7 @@ dependencies = [
  "openssl",
  "postgres-from-row",
  "postgres-types",
+ "postgres_array",
  "prost",
  "prost-types",
  "r2d2",
@@ -1871,6 +1872,18 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "postgres_array"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2667c8b8c3a857620d87fc5172972c3385254a7563a5ab303bc9a41a16a7bf4e"
+dependencies = [
+ "bytes",
+ "fallible-iterator",
+ "postgres-protocol",
+ "postgres-types",
 ]
 
 [[package]]
