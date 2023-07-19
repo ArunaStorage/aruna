@@ -167,7 +167,26 @@ impl Object {
         client.execute(&prepared, &[&Json(kv), id]).await?;
         Ok(())
     }
+    pub async fn update(&self, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+        SET description = $2, key_values = $3, data_class = $4)
+        WHERE id = $1 ;";
 
+        let prepared = client.prepare(query).await?;
+
+        client
+            .query(
+                &prepared,
+                &[
+                    &self.id,
+                    &self.description,
+                    &self.key_values,
+                    &self.data_class,
+                ],
+            )
+            .await?;
+        Ok(())
+    }
     pub async fn remove_key_value(&self, client: &Client, kv: KeyValue) -> Result<()> {
         let element: i32 = self
             .key_values

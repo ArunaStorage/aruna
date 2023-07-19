@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{ExternalRelation, Hash, KeyValue};
+use chrono::{Datelike, Timelike};
 use tonic::metadata::MetadataMap;
 
 use crate::database::{
@@ -242,4 +243,16 @@ impl From<Hashes> for Vec<Hash> {
             })
             .collect()
     }
+}
+pub fn naivedatetime_to_prost_time(
+    ndt: chrono::NaiveDateTime,
+) -> Result<prost_types::Timestamp, prost_types::TimestampError> {
+    prost_types::Timestamp::date_time(
+        ndt.date().year().into(),
+        ndt.date().month() as u8,
+        ndt.date().day() as u8,
+        ndt.time().hour() as u8,
+        ndt.time().minute() as u8,
+        ndt.time().second() as u8,
+    )
 }

@@ -17,8 +17,10 @@ use tokio_postgres::Client;
 pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
+    // TODO: Type
     pub type_id: i32,
     pub target_pid: DieselUlid,
+    // TODO: Type
     pub is_persistent: bool,
 }
 
@@ -101,6 +103,17 @@ impl InternalRelation {
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
     }
+    // Checks if relations already exists
+    pub async fn exists(from: DieselUlid, to: DieselUlid, client: &Client) -> Result<bool> {
+        let query = "SELECT * FROM internal_relations WHERE origin_pid = $1 AND target_pid = $2 ";
+        let prepared = client.prepare(query).await?;
+        let opt = client.query_opt(&prepared, &[&from, &to]).await?;
+        match opt {
+            Some(_) => Ok(true),
+            None => Ok(false),
+        }
+    }
+    // Gets all inbound and outbound relations for id
     pub async fn get_filtered_by_id(
         id: DieselUlid,
         client: &Client,
