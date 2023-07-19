@@ -33,10 +33,10 @@ impl CrudDb for PubKey {
         Ok(rows.iter().map(PubKey::from_row).collect::<Vec<_>>())
     }
 
-    async fn delete(&self, id: impl PrimaryKey, client: &Client) -> Result<()> {
+    async fn delete(&self, client: &Client) -> Result<()> {
         let query = "DELETE FROM pub_keys WHERE id = $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&id]).await?;
+        client.execute(&prepared, &[&self.id]).await?;
         Ok(())
     }
 }
