@@ -634,7 +634,7 @@ impl ObjectService for ObjectServiceImpl {
                         target_type: ObjectType::OBJECT,
                         type_id: 1,
                     };
-                    if InternalRelation::exists(
+                    if InternalRelation::get_by_pids(
                         create_relation.origin_pid,
                         create_relation.target_pid,
                         &transaction_client,
@@ -643,7 +643,9 @@ impl ObjectService for ObjectServiceImpl {
                     .map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::internal("Database transaction error.")
-                    })? {
+                    })?
+                    .is_some()
+                    {
                         return Err(tonic::Status::internal(
                             "InternalRelation to parent already exists.",
                         ));
