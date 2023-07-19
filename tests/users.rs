@@ -214,7 +214,7 @@ async fn delete_user_test() {
     user.create(&client).await.unwrap();
 
     // Delete user
-    user.delete(user.id, &client).await.unwrap();
+    user.delete(&client).await.unwrap();
 
     // Validate update
     if User::get(user.id, &client).await.unwrap().is_some() {

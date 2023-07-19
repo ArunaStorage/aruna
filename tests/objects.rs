@@ -226,28 +226,36 @@ async fn get_object_with_relations_test() {
     let create_relation_one = InternalRelation {
         id: DieselUlid::generate(),
         origin_pid: collection_one,
+        origin_type: aruna_server::database::enums::ObjectType::COLLECTION,
         target_pid: dataset_id,
+        target_type: aruna_server::database::enums::ObjectType::DATASET,
         is_persistent: true,
         type_id: 1,
     };
     let create_relation_two = InternalRelation {
         id: DieselUlid::generate(),
         origin_pid: collection_two,
+        origin_type: aruna_server::database::enums::ObjectType::COLLECTION,
         target_pid: dataset_id,
+        target_type: aruna_server::database::enums::ObjectType::DATASET,
         is_persistent: true,
         type_id: 1,
     };
     let create_relation_three = InternalRelation {
         id: DieselUlid::generate(),
         origin_pid: dataset_id,
+        origin_type: aruna_server::database::enums::ObjectType::DATASET,
         target_pid: object_one,
+        target_type: aruna_server::database::enums::ObjectType::OBJECT,
         is_persistent: true,
         type_id: 1,
     };
     let create_relation_four = InternalRelation {
         id: DieselUlid::generate(),
         origin_pid: dataset_id,
+        origin_type: aruna_server::database::enums::ObjectType::DATASET,
         target_pid: object_two,
+        target_type: aruna_server::database::enums::ObjectType::OBJECT,
         is_persistent: true,
         type_id: 1,
     };
