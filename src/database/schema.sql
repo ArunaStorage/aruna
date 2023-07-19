@@ -156,8 +156,10 @@ CREATE TABLE IF NOT EXISTS relation_types (
 CREATE TABLE IF NOT EXISTS internal_relations (
     id UUID PRIMARY KEY NOT NULL,
     origin_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
+    origin_type "ObjectType" NOT NULL,
     type_id INT NOT NULL REFERENCES relation_types(id) ON DELETE CASCADE,
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
+    target_type "ObjectType" NOT NULL,
     is_persistent BOOL NOT NULL DEFAULT FALSE
 );
 
