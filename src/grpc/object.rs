@@ -7,7 +7,7 @@ use crate::database::internal_relation_dsl::InternalRelation;
 use crate::database::object_dsl::{
     ExternalRelations, Hashes, KeyValue as DBKeyValue, KeyValues, Object,
 };
-use crate::utils::conversions::{get_token_from_md, naivedatetime_to_prost_time};
+use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, InternalRelation as APIInternalRelation,
     Object as GRPCObject, Relation,
@@ -299,10 +299,7 @@ impl ObjectService for ObjectServiceImpl {
             content_len: inner_request.content_len,
             data_class: to_update_object.data_class.into(),
             created_at: match to_update_object.created_at {
-                Some(t) => Some(naivedatetime_to_prost_time(t).map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::internal("Time conversion error.")
-                })?),
+                Some(t) => Some(t.into()),
                 None => None,
             },
             created_by: user_id.to_string(),
@@ -727,10 +724,7 @@ impl ObjectService for ObjectServiceImpl {
                 content_len: updated_object.content_len,
                 data_class: updated_object.data_class.into(),
                 created_at: match old_object.created_at {
-                    Some(t) => Some(naivedatetime_to_prost_time(t).map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::internal("Time conversion error.")
-                    })?),
+                    Some(t) => Some(t.into()),
                     None => None,
                 },
                 created_by: user_id.to_string(),
@@ -951,10 +945,7 @@ impl ObjectService for ObjectServiceImpl {
             name: get_object.object.name,
             description: get_object.object.description,
             created_at: match get_object.object.created_at {
-                Some(t) => Some(naivedatetime_to_prost_time(t).map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::internal("Time conversion error.")
-                })?),
+                Some(t) => Some(t.into()),
                 None => None,
             },
             created_by: get_object.object.created_by.to_string(),
