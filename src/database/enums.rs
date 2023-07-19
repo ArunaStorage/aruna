@@ -29,6 +29,20 @@ pub enum ObjectType {
     OBJECT,
 }
 
+impl TryFrom<i32> for ObjectType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(ObjectType::PROJECT),
+            2 => Ok(ObjectType::COLLECTION),
+            3 => Ok(ObjectType::DATASET),
+            4 => Ok(ObjectType::OBJECT),
+            _ => Err(anyhow!("Unknown object type").into()),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum PermissionLevels {
     DENY,
