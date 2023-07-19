@@ -766,7 +766,7 @@ impl ObjectService for ObjectServiceImpl {
         })?;
         let ctx = Context::Object(ResourcePermission {
             id: object_id,
-            level: crate::database::enums::PermissionLevels::WRITE, // delete?
+            level: crate::database::enums::PermissionLevels::ADMIN,
             allow_sa: false,
         });
 
@@ -816,20 +816,17 @@ impl ObjectService for ObjectServiceImpl {
                         tonic::Status::unavailable("Revisions not found")
                     })?;
                 for r in revisions {
-                    r.delete(r.id, &transaction_client).await.map_err(|e| {
+                    r.delete(&transaction_client).await.map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::aborted("Database delete transaction failed.")
                     })?;
                 }
             }
             false => {
-                object
-                    .delete(object.id, &transaction_client)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::aborted("Database delete transaction failed.")
-                    })?;
+                object.delete(&transaction_client).await.map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database delete transaction failed.")
+                })?;
             }
         };
         Ok(tonic::Response::new(DeleteObjectResponse {}))
