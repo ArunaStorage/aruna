@@ -97,7 +97,7 @@ pub fn calculate_reply_hmac(reply: String, secret: String) -> Reply {
 ///ToDo: Rust Doc
 pub fn validate_reply_msg(reply: Reply, secret: String) -> anyhow::Result<bool> {
     // Calculate hmac
-    let mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
         Ok(hmac256) => hmac256,
         Err(_) => return Err(anyhow::anyhow!("Invalid key length for hmac")),
     };

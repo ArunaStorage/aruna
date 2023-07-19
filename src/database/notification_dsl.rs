@@ -7,7 +7,7 @@ use tokio_postgres::Client;
 
 use super::crud::{CrudDb, PrimaryKey};
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, PartialEq, Eq)]
 pub struct StreamConsumer {
     pub id: DieselUlid,
     pub user_id: Option<DieselUlid>,
@@ -54,10 +54,10 @@ impl CrudDb for StreamConsumer {
     }
 
     //ToDo: Rust Doc
-    async fn delete(&self, id: impl PrimaryKey, client: &Client) -> Result<()> {
+    async fn delete(&self, client: &Client) -> Result<()> {
         let query = "DELETE FROM stream_consumers WHERE id = $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&id]).await?;
+        client.execute(&prepared, &[&self.id]).await?;
         Ok(())
     }
 }

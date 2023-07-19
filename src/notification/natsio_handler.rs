@@ -24,7 +24,7 @@ use super::utils::{
 
 // ----- Constants used for notifications -------------------- //
 pub const STREAM_NAME: &str = "AOS_STREAM";
-pub const STREAM_SUBJECTS: Vec<&str> = vec!["RESOURCE.>", "USER.>", "ANNOUNCEMENT.>"];
+pub const STREAM_SUBJECTS: [&str;3] = ["RESOURCE.>", "USER.>", "ANNOUNCEMENT.>"];
 // ----------------------------------------------------------- //
 
 #[derive(Debug, Clone)]
@@ -32,7 +32,6 @@ pub struct NatsIoHandler {
     jetstream_context: Context,
     stream: Stream,
     secret: String,
-    event_client_host: String,
 }
 
 #[derive(Debug, Clone)]
@@ -45,8 +44,8 @@ impl EventHandler for NatsIoHandler {
     ///ToDo: Rust Doc
     async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()> {
         // Generate subject
-        let subject = match message_variant {
-            MessageVariant::ResourceEvent(event) => match event.resource {
+        let subject = match &message_variant {
+            MessageVariant::ResourceEvent(event) => match &event.resource {
                 Some(resource) => generate_resource_message_subject(
                     &resource.resource_id,
                     ObjectType::try_from(resource.resource_variant)?,
@@ -54,7 +53,7 @@ impl EventHandler for NatsIoHandler {
                 None => return Err(anyhow::anyhow!("No event resource provided")),
             },
             MessageVariant::UserEvent(event) => generate_user_message_subject(&event.user_id),
-            MessageVariant::AnnouncementEvent(event) => generate_announcement_message_subject(),
+            MessageVariant::AnnouncementEvent(_) => generate_announcement_message_subject(),
         };
 
         // Encode message
