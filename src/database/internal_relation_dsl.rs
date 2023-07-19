@@ -11,16 +11,18 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
+use super::enums::ObjectType;
+
 #[derive(
     Serialize, Deserialize, Hash, ToSql, FromRow, Debug, FromSql, Clone, PartialEq, Eq, PartialOrd,
 )]
 pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
-    // TODO: Type
+    pub origin_type: ObjectType,
     pub type_id: i32,
     pub target_pid: DieselUlid,
-    // TODO: Type
+    pub target_type: ObjectType,
     pub is_persistent: bool,
 }
 
@@ -37,8 +39,8 @@ pub struct InternalRelation {
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, type_id, target_pid, is_persistent) VALUES (
-            $1, $2, $3, $4, $5
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, type_id, target_pid, target_type, is_persistent) VALUES (
+            $1, $2, $3, $4, $5, $6, $7
         );";
 
         let prepared = client.prepare(query).await?;
@@ -49,8 +51,10 @@ impl CrudDb for InternalRelation {
                 &[
                     &self.id,
                     &self.origin_pid,
+                    &self.origin_type,
                     &self.type_id,
                     &self.target_pid,
+                    &self.target_type,
                     &self.is_persistent,
                 ],
             )

@@ -21,7 +21,9 @@ pub enum DataClass {
     CONFIDENTIAL,
 }
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize,
+)]
 pub enum ObjectType {
     PROJECT,
     COLLECTION,

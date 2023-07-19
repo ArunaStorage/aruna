@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{ExternalRelation, Hash, KeyValue};
-use chrono::{Datelike, Timelike};
 use tonic::metadata::MetadataMap;
 
 use crate::database::{
-    enums::{DataClass, ObjectStatus},
+    enums::{DataClass, ObjectStatus, ObjectType},
     object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
         Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
@@ -242,5 +241,16 @@ impl From<Hashes> for Vec<Hash> {
                 hash: h.hash,
             })
             .collect()
+    }
+}
+
+impl From<ObjectType> for i32 {
+    fn from(object_type: ObjectType) -> Self {
+        match object_type {
+            ObjectType::PROJECT => 1,
+            ObjectType::COLLECTION => 2,
+            ObjectType::DATASET => 3,
+            ObjectType::OBJECT => 4,
+        }
     }
 }

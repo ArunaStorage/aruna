@@ -98,8 +98,10 @@ pub struct Outbound(pub Vec<InternalRelation>);
 pub struct InternalRelationWithULIDsAsStrings {
     pub id: String,
     pub origin_pid: String,
+    pub origin_type: ObjectType,
     pub type_id: i32,
     pub target_pid: String,
+    pub target_type: ObjectType,
     pub is_persistent: bool,
 }
 #[async_trait::async_trait]
@@ -315,8 +317,10 @@ impl Object {
                         Ok(InternalRelation {
                             id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
                             origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
+                            origin_type: i.origin_type,
                             type_id: i.type_id,
                             target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
+                            target_type: i.target_type,
                             is_persistent: i.is_persistent,
                         })
                     })
@@ -330,8 +334,10 @@ impl Object {
                         Ok(InternalRelation {
                             id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
                             origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
+                            origin_type: i.origin_type,
                             type_id: i.type_id,
                             target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
+                            target_type: i.target_type,
                             is_persistent: i.is_persistent,
                         })
                     })

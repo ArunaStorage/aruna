@@ -49,9 +49,9 @@ impl ObjectService for ObjectServiceImpl {
         let (parent_id, variant) = match inner_request.parent {
             Some(parent) => {
                 let (id, var) = match parent {
-                    CreateParent::ProjectId(id) => (id, 1),
-                    CreateParent::CollectionId(id) => (id, 2),
-                    CreateParent::DatasetId(id) => (id, 3),
+                    CreateParent::ProjectId(id) => (id, ObjectType::PROJECT),
+                    CreateParent::CollectionId(id) => (id, ObjectType::COLLECTION),
+                    CreateParent::DatasetId(id) => (id, ObjectType::DATASET),
                 };
                 (
                     DieselUlid::from_str(&id).map_err(|e| {
@@ -141,8 +141,10 @@ impl ObjectService for ObjectServiceImpl {
         let create_relation = InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: parent_id,
+            origin_type: variant.clone(),
             is_persistent: false,
             target_pid: create_object.id,
+            target_type: ObjectType::OBJECT,
             type_id: 1,
         };
 
@@ -163,7 +165,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let parent_relation = Some(RelationEnum::Internal(APIInternalRelation {
             resource_id: create_object.id.to_string(),
-            resource_variant: variant,
+            resource_variant: variant.into(),
             direction: 2,
             defined_variant: 1,
             custom_variant: None,
@@ -413,10 +415,10 @@ impl ObjectService for ObjectServiceImpl {
             let parent_relation = match inner_request.parent {
                 // Can only add new parents
                 Some(p) => {
-                    let p = match p {
-                        UpdateParent::ProjectId(p) => p,
-                        UpdateParent::DatasetId(p) => p,
-                        UpdateParent::CollectionId(p) => p,
+                    let (p, v) = match p {
+                        UpdateParent::ProjectId(p) => (p, ObjectType::PROJECT),
+                        UpdateParent::DatasetId(p) => (p, ObjectType::COLLECTION),
+                        UpdateParent::CollectionId(p) => (p, ObjectType::DATASET),
                     };
                     let parent = DieselUlid::from_str(&p).map_err(|e| {
                         log::error!("{}", e);
@@ -450,8 +452,10 @@ impl ObjectService for ObjectServiceImpl {
                     let create_relation = InternalRelation {
                         id: DieselUlid::generate(),
                         origin_pid: parent,
+                        origin_type: v,
                         is_persistent: false,
                         target_pid: new_version_object_id,
+                        target_type: ObjectType::OBJECT,
                         type_id: 1,
                     };
                     create_relation
@@ -586,10 +590,10 @@ impl ObjectService for ObjectServiceImpl {
             let parent_relation = match inner_request.parent {
                 // Can only add new parents
                 Some(p) => {
-                    let p = match p {
-                        UpdateParent::ProjectId(p) => p,
-                        UpdateParent::DatasetId(p) => p,
-                        UpdateParent::CollectionId(p) => p,
+                    let (p, v) = match p {
+                        UpdateParent::ProjectId(p) => (p, ObjectType::PROJECT),
+                        UpdateParent::DatasetId(p) => (p, ObjectType::DATASET),
+                        UpdateParent::CollectionId(p) => (p, ObjectType::COLLECTION),
                     };
                     let parent = DieselUlid::from_str(&p).map_err(|e| {
                         log::error!("{}", e);
@@ -624,8 +628,10 @@ impl ObjectService for ObjectServiceImpl {
                     let create_relation = InternalRelation {
                         id: DieselUlid::generate(),
                         origin_pid: parent,
+                        origin_type: v,
                         is_persistent: false,
                         target_pid: old_object.id,
+                        target_type: ObjectType::OBJECT,
                         type_id: 1,
                     };
                     if InternalRelation::exists(
