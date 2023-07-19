@@ -1,8 +1,7 @@
-
 use aruna_rust_api::api::notification::services::v2::{
     anouncement_event::EventVariant as AnnouncementVariant, event_message::MessageVariant, Reply,
 };
-use async_nats::jetstream::consumer::{DeliverPolicy, Config};
+use async_nats::jetstream::consumer::{Config, DeliverPolicy};
 use async_nats::jetstream::Message;
 use async_trait::async_trait;
 use diesel_ulid::DieselUlid;
@@ -11,9 +10,13 @@ use crate::database::enums::ObjectType;
 
 // Internal enum which provides info for consumer creation
 pub enum EventType {
-    Resource((DieselUlid, ObjectType, bool)),
-    User(DieselUlid),
+    // Contains resource_id, resource_variant and if it includes sub resources
+    Resource((String, ObjectType, bool)),
+    // Contains user_id
+    User(String),
+    // Contains the specific announcement variant information
     Announcement(AnnouncementVariant),
+    // Applies to all messages
     All,
 }
 
@@ -21,10 +24,7 @@ pub enum EventType {
 #[async_trait]
 pub trait EventHandler {
     // Registers/Publishs an event into the event message system
-    async fn register_event(
-        &self,
-        message_variant: MessageVariant,
-    ) -> anyhow::Result<()>;
+    async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()>;
 
     // Creates an event consumer.
     // An event consumer is a entity of the underlaying event streaming system can be used
@@ -55,10 +55,7 @@ pub trait EventHandler {
     ) -> anyhow::Result<Box<dyn EventStreamHandler + Send + Sync>>;
 
     // Deletes a stream group which is represented through a Nats.io Jetstream consumer.
-    async fn delete_event_consumer(
-        &self,
-        event_consumer_id: String,
-    ) -> anyhow::Result<()>;
+    async fn delete_event_consumer(&self, event_consumer_id: String) -> anyhow::Result<()>;
 }
 
 // An EventStreamHandler handles the message stream based on StreamGroups/Consumers
@@ -68,7 +65,5 @@ pub trait EventStreamHandler {
     // This call expected to return after a certain timeout even if no messages are available
     // This is currently specific to nats.io and needs to be generalized
     // TODO: Generalize
-    async fn get_event_consumer_messages(
-        &self,
-    ) -> anyhow::Result<Vec<Message>>;
+    async fn get_event_consumer_messages(&self) -> anyhow::Result<Vec<Message>>;
 }
