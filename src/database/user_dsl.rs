@@ -154,7 +154,7 @@ impl User {
         SET attributes = JSONB_SET(attributes, '{global_admin}', to_jsonb($1::bool))
         WHERE id = $2;";
 
-        let prepared = client.prepare(&query).await?;
+        let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&is_admin, user_id]).await?;
 
         Ok(())
@@ -180,11 +180,11 @@ impl User {
 
     //ToDo: Rust Doc
     pub async fn add_user_permission(
-        client: &Client,
-        user_id: &DieselUlid,
-        user_perm: Permission,
+        _client: &Client,
+        _user_id: &DieselUlid,
+        _user_perm: Permission,
     ) -> Result<()> {
-        let query = "";
+        let _query = "";
 
         todo!();
         //let prepared = client.prepare(query).await?;
@@ -195,11 +195,11 @@ impl User {
 
     //ToDo: Rust Doc
     pub async fn remove_user_permission(
-        client: &Client,
-        user_id: &DieselUlid,
-        user_perm: Permission,
+        _client: &Client,
+        _user_id: &DieselUlid,
+        _user_perm: Permission,
     ) -> Result<()> {
-        let query = "";
+        let _query = "";
 
 
         todo!();

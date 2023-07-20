@@ -74,7 +74,7 @@ impl RelationsService for RelationsServiceImpl {
 
         let client = transaction.client();
 
-        let resource = Object::get(resource_id, &client)
+        let resource = Object::get(resource_id, client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -83,8 +83,8 @@ impl RelationsService for RelationsServiceImpl {
             .ok_or(tonic::Status::not_found("Resource not found"))?;
         let resource_type = resource.clone().object_type;
         for relation in inner_request.add_relations {
-            match relation.relation {
-                Some(rel) => match rel {
+            if let Some(rel) = relation.relation {
+                match rel {
                     relation::Relation::External(external) => {
                         let external_relation = match external.defined_variant {
                             0 => {
@@ -113,7 +113,7 @@ impl RelationsService for RelationsServiceImpl {
                                 ))
                             }
                         };
-                        Object::add_external_relations(&resource_id, &client, external_relation)
+                        Object::add_external_relations(&resource_id, client, external_relation)
                             .await
                             .map_err(|e| {
                                 log::error!("{}", e);
@@ -258,29 +258,28 @@ impl RelationsService for RelationsServiceImpl {
                                 ))
                             }
                         };
-                        if InternalRelation::get_by_pids(origin_pid, target_pid, &client)
+                        let exists = InternalRelation::get_by_pids(origin_pid, target_pid, client)
                             .await
                             .map_err(|e| {
                                 log::error!("{}", e);
                                 tonic::Status::aborted("Database transaction failed.")
                             })?
-                            .is_some()
-                        {
+                            .is_some();
+                        if exists {
                             return Err(tonic::Status::aborted("Relation already exists"));
                         } else {
-                            internal_relation.create(&client).await.map_err(|e| {
+                            internal_relation.create(client).await.map_err(|e| {
                                 log::error!("{}", e);
                                 tonic::Status::aborted("Database transaction failed.")
                             })?;
                         }
                     }
-                },
-                None => (),
+                }
             }
         }
         for relation in inner_request.remove_relations {
-            match relation.relation {
-                Some(rel) => match rel {
+            if let Some(rel) = relation.relation {
+                match rel {
                     relation::Relation::External(external) => {
                         let external_relation = match external.defined_variant {
                             0 => {
@@ -309,7 +308,7 @@ impl RelationsService for RelationsServiceImpl {
                                 ))
                             }
                         };
-                        Object::remove_external_relation(&resource, &client, external_relation)
+                        Object::remove_external_relation(&resource, client, external_relation)
                             .await
                             .map_err(|e| {
                                 log::error!("{}", e);
@@ -385,23 +384,21 @@ impl RelationsService for RelationsServiceImpl {
                                 return Err(tonic::Status::internal("Direction conversion error."))
                             }
                         };
-                        match InternalRelation::get_by_pids(origin_pid, target_pid, &client)
-                            .await
-                            .map_err(|e| {
-                                log::error!("{}", e);
-                                tonic::Status::aborted("Database transaction failed.")
-                            })? {
-                            Some(ir) => {
-                                ir.delete(&client).await.map_err(|e| {
+                        if let Some(ir) =
+                            InternalRelation::get_by_pids(origin_pid, target_pid, client)
+                                .await
+                                .map_err(|e| {
                                     log::error!("{}", e);
                                     tonic::Status::aborted("Database transaction failed.")
-                                })?;
-                            }
-                            None => (),
+                                })?
+                        {
+                            ir.delete(client).await.map_err(|e| {
+                                log::error!("{}", e);
+                                tonic::Status::aborted("Database transaction failed.")
+                            })?;
                         };
                     }
-                },
-                None => (),
+                }
             }
         }
         Ok(tonic::Response::new(ModifyRelationsResponse {}))
@@ -451,7 +448,7 @@ impl RelationsService for RelationsServiceImpl {
 
         let client = transaction.client();
 
-        let resources = InternalRelation::get_outbound_by_id(resource_id, &client)
+        let resources = InternalRelation::get_outbound_by_id(resource_id, client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -468,7 +465,7 @@ impl RelationsService for RelationsServiceImpl {
                 })),
             }
         } else if resources[0].origin_type == ObjectType::COLLECTION {
-            let children = InternalRelation::get_outbound_by_id(resource_id, &client)
+            let children = InternalRelation::get_outbound_by_id(resource_id, client)
                 .await
                 .map_err(|e| {
                     log::error!("{}", e);
@@ -509,7 +506,7 @@ impl RelationsService for RelationsServiceImpl {
                 })),
             }
         } else {
-            let children = InternalRelation::get_outbound_by_id(resource_id, &client)
+            let children = InternalRelation::get_outbound_by_id(resource_id, client)
                 .await
                 .map_err(|e| {
                     log::error!("{}", e);

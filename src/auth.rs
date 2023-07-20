@@ -33,7 +33,7 @@ impl Authorizer {
         Authorizer {}
     }
 
-    pub fn check_permissions(&self, token: &str, ctx: Context) -> Result<bool> {
+    pub fn check_permissions(&self, _token: &str, _ctx: Context) -> Result<bool> {
         // Should return user_id
         Ok(false)
     }

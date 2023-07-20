@@ -143,14 +143,14 @@ impl DatasetService for DatasetServiceImpl {
         };
 
         create_relation
-            .create(&transaction_client)
+            .create(transaction_client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
                 tonic::Status::aborted("Database transaction failed.")
             })?;
         create_object
-            .create(&transaction_client)
+            .create(transaction_client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -246,7 +246,7 @@ impl DatasetService for DatasetServiceImpl {
         })?;
 
         let client = transaction.client();
-        let get_object = Object::get_object_with_relations(&object_id, &client)
+        let get_object = Object::get_object_with_relations(&object_id, client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -262,13 +262,13 @@ impl DatasetService for DatasetServiceImpl {
     }
     async fn get_datasets(
         &self,
-        request: Request<GetDatasetsRequest>,
+        _request: Request<GetDatasetsRequest>,
     ) -> Result<Response<GetDatasetsResponse>> {
         todo!()
     }
     async fn delete_dataset(
         &self,
-        request: Request<DeleteDatasetRequest>,
+        _request: Request<DeleteDatasetRequest>,
     ) -> Result<Response<DeleteDatasetResponse>> {
         todo!()
     }
@@ -314,7 +314,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::unavailable("Database not avaliable.")
         })?;
-        Object::update_name(object_id.clone(), inner_request.name, &client)
+        Object::update_name(object_id, inner_request.name, &client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -374,7 +374,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::unavailable("Database not avaliable.")
         })?;
-        Object::update_description(object_id.clone(), inner_request.description, &client)
+        Object::update_description(object_id, inner_request.description, &client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -442,7 +442,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("DataClass conversion error.")
         })?;
-        Object::update_dataclass(object_id.clone(), dataclass, &client)
+        Object::update_dataclass(object_id, dataclass, &client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -465,14 +465,14 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn update_dataset_key_values(
         &self,
-        request: Request<UpdateDatasetKeyValuesRequest>,
+        _request: Request<UpdateDatasetKeyValuesRequest>,
     ) -> Result<Response<UpdateDatasetKeyValuesResponse>> {
         todo!()
     }
 
     async fn snapshot_dataset(
         &self,
-        request: Request<SnapshotDatasetRequest>,
+        _request: Request<SnapshotDatasetRequest>,
     ) -> Result<Response<SnapshotDatasetResponse>> {
         todo!()
     }

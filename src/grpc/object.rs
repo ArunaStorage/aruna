@@ -150,14 +150,14 @@ impl ObjectService for ObjectServiceImpl {
         };
 
         create_relation
-            .create(&transaction_client)
+            .create(transaction_client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
                 tonic::Status::aborted("Database transaction failed.")
             })?;
         create_object
-            .create(&transaction_client)
+            .create(transaction_client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -301,10 +301,7 @@ impl ObjectService for ObjectServiceImpl {
                 .collect(),
             content_len: inner_request.content_len,
             data_class: to_update_object.data_class.into(),
-            created_at: match to_update_object.created_at {
-                Some(t) => Some(t.into()),
-                None => None,
-            },
+            created_at: to_update_object.created_at.map(|t| t.into()),
             created_by: user_id.to_string(),
             status: 3,
             dynamic: false,
@@ -460,7 +457,7 @@ impl ObjectService for ObjectServiceImpl {
                         type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
                     create_relation
-                        .create(&transaction_client)
+                        .create(transaction_client)
                         .await
                         .map_err(|e| {
                             log::error!("{}", e);
@@ -494,24 +491,20 @@ impl ObjectService for ObjectServiceImpl {
                         log::error!("{}", e);
                         tonic::Status::internal("Invalid hashes.")
                     })?),
-                    true => old_object.hashes.into(),
+                    true => old_object.hashes,
                 },
                 data_class,
                 key_values: Json(KeyValues(key_values)),
                 external_relations: old_object.external_relations.clone(),
             };
             new_version_object
-                .create(&transaction_client)
+                .create(transaction_client)
                 .await
                 .map_err(|e| {
                     log::error!("{}", e);
                     tonic::Status::aborted("Database transaction failed.")
                 })?;
-            let external_relations: ExternalRelations =
-                old_object.external_relations.0.try_into().map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::internal("ExternalRelation conversion error.")
-                })?;
+            let external_relations: ExternalRelations = old_object.external_relations.0;
 
             let mut relations: Vec<Relation> = external_relations
                 .0
@@ -520,20 +513,18 @@ impl ObjectService for ObjectServiceImpl {
                     relation: Some(RelationEnum::External(r.into())),
                 })
                 .collect();
-            match parent_relation {
-                Some(r) => {
-                    relations.push(Relation {
-                        relation: Some(RelationEnum::Internal(
-                            from_db_internal_relation(r, false, 1).map_err(|e| {
-                                log::error!("{}", e);
-                                tonic::Status::internal("Internal custom type conversion error.")
-                            })?,
-                        )),
-                    });
-                }
-                None => (),
+            if let Some(r) = parent_relation {
+                relations.push(Relation {
+                    relation: Some(RelationEnum::Internal(
+                        from_db_internal_relation(r, false, 1).map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::internal("Internal custom type conversion error.")
+                        })?,
+                    )),
+                });
             };
-            let grpc_object = GRPCObject {
+
+            GRPCObject {
                 id: new_version_object_id.to_string(),
                 name: new_version_object.name,
                 description: new_version_object.description,
@@ -546,8 +537,7 @@ impl ObjectService for ObjectServiceImpl {
                 status: new_version_object.object_status.into(),
                 dynamic: false,
                 hashes: new_version_object.hashes.0.into(),
-            };
-            grpc_object
+            }
         } else {
             // Update object
 
@@ -632,24 +622,24 @@ impl ObjectService for ObjectServiceImpl {
                         target_type: ObjectType::OBJECT,
                         type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
-                    if InternalRelation::get_by_pids(
+                    let exists = InternalRelation::get_by_pids(
                         create_relation.origin_pid,
                         create_relation.target_pid,
-                        &transaction_client,
+                        transaction_client,
                     )
                     .await
                     .map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::internal("Database transaction error.")
                     })?
-                    .is_some()
-                    {
+                    .is_some();
+                    if exists {
                         return Err(tonic::Status::internal(
                             "InternalRelation to parent already exists.",
                         ));
                     } else {
                         create_relation
-                            .create(&transaction_client)
+                            .create(transaction_client)
                             .await
                             .map_err(|e| {
                                 log::error!("{}", e);
@@ -682,17 +672,13 @@ impl ObjectService for ObjectServiceImpl {
                 external_relations: old_object.external_relations.clone(),
             };
             updated_object
-                .update(&transaction_client)
+                .update(transaction_client)
                 .await
                 .map_err(|e| {
                     log::error!("{}", e);
                     tonic::Status::aborted("Database transaction failed.")
                 })?;
-            let external_relations: ExternalRelations =
-                old_object.external_relations.0.try_into().map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::internal("ExternalRelation conversion error.")
-                })?;
+            let external_relations: ExternalRelations = old_object.external_relations.0;
 
             let mut relations: Vec<Relation> = external_relations
                 .0
@@ -701,20 +687,18 @@ impl ObjectService for ObjectServiceImpl {
                     relation: Some(RelationEnum::External(r.into())),
                 })
                 .collect();
-            match parent_relation {
-                Some(r) => {
-                    relations.push(Relation {
-                        relation: Some(RelationEnum::Internal(
-                            from_db_internal_relation(r, false, 1).map_err(|e| {
-                                log::error!("{}", e);
-                                tonic::Status::internal("Internal custom type conversion error.")
-                            })?,
-                        )),
-                    });
-                }
-                None => (),
+            if let Some(r) = parent_relation {
+                relations.push(Relation {
+                    relation: Some(RelationEnum::Internal(
+                        from_db_internal_relation(r, false, 1).map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::internal("Internal custom type conversion error.")
+                        })?,
+                    )),
+                });
             };
-            let grpc_object = GRPCObject {
+
+            GRPCObject {
                 id: updated_object.id.to_string(),
                 name: updated_object.name,
                 description: updated_object.description,
@@ -722,16 +706,12 @@ impl ObjectService for ObjectServiceImpl {
                 relations,
                 content_len: updated_object.content_len,
                 data_class: updated_object.data_class.into(),
-                created_at: match old_object.created_at {
-                    Some(t) => Some(t.into()),
-                    None => None,
-                },
+                created_at: old_object.created_at.map(|t| t.into()),
                 created_by: user_id.to_string(),
                 status: updated_object.object_status.into(),
                 dynamic: false,
                 hashes: updated_object.hashes.0.into(),
-            };
-            grpc_object
+            }
         };
 
         Ok(tonic::Response::new(UpdateObjectResponse {
@@ -792,7 +772,7 @@ impl ObjectService for ObjectServiceImpl {
             tonic::Status::unavailable("Database not avaliable.")
         })?;
         let transaction_client = transaction.client();
-        let object = Object::get(object_id, &transaction_client)
+        let object = Object::get(object_id, transaction_client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
@@ -802,21 +782,21 @@ impl ObjectService for ObjectServiceImpl {
         // Should only mark as deleted
         match inner_request.with_revisions {
             true => {
-                let revisions = Object::get_all_revisions(&object.shared_id, &transaction_client)
+                let revisions = Object::get_all_revisions(&object.shared_id, transaction_client)
                     .await
                     .map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::unavailable("Revisions not found")
                     })?;
                 for r in revisions {
-                    r.delete(&transaction_client).await.map_err(|e| {
+                    r.delete(transaction_client).await.map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::aborted("Database delete transaction failed.")
                     })?;
                 }
             }
             false => {
-                object.delete(&transaction_client).await.map_err(|e| {
+                object.delete(transaction_client).await.map_err(|e| {
                     log::error!("{}", e);
                     tonic::Status::aborted("Database delete transaction failed.")
                 })?;
@@ -884,7 +864,7 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_objects(
         &self,
-        request: Request<GetObjectsRequest>,
+        _request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -893,7 +873,7 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_upload_url(
         &self,
-        request: Request<GetUploadUrlRequest>,
+        _request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -902,7 +882,7 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_download_url(
         &self,
-        request: Request<GetDownloadUrlRequest>,
+        _request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -911,7 +891,7 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn clone_object(
         &self,
-        request: Request<CloneObjectRequest>,
+        _request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>> {
         //TODO
         Err(tonic::Status::unimplemented(

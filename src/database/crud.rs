@@ -5,7 +5,7 @@ use tokio_postgres::Client;
 
 pub trait PrimaryKey: ToSql + Send + Sync {
     fn get_key(&self) -> &Self {
-        &self
+        self
     }
 }
 

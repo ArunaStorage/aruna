@@ -341,7 +341,8 @@ impl Object {
             GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
         let row = client.query_one(&prepared, &[&id]).await;
-        let object = row.map(|e| -> Result<ObjectWithRelations> {
+        
+        row.map(|e| -> Result<ObjectWithRelations> {
             //let inbound: Json<Inbound> = ;
             let inbound = Json(Inbound(
                 e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(15)
@@ -382,8 +383,7 @@ impl Object {
                 inbound,
                 outbound,
             })
-        })?;
-        Ok(object?)
+        })?
     }
 }
 

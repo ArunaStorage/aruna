@@ -87,7 +87,7 @@ impl TryFrom<i32> for KeyValueVariant {
             1 => Ok(KeyValueVariant::LABEL),
             2 => Ok(KeyValueVariant::STATIC_LABEL),
             3 => Ok(KeyValueVariant::HOOK),
-            _ => return Err(anyhow!("KeyValue variant not defined.")),
+            _ => Err(anyhow!("KeyValue variant not defined.")),
         }
     }
 }
@@ -129,7 +129,7 @@ impl TryFrom<i32> for DataClass {
             2 => Ok(DataClass::PRIVATE),
             4 => Ok(DataClass::WORKSPACE),
             5 => Ok(DataClass::CONFIDENTIAL),
-            _ => return Err(anyhow!("Not defined.")),
+            _ => Err(anyhow!("Not defined.")),
         }
     }
 }
@@ -299,10 +299,7 @@ impl TryFrom<ObjectWithRelations> for GRPCObject {
             content_len: get_object.object.content_len,
             name: get_object.object.name,
             description: get_object.object.description,
-            created_at: match get_object.object.created_at {
-                Some(t) => Some(t.into()),
-                None => None,
-            },
+            created_at: get_object.object.created_at.map(|t| t.into()),
             created_by: get_object.object.created_by.to_string(),
             data_class: get_object.object.data_class.into(),
             dynamic: false,
@@ -369,20 +366,14 @@ impl TryFrom<ObjectWithRelations> for GRPCDataset {
         let stats = Some(Stats {
             count: object_with_relations.object.count as i64,
             size: 0, // TODO
-            last_updated: match object_with_relations.object.created_at {
-                Some(t) => Some(t.into()),
-                None => None,
-            },
+            last_updated: object_with_relations.object.created_at.map(|t| t.into()),
         });
 
         Ok(GRPCDataset {
             id: object_with_relations.object.id.to_string(),
             name: object_with_relations.object.name,
             description: object_with_relations.object.description,
-            created_at: match object_with_relations.object.created_at {
-                Some(t) => Some(t.into()),
-                None => None,
-            },
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
             stats,
             created_by: object_with_relations.object.created_by.to_string(),
             data_class: object_with_relations.object.data_class.into(),

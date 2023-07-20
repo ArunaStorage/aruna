@@ -7,7 +7,7 @@ impl Cache {
         Cache {}
     }
 
-    pub fn get_pid(&self, did: &DieselUlid) -> &DieselUlid {
+    pub fn get_pid(&self, _did: &DieselUlid) -> &DieselUlid {
         todo!()
     }
 }

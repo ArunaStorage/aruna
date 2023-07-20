@@ -40,7 +40,7 @@ impl TryFrom<i32> for ObjectType {
             2 => Ok(ObjectType::COLLECTION),
             3 => Ok(ObjectType::DATASET),
             4 => Ok(ObjectType::OBJECT),
-            _ => Err(anyhow!("Unknown object type").into()),
+            _ => Err(anyhow!("Unknown object type")),
         }
     }
 }

@@ -124,7 +124,7 @@ impl InternalRelation {
             .query(&prepared, &[&id])
             .await?
             .iter()
-            .map(|e| InternalRelation::from_row(&e))
+            .map(InternalRelation::from_row)
             .collect();
 
         Ok(object)
@@ -144,14 +144,14 @@ impl InternalRelation {
             .query(&to_prepared, &[&id])
             .await?
             .iter()
-            .map(|e| InternalRelation::from_row(&e))
+            .map(InternalRelation::from_row)
             .collect();
         let from_object = Some(
             client
                 .query(&from_prepared, &[&id])
                 .await?
                 .iter()
-                .map(|e| InternalRelation::from_row(&e))
+                .map(InternalRelation::from_row)
                 .collect(),
         );
         Ok((to_object, from_object))
