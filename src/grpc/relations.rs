@@ -150,17 +150,10 @@ impl RelationsService for RelationsServiceImpl {
                                 };
                                 (
                                     origin_pid,
-                                    // This is not optimal
-                                    Object::get(origin_pid, &client)
-                                        .await
-                                        .map_err(|e| {
-                                            log::error!("{}", e);
-                                            tonic::Status::unavailable(
-                                                "Database transaction failed.",
-                                            )
-                                        })?
-                                        .ok_or(tonic::Status::not_found("Resource not found"))?
-                                        .object_type,
+                                    internal.resource_variant.try_into().map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::internal("ResourceVariant conversion error.")
+                                    })?,
                                     resource_id,
                                     resource_type.clone(),
                                 )
@@ -196,17 +189,10 @@ impl RelationsService for RelationsServiceImpl {
                                     resource_id,
                                     resource_type.clone(),
                                     target_pid,
-                                    // This is not optimal
-                                    Object::get(target_pid, &client)
-                                        .await
-                                        .map_err(|e| {
-                                            log::error!("{}", e);
-                                            tonic::Status::unavailable(
-                                                "Database transaction failed.",
-                                            )
-                                        })?
-                                        .ok_or(tonic::Status::not_found("Resource not found"))?
-                                        .object_type,
+                                    internal.resource_variant.try_into().map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::internal("ResourceVariant conversion error.")
+                                    })?,
                                 )
                             }
                             _ => {
