@@ -106,9 +106,9 @@ impl CollectionService for CollectionServiceImpl {
             name: inner_request.name,
             description: inner_request.description,
             created_at: None,
-            content_len: 0, // gets updated when finish_object_staging gets called
+            content_len: 0,
             created_by: user_id,
-            count: 1, // Objects always have count 1,
+            count: 0,
             key_values: Json(key_values.clone()),
             object_status: crate::database::enums::ObjectStatus::AVAILABLE,
             data_class: inner_request.data_class.try_into().map_err(|e| {
@@ -200,9 +200,361 @@ impl CollectionService for CollectionServiceImpl {
     }
     async fn get_collection(
         &self,
-        _request: Request<GetCollectionRequest>,
+        request: Request<GetCollectionRequest>,
     ) -> Result<Response<GetCollectionResponse>> {
-        todo!()
+        log::info!("Recieved GetCollectionRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::READ, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let client = transaction.client();
+        let get_object = Object::get_object_with_relations(&object_id, client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database read error.")
+            })?;
+
+        let collection = Some(get_object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ObjectFromRelations conversion failed.")
+        })?);
+
+        Ok(tonic::Response::new(GetCollectionResponse { collection }))
+    }
+
+    async fn update_collection_name(
+        &self,
+        request: Request<UpdateCollectionNameRequest>,
+    ) -> Result<Response<UpdateCollectionNameResponse>> {
+        log::info!("Recieved UpdateCollectionNameRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        Object::update_name(object_id, inner_request.name, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let object = Object::get_object_with_relations(&object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let collection = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
+        Ok(tonic::Response::new(UpdateCollectionNameResponse {
+            collection,
+        }))
+    }
+    async fn update_collection_description(
+        &self,
+        request: Request<UpdateCollectionDescriptionRequest>,
+    ) -> Result<Response<UpdateCollectionDescriptionResponse>> {
+        log::info!("Recieved UpdateCollectionDescriptionRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        Object::update_description(object_id, inner_request.description, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let object = Object::get_object_with_relations(&object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let collection = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
+        Ok(tonic::Response::new(UpdateCollectionDescriptionResponse {
+            collection,
+        }))
+    }
+
+    async fn update_collection_data_class(
+        &self,
+        request: Request<UpdateCollectionDataClassRequest>,
+    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
+        log::info!("Recieved UpdateCollectionDataClassRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let dataclass = inner_request.data_class.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("DataClass conversion error.")
+        })?;
+        Object::update_dataclass(object_id, dataclass, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let object = Object::get_object_with_relations(&object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let collection = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
+        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
+            collection,
+        }))
+    }
+    async fn update_collection_key_values(
+        &self,
+        request: Request<UpdateCollectionKeyValuesRequest>,
+    ) -> Result<Response<UpdateCollectionKeyValuesResponse>> {
+        log::info!("Recieved UpdateCollectionKeyValuesRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let dataset_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error.")
+        })?;
+
+        let ctx = Context::Object(ResourcePermission {
+            id: dataset_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let client = transaction.client();
+
+        if !inner_request.add_key_values.is_empty() {
+            let add_kv: KeyValues = inner_request.add_key_values.try_into().map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("KeyValue conversion error.")
+            })?;
+
+            for kv in add_kv.0 {
+                Object::add_key_value(&dataset_id, &client, kv)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction error.")
+                    })?;
+            }
+        } else if !inner_request.remove_key_values.is_empty() {
+            let rm_kv: KeyValues = inner_request.remove_key_values.try_into().map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("KeyValue conversion error.")
+            })?;
+            let object = Object::get(dataset_id, &client)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction error.")
+                })?
+                .ok_or(tonic::Status::invalid_argument("Dataset does not exist."))?;
+            for kv in rm_kv.0 {
+                object.remove_key_value(&client, kv).await.map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction error.")
+                })?;
+            }
+        } else {
+            return Err(tonic::Status::invalid_argument(
+                "Both add_key_values and remove_key_values empty.",
+            ));
+        }
+
+        let dataset_with_relations = Object::get_object_with_relations(&dataset_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database transaction error.")
+            })?;
+        let collection = Some(dataset_with_relations.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("Dataset conversion error.")
+        })?);
+
+        Ok(tonic::Response::new(UpdateCollectionKeyValuesResponse {
+            collection,
+        }))
     }
     async fn get_collections(
         &self,
@@ -214,30 +566,6 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         _request: Request<DeleteCollectionRequest>,
     ) -> Result<Response<DeleteCollectionResponse>> {
-        todo!()
-    }
-    async fn update_collection_name(
-        &self,
-        _request: Request<UpdateCollectionNameRequest>,
-    ) -> Result<Response<UpdateCollectionNameResponse>> {
-        todo!()
-    }
-    async fn update_collection_description(
-        &self,
-        _request: Request<UpdateCollectionDescriptionRequest>,
-    ) -> Result<Response<UpdateCollectionDescriptionResponse>> {
-        todo!()
-    }
-    async fn update_collection_key_values(
-        &self,
-        _request: Request<UpdateCollectionKeyValuesRequest>,
-    ) -> Result<Response<UpdateCollectionKeyValuesResponse>> {
-        todo!()
-    }
-    async fn update_collection_data_class(
-        &self,
-        _request: Request<UpdateCollectionDataClassRequest>,
-    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
         todo!()
     }
     async fn snapshot_collection(
