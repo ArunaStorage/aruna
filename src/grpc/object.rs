@@ -574,12 +574,16 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::internal("Invalid dataclass.")
             })?;
 
-            let mut add_kv: KeyValues = inner_request.add_key_values.try_into().map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::internal("KeyValue conversion error.")
-            })?;
             let mut key_values: Vec<DBKeyValue> = old_object.key_values.0 .0;
-            key_values.append(&mut add_kv.0);
+
+            if !inner_request.add_key_values.is_empty() {
+                let mut add_kv: KeyValues =
+                    inner_request.add_key_values.try_into().map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::internal("KeyValue conversion error.")
+                    })?;
+                key_values.append(&mut add_kv.0);
+            }
 
             let transaction = client.transaction().await.map_err(|e| {
                 log::error!("{}", e);
@@ -837,7 +841,7 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<GetObjectRequest>,
     ) -> Result<Response<GetObjectResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved GetObjectRequest.");
         log::debug!("{:?}", &request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {

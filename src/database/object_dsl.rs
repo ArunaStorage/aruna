@@ -191,6 +191,38 @@ impl Object {
             .await?;
         Ok(())
     }
+    pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+        SET name = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &name]).await?;
+        Ok(())
+    }
+    pub async fn update_description(
+        id: DieselUlid,
+        description: String,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+        SET description = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &description]).await?;
+        Ok(())
+    }
+    pub async fn update_dataclass(
+        id: DieselUlid,
+        dataclass: DataClass,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+        SET data_class = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &dataclass]).await?;
+        Ok(())
+    }
     pub async fn remove_key_value(&self, client: &Client, kv: KeyValue) -> Result<()> {
         let element: i32 = self
             .key_values

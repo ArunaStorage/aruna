@@ -1,14 +1,20 @@
-use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::{ExternalRelation, Hash, KeyValue};
-use tonic::metadata::MetadataMap;
-
+use crate::database::internal_relation_dsl::InternalRelation;
 use crate::database::{
     enums::{DataClass, ObjectStatus, ObjectType},
     object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
         Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
+        ObjectWithRelations,
     },
 };
+use anyhow::{anyhow, Result};
+use aruna_rust_api::api::storage::models::v2::{
+    relation::Relation as RelationEnum, Dataset as GRPCDataset, ExternalRelation, Hash,
+    InternalRelation as APIInternalRelation, KeyValue, Relation, Stats,
+};
+
+use tokio_postgres::Client;
+use tonic::metadata::MetadataMap;
 
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
@@ -110,30 +116,6 @@ impl TryFrom<ExternalRelation> for DBExternalRelation {
         })
     }
 }
-
-// impl TryFrom<ExternalVariant> for RelationVariantVariant {
-//     type Error = anyhow::Error;
-//     fn try_from(var: ExternalVariant) -> Result<Self> {
-//         match var {
-//             ExternalVariant::DefinedVariant(v) => {
-//                 let def_var = v.try_into()?;
-//                 Ok(RelationVariantVariant::DEFINED(def_var))
-//             }
-//             ExternalVariant::CustomVariant(s) => Ok(RelationVariantVariant::CUSTOM(s)),
-//         }
-//     }
-// }
-//
-// impl TryFrom<i32> for RelationVariant {
-//     type Error = anyhow::Error;
-//     fn try_from(var: i32) -> Result<Self> {
-//         match var {
-//             1 => Ok(RelationVariant::URL),
-//             2 => Ok(RelationVariant::IDENTIFIER),
-//             _ => return Err(anyhow!("Not defined.")),
-//         }
-//     }
-// }
 
 impl TryFrom<i32> for DataClass {
     type Error = anyhow::Error;
@@ -253,4 +235,88 @@ impl From<ObjectType> for i32 {
             ObjectType::OBJECT => 4,
         }
     }
+}
+
+pub async fn from_object_with_relations(
+    object_with_relations: ObjectWithRelations,
+    client: &Client,
+) -> Result<GRPCDataset> {
+    let (to_relations, from_relations) = (
+        object_with_relations.inbound.0 .0,
+        match object_with_relations.outbound.0 .0.is_empty() {
+            true => None,
+            false => Some(object_with_relations.outbound.0 .0),
+        },
+    );
+
+    let mut from_relations = match from_relations {
+        Some(r) => {
+            let mut relations: Vec<Relation> = Vec::new();
+            for relation in r.into_iter() {
+                relations.push(Relation {
+                    relation: Some(RelationEnum::Internal(
+                        InternalRelation::from_db_internal_relation(relation, true, 4, &client)
+                            .await
+                            .map_err(|e| {
+                                log::error!("{}", e);
+                                tonic::Status::internal("Internal custom type conversion error.")
+                            })?,
+                    )),
+                });
+            }
+            relations
+        }
+        None => Vec::new(),
+    };
+
+    let mut to_relations_converted: Vec<Relation> = Vec::new();
+    for relation in to_relations.into_iter() {
+        to_relations_converted.push(Relation {
+            relation: Some(RelationEnum::Internal(
+                InternalRelation::from_db_internal_relation(relation, false, 4, &client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::internal("Internal custom type conversion error.")
+                    })?,
+            )),
+        });
+    }
+    let mut relations: Vec<Relation> = object_with_relations
+        .object
+        .external_relations
+        .0
+         .0
+        .into_iter()
+        .map(|r| Relation {
+            relation: Some(RelationEnum::External(r.into())),
+        })
+        .collect();
+    relations.append(&mut to_relations_converted);
+    relations.append(&mut from_relations);
+    let stats = Some(Stats {
+        count: object_with_relations.object.count as i64,
+        size: 0, // TODO
+        last_updated: match object_with_relations.object.created_at {
+            Some(t) => Some(t.into()),
+            None => None,
+        },
+    });
+
+    Ok(GRPCDataset {
+        id: object_with_relations.object.id.to_string(),
+        name: object_with_relations.object.name,
+        description: object_with_relations.object.description,
+        created_at: match object_with_relations.object.created_at {
+            Some(t) => Some(t.into()),
+            None => None,
+        },
+        stats,
+        created_by: object_with_relations.object.created_by.to_string(),
+        data_class: object_with_relations.object.data_class.into(),
+        dynamic: false,
+        key_values: object_with_relations.object.key_values.0.into(),
+        status: object_with_relations.object.object_status.into(),
+        relations,
+    })
 }
