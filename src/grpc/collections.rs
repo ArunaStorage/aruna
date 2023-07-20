@@ -433,6 +433,18 @@ impl CollectionService for CollectionServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("DataClass conversion error.")
         })?;
+        let old_class: i32 = Object::get(object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("Database transaction failed.")
+            })?
+            .ok_or(tonic::Status::internal("Database transaction failed."))?
+            .data_class
+            .into();
+        if old_class > inner_request.data_class {
+            return Err(tonic::Status::internal("Dataclass can only be relaxed."));
+        }
         Object::update_dataclass(object_id, dataclass, &client)
             .await
             .map_err(|e| {
@@ -510,7 +522,7 @@ impl CollectionService for CollectionServiceImpl {
             })?;
 
             for kv in add_kv.0 {
-                Object::add_key_value(&dataset_id, &client, kv)
+                Object::add_key_value(&dataset_id, client, kv)
                     .await
                     .map_err(|e| {
                         log::error!("{}", e);
@@ -522,7 +534,7 @@ impl CollectionService for CollectionServiceImpl {
                 log::error!("{}", e);
                 tonic::Status::internal("KeyValue conversion error.")
             })?;
-            let object = Object::get(dataset_id, &client)
+            let object = Object::get(dataset_id, client)
                 .await
                 .map_err(|e| {
                     log::error!("{}", e);
@@ -530,7 +542,7 @@ impl CollectionService for CollectionServiceImpl {
                 })?
                 .ok_or(tonic::Status::invalid_argument("Dataset does not exist."))?;
             for kv in rm_kv.0 {
-                object.remove_key_value(&client, kv).await.map_err(|e| {
+                object.remove_key_value(client, kv).await.map_err(|e| {
                     log::error!("{}", e);
                     tonic::Status::aborted("Database transaction error.")
                 })?;
@@ -541,7 +553,7 @@ impl CollectionService for CollectionServiceImpl {
             ));
         }
 
-        let dataset_with_relations = Object::get_object_with_relations(&dataset_id, &client)
+        let dataset_with_relations = Object::get_object_with_relations(&dataset_id, client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);

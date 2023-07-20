@@ -378,7 +378,12 @@ impl ObjectService for ObjectServiceImpl {
 
             let data_class = match inner_request.data_class {
                 0 => Ok(old_object.data_class),
-                1..=5 => inner_request.data_class.try_into(),
+                1..=5 =>
+                // TODO
+                // Match dataclass if relaxed, else fail
+                {
+                    inner_request.data_class.try_into()
+                }
                 _ => return Err(tonic::Status::internal("Invalid dataclass.")),
             }
             .map_err(|e| {
