@@ -33,7 +33,7 @@ impl RelationsService for RelationsServiceImpl {
         &self,
         request: Request<ModifyRelationsRequest>,
     ) -> Result<Response<ModifyRelationsResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved ModifyRelationsRequest.");
         log::debug!("{:?}", &request);
         let token = get_token_from_md(request.metadata()).map_err(|e| {
             log::debug!("{}", e);
@@ -407,7 +407,7 @@ impl RelationsService for RelationsServiceImpl {
         &self,
         request: Request<GetHierachyRequest>,
     ) -> Result<Response<GetHierachyResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved GetHierarchyRequest.");
         log::debug!("{:?}", &request);
         let token = get_token_from_md(request.metadata()).map_err(|e| {
             log::debug!("{}", e);

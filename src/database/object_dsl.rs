@@ -171,58 +171,6 @@ impl Object {
         client.execute(&prepared, &[&Json(kv), id]).await?;
         Ok(())
     }
-    pub async fn update(&self, client: &Client) -> Result<()> {
-        let query = "UPDATE objects 
-        SET description = $2, key_values = $3, data_class = $4)
-        WHERE id = $1 ;";
-
-        let prepared = client.prepare(query).await?;
-
-        client
-            .query(
-                &prepared,
-                &[
-                    &self.id,
-                    &self.description,
-                    &self.key_values,
-                    &self.data_class,
-                ],
-            )
-            .await?;
-        Ok(())
-    }
-    pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
-        let query = "UPDATE objects 
-        SET name = $2
-        WHERE id = $1 ;";
-        let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &name]).await?;
-        Ok(())
-    }
-    pub async fn update_description(
-        id: DieselUlid,
-        description: String,
-        client: &Client,
-    ) -> Result<()> {
-        let query = "UPDATE objects 
-        SET description = $2
-        WHERE id = $1 ;";
-        let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &description]).await?;
-        Ok(())
-    }
-    pub async fn update_dataclass(
-        id: DieselUlid,
-        dataclass: DataClass,
-        client: &Client,
-    ) -> Result<()> {
-        let query = "UPDATE objects 
-        SET data_class = $2
-        WHERE id = $1 ;";
-        let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &dataclass]).await?;
-        Ok(())
-    }
     pub async fn remove_key_value(&self, client: &Client, kv: KeyValue) -> Result<()> {
         let element: i32 = self
             .key_values
@@ -341,7 +289,7 @@ impl Object {
             GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
         let row = client.query_one(&prepared, &[&id]).await;
-        
+
         row.map(|e| -> Result<ObjectWithRelations> {
             //let inbound: Json<Inbound> = ;
             let inbound = Json(Inbound(
@@ -384,6 +332,58 @@ impl Object {
                 outbound,
             })
         })?
+    }
+    pub async fn update(&self, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+        SET description = $2, key_values = $3, data_class = $4)
+        WHERE id = $1 ;";
+
+        let prepared = client.prepare(query).await?;
+
+        client
+            .query(
+                &prepared,
+                &[
+                    &self.id,
+                    &self.description,
+                    &self.key_values,
+                    &self.data_class,
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+    pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+        SET name = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &name]).await?;
+        Ok(())
+    }
+    pub async fn update_description(
+        id: DieselUlid,
+        description: String,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+        SET description = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &description]).await?;
+        Ok(())
+    }
+    pub async fn update_dataclass(
+        id: DieselUlid,
+        dataclass: DataClass,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+        SET data_class = $2
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&id, &dataclass]).await?;
+        Ok(())
     }
 }
 

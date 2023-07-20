@@ -260,18 +260,7 @@ impl DatasetService for DatasetServiceImpl {
 
         Ok(tonic::Response::new(GetDatasetResponse { dataset }))
     }
-    async fn get_datasets(
-        &self,
-        _request: Request<GetDatasetsRequest>,
-    ) -> Result<Response<GetDatasetsResponse>> {
-        todo!()
-    }
-    async fn delete_dataset(
-        &self,
-        _request: Request<DeleteDatasetRequest>,
-    ) -> Result<Response<DeleteDatasetResponse>> {
-        todo!()
-    }
+
     async fn update_dataset_name(
         &self,
         request: Request<UpdateDatasetNameRequest>,
@@ -462,14 +451,122 @@ impl DatasetService for DatasetServiceImpl {
             dataset,
         }))
     }
-
     async fn update_dataset_key_values(
         &self,
-        _request: Request<UpdateDatasetKeyValuesRequest>,
+        request: Request<UpdateDatasetKeyValuesRequest>,
     ) -> Result<Response<UpdateDatasetKeyValuesResponse>> {
-        todo!()
+        log::info!("Recieved UpdateDatasetKeyValuesRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let dataset_id = DieselUlid::from_str(&inner_request.dataset_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error.")
+        })?;
+
+        let ctx = Context::Object(ResourcePermission {
+            id: dataset_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let client = transaction.client();
+
+        if !inner_request.add_key_values.is_empty() {
+            let add_kv: KeyValues = inner_request.add_key_values.try_into().map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("KeyValue conversion error.")
+            })?;
+
+            for kv in add_kv.0 {
+                Object::add_key_value(&dataset_id, &client, kv)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction error.")
+                    })?;
+            }
+        } else if !inner_request.remove_key_values.is_empty() {
+            let rm_kv: KeyValues = inner_request.remove_key_values.try_into().map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::internal("KeyValue conversion error.")
+            })?;
+            let object = Object::get(dataset_id, &client)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction error.")
+                })?
+                .ok_or(tonic::Status::invalid_argument("Dataset does not exist."))?;
+            for kv in rm_kv.0 {
+                object.remove_key_value(&client, kv).await.map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction error.")
+                })?;
+            }
+        } else {
+            return Err(tonic::Status::invalid_argument(
+                "Both add_key_values and remove_key_values empty.",
+            ));
+        }
+
+        let dataset_with_relations = Object::get_object_with_relations(&dataset_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database transaction error.")
+            })?;
+        let dataset = Some(dataset_with_relations.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("Dataset conversion error.")
+        })?);
+
+        Ok(tonic::Response::new(UpdateDatasetKeyValuesResponse {
+            dataset,
+        }))
     }
 
+    async fn delete_dataset(
+        &self,
+        _request: Request<DeleteDatasetRequest>,
+    ) -> Result<Response<DeleteDatasetResponse>> {
+        todo!()
+    }
+    async fn get_datasets(
+        &self,
+        _request: Request<GetDatasetsRequest>,
+    ) -> Result<Response<GetDatasetsResponse>> {
+        todo!()
+    }
     async fn snapshot_dataset(
         &self,
         _request: Request<SnapshotDatasetRequest>,

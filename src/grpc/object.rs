@@ -205,7 +205,7 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved FinishObjectStagingRequest.");
         log::debug!("{:?}", &request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {
@@ -318,7 +318,7 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<UpdateObjectRequest>,
     ) -> Result<Response<UpdateObjectResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved UpdateObjectRequest.");
         log::debug!("{:?}", &request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {
@@ -410,6 +410,7 @@ impl ObjectService for ObjectServiceImpl {
             let new_version_object_id = DieselUlid::generate();
 
             let transaction_client = transaction.client();
+
             let parent_relation = match inner_request.parent {
                 // Can only add new parents
                 Some(p) => {
@@ -516,10 +517,12 @@ impl ObjectService for ObjectServiceImpl {
             if let Some(r) = parent_relation {
                 relations.push(Relation {
                     relation: Some(RelationEnum::Internal(
-                        from_db_internal_relation(r, false, 1).map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::internal("Internal custom type conversion error.")
-                        })?,
+                        from_db_internal_relation(r.clone(), false, r.origin_type.into()).map_err(
+                            |e| {
+                                log::error!("{}", e);
+                                tonic::Status::internal("Internal custom type conversion error.")
+                            },
+                        )?,
                     )),
                 });
             };
@@ -690,10 +693,12 @@ impl ObjectService for ObjectServiceImpl {
             if let Some(r) = parent_relation {
                 relations.push(Relation {
                     relation: Some(RelationEnum::Internal(
-                        from_db_internal_relation(r, false, 1).map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::internal("Internal custom type conversion error.")
-                        })?,
+                        from_db_internal_relation(r.clone(), false, r.origin_type.into()).map_err(
+                            |e| {
+                                log::error!("{}", e);
+                                tonic::Status::internal("Internal custom type conversion error.")
+                            },
+                        )?,
                     )),
                 });
             };
@@ -724,7 +729,7 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
+        log::info!("Recieved DeleteObjectRequest.");
         log::debug!("{:?}", &request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {
