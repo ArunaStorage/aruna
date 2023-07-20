@@ -20,7 +20,6 @@ impl CrudDb for RelationType {
         Ok(())
     }
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
-        // This needs to be dynamic for (origin/target)/(did/pid)
         let query = "SELECT * FROM relation_types WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
@@ -40,5 +39,15 @@ impl CrudDb for RelationType {
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&self.id]).await?;
         Ok(())
+    }
+}
+impl RelationType {
+    pub async fn get_by_name(name: String, client: &Client) -> Result<Option<RelationType>> {
+        let query = "SELECT * FROM relation_types WHERE relation_name = $1";
+        let prepared = client.prepare(query).await?;
+        Ok(client
+            .query_opt(&prepared, &[&name])
+            .await?
+            .map(|e| RelationType::from_row(&e)))
     }
 }

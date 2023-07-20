@@ -2,15 +2,18 @@ use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
+use crate::database::enums::ObjectType;
 use crate::database::internal_relation_dsl::InternalRelation;
 use crate::database::object_dsl::{DefinedVariant, ExternalRelation, Object};
+use crate::database::relation_type_dsl::RelationType;
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::relation;
+use aruna_rust_api::api::storage::services::v2::get_hierachy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
-use aruna_rust_api::api::storage::services::v2::GetHierachyRequest;
-use aruna_rust_api::api::storage::services::v2::GetHierachyResponse;
-use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsResponse;
+use aruna_rust_api::api::storage::services::v2::{CollectionRelations, GetHierachyResponse};
+use aruna_rust_api::api::storage::services::v2::{DatasetRelations, GetHierachyRequest};
+use aruna_rust_api::api::storage::services::v2::{ModifyRelationsRequest, ProjectRelations};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -205,60 +208,36 @@ impl RelationsService for RelationsServiceImpl {
                                     "Undefined internal variants are forbidden.",
                                 ))
                             }
-                            1 => InternalRelation {
+                            i if i > 0 && i < 6 => InternalRelation {
                                 id: DieselUlid::generate(),
                                 origin_pid,
                                 origin_type,
-                                type_id: 1, // Belongs_to
-                                target_pid,
-                                target_type,
-                                is_persistent: false,
-                            },
-                            2 => InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid,
-                                origin_type,
-                                type_id: 2, // Origin
-                                target_pid,
-                                target_type,
-                                is_persistent: false,
-                            },
-                            3 => InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid,
-                                origin_type,
-                                type_id: 3, // Version
-                                target_pid,
-                                target_type,
-                                is_persistent: false,
-                            },
-                            4 => InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid,
-                                origin_type,
-                                type_id: 4, // Metadata
-                                target_pid,
-                                target_type,
-                                is_persistent: false,
-                            },
-                            5 => InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid,
-                                origin_type,
-                                type_id: 5, // Policy
+                                type_id: i,
                                 target_pid,
                                 target_type,
                                 is_persistent: false,
                             },
                             6 => {
-                                // Custom
-                                // -> easiest, because directions must not be checked
-
+                                // Check if exists:
+                                let name = internal.custom_variant.ok_or(
+                                    tonic::Status::invalid_argument(
+                                        "No custom variant name specified.",
+                                    ),
+                                )?;
+                                let relation_variant = RelationType::get_by_name(name, &client)
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::aborted("Database transaction failed.")
+                                    })?
+                                    .ok_or(tonic::Status::not_found(
+                                        "Custom RelationType not found.",
+                                    ))?;
                                 InternalRelation {
                                     id: DieselUlid::generate(),
                                     origin_pid,
                                     origin_type,
-                                    type_id: 6, // TODO: or custom entry in DB,
+                                    type_id: relation_variant.id as i32,
                                     target_pid,
                                     target_type,
                                     is_persistent: false,
@@ -422,6 +401,194 @@ impl RelationsService for RelationsServiceImpl {
         &self,
         request: Request<GetHierachyRequest>,
     ) -> Result<Response<GetHierachyResponse>> {
-        todo!()
+        log::info!("Recieved CreateObjectRequest.");
+        log::debug!("{:?}", &request);
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+        let inner_request = request.into_inner();
+        let resource_id = DieselUlid::from_str(&inner_request.resource_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: resource_id,
+            level: crate::database::enums::PermissionLevels::READ,
+            allow_sa: true,
+        });
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let client = transaction.client();
+
+        let resources = InternalRelation::get_outbound_by_id(resource_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database transaction failed.")
+            })?;
+        let graph = if resources[0].origin_type == ObjectType::DATASET {
+            GetHierachyResponse {
+                graph: Some(Graph::Dataset(DatasetRelations {
+                    origin: inner_request.resource_id,
+                    object_children: resources
+                        .into_iter()
+                        .map(|o| o.target_pid.to_string())
+                        .collect(),
+                })),
+            }
+        } else if resources[0].origin_type == ObjectType::COLLECTION {
+            let children = InternalRelation::get_outbound_by_id(resource_id, &client)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction failed.")
+                })?;
+            let datasets_ulid: Vec<DieselUlid> = children
+                .clone()
+                .into_iter()
+                .filter(|d| d.target_type == ObjectType::DATASET)
+                .map(|d| d.target_pid)
+                .collect();
+            let mut dataset_children: Vec<DatasetRelations> = Vec::new();
+            for d in datasets_ulid {
+                let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction failed.")
+                    })?;
+                dataset_children.push(DatasetRelations {
+                    origin: d.to_string(),
+                    object_children: dataset_relation
+                        .into_iter()
+                        .map(|o| o.target_pid.to_string())
+                        .collect(),
+                });
+            }
+            let object_children: Vec<String> = children
+                .into_iter()
+                .filter(|o| o.target_type == ObjectType::OBJECT)
+                .map(|o| o.target_pid.to_string())
+                .collect();
+            GetHierachyResponse {
+                graph: Some(Graph::Collection(CollectionRelations {
+                    origin: inner_request.resource_id,
+                    dataset_children,
+                    object_children,
+                })),
+            }
+        } else {
+            let children = InternalRelation::get_outbound_by_id(resource_id, &client)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    tonic::Status::aborted("Database transaction failed.")
+                })?;
+            let collections_ulid: Vec<DieselUlid> = children
+                .clone()
+                .into_iter()
+                .filter(|d| d.target_type == ObjectType::COLLECTION)
+                .map(|d| d.target_pid)
+                .collect();
+            let datasets_ulid: Vec<DieselUlid> = children
+                .clone()
+                .into_iter()
+                .filter(|d| d.target_type == ObjectType::DATASET)
+                .map(|d| d.target_pid)
+                .collect();
+            let mut collection_children: Vec<CollectionRelations> = Vec::new();
+            for c in collections_ulid {
+                let children = InternalRelation::get_outbound_by_id(c, client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction failed.")
+                    })?;
+                let datasets_ulid: Vec<DieselUlid> = children
+                    .clone()
+                    .into_iter()
+                    .filter(|d| d.target_type == ObjectType::DATASET)
+                    .map(|d| d.target_pid)
+                    .collect();
+                let mut dataset_children: Vec<DatasetRelations> = Vec::new();
+                for d in datasets_ulid {
+                    let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::aborted("Database transaction failed.")
+                        })?;
+                    dataset_children.push(DatasetRelations {
+                        origin: d.to_string(),
+                        object_children: dataset_relation
+                            .into_iter()
+                            .map(|o| o.target_pid.to_string())
+                            .collect(),
+                    });
+                }
+                let object_children: Vec<String> = children
+                    .into_iter()
+                    .filter(|o| o.target_type == ObjectType::OBJECT)
+                    .map(|o| o.target_pid.to_string())
+                    .collect();
+                collection_children.push(CollectionRelations {
+                    origin: c.to_string(),
+                    dataset_children,
+                    object_children,
+                });
+            }
+            let mut dataset_children: Vec<DatasetRelations> = Vec::new();
+            for d in datasets_ulid {
+                let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::aborted("Database transaction failed.")
+                    })?;
+                dataset_children.push(DatasetRelations {
+                    origin: d.to_string(),
+                    object_children: dataset_relation
+                        .into_iter()
+                        .map(|o| o.target_pid.to_string())
+                        .collect(),
+                });
+            }
+            let object_children: Vec<String> = children
+                .into_iter()
+                .filter(|o| o.target_type == ObjectType::OBJECT)
+                .map(|o| o.target_pid.to_string())
+                .collect();
+            GetHierachyResponse {
+                graph: Some(Graph::Project(ProjectRelations {
+                    origin: inner_request.resource_id,
+                    collection_children,
+                    dataset_children,
+                    object_children,
+                })),
+            }
+        };
+        Ok(tonic::Response::new(graph))
     }
 }

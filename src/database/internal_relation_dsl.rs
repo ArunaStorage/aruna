@@ -107,7 +107,7 @@ impl InternalRelation {
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
     }
-    // Checks if relations already exists
+    // Checks if relation between two objects already exists
     pub async fn get_by_pids(
         from: DieselUlid,
         to: DieselUlid,
@@ -120,6 +120,23 @@ impl InternalRelation {
             .await?
             .map(|e| InternalRelation::from_row(&e));
         Ok(opt)
+    }
+    // Gets all outbound relations for pid
+    pub async fn get_outbound_by_id(
+        id: DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<InternalRelation>> {
+        let query = "SELECT * FROM internal_relations 
+            WHERE origin_pid = $1 AND type_id = 1;";
+        let prepared = client.prepare(query).await?;
+        let object = client
+            .query(&prepared, &[&id])
+            .await?
+            .iter()
+            .map(|e| InternalRelation::from_row(&e))
+            .collect();
+
+        Ok(object)
     }
     // Gets all inbound and outbound relations for id
     pub async fn get_filtered_by_id(
