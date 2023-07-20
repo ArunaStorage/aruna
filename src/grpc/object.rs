@@ -4,10 +4,11 @@ use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::enums::ObjectType;
 use crate::database::internal_relation_dsl::InternalRelation;
+use crate::database::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO;
 use crate::database::object_dsl::{
     ExternalRelations, Hashes, KeyValue as DBKeyValue, KeyValues, Object,
 };
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{from_db_internal_relation, get_token_from_md};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, InternalRelation as APIInternalRelation,
     Object as GRPCObject, Relation,
@@ -145,7 +146,7 @@ impl ObjectService for ObjectServiceImpl {
             is_persistent: false,
             target_pid: create_object.id,
             target_type: ObjectType::OBJECT,
-            type_id: 1,
+            type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
         };
 
         create_relation
@@ -456,7 +457,7 @@ impl ObjectService for ObjectServiceImpl {
                         is_persistent: false,
                         target_pid: new_version_object_id,
                         target_type: ObjectType::OBJECT,
-                        type_id: 1,
+                        type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
                     create_relation
                         .create(&transaction_client)
@@ -523,14 +524,7 @@ impl ObjectService for ObjectServiceImpl {
                 Some(r) => {
                     relations.push(Relation {
                         relation: Some(RelationEnum::Internal(
-                            InternalRelation::from_db_internal_relation(
-                                r,
-                                false,
-                                1,
-                                &transaction_client,
-                            )
-                            .await
-                            .map_err(|e| {
+                            from_db_internal_relation(r, false, 1).map_err(|e| {
                                 log::error!("{}", e);
                                 tonic::Status::internal("Internal custom type conversion error.")
                             })?,
@@ -636,7 +630,7 @@ impl ObjectService for ObjectServiceImpl {
                         is_persistent: false,
                         target_pid: old_object.id,
                         target_type: ObjectType::OBJECT,
-                        type_id: 1,
+                        type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
                     if InternalRelation::get_by_pids(
                         create_relation.origin_pid,
@@ -711,14 +705,7 @@ impl ObjectService for ObjectServiceImpl {
                 Some(r) => {
                     relations.push(Relation {
                         relation: Some(RelationEnum::Internal(
-                            InternalRelation::from_db_internal_relation(
-                                r,
-                                false,
-                                1,
-                                &transaction_client,
-                            )
-                            .await
-                            .map_err(|e| {
+                            from_db_internal_relation(r, false, 1).map_err(|e| {
                                 log::error!("{}", e);
                                 tonic::Status::internal("Internal custom type conversion error.")
                             })?,
@@ -875,16 +862,11 @@ impl ObjectService for ObjectServiceImpl {
                 return Err(tonic::Status::permission_denied("Not allowed."));
             }
         };
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        let transaction = client.transaction().await.map_err(|e| {
+        let client = self.database.get_client().await.map_err(|e| {
             log::error!("{}", e);
             tonic::Status::unavailable("Database not avaliable.")
         })?;
 
-        let client = transaction.client();
         let get_object = Object::get_object_with_relations(&object_id, &client)
             .await
             .map_err(|e| {
@@ -892,80 +874,10 @@ impl ObjectService for ObjectServiceImpl {
                 tonic::Status::aborted("Database read error.")
             })?;
 
-        let (to_relations, from_relations) = (
-            get_object.inbound.0 .0,
-            match get_object.outbound.0 .0.is_empty() {
-                true => None,
-                false => Some(get_object.outbound.0 .0),
-            },
-        );
-
-        let mut from_relations = match from_relations {
-            Some(r) => {
-                let mut relations: Vec<Relation> = Vec::new();
-                for relation in r.into_iter() {
-                    relations.push(Relation {
-                        relation: Some(RelationEnum::Internal(
-                            InternalRelation::from_db_internal_relation(relation, true, 4, &client)
-                                .await
-                                .map_err(|e| {
-                                    log::error!("{}", e);
-                                    tonic::Status::internal(
-                                        "Internal custom type conversion error.",
-                                    )
-                                })?,
-                        )),
-                    });
-                }
-                relations
-            }
-            None => Vec::new(),
-        };
-
-        let mut to_relations_converted: Vec<Relation> = Vec::new();
-        for relation in to_relations.into_iter() {
-            to_relations_converted.push(Relation {
-                relation: Some(RelationEnum::Internal(
-                    InternalRelation::from_db_internal_relation(relation, false, 4, &client)
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::internal("Internal custom type conversion error.")
-                        })?,
-                )),
-            });
-        }
-        let mut relations: Vec<Relation> = get_object
-            .object
-            .external_relations
-            .0
-             .0
-            .into_iter()
-            .map(|r| Relation {
-                relation: Some(RelationEnum::External(r.into())),
-            })
-            .collect();
-        relations.append(&mut to_relations_converted);
-        relations.append(&mut from_relations);
-
-        let grpc_object = GRPCObject {
-            id: object_id.to_string(),
-            content_len: get_object.object.content_len,
-            name: get_object.object.name,
-            description: get_object.object.description,
-            created_at: match get_object.object.created_at {
-                Some(t) => Some(t.into()),
-                None => None,
-            },
-            created_by: get_object.object.created_by.to_string(),
-            data_class: get_object.object.data_class.into(),
-            dynamic: false,
-            hashes: get_object.object.hashes.0.into(),
-            key_values: get_object.object.key_values.0.into(),
-            status: get_object.object.object_status.into(),
-            relations,
-        };
-
+        let grpc_object = get_object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("Object conversion error.")
+        })?;
         Ok(tonic::Response::new(GetObjectResponse {
             object: Some(grpc_object),
         }))

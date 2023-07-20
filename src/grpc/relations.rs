@@ -4,8 +4,13 @@ use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::enums::ObjectType;
 use crate::database::internal_relation_dsl::InternalRelation;
+use crate::database::internal_relation_dsl::{
+    INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
+    INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
+    INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::object_dsl::{DefinedVariant, ExternalRelation, Object};
-use crate::database::relation_type_dsl::RelationType;
+//use crate::database::relation_type_dsl::RelationType;
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::relation;
 use aruna_rust_api::api::storage::services::v2::get_hierachy_response::Graph;
@@ -208,36 +213,40 @@ impl RelationsService for RelationsServiceImpl {
                                     "Undefined internal variants are forbidden.",
                                 ))
                             }
-                            i if i > 0 && i < 6 => InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid,
-                                origin_type,
-                                type_id: i,
-                                target_pid,
-                                target_type,
-                                is_persistent: false,
-                            },
+                            i if i > 0 && i < 6 => {
+                                let type_name = match i {
+                                    1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                                    2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
+                                    3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                                    4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
+                                    5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
+                                    _ => {
+                                        return Err(tonic::Status::internal(
+                                            "Undefined internal variants are forbidden.",
+                                        ))
+                                    }
+                                };
+                                InternalRelation {
+                                    id: DieselUlid::generate(),
+                                    origin_pid,
+                                    origin_type,
+                                    type_name,
+                                    target_pid,
+                                    target_type,
+                                    is_persistent: false,
+                                }
+                            }
                             6 => {
-                                // Check if exists:
                                 let name = internal.custom_variant.ok_or(
                                     tonic::Status::invalid_argument(
                                         "No custom variant name specified.",
                                     ),
                                 )?;
-                                let relation_variant = RelationType::get_by_name(name, &client)
-                                    .await
-                                    .map_err(|e| {
-                                        log::error!("{}", e);
-                                        tonic::Status::aborted("Database transaction failed.")
-                                    })?
-                                    .ok_or(tonic::Status::not_found(
-                                        "Custom RelationType not found.",
-                                    ))?;
                                 InternalRelation {
                                     id: DieselUlid::generate(),
                                     origin_pid,
                                     origin_type,
-                                    type_id: relation_variant.id as i32,
+                                    type_name: name,
                                     target_pid,
                                     target_type,
                                     is_persistent: false,

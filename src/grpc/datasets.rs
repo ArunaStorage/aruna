@@ -3,9 +3,11 @@ use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::enums::ObjectType;
-use crate::database::internal_relation_dsl::InternalRelation;
+use crate::database::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
+};
 use crate::database::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
-use crate::utils::conversions::{from_object_with_relations, get_token_from_md};
+use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Dataset as GRPCDataset,
     InternalRelation as APIInternalRelation, Relation, Stats,
@@ -137,7 +139,7 @@ impl DatasetService for DatasetServiceImpl {
             is_persistent: false,
             target_pid: create_object.id,
             target_type: ObjectType::DATASET,
-            type_id: 1,
+            type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
         };
 
         create_relation
@@ -251,14 +253,10 @@ impl DatasetService for DatasetServiceImpl {
                 tonic::Status::aborted("Database read error.")
             })?;
 
-        let dataset = Some(
-            from_object_with_relations(get_object, &client)
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::internal("ObjectFromRelations conversion failed.")
-                })?,
-        );
+        let dataset = Some(get_object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ObjectFromRelations conversion failed.")
+        })?);
 
         Ok(tonic::Response::new(GetDatasetResponse { dataset }))
     }
@@ -328,34 +326,150 @@ impl DatasetService for DatasetServiceImpl {
                 log::error!("{}", e);
                 tonic::Status::aborted("Database update failed.")
             })?;
-        let dataset = Some(
-            from_object_with_relations(object, &client)
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::aborted("Database request failed.")
-                })?,
-        );
+        let dataset = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
         Ok(tonic::Response::new(UpdateDatasetNameResponse { dataset }))
     }
     async fn update_dataset_description(
         &self,
         request: Request<UpdateDatasetDescriptionRequest>,
     ) -> Result<Response<UpdateDatasetDescriptionResponse>> {
-        todo!()
+        log::info!("Recieved UpdateDatasetDescriptionRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.dataset_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+        Object::update_description(object_id.clone(), inner_request.description, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let object = Object::get_object_with_relations(&object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let dataset = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
+        Ok(tonic::Response::new(UpdateDatasetDescriptionResponse {
+            dataset,
+        }))
     }
+
+    async fn update_dataset_data_class(
+        &self,
+        request: Request<UpdateDatasetDataClassRequest>,
+    ) -> Result<Response<UpdateDatasetDataClassResponse>> {
+        log::info!("Recieved UpdateDatasetDataClassRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+        let object_id = DieselUlid::from_str(&inner_request.dataset_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
+        let client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let dataclass = inner_request.data_class.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("DataClass conversion error.")
+        })?;
+        Object::update_dataclass(object_id.clone(), dataclass, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let object = Object::get_object_with_relations(&object_id, &client)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::aborted("Database update failed.")
+            })?;
+        let dataset = Some(object.try_into().map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database request failed.")
+        })?);
+        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
+            dataset,
+        }))
+    }
+
     async fn update_dataset_key_values(
         &self,
         request: Request<UpdateDatasetKeyValuesRequest>,
     ) -> Result<Response<UpdateDatasetKeyValuesResponse>> {
         todo!()
     }
-    async fn update_dataset_data_class(
-        &self,
-        request: Request<UpdateDatasetDataClassRequest>,
-    ) -> Result<Response<UpdateDatasetDataClassResponse>> {
-        todo!()
-    }
+
     async fn snapshot_dataset(
         &self,
         request: Request<SnapshotDatasetRequest>,

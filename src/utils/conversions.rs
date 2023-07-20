@@ -1,4 +1,9 @@
 use crate::database::internal_relation_dsl::InternalRelation;
+use crate::database::internal_relation_dsl::{
+    INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
+    INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
+    INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::{
     enums::{DataClass, ObjectStatus, ObjectType},
     object_dsl::{
@@ -10,10 +15,9 @@ use crate::database::{
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Dataset as GRPCDataset, ExternalRelation, Hash,
-    InternalRelation as APIInternalRelation, KeyValue, Relation, Stats,
+    InternalRelation as APIInternalRelation, KeyValue, Object as GRPCObject, Relation, Stats,
 };
 
-use tokio_postgres::Client;
 use tonic::metadata::MetadataMap;
 
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
@@ -237,86 +241,178 @@ impl From<ObjectType> for i32 {
     }
 }
 
-pub async fn from_object_with_relations(
-    object_with_relations: ObjectWithRelations,
-    client: &Client,
-) -> Result<GRPCDataset> {
-    let (to_relations, from_relations) = (
-        object_with_relations.inbound.0 .0,
-        match object_with_relations.outbound.0 .0.is_empty() {
-            true => None,
-            false => Some(object_with_relations.outbound.0 .0),
-        },
-    );
+impl TryFrom<ObjectWithRelations> for GRPCObject {
+    type Error = anyhow::Error;
+    fn try_from(get_object: ObjectWithRelations) -> Result<Self> {
+        let (to_relations, from_relations) = (
+            get_object.inbound.0 .0,
+            match get_object.outbound.0 .0.is_empty() {
+                true => None,
+                false => Some(get_object.outbound.0 .0),
+            },
+        );
 
-    let mut from_relations = match from_relations {
-        Some(r) => {
-            let mut relations: Vec<Relation> = Vec::new();
-            for relation in r.into_iter() {
-                relations.push(Relation {
-                    relation: Some(RelationEnum::Internal(
-                        InternalRelation::from_db_internal_relation(relation, true, 4, &client)
-                            .await
-                            .map_err(|e| {
+        let mut from_relations = match from_relations {
+            Some(r) => {
+                let mut relations: Vec<Relation> = Vec::new();
+                for relation in r.into_iter() {
+                    relations.push(Relation {
+                        relation: Some(RelationEnum::Internal(
+                            from_db_internal_relation(relation, true, 4).map_err(|e| {
                                 log::error!("{}", e);
                                 tonic::Status::internal("Internal custom type conversion error.")
                             })?,
-                    )),
-                });
+                        )),
+                    });
+                }
+                relations
             }
-            relations
-        }
-        None => Vec::new(),
-    };
+            None => Vec::new(),
+        };
 
-    let mut to_relations_converted: Vec<Relation> = Vec::new();
-    for relation in to_relations.into_iter() {
-        to_relations_converted.push(Relation {
-            relation: Some(RelationEnum::Internal(
-                InternalRelation::from_db_internal_relation(relation, false, 4, &client)
-                    .await
-                    .map_err(|e| {
+        let mut to_relations_converted: Vec<Relation> = Vec::new();
+        for relation in to_relations.into_iter() {
+            to_relations_converted.push(Relation {
+                relation: Some(RelationEnum::Internal(
+                    from_db_internal_relation(relation, false, 4).map_err(|e| {
                         log::error!("{}", e);
                         tonic::Status::internal("Internal custom type conversion error.")
                     })?,
-            )),
-        });
-    }
-    let mut relations: Vec<Relation> = object_with_relations
-        .object
-        .external_relations
-        .0
-         .0
-        .into_iter()
-        .map(|r| Relation {
-            relation: Some(RelationEnum::External(r.into())),
-        })
-        .collect();
-    relations.append(&mut to_relations_converted);
-    relations.append(&mut from_relations);
-    let stats = Some(Stats {
-        count: object_with_relations.object.count as i64,
-        size: 0, // TODO
-        last_updated: match object_with_relations.object.created_at {
-            Some(t) => Some(t.into()),
-            None => None,
-        },
-    });
+                )),
+            });
+        }
+        let mut relations: Vec<Relation> = get_object
+            .object
+            .external_relations
+            .0
+             .0
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::External(r.into())),
+            })
+            .collect();
+        relations.append(&mut to_relations_converted);
+        relations.append(&mut from_relations);
 
-    Ok(GRPCDataset {
-        id: object_with_relations.object.id.to_string(),
-        name: object_with_relations.object.name,
-        description: object_with_relations.object.description,
-        created_at: match object_with_relations.object.created_at {
-            Some(t) => Some(t.into()),
-            None => None,
-        },
-        stats,
-        created_by: object_with_relations.object.created_by.to_string(),
-        data_class: object_with_relations.object.data_class.into(),
-        dynamic: false,
-        key_values: object_with_relations.object.key_values.0.into(),
-        status: object_with_relations.object.object_status.into(),
-        relations,
+        Ok(GRPCObject {
+            id: get_object.object.id.to_string(),
+            content_len: get_object.object.content_len,
+            name: get_object.object.name,
+            description: get_object.object.description,
+            created_at: match get_object.object.created_at {
+                Some(t) => Some(t.into()),
+                None => None,
+            },
+            created_by: get_object.object.created_by.to_string(),
+            data_class: get_object.object.data_class.into(),
+            dynamic: false,
+            hashes: get_object.object.hashes.0.into(),
+            key_values: get_object.object.key_values.0.into(),
+            status: get_object.object.object_status.into(),
+            relations,
+        })
+    }
+}
+
+impl TryFrom<ObjectWithRelations> for GRPCDataset {
+    type Error = anyhow::Error;
+    fn try_from(object_with_relations: ObjectWithRelations) -> Result<GRPCDataset> {
+        let (to_relations, from_relations) = (
+            object_with_relations.inbound.0 .0,
+            match object_with_relations.outbound.0 .0.is_empty() {
+                true => None,
+                false => Some(object_with_relations.outbound.0 .0),
+            },
+        );
+
+        let mut from_relations = match from_relations {
+            Some(r) => {
+                let mut relations: Vec<Relation> = Vec::new();
+                for relation in r.into_iter() {
+                    relations.push(Relation {
+                        relation: Some(RelationEnum::Internal(
+                            from_db_internal_relation(relation, true, 4).map_err(|e| {
+                                log::error!("{}", e);
+                                tonic::Status::internal("Internal custom type conversion error.")
+                            })?,
+                        )),
+                    });
+                }
+                relations
+            }
+            None => Vec::new(),
+        };
+
+        let mut to_relations_converted: Vec<Relation> = Vec::new();
+        for relation in to_relations.into_iter() {
+            to_relations_converted.push(Relation {
+                relation: Some(RelationEnum::Internal(
+                    from_db_internal_relation(relation, false, 4).map_err(|e| {
+                        log::error!("{}", e);
+                        tonic::Status::internal("Internal custom type conversion error.")
+                    })?,
+                )),
+            });
+        }
+        let mut relations: Vec<Relation> = object_with_relations
+            .object
+            .external_relations
+            .0
+             .0
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::External(r.into())),
+            })
+            .collect();
+        relations.append(&mut to_relations_converted);
+        relations.append(&mut from_relations);
+        let stats = Some(Stats {
+            count: object_with_relations.object.count as i64,
+            size: 0, // TODO
+            last_updated: match object_with_relations.object.created_at {
+                Some(t) => Some(t.into()),
+                None => None,
+            },
+        });
+
+        Ok(GRPCDataset {
+            id: object_with_relations.object.id.to_string(),
+            name: object_with_relations.object.name,
+            description: object_with_relations.object.description,
+            created_at: match object_with_relations.object.created_at {
+                Some(t) => Some(t.into()),
+                None => None,
+            },
+            stats,
+            created_by: object_with_relations.object.created_by.to_string(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: false,
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+        })
+    }
+}
+pub fn from_db_internal_relation(
+    internal: InternalRelation,
+    resource_is_origin: bool,
+    resource_variant: i32,
+) -> Result<APIInternalRelation> {
+    let direction = if resource_is_origin { 1 } else { 2 };
+    let (defined_variant, custom_variant) = match internal.type_name.as_str() {
+        INTERNAL_RELATION_VARIANT_BELONGS_TO => (1, None),
+        INTERNAL_RELATION_VARIANT_ORIGIN => (2, None),
+        INTERNAL_RELATION_VARIANT_VERSION => (3, None),
+        INTERNAL_RELATION_VARIANT_METADATA => (4, None),
+        INTERNAL_RELATION_VARIANT_POLICY => (5, None),
+        _ => (6, Some(internal.type_name)),
+    };
+    Ok(APIInternalRelation {
+        resource_id: internal.origin_pid.to_string(),
+        resource_variant,
+        direction, // 1 for inbound, 2 for outbound
+        // Database only has defined variants
+        defined_variant,
+        custom_variant,
     })
 }
