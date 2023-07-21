@@ -61,9 +61,9 @@ checksum = "3b13c32d80ecc7ab747b80c3784bce54ee8a7a0cc4fbda9bf4cda2cf6fe90854"
 
 [[package]]
 name = "aruna-cache"
-version = "0.2.0"
+version = "0.2.1-alpha.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd52543fa3430601800626c5c794d07299d7f3ef46be2848528ba9d695b5204"
+checksum = "329f0fba727b3936321a204c37a129ef2777376c8e7987005bcc79baf21723a6"
 dependencies = [
  "ahash",
  "anyhow",
@@ -95,9 +95,9 @@ dependencies = [
 
 [[package]]
 name = "aruna_policy"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "467c6189d7efa51d30ffb9038d5b2087887d0396aaecabc55b07daa8064c0f63"
+checksum = "a8020eccd6f3265d8d3509d2b3839604144d05f3b5834698bda5f6c90bdb8749"
 dependencies = [
  "anyhow",
  "aruna-cache",
@@ -317,10 +317,12 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
 name = "bigdecimal"
-version = "0.3.1"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6773ddc0eafc0e509fb60e48dff7f450f8e674a0686ae8605e8d9901bd5eefa"
+checksum = "454bca3db10617b88b566f205ed190aedb0e0e6dd4cad61d3988a72e8c5594cb"
 dependencies = [
+ "autocfg",
+ "libm",
  "num-bigint",
  "num-integer",
  "num-traits",
