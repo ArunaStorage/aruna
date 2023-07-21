@@ -15,5 +15,14 @@ pub async fn main() -> Result<()> {
         database_user,
     )?;
     db.initialize_db().await?;
+
+    let qhandler = aruna_server::database::query_handler::QueryHandler {};
+
+    let cache =
+        aruna_cache::notifications::NotificationCache::new("", "", Box::new(qhandler)).await?;
+
+    let authorizer =
+        aruna_policy::ape::policy_evaluator::PolicyEvaluator::new("", "", "", qhandler).await?;
+
     Ok(())
 }
