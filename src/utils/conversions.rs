@@ -13,7 +13,7 @@ use crate::database::{
     },
     enums::{DataClass, ObjectStatus, ObjectType},
 };
-use crate::middlelayer::create_request_handler::Parent;
+use crate::middlelayer::create_request_types::Parent;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::{

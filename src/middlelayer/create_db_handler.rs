@@ -1,4 +1,4 @@
-use super::create_request_handler::CreateRequest;
+use super::create_request_types::CreateRequest;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
