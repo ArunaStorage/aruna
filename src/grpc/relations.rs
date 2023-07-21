@@ -23,6 +23,7 @@ use aruna_rust_api::api::storage::services::v2::{ModifyRelationsRequest, Project
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio_postgres::Client;
 use tonic::{Request, Response, Result};
 
 crate::impl_grpc_server!(RelationsServiceImpl);
@@ -405,153 +406,133 @@ impl RelationsService for RelationsServiceImpl {
 
         let client = transaction.client();
 
-        let resources = InternalRelation::get_outbound_by_id(resource_id, client)
+        let resource = Object::get(resource_id, client)
             .await
             .map_err(|e| {
                 log::error!("{}", e);
                 tonic::Status::aborted("Database transaction failed.")
-            })?;
-        let graph = if resources[0].origin_type == ObjectType::DATASET {
+            })?
+            .ok_or(tonic::Status::not_found("Resource not found."))?;
+        let graph = if resource.object_type == ObjectType::DATASET {
             GetHierachyResponse {
-                graph: Some(Graph::Dataset(DatasetRelations {
-                    origin: inner_request.resource_id,
-                    object_children: resources
-                        .into_iter()
-                        .map(|o| o.target_pid.to_string())
-                        .collect(),
-                })),
+                graph: Some(Graph::Dataset(
+                    get_dataset_relations(resource_id, &client).await?,
+                )),
             }
-        } else if resources[0].origin_type == ObjectType::COLLECTION {
-            let children = InternalRelation::get_outbound_by_id(resource_id, client)
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::aborted("Database transaction failed.")
-                })?;
-            let datasets_ulid: Vec<DieselUlid> = children
-                .clone()
-                .into_iter()
-                .filter(|d| d.target_type == ObjectType::DATASET)
-                .map(|d| d.target_pid)
-                .collect();
-            let mut dataset_children: Vec<DatasetRelations> = Vec::new();
-            for d in datasets_ulid {
-                let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::aborted("Database transaction failed.")
-                    })?;
-                dataset_children.push(DatasetRelations {
-                    origin: d.to_string(),
-                    object_children: dataset_relation
-                        .into_iter()
-                        .map(|o| o.target_pid.to_string())
-                        .collect(),
-                });
-            }
-            let object_children: Vec<String> = children
-                .into_iter()
-                .filter(|o| o.target_type == ObjectType::OBJECT)
-                .map(|o| o.target_pid.to_string())
-                .collect();
+        } else if resource.object_type == ObjectType::COLLECTION {
             GetHierachyResponse {
-                graph: Some(Graph::Collection(CollectionRelations {
-                    origin: inner_request.resource_id,
-                    dataset_children,
-                    object_children,
-                })),
+                graph: Some(Graph::Collection(
+                    get_collection_relations(resource_id, &client).await?,
+                )),
             }
         } else {
-            let children = InternalRelation::get_outbound_by_id(resource_id, client)
-                .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::aborted("Database transaction failed.")
-                })?;
-            let collections_ulid: Vec<DieselUlid> = children
-                .clone()
-                .into_iter()
-                .filter(|d| d.target_type == ObjectType::COLLECTION)
-                .map(|d| d.target_pid)
-                .collect();
-            let datasets_ulid: Vec<DieselUlid> = children
-                .clone()
-                .into_iter()
-                .filter(|d| d.target_type == ObjectType::DATASET)
-                .map(|d| d.target_pid)
-                .collect();
-            let mut collection_children: Vec<CollectionRelations> = Vec::new();
-            for c in collections_ulid {
-                let children = InternalRelation::get_outbound_by_id(c, client)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::aborted("Database transaction failed.")
-                    })?;
-                let datasets_ulid: Vec<DieselUlid> = children
-                    .clone()
-                    .into_iter()
-                    .filter(|d| d.target_type == ObjectType::DATASET)
-                    .map(|d| d.target_pid)
-                    .collect();
-                let mut dataset_children: Vec<DatasetRelations> = Vec::new();
-                for d in datasets_ulid {
-                    let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::aborted("Database transaction failed.")
-                        })?;
-                    dataset_children.push(DatasetRelations {
-                        origin: d.to_string(),
-                        object_children: dataset_relation
-                            .into_iter()
-                            .map(|o| o.target_pid.to_string())
-                            .collect(),
-                    });
-                }
-                let object_children: Vec<String> = children
-                    .into_iter()
-                    .filter(|o| o.target_type == ObjectType::OBJECT)
-                    .map(|o| o.target_pid.to_string())
-                    .collect();
-                collection_children.push(CollectionRelations {
-                    origin: c.to_string(),
-                    dataset_children,
-                    object_children,
-                });
-            }
-            let mut dataset_children: Vec<DatasetRelations> = Vec::new();
-            for d in datasets_ulid {
-                let dataset_relation = InternalRelation::get_outbound_by_id(d, client)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::aborted("Database transaction failed.")
-                    })?;
-                dataset_children.push(DatasetRelations {
-                    origin: d.to_string(),
-                    object_children: dataset_relation
-                        .into_iter()
-                        .map(|o| o.target_pid.to_string())
-                        .collect(),
-                });
-            }
-            let object_children: Vec<String> = children
-                .into_iter()
-                .filter(|o| o.target_type == ObjectType::OBJECT)
-                .map(|o| o.target_pid.to_string())
-                .collect();
             GetHierachyResponse {
-                graph: Some(Graph::Project(ProjectRelations {
-                    origin: inner_request.resource_id,
-                    collection_children,
-                    dataset_children,
-                    object_children,
-                })),
+                graph: Some(Graph::Project(
+                    get_project_relations(resource_id, &client).await?,
+                )),
             }
         };
         Ok(tonic::Response::new(graph))
     }
+}
+
+pub async fn get_dataset_relations(
+    dataset: DieselUlid,
+    client: &Client,
+) -> Result<DatasetRelations> {
+    let resources = InternalRelation::get_outbound_by_id(dataset, client)
+        .await
+        .map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?;
+    Ok(DatasetRelations {
+        origin: dataset.to_string(),
+        object_children: resources
+            .into_iter()
+            .map(|o| o.target_pid.to_string())
+            .collect(),
+    })
+}
+pub async fn get_collection_relations(
+    collection: DieselUlid,
+    client: &Client,
+) -> Result<CollectionRelations> {
+    let children = InternalRelation::get_outbound_by_id(collection, client)
+        .await
+        .map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?;
+    let datasets_ulid: Vec<DieselUlid> = children
+        .clone()
+        .into_iter()
+        .filter(|d| d.target_type == ObjectType::DATASET)
+        .map(|d| d.target_pid)
+        .collect();
+    let mut dataset_children: Vec<DatasetRelations> = Vec::new();
+    for d in datasets_ulid {
+        dataset_children.push(get_dataset_relations(d, client).await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?);
+    }
+    let object_children: Vec<String> = children
+        .into_iter()
+        .filter(|o| o.target_type == ObjectType::OBJECT)
+        .map(|o| o.target_pid.to_string())
+        .collect();
+    Ok(CollectionRelations {
+        origin: collection.to_string(),
+        dataset_children,
+        object_children,
+    })
+}
+pub async fn get_project_relations(
+    project: DieselUlid,
+    client: &Client,
+) -> Result<ProjectRelations> {
+    let children = InternalRelation::get_outbound_by_id(project, client)
+        .await
+        .map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?;
+    let collections_ulid: Vec<DieselUlid> = children
+        .clone()
+        .into_iter()
+        .filter(|d| d.target_type == ObjectType::COLLECTION)
+        .map(|d| d.target_pid)
+        .collect();
+    let datasets_ulid: Vec<DieselUlid> = children
+        .clone()
+        .into_iter()
+        .filter(|d| d.target_type == ObjectType::DATASET)
+        .map(|d| d.target_pid)
+        .collect();
+    let mut collection_children: Vec<CollectionRelations> = Vec::new();
+    for c in collections_ulid {
+        collection_children.push(get_collection_relations(c, client).await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?);
+    }
+    let mut dataset_children: Vec<DatasetRelations> = Vec::new();
+    for d in datasets_ulid {
+        dataset_children.push(get_dataset_relations(d, client).await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::aborted("Database transaction failed.")
+        })?);
+    }
+    let object_children: Vec<String> = children
+        .into_iter()
+        .filter(|o| o.target_type == ObjectType::OBJECT)
+        .map(|o| o.target_pid.to_string())
+        .collect();
+    Ok(ProjectRelations {
+        origin: project.to_string(),
+        collection_children,
+        dataset_children,
+        object_children,
+    })
 }

@@ -872,24 +872,52 @@ impl ObjectService for ObjectServiceImpl {
             object: Some(grpc_object),
         }))
     }
-    async fn get_objects(
-        &self,
-        _request: Request<GetObjectsRequest>,
-    ) -> Result<Response<GetObjectsResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "GetObjects is not implemented.",
-        ))
-    }
+
     async fn get_upload_url(
         &self,
-        _request: Request<GetUploadUrlRequest>,
+        request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>> {
+        log::info!("Recieved CreateObjectRequest.");
+        log::debug!("{:?}", &request);
+
+        let token = get_token_from_md(request.metadata()).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        let inner_request = request.into_inner();
+
+        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal("ULID conversion error.")
+        })?;
+        let ctx = Context::Object(ResourcePermission {
+            id: object_id,
+            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            allow_sa: true,
+        });
+
+        let user_id = match &self.authorizer.check_permissions(&token, ctx) {
+            Ok(b) => {
+                if *b {
+                    // ToDo!
+                    // PLACEHOLDER!
+                    DieselUlid::generate()
+                } else {
+                    return Err(tonic::Status::permission_denied("Not allowed."));
+                }
+            }
+            Err(e) => {
+                log::debug!("{}", e);
+                return Err(tonic::Status::permission_denied("Not allowed."));
+            }
+        };
         //TODO
         Err(tonic::Status::unimplemented(
             "GetUploadURL is not implemented.",
         ))
     }
+
     async fn get_download_url(
         &self,
         _request: Request<GetDownloadUrlRequest>,
@@ -906,6 +934,15 @@ impl ObjectService for ObjectServiceImpl {
         //TODO
         Err(tonic::Status::unimplemented(
             "CloneObject is not implemented.",
+        ))
+    }
+    async fn get_objects(
+        &self,
+        _request: Request<GetObjectsRequest>,
+    ) -> Result<Response<GetObjectsResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "GetObjects is not implemented.",
         ))
     }
 }
