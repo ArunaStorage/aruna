@@ -1,16 +1,16 @@
-use crate::database::internal_relation_dsl::InternalRelation;
-use crate::database::internal_relation_dsl::{
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
 use crate::database::{
-    enums::{DataClass, ObjectStatus, ObjectType},
-    object_dsl::{
+    dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
         Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
         ObjectWithRelations,
     },
+    enums::{DataClass, ObjectStatus, ObjectType},
 };
 
 use anyhow::{anyhow, Result};

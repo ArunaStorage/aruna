@@ -6,7 +6,7 @@ use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-use super::enums::ObjectType;
+use super::super::enums::ObjectType;
 
 #[derive(
     Serialize, Deserialize, Hash, ToSql, FromRow, Debug, FromSql, Clone, PartialEq, Eq, PartialOrd,

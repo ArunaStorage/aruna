@@ -2,14 +2,14 @@ use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
-use crate::database::enums::ObjectType;
-use crate::database::internal_relation_dsl::InternalRelation;
-use crate::database::internal_relation_dsl::{
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
-use crate::database::object_dsl::{DefinedVariant, ExternalRelation, Object};
+use crate::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
+use crate::database::enums::ObjectType;
 //use crate::database::relation_type_dsl::RelationType;
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::relation;

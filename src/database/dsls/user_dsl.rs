@@ -6,7 +6,7 @@ use postgres_types::Json;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-use super::crud::{CrudDb, PrimaryKey};
+use super::super::crud::{CrudDb, PrimaryKey};
 
 #[derive(Debug, FromRow)]
 pub struct User {
@@ -200,7 +200,6 @@ impl User {
         _user_perm: Permission,
     ) -> Result<()> {
         let _query = "";
-
 
         todo!();
         //let prepared = client.prepare(query).await?;

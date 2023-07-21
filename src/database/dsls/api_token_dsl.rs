@@ -5,7 +5,7 @@ use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
-use super::enums::PermissionLevels;
+use super::super::enums::PermissionLevels;
 
 #[derive(FromRow, Debug)]
 pub struct APIToken {

@@ -2,12 +2,12 @@ use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
-use crate::database::enums::ObjectType;
-use crate::database::internal_relation_dsl::InternalRelation;
-use crate::database::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO;
-use crate::database::object_dsl::{
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO;
+use crate::database::dsls::object_dsl::{
     ExternalRelations, Hashes, KeyValue as DBKeyValue, KeyValues, Object,
 };
+use crate::database::enums::ObjectType;
 use crate::utils::conversions::{from_db_internal_relation, get_token_from_md};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, InternalRelation as APIInternalRelation,

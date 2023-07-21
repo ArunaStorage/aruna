@@ -3,7 +3,7 @@ use crate::database::{
     enums::{DataClass, ObjectStatus, ObjectType},
 };
 
-use crate::database::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
