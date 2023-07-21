@@ -13,13 +13,16 @@ use crate::database::{
     },
     enums::{DataClass, ObjectStatus, ObjectType},
 };
-use crate::middlelayer::update_handler::GRPCResource;
-
+use crate::middlelayer::create_request_handler::Parent;
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
     ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
     Object as GRPCObject, Project as GRPCProject, Relation, Stats,
+};
+use aruna_rust_api::api::storage::services::v2::{
+    create_collection_request, create_dataset_request, create_object_request,
 };
 use tonic::metadata::MetadataMap;
 
@@ -64,9 +67,9 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     Ok(splitted[1].to_string())
 }
 
-impl TryFrom<Vec<KeyValue>> for KeyValues {
+impl TryFrom<&Vec<KeyValue>> for KeyValues {
     type Error = anyhow::Error;
-    fn try_from(key_val: Vec<KeyValue>) -> Result<Self> {
+    fn try_from(key_val: &Vec<KeyValue>) -> Result<Self> {
         let mut key_vals: Vec<DBKeyValue> = Vec::new();
         for kv in key_val {
             let kv = kv.try_into()?;
@@ -76,9 +79,9 @@ impl TryFrom<Vec<KeyValue>> for KeyValues {
     }
 }
 
-impl TryFrom<KeyValue> for DBKeyValue {
+impl TryFrom<&KeyValue> for DBKeyValue {
     type Error = anyhow::Error;
-    fn try_from(key_val: KeyValue) -> Result<Self> {
+    fn try_from(key_val: &KeyValue) -> Result<Self> {
         Ok(DBKeyValue {
             key: key_val.key,
             value: key_val.value,
@@ -99,9 +102,9 @@ impl TryFrom<i32> for KeyValueVariant {
     }
 }
 
-impl TryFrom<Vec<ExternalRelation>> for ExternalRelations {
+impl TryFrom<&Vec<ExternalRelation>> for ExternalRelations {
     type Error = anyhow::Error;
-    fn try_from(ex_rels: Vec<ExternalRelation>) -> Result<Self> {
+    fn try_from(ex_rels: &Vec<ExternalRelation>) -> Result<Self> {
         let mut relations: Vec<DBExternalRelation> = Vec::new();
         for r in ex_rels {
             let rs = r.try_into()?;
@@ -111,9 +114,9 @@ impl TryFrom<Vec<ExternalRelation>> for ExternalRelations {
     }
 }
 
-impl TryFrom<ExternalRelation> for DBExternalRelation {
+impl TryFrom<&ExternalRelation> for DBExternalRelation {
     type Error = anyhow::Error;
-    fn try_from(ex_rel: ExternalRelation) -> Result<Self> {
+    fn try_from(ex_rel: &ExternalRelation) -> Result<Self> {
         let (defined_variant, custom_variant) = match ex_rel.defined_variant {
             1 => (DefinedVariant::URL, None),
             2 => (DefinedVariant::IDENTIFIER, None),
@@ -563,6 +566,7 @@ impl TryFrom<ObjectWithRelations> for GRPCProject {
         })
     }
 }
+
 pub fn from_db_internal_relation(
     internal: InternalRelation,
     resource_is_origin: bool,
@@ -586,7 +590,10 @@ pub fn from_db_internal_relation(
     })
 }
 
-pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Result<GRPCResource> {
+pub fn from_db_object(
+    internal: Option<InternalRelation>,
+    object: Object,
+) -> Result<generic_resource::Resource> {
     let mut relations: Vec<Relation> = object
         .external_relations
         .0
@@ -608,7 +615,7 @@ pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Res
     };
 
     match object.object_type {
-        ObjectType::PROJECT => Ok(GRPCResource::Project(GRPCProject {
+        ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
             id: object.id.to_string(),
             name: object.name,
             description: object.description,
@@ -621,7 +628,7 @@ pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Res
             status: object.object_status.into(),
             dynamic: false,
         })),
-        ObjectType::COLLECTION => Ok(GRPCResource::Collection(GRPCCollection {
+        ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
             id: object.id.to_string(),
             name: object.name,
             description: object.description,
@@ -634,7 +641,7 @@ pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Res
             status: object.object_status.into(),
             dynamic: false,
         })),
-        ObjectType::DATASET => Ok(GRPCResource::Dataset(GRPCDataset {
+        ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
             id: object.id.to_string(),
             name: object.name,
             description: object.description,
@@ -647,7 +654,7 @@ pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Res
             status: object.object_status.into(),
             dynamic: false,
         })),
-        ObjectType::OBJECT => Ok(GRPCResource::Object(GRPCObject {
+        ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
             id: object.id.to_string(),
             name: object.name,
             description: object.description,
@@ -661,5 +668,32 @@ pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Res
             dynamic: false,
             hashes: object.hashes.0.into(),
         })),
+    }
+}
+
+impl From<create_collection_request::Parent> for Parent {
+    fn from(value: create_collection_request::Parent) -> Self {
+        match value {
+            create_collection_request::Parent::ProjectId(pid) => Parent::Project(pid),
+        }
+    }
+}
+
+impl From<create_dataset_request::Parent> for Parent {
+    fn from(value: create_dataset_request::Parent) -> Self {
+        match value {
+            create_dataset_request::Parent::ProjectId(pid) => Parent::Project(pid),
+            create_dataset_request::Parent::CollectionId(cid) => Parent::Collection(cid),
+        }
+    }
+}
+
+impl From<create_object_request::Parent> for Parent {
+    fn from(value: create_object_request::Parent) -> Self {
+        match value {
+            create_object_request::Parent::ProjectId(pid) => Parent::Project(pid),
+            create_object_request::Parent::CollectionId(cid) => Parent::Collection(cid),
+            create_object_request::Parent::DatasetId(did) => Parent::Dataset(did),
+        }
     }
 }
