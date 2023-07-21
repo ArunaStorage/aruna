@@ -80,27 +80,15 @@ $$;
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
-CREATE TABLE IF NOT EXISTS identity_providers (
-    id UUID PRIMARY KEY,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) DEFAULT '',
+    external_id VARCHAR(511),
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE
 );
-
-CREATE TABLE IF NOT EXISTS external_user_ids (
-    id UUID PRIMARY KEY,
-    external_id VARCHAR(511) NOT NULL,
-    user_id UUID NOT NULL REFERENCES users(id),
-    idp_id UUID NOT NULL REFERENCES identity_providers(id)
-);
-
 
 /* ----- Object Service -------------------------------------------- */
 -- Table with objects which represent individual data blobs
