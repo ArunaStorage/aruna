@@ -1,5 +1,5 @@
 use super::create_request_types::CreateRequest;
-use crate::database::connection::Database;
+use super::db_handler::DatabaseHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
@@ -11,11 +11,6 @@ use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use std::sync::Arc;
-
-pub struct DatabaseHandler {
-    pub database: Arc<Database>,
-}
 
 impl DatabaseHandler {
     pub async fn create_resource(
