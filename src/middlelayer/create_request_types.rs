@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::ObjectType;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Hash;
@@ -10,6 +11,7 @@ use aruna_rust_api::api::storage::{
     },
 };
 use diesel_ulid::DieselUlid;
+use postgres_types::Json;
 
 pub enum CreateRequest {
     Project(CreateProjectRequest),
@@ -111,5 +113,36 @@ impl CreateRequest {
             CreateRequest::Dataset(request) => Some(request.parent?.into()),
             CreateRequest::Object(request) => Some(request.parent?.into()),
         }
+    }
+
+    pub fn into_new_db_object(&self, user_id: DieselUlid) -> Result<Object> {
+        // Conversions
+        let id = DieselUlid::generate();
+        let shared_id = DieselUlid::generate();
+        let key_values: KeyValues = self.get_key_values().try_into()?;
+        let external_relations: ExternalRelations = self.get_external_relations().try_into()?;
+        let data_class = self.get_data_class().try_into()?;
+        let hashes: Hashes = match self.get_hashes() {
+            Some(h) => h.try_into()?,
+            None => Hashes(Vec::new()),
+        };
+
+        Ok(Object {
+            id,
+            shared_id,
+            revision_number: 0,
+            name: self.get_name(),
+            description: self.get_description(),
+            created_at: None,
+            content_len: 0,
+            created_by: user_id,
+            count: 1,
+            key_values: Json(key_values),
+            object_status: crate::database::enums::ObjectStatus::INITIALIZING,
+            data_class,
+            object_type: self.get_type(),
+            external_relations: Json(external_relations),
+            hashes: Json(hashes),
+        })
     }
 }
