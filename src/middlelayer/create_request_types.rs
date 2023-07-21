@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
-use crate::database::enums::ObjectType;
+use crate::database::enums::{ObjectStatus, ObjectType};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
@@ -106,6 +106,15 @@ impl CreateRequest {
         }
     }
 
+    pub fn get_status(&self) -> ObjectStatus {
+        match self {
+            CreateRequest::Project(_)
+            | CreateRequest::Collection(_)
+            | CreateRequest::Dataset(_) => ObjectStatus::AVAILABLE,
+            CreateRequest::Object(_) => ObjectStatus::INITIALIZING,
+        }
+    }
+
     pub fn get_parent(&self) -> Option<Parent> {
         match self {
             CreateRequest::Project(request) => None,
@@ -138,7 +147,7 @@ impl CreateRequest {
             created_by: user_id,
             count: 1,
             key_values: Json(key_values),
-            object_status: crate::database::enums::ObjectStatus::INITIALIZING,
+            object_status: self.get_status(),
             data_class,
             object_type: self.get_type(),
             external_relations: Json(external_relations),
