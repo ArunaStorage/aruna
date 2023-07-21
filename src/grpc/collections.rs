@@ -85,9 +85,8 @@ impl CollectionService for CollectionServiceImpl {
         let id = DieselUlid::generate();
         let shared_id = DieselUlid::generate();
 
-        let key_values: KeyValues = into_tonic_status!(
+        let key_values: KeyValues = tonic_invalid!(
             inner_request.key_values.try_into(),
-            tonic::Status::internal,
             "KeyValue conversion error."
         );
 

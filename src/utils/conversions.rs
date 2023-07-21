@@ -21,6 +21,10 @@ use aruna_rust_api::api::storage::models::v2::{
 };
 use tonic::metadata::MetadataMap;
 
+pub fn type_name_of<T>(_: T) -> &'static str {
+    std::any::type_name::<T>()
+}
+
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")

@@ -161,9 +161,7 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: Request<UpdateProjectNameRequest>,
     ) -> Result<Response<UpdateProjectNameResponse>> {
-        log::info!("Recieved UpdateProjectNameRequest.");
-        log::debug!("{:?}", &request);
-
+        log_received!(&request);
         let token = get_token_from_md(request.metadata()).map_err(|e| {
             log::debug!("{}", e);
             tonic::Status::unauthenticated("Token authentication error.")

@@ -9,6 +9,7 @@ use crate::database::dsls::internal_relation_dsl::{
 use crate::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
 use crate::database::enums::ObjectType;
 use crate::utils::conversions::get_token_from_md;
+use anyhow::Result;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 use aruna_policy::ape::structs::PermissionLevels as PolicyLevels;
@@ -24,7 +25,7 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio_postgres::Client;
-use tonic::{Request, Response, Result};
+use tonic::{Request, Response};
 
 crate::impl_grpc_server!(RelationsServiceImpl);
 
@@ -440,12 +441,7 @@ pub async fn get_dataset_relations(
     dataset: DieselUlid,
     client: &Client,
 ) -> Result<DatasetRelations> {
-    let resources = InternalRelation::get_outbound_by_id(dataset, client)
-        .await
-        .map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::aborted("Database transaction failed.")
-        })?;
+    let resources = InternalRelation::get_outbound_by_id(dataset, client).await?;
     Ok(DatasetRelations {
         origin: dataset.to_string(),
         object_children: resources
