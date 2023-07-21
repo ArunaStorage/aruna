@@ -1,4 +1,3 @@
-use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
@@ -9,10 +8,11 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
 use crate::database::enums::ObjectType;
+use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-//use crate::database::relation_type_dsl::RelationType;
-use crate::utils::conversions::get_token_from_md;
+use aruna_policy::ape::structs::PermissionLevels as PolicyLevels;
+use aruna_policy::ape::structs::{ApeResourcePermission, Context, ResourceContext};
 use aruna_rust_api::api::storage::models::v2::relation;
 use aruna_rust_api::api::storage::services::v2::get_hierachy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
@@ -23,7 +23,6 @@ use aruna_rust_api::api::storage::services::v2::{ModifyRelationsRequest, Project
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tonic::{Request, Response, Result};
 
 crate::impl_grpc_server!(RelationsServiceImpl);
@@ -36,37 +35,27 @@ impl RelationsService for RelationsServiceImpl {
     ) -> Result<Response<ModifyRelationsResponse>> {
         log::info!("Recieved ModifyRelationsRequest.");
         log::debug!("{:?}", &request);
-        let token = get_token_from_md(request.metadata()).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
         let inner_request = request.into_inner();
-        let resource_id = DieselUlid::from_str(&inner_request.resource_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error")
-        })?;
-        let ctx = Context::Object(ResourcePermission {
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "ULID conversion error"
+        );
+        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
             id: resource_id,
-            level: crate::database::enums::PermissionLevels::WRITE,
+            level: PolicyLevels::WRITE,
             allow_sa: false,
-        });
-        match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
+        }));
+        let user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "User not authenticated"
+        );
 
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
+        let mut client =
+            tonic_internal!(self.database.get_client().await, "Database not avaliable.");
 
         let transaction = client.transaction().await.map_err(|e| {
             log::error!("{}", e);
@@ -136,27 +125,20 @@ impl RelationsService for RelationsServiceImpl {
                                         log::error!("{}", e);
                                         tonic::Status::internal("ULID conversion error.")
                                     })?;
-                                let ctx = Context::Object(ResourcePermission {
-                                    id: origin_pid,
-                                    level: crate::database::enums::PermissionLevels::WRITE,
-                                    allow_sa: false,
-                                });
-                                match &self.authorizer.check_permissions(&token, ctx) {
-                                    Ok(b) => {
-                                        if *b {
-                                        } else {
-                                            return Err(tonic::Status::permission_denied(
-                                                "Not allowed.",
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::debug!("{}", e);
-                                        return Err(tonic::Status::permission_denied(
-                                            "Not allowed.",
-                                        ));
-                                    }
-                                };
+                                let ctx = Context::ResourceContext(ResourceContext::Object(
+                                    ApeResourcePermission {
+                                        id: origin_pid,
+                                        level: PolicyLevels::WRITE,
+                                        allow_sa: false,
+                                    },
+                                ));
+                                let user_id =
+                                    self.authorizer.check_context(&token, ctx).await.map_err(
+                                        |e| {
+                                            log::error!("{}", e);
+                                            tonic::Status::unauthenticated("User not authenticated")
+                                        },
+                                    )?;
                                 (
                                     origin_pid,
                                     internal.resource_variant.try_into().map_err(|e| {
@@ -173,27 +155,20 @@ impl RelationsService for RelationsServiceImpl {
                                         log::error!("{}", e);
                                         tonic::Status::internal("ULID conversion error.")
                                     })?;
-                                let ctx = Context::Object(ResourcePermission {
-                                    id: target_pid,
-                                    level: crate::database::enums::PermissionLevels::WRITE,
-                                    allow_sa: false,
-                                });
-                                match &self.authorizer.check_permissions(&token, ctx) {
-                                    Ok(b) => {
-                                        if *b {
-                                        } else {
-                                            return Err(tonic::Status::permission_denied(
-                                                "Not allowed.",
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::debug!("{}", e);
-                                        return Err(tonic::Status::permission_denied(
-                                            "Not allowed.",
-                                        ));
-                                    }
-                                };
+                                let ctx = Context::ResourceContext(ResourceContext::Object(
+                                    ApeResourcePermission {
+                                        id: target_pid,
+                                        level: PolicyLevels::WRITE,
+                                        allow_sa: true,
+                                    },
+                                ));
+                                self.authorizer
+                                    .check_context(&token, ctx)
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::unauthenticated("User not authenticated")
+                                    })?;
                                 (
                                     resource_id,
                                     resource_type.clone(),
@@ -329,27 +304,20 @@ impl RelationsService for RelationsServiceImpl {
                                         log::error!("{}", e);
                                         tonic::Status::internal("ULID conversion error.")
                                     })?;
-                                let ctx = Context::Object(ResourcePermission {
-                                    id: origin_pid,
-                                    level: crate::database::enums::PermissionLevels::WRITE,
-                                    allow_sa: false,
-                                });
-                                match &self.authorizer.check_permissions(&token, ctx) {
-                                    Ok(b) => {
-                                        if *b {
-                                        } else {
-                                            return Err(tonic::Status::permission_denied(
-                                                "Not allowed.",
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::debug!("{}", e);
-                                        return Err(tonic::Status::permission_denied(
-                                            "Not allowed.",
-                                        ));
-                                    }
-                                };
+                                let ctx = Context::ResourceContext(ResourceContext::Object(
+                                    ApeResourcePermission {
+                                        id: origin_pid,
+                                        level: PolicyLevels::WRITE,
+                                        allow_sa: true,
+                                    },
+                                ));
+                                self.authorizer
+                                    .check_context(&token, ctx)
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::unauthenticated("User not authenticated")
+                                    })?;
                                 (origin_pid, resource_id)
                             }
                             2 => {
@@ -358,27 +326,20 @@ impl RelationsService for RelationsServiceImpl {
                                         log::error!("{}", e);
                                         tonic::Status::internal("ULID conversion error.")
                                     })?;
-                                let ctx = Context::Object(ResourcePermission {
-                                    id: target_pid,
-                                    level: crate::database::enums::PermissionLevels::WRITE,
-                                    allow_sa: false,
-                                });
-                                match &self.authorizer.check_permissions(&token, ctx) {
-                                    Ok(b) => {
-                                        if *b {
-                                        } else {
-                                            return Err(tonic::Status::permission_denied(
-                                                "Not allowed.",
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::debug!("{}", e);
-                                        return Err(tonic::Status::permission_denied(
-                                            "Not allowed.",
-                                        ));
-                                    }
-                                };
+                                let ctx = Context::ResourceContext(ResourceContext::Object(
+                                    ApeResourcePermission {
+                                        id: target_pid,
+                                        level: PolicyLevels::WRITE,
+                                        allow_sa: true,
+                                    },
+                                ));
+                                self.authorizer
+                                    .check_context(&token, ctx)
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!("{}", e);
+                                        tonic::Status::unauthenticated("User not authenticated")
+                                    })?;
                                 (resource_id, target_pid)
                             }
                             _ => {
@@ -419,23 +380,18 @@ impl RelationsService for RelationsServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("ULID conversion error")
         })?;
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
             id: resource_id,
-            level: crate::database::enums::PermissionLevels::READ,
+            level: PolicyLevels::READ,
             allow_sa: true,
-        });
-        match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
+        }));
+        self.authorizer
+            .check_context(&token, ctx)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unauthenticated("User not authenticated")
+            })?;
 
         let mut client = self.database.get_client().await.map_err(|e| {
             log::error!("{}", e);

@@ -69,7 +69,7 @@ macro_rules! impl_grpc_server {
         }
 
         impl $struct_name {
-            pub async fn new(database: Arc<Database>, authorizer: Arc<Authorizer>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database: Arc<Database>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
                     database,
                     authorizer,
@@ -80,5 +80,35 @@ macro_rules! impl_grpc_server {
                 }
             }
         }
+    };
+}
+
+#[macro_export]
+macro_rules! tonic_internal {
+    ($result:expr, $message:expr) => {
+        $result.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::internal($message)
+        })?
+    };
+}
+
+#[macro_export]
+macro_rules! tonic_invalid {
+    ($result:expr, $message:expr) => {
+        $result.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::invalid_argument($message)
+        })?
+    };
+}
+
+#[macro_export]
+macro_rules! tonic_auth {
+    ($result:expr, $message:expr) => {
+        $result.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unauthenticated($message)
+        })?
     };
 }

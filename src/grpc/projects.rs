@@ -1,10 +1,11 @@
-use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+use aruna_policy::ape::structs::PermissionLevels as PolicyLevels;
+use aruna_policy::ape::structs::{ApeResourcePermission, Context, ResourceContext};
 use aruna_rust_api::api::storage::models::v2::{Project, Stats};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -39,37 +40,28 @@ impl ProjectService for ProjectServiceImpl {
 
         let inner_request = request.into_inner();
 
-        let ctx = Context::Project(None);
+        let ctx = Context::ResourceContext(ResourceContext::Project(None));
 
-        let user_id = match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                    // ToDo!
-                    // PLACEHOLDER!
-                    DieselUlid::generate()
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
+        let user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        )
+        .ok_or(tonic::Status::invalid_argument(
+            "Invalid user request, user_id is required",
+        ))?;
 
         let id = DieselUlid::generate();
         let shared_id = DieselUlid::generate();
 
-        let key_values: KeyValues = inner_request.key_values.try_into().map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("KeyValue conversion error.")
-        })?;
+        let key_values: KeyValues = tonic_invalid!(
+            inner_request.key_values.try_into(),
+            "KeyValue conversion error."
+        );
 
-        let external_relations: ExternalRelations =
-            inner_request.external_relations.try_into().map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::internal("ExternalRelation conversion error.")
-            })?;
+        let external_relations: ExternalRelations = tonic_invalid!(
+            inner_request.external_relations.try_into(),
+            "ExternalRelation conversion error."
+        );
 
         let create_object = Object {
             id,
@@ -83,23 +75,20 @@ impl ProjectService for ProjectServiceImpl {
             count: 0,
             key_values: Json(key_values.clone()),
             object_status: crate::database::enums::ObjectStatus::AVAILABLE,
-            data_class: inner_request.data_class.try_into().map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::internal("DataClass conversion error.")
-            })?,
+            data_class: tonic_invalid!(
+                inner_request.data_class.try_into(),
+                "DataClass conversion error."
+            ),
             object_type: crate::database::enums::ObjectType::PROJECT,
             external_relations: Json(external_relations.clone()),
             hashes: Json(Hashes(Vec::new())),
         };
 
-        let client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        create_object.create(&client).await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::aborted("Database transaction failed.")
-        })?;
+        let client = tonic_internal!(self.database.get_client().await, "Database not avaliable.");
+        tonic_internal!(
+            create_object.create(&client).await,
+            "Database transaction failed."
+        );
 
         let stats = Some(Stats {
             count: 0,
@@ -130,58 +119,40 @@ impl ProjectService for ProjectServiceImpl {
         log::info!("Recieved GetCollectionRequest.");
         log::debug!("{:?}", &request);
 
-        let token = get_token_from_md(request.metadata()).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
 
         let inner_request = request.into_inner();
-        let object_id = DieselUlid::from_str(&inner_request.project_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error")
-        })?;
-        let ctx = Context::Project(Some(ResourcePermission {
+        let object_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.project_id),
+            "ULID conversion error"
+        );
+        let ctx = Context::ResourceContext(ResourceContext::Project(Some(ApeResourcePermission {
             id: object_id,
-            level: crate::database::enums::PermissionLevels::READ, // append?
+            level: PolicyLevels::READ, // append?
             allow_sa: true,
-        }));
+        })));
 
-        match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                    // ToDo!
-                    // PLACEHOLDER!
-                    DieselUlid::generate()
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        let transaction = client.transaction().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "unauthorized"
+        );
+        let mut client =
+            tonic_internal!(self.database.get_client().await, "Database not avaliable");
+        let transaction = tonic_internal!(client.transaction().await, "Database not avaliable");
 
         let client = transaction.client();
-        let get_object = Object::get_object_with_relations(&object_id, client)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::aborted("Database read error.")
-            })?;
+        let get_object = tonic_internal!(
+            Object::get_object_with_relations(&object_id, client).await,
+            "Database read error"
+        );
 
-        let project = Some(get_object.try_into().map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ObjectFromRelations conversion failed.")
-        })?);
+        let project = Some(tonic_internal!(
+            get_object.try_into(),
+            "ObjectFromRelations conversion failed."
+        ));
 
         Ok(tonic::Response::new(GetProjectResponse { project }))
     }
@@ -199,15 +170,15 @@ impl ProjectService for ProjectServiceImpl {
         })?;
 
         let inner_request = request.into_inner();
-        let object_id = DieselUlid::from_str(&inner_request.project_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error")
-        })?;
-        let ctx = Context::Project(Some(ResourcePermission {
+        let object_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.project_id),
+            "ULID conversion error"
+        );
+        let ctx = Context::ResourceContext(ResourceContext::Project(Some(ApeResourcePermission {
             id: object_id,
-            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            level: PolicyLevels::WRITE, // append?
             allow_sa: false,
-        }));
+        })));
 
         match &self.authorizer.check_permissions(&token, ctx) {
             Ok(b) => {

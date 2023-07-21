@@ -1,4 +1,3 @@
-use crate::auth::{Authorizer, Context, ResourcePermission};
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
@@ -9,6 +8,7 @@ use crate::database::enums::ObjectType;
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+use aruna_policy::ape::structs::{ApeResourcePermission, Context, ResourceContext};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection,
     InternalRelation as APIInternalRelation, Relation, Stats,
@@ -41,10 +41,10 @@ impl CollectionService for CollectionServiceImpl {
         log::info!("Recieved CreateCollectionRequest.");
         log::debug!("{:?}", &request);
 
-        let token = get_token_from_md(request.metadata()).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
 
         let inner_request = request.into_inner();
         let (parent_id, variant) = match inner_request.parent {
@@ -53,21 +53,18 @@ impl CollectionService for CollectionServiceImpl {
                     CreateParent::ProjectId(id) => (id, ObjectType::PROJECT),
                 };
                 (
-                    DieselUlid::from_str(&id).map_err(|e| {
-                        log::debug!("{}", e);
-                        tonic::Status::internal("ULID parsing error")
-                    })?,
+                    tonic_invalid!(DieselUlid::from_str(&id), "Invalid ULID"),
                     var,
                 )
             }
             None => return Err(tonic::Status::invalid_argument("Object has no parent")),
         };
 
-        let ctx = Context::Collection(ResourcePermission {
+        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
             id: parent_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
-        });
+        }));
 
         let user_id = match &self.authorizer.check_permissions(&token, ctx) {
             Ok(b) => {
@@ -88,10 +85,11 @@ impl CollectionService for CollectionServiceImpl {
         let id = DieselUlid::generate();
         let shared_id = DieselUlid::generate();
 
-        let key_values: KeyValues = inner_request.key_values.try_into().map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("KeyValue conversion error.")
-        })?;
+        let key_values: KeyValues = into_tonic_status!(
+            inner_request.key_values.try_into(),
+            tonic::Status::internal,
+            "KeyValue conversion error."
+        );
 
         let external_relations: ExternalRelations =
             inner_request.external_relations.try_into().map_err(|e| {
