@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = "1.0.72"
 aruna-rust-api = "2.0.0-alpha.7"
+aruna_policy = "0.2.0-alpha.1"
 async-nats = "0.30.0"
 bigdecimal = "0.3.1"
 chrono = "0.4.26"
@@ -20,7 +21,6 @@ itertools = "0.11.0"
 jsonwebtoken = "8.3.0"
 lazy_static = "1.4.0"
 log = "0.4.19"
-openssl = "0.10.55"
 prost = "0.11.9"
 prost-types = "0.11.9"
 prost-wkt-types = "0.4.2"
@@ -30,7 +30,7 @@ rand_core = "0.6.4"
 regex = "1.9.1"
 reqsign = { version = "0.13.0", features = ["reqwest_request"]}
 reqwest = {version = "0.11.18", features = ["json"] }
-serde = {version = "1.0.171", features = ["derive"]}
+serde = {version = "1.0.174", features = ["derive"]}
 serde_json = {version = "1.0.103", features = ["raw_value"]}
 simple_logger = "4.2.0"
 time = "0.3.23"
@@ -43,15 +43,12 @@ uuid = {version = "1.4.1", features = ["v4", "fast-rng", "macro-diagnostics", "s
 lettre = "0.10"
 diesel-ulid = "0.2.0"
 rusty_ulid = "2.0.0"
-kube = {version= "0.83.0", features = ["runtime", "client", "derive"]}
-k8s-openapi = { version = "0.18.0", features = ["v1_24"] }
-schemars = { version = "0.8.12", features = ["chrono"] }
 sha2 = "0.10.7"
 hmac = "0.12.1"
 hex = "0.4.3"
 base64 = "0.21.2"
 tower = "0.4.13"
-async-trait = "0.1.71"
+async-trait = "0.1.72"
 
 # Postgres interaction
 tokio-postgres = { version = "0.7.8", features = ["with-uuid-1", "with-serde_json-1", "with-chrono-0_4"] }
