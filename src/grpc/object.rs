@@ -38,8 +38,7 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<CreateObjectRequest>,
     ) -> Result<Response<CreateObjectResponse>> {
-        log::info!("Recieved CreateObjectRequest.");
-        log::debug!("{:?}", &request);
+        log_received!(&request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {
             log::debug!("{}", e);

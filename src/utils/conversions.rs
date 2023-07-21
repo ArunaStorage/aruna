@@ -4,6 +4,7 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::object_dsl::Object;
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
@@ -12,6 +13,7 @@ use crate::database::{
     },
     enums::{DataClass, ObjectStatus, ObjectType},
 };
+use crate::middlelayer::update_handler::GRPCResource;
 
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
@@ -582,4 +584,82 @@ pub fn from_db_internal_relation(
         defined_variant,
         custom_variant,
     })
+}
+
+pub fn from_db_object(internal: Option<InternalRelation>, object: Object) -> Result<GRPCResource> {
+    let mut relations: Vec<Relation> = object
+        .external_relations
+        .0
+         .0
+        .into_iter()
+        .map(|r| Relation {
+            relation: Some(RelationEnum::External(r.into())),
+        })
+        .collect();
+    let parent_relation = match internal {
+        Some(i) => relations.push(Relation {
+            relation: Some(RelationEnum::Internal(from_db_internal_relation(
+                i,
+                false,
+                i.origin_type.try_into()?,
+            )?)),
+        }),
+        None => (),
+    };
+
+    match object.object_type {
+        ObjectType::PROJECT => Ok(GRPCResource::Project(GRPCProject {
+            id: object.id.to_string(),
+            name: object.name,
+            description: object.description,
+            key_values: object.key_values.0.into(),
+            stats: None,
+            relations,
+            data_class: object.data_class.into(),
+            created_at: None, // TODO
+            created_by: object.created_by.to_string(),
+            status: object.object_status.into(),
+            dynamic: false,
+        })),
+        ObjectType::COLLECTION => Ok(GRPCResource::Collection(GRPCCollection {
+            id: object.id.to_string(),
+            name: object.name,
+            description: object.description,
+            key_values: object.key_values.0.into(),
+            stats: None,
+            relations,
+            data_class: object.data_class.into(),
+            created_at: None, // TODO
+            created_by: object.created_by.to_string(),
+            status: object.object_status.into(),
+            dynamic: false,
+        })),
+        ObjectType::DATASET => Ok(GRPCResource::Dataset(GRPCDataset {
+            id: object.id.to_string(),
+            name: object.name,
+            description: object.description,
+            key_values: object.key_values.0.into(),
+            stats: None,
+            relations,
+            data_class: object.data_class.into(),
+            created_at: None, // TODO
+            created_by: object.created_by.to_string(),
+            status: object.object_status.into(),
+            dynamic: false,
+        })),
+        ObjectType::OBJECT => Ok(GRPCResource::Object(GRPCObject {
+            id: object.id.to_string(),
+            name: object.name,
+            description: object.description,
+            key_values: object.key_values.0.into(),
+            relations,
+            content_len: object.content_len,
+            data_class: object.data_class.into(),
+            created_at: None, // TODO
+            created_by: object.created_by.to_string(),
+            status: object.object_status.into(),
+            dynamic: false,
+            hashes: object.hashes.0.into(),
+        })),
+    }
 }

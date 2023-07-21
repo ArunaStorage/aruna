@@ -35,8 +35,8 @@ impl RelationsService for RelationsServiceImpl {
         &self,
         request: Request<ModifyRelationsRequest>,
     ) -> Result<Response<ModifyRelationsResponse>> {
-        log::info!("Recieved ModifyRelationsRequest.");
-        log::debug!("{:?}", &request);
+        log_received!(&request);
+
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
             "Token authentication error."
