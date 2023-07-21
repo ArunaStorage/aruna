@@ -116,6 +116,7 @@ name = "aruna_server"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "aruna-cache",
  "aruna-rust-api",
  "aruna_policy",
  "async-nats",
