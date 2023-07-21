@@ -12,13 +12,13 @@ use crate::database::{
         ObjectWithRelations,
     },
 };
+
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
     ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
-    Object as GRPCObject, Relation, Stats,
+    Object as GRPCObject, Project as GRPCProject, Relation, Stats,
 };
-
 use tonic::metadata::MetadataMap;
 
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
@@ -317,6 +317,87 @@ impl TryFrom<ObjectWithRelations> for GRPCObject {
         })
     }
 }
+
+impl TryFrom<ObjectWithRelations> for GRPCDataset {
+    type Error = anyhow::Error;
+    fn try_from(object_with_relations: ObjectWithRelations) -> Result<GRPCDataset> {
+        let (to_relations, from_relations) = (
+            object_with_relations.inbound.0 .0,
+            match object_with_relations.outbound.0 .0.is_empty() {
+                true => None,
+                false => Some(object_with_relations.outbound.0 .0),
+            },
+        );
+
+        let mut from_relations = match from_relations {
+            Some(r) => {
+                let mut relations: Vec<Relation> = Vec::new();
+                for relation in r.into_iter() {
+                    relations.push(Relation {
+                        relation: Some(RelationEnum::Internal(
+                            from_db_internal_relation(
+                                relation.clone(),
+                                true,
+                                relation.target_type.into(),
+                            )
+                            .map_err(|e| {
+                                log::error!("{}", e);
+                                tonic::Status::internal("Internal custom type conversion error.")
+                            })?,
+                        )),
+                    });
+                }
+                relations
+            }
+            None => Vec::new(),
+        };
+
+        let mut to_relations_converted: Vec<Relation> = Vec::new();
+        for relation in to_relations.into_iter() {
+            to_relations_converted.push(Relation {
+                relation: Some(RelationEnum::Internal(
+                    from_db_internal_relation(relation.clone(), false, relation.origin_type.into())
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            tonic::Status::internal("Internal custom type conversion error.")
+                        })?,
+                )),
+            });
+        }
+        let mut relations: Vec<Relation> = object_with_relations
+            .object
+            .external_relations
+            .0
+             .0
+            .into_iter()
+            .map(|r| Relation {
+                relation: Some(RelationEnum::External(r.into())),
+            })
+            .collect();
+        relations.append(&mut to_relations_converted);
+        relations.append(&mut from_relations);
+        let stats = Some(Stats {
+            count: object_with_relations.object.count as i64,
+            size: 0, // TODO
+            last_updated: object_with_relations.object.created_at.map(|t| t.into()),
+        });
+
+        Ok(GRPCDataset {
+            id: object_with_relations.object.id.to_string(),
+            name: object_with_relations.object.name,
+            description: object_with_relations.object.description,
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
+            stats,
+            created_by: object_with_relations.object.created_by.to_string(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: false,
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+        })
+    }
+}
+
 impl TryFrom<ObjectWithRelations> for GRPCCollection {
     type Error = anyhow::Error;
     fn try_from(object_with_relations: ObjectWithRelations) -> Result<GRPCCollection> {
@@ -396,9 +477,10 @@ impl TryFrom<ObjectWithRelations> for GRPCCollection {
         })
     }
 }
-impl TryFrom<ObjectWithRelations> for GRPCDataset {
+
+impl TryFrom<ObjectWithRelations> for GRPCProject {
     type Error = anyhow::Error;
-    fn try_from(object_with_relations: ObjectWithRelations) -> Result<GRPCDataset> {
+    fn try_from(object_with_relations: ObjectWithRelations) -> Result<GRPCProject> {
         let (to_relations, from_relations) = (
             object_with_relations.inbound.0 .0,
             match object_with_relations.outbound.0 .0.is_empty() {
@@ -460,7 +542,7 @@ impl TryFrom<ObjectWithRelations> for GRPCDataset {
             last_updated: object_with_relations.object.created_at.map(|t| t.into()),
         });
 
-        Ok(GRPCDataset {
+        Ok(GRPCProject {
             id: object_with_relations.object.id.to_string(),
             name: object_with_relations.object.name,
             description: object_with_relations.object.description,

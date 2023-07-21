@@ -18,7 +18,7 @@ impl ResourcePermission {
 }
 
 pub enum Context {
-    Project(ResourcePermission),
+    Project(Option<ResourcePermission>),
     Collection(ResourcePermission),
     Dataset(ResourcePermission),
     Object(ResourcePermission),

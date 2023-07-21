@@ -8,6 +8,7 @@ use crate::database::internal_relation_dsl::{
 };
 use crate::database::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::utils::conversions::get_token_from_md;
+
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Dataset as GRPCDataset,
     InternalRelation as APIInternalRelation, Relation, Stats,
@@ -22,6 +23,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
     UpdateDatasetKeyValuesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
 };
+
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
@@ -63,7 +65,7 @@ impl DatasetService for DatasetServiceImpl {
             None => return Err(tonic::Status::invalid_argument("Object has no parent")),
         };
 
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: parent_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
@@ -191,7 +193,7 @@ impl DatasetService for DatasetServiceImpl {
             created_at: None, // TODO
             created_by: user_id.to_string(),
             status: create_object.object_status.into(),
-            dynamic: false,
+            dynamic: true,
             stats,
         };
         Ok(tonic::Response::new(CreateDatasetResponse {
@@ -215,7 +217,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("ULID conversion error")
         })?;
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: object_id,
             level: crate::database::enums::PermissionLevels::READ, // append?
             allow_sa: true,
@@ -278,7 +280,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("ULID conversion error")
         })?;
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: object_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
@@ -338,7 +340,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("ULID conversion error")
         })?;
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: object_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
@@ -401,7 +403,7 @@ impl DatasetService for DatasetServiceImpl {
             log::error!("{}", e);
             tonic::Status::internal("ULID conversion error")
         })?;
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: object_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
@@ -482,7 +484,7 @@ impl DatasetService for DatasetServiceImpl {
             tonic::Status::internal("ULID conversion error.")
         })?;
 
-        let ctx = Context::Object(ResourcePermission {
+        let ctx = Context::Dataset(ResourcePermission {
             id: dataset_id,
             level: crate::database::enums::PermissionLevels::WRITE, // append?
             allow_sa: true,
