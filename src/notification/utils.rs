@@ -1,6 +1,4 @@
-use aruna_rust_api::api::notification::services::v2::{
-    anouncement_event::EventVariant, Reply,
-};
+use aruna_rust_api::api::notification::services::v2::{anouncement_event::EventVariant, Reply};
 use base64::{engine::general_purpose, Engine};
 use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, Rng};

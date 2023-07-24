@@ -8,10 +8,11 @@ use aruna_policy::ape::{
 use aruna_rust_api::api::{
     notification::services::v2::{
         create_stream_consumer_request::{StreamType, Target},
+        event_message::MessageVariant,
         event_notification_service_server::EventNotificationService,
         AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse,
         CreateStreamConsumerRequest, CreateStreamConsumerResponse,
-        DeleteEventStreamingGroupRequest, DeleteEventStreamingGroupResponse,
+        DeleteEventStreamingGroupRequest, DeleteEventStreamingGroupResponse, EventMessage,
         GetEventMessageBatchRequest, GetEventMessageBatchResponse,
         GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse,
     },
@@ -26,10 +27,14 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Result, Status};
 
 use crate::{
-    database::{connection::Database, crud::CrudDb, dsls::notification_dsl::StreamConsumer},
+    database::{
+        connection::Database, crud::CrudDb, dsls::notification_dsl::StreamConsumer,
+        enums::ObjectType,
+    },
     notification::{
         handler::{EventHandler, EventType},
         natsio_handler::NatsIoHandler,
+        utils::{calculate_reply_hmac, parse_event_consumer_subject},
     },
     utils::conversions::get_token_from_md,
 };
@@ -115,11 +120,10 @@ impl EventNotificationService for NotificationServiceImpl {
             None => return Err(Status::invalid_argument("Event target required")),
         };
 
-        &self
-            .authorizer
-            .check_context(&token, perm_context)
-            .await
-            .map_err(|err| Status::invalid_argument(err.to_string()))?;
+        tonic_auth!(
+            &self.authorizer.check_context(&token, perm_context).await,
+            "Permission denied"
+        );
 
         // Extract and convert delivery policy
         let deliver_policy = if let Some(stream_type) = inner_request.stream_type {
@@ -183,7 +187,126 @@ impl EventNotificationService for NotificationServiceImpl {
         &self,
         request: tonic::Request<GetEventMessageBatchRequest>,
     ) -> Result<tonic::Response<GetEventMessageBatchResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log::info!("Received GetEventMessageBatchRequest.");
+        log::debug!("{:?}", &request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Exrtact and
+        let consumer_id = DieselUlid::from_str(&inner_request.stream_consumer)
+            .map_err(|err| Status::invalid_argument(err.to_string()))?;
+
+        // Extract token from request metadata
+        let token = get_token_from_md(&request_metadata).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        // Check empty permission context just to validate registered and active user
+        tonic_auth!(
+            &self.authorizer.check_context(&token, Context::Empty).await,
+            "Permission denied"
+        );
+
+        // Fetch stream consumer, parse subject and check specific permissions. This is shit.
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not available.")
+        })?;
+
+        let stream_consumer = StreamConsumer::get(consumer_id, &client)
+            .await
+            .map_err(|err| Status::aborted("Stream consumer fetech failed"))?;
+
+        let specific_context = if let Some(consumer) = stream_consumer {
+            match parse_event_consumer_subject(&consumer.config.0.filter_subject)
+                .map_err(|_| Status::invalid_argument("Invalid consumer subject format"))?
+            {
+                EventType::Resource((resource_id, object_type, _)) => {
+                    let res_perm = ApeResourcePermission {
+                        id: tonic_invalid!(
+                            DieselUlid::from_str(&resource_id),
+                            "Invalid resource id"
+                        ),
+                        level: PermissionLevels::READ,
+                        allow_sa: true,
+                    };
+
+                    Context::ResourceContext(match object_type {
+                        ObjectType::PROJECT => ResourceContext::Project(Some(res_perm)),
+                        ObjectType::COLLECTION => ResourceContext::Collection(res_perm),
+                        ObjectType::DATASET => ResourceContext::Dataset(res_perm),
+                        ObjectType::OBJECT => ResourceContext::Object(res_perm),
+                    })
+                }
+                EventType::User(user_id) => Context::User(ApeUserPermission {
+                    id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
+                    allow_proxy: true,
+                }),
+                EventType::Announcement(_) => Context::Empty,
+                EventType::All => Context::GlobalAdmin,
+            }
+        } else {
+            return Err(Status::invalid_argument(format!(
+                "Consumer with id {} does not exist.",
+                consumer_id
+            )));
+        };
+
+        tonic_auth!(
+            &self
+                .authorizer
+                .check_context(&token, specific_context)
+                .await,
+            "Nope."
+        );
+
+        // Fetch messages of event consumer
+        let nats_messages = self
+            .natsio_handler
+            .get_event_consumer_messages(consumer_id.to_string(), inner_request.batch_size)
+            .await
+            .map_err(|_| Status::internal("Stream consumer message fetch failed"))?;
+
+        // Convert messages and add reply
+        let mut proto_messages = vec![];
+        for nats_message in nats_messages {
+            // Convert Nats.io message to proto message
+            let mut msg_variant: MessageVariant = serde_json::from_slice(
+                nats_message.message.payload.to_vec().as_slice(),
+            )
+            .map_err(|_| tonic::Status::internal("Could not convert received Nats.io message"))?;
+
+            // Create reply option
+            let reply_subject = nats_message.reply.as_ref().ok_or_else(|| {
+                tonic::Status::internal("Nats.io message is missing reply subject")
+            })?;
+            let msg_reply =
+                calculate_reply_hmac(reply_subject, self.natsio_handler.reply_secret.clone());
+
+            // Modify message with reply
+            match msg_variant {
+                MessageVariant::ResourceEvent(ref mut event) => event.reply = Some(msg_reply),
+                MessageVariant::UserEvent(ref mut event) => event.reply = Some(msg_reply),
+                MessageVariant::AnnouncementEvent(ref mut event) => event.reply = Some(msg_reply),
+            }
+
+            proto_messages.push(EventMessage {
+                message_variant: Some(msg_variant),
+            })
+        }
+
+        // Create gRPC response
+        let grpc_response = Response::new(GetEventMessageBatchResponse {
+            messages: proto_messages,
+        });
+
+        // Log some stuff and return response
+        log::info!("Sending GetEventMessageBatchResponse back to client.");
+        log::debug!("{:?}", &grpc_response);
+        return Ok(grpc_response);
     }
 
     ///ToDo: Rust Doc
