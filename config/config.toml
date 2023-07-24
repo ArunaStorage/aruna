@@ -35,8 +35,8 @@ public = true
 feature = "BUNDLER"
 
 [event_notifications]
-emitter_host = 'http://localhost:50053'
-emitter_token = 'ThisIsASecretToken'
+nats_host = "localhost:4222"
+reply_secret = 'ThisIsASecretToken'
 
 [loc_version]
 location        = 'FOO'

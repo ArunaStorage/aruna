@@ -15,7 +15,7 @@ pub enum EventType {
     // Contains user_id
     User(String),
     // Contains the specific announcement variant information
-    Announcement(AnnouncementVariant),
+    Announcement(Option<AnnouncementVariant>),
     // Applies to all messages
     All,
 }

@@ -26,10 +26,13 @@ async fn create_stream_consumer() {
     stream_consumer.create(&client).await.unwrap();
 
     // Validate stream consumer creation
-    if let Some(created_consumer) = StreamConsumer::get(stream_consumer.id, &client).await.unwrap() {
-        assert_eq!{created_consumer.id, stream_consumer.id};
-        assert_eq!{created_consumer.user_id, stream_consumer.user_id};
-        assert_eq!{created_consumer.config, stream_consumer.config};
+    if let Some(created_consumer) = StreamConsumer::get(stream_consumer.id, &client)
+        .await
+        .unwrap()
+    {
+        assert_eq! {created_consumer.id, stream_consumer.id};
+        assert_eq! {created_consumer.user_id, stream_consumer.user_id};
+        assert_eq! {created_consumer.config, stream_consumer.config};
     } else {
         panic!("StreamConsumer should exist.")
     }
@@ -57,8 +60,11 @@ async fn get_stream_consumer() {
     stream_consumer.create(&client).await.unwrap();
 
     // Fetch stream consumer from database and validate equality
-    if let Some(get_consumer) = StreamConsumer::get(stream_consumer.id, &client).await.unwrap() {
-        assert_eq!{get_consumer, stream_consumer}
+    if let Some(get_consumer) = StreamConsumer::get(stream_consumer.id, &client)
+        .await
+        .unwrap()
+    {
+        assert_eq! {get_consumer, stream_consumer}
     } else {
         panic!("StreamConsumer should exist.")
     }
@@ -86,8 +92,11 @@ async fn delete_stream_consumer() {
     stream_consumer.create(&client).await.unwrap();
 
     // Fetch stream consumer from database and validate equality
-    if let Some(get_consumer) = StreamConsumer::get(stream_consumer.id, &client).await.unwrap() {
-        assert_eq!{get_consumer, stream_consumer}
+    if let Some(get_consumer) = StreamConsumer::get(stream_consumer.id, &client)
+        .await
+        .unwrap()
+    {
+        assert_eq! {get_consumer, stream_consumer}
     } else {
         panic!("StreamConsumer should exist.")
     }
@@ -96,7 +105,10 @@ async fn delete_stream_consumer() {
     stream_consumer.delete(&client).await.unwrap();
 
     // Try to fetch deleted stream consumer
-    if let Some(_) = StreamConsumer::get(stream_consumer.id, &client).await.unwrap() {
+    if let Some(_) = StreamConsumer::get(stream_consumer.id, &client)
+        .await
+        .unwrap()
+    {
         panic!("StreamConsumer shouldn't exist.")
-    } 
+    }
 }
