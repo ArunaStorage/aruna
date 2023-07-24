@@ -17,9 +17,8 @@ use crate::database::enums::ObjectType;
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
-    generate_announcement_message_subject, generate_announcement_subject,
-    generate_resource_message_subject, generate_resource_subject, generate_user_message_subject,
-    generate_user_subject, validate_reply_msg,
+    generate_announcement_subject, generate_resource_message_subject, generate_resource_subject,
+    generate_user_message_subject, generate_user_subject, validate_reply_msg,
 };
 
 // ----- Constants used for notifications -------------------- //
@@ -31,7 +30,7 @@ pub const STREAM_SUBJECTS: [&str; 3] = ["AOS.RESOURCE.>", "AOS.USER.>", "AOS.ANN
 pub struct NatsIoHandler {
     jetstream_context: Context,
     stream: Stream,
-    secret: String,
+    pub reply_secret: String,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +52,7 @@ impl EventHandler for NatsIoHandler {
                 None => return Err(anyhow::anyhow!("No event resource provided")),
             },
             MessageVariant::UserEvent(event) => generate_user_message_subject(&event.user_id),
-            MessageVariant::AnnouncementEvent(_) => generate_announcement_message_subject(),
+            MessageVariant::AnnouncementEvent(event) => todo!(), //generate_announcement_message_subject(event),
         };
 
         // Encode message
@@ -141,7 +140,7 @@ impl EventHandler for NatsIoHandler {
         let mut reply_ack = Vec::new();
         for reply in replies {
             // Validate reply hmac
-            match validate_reply_msg(reply.clone(), self.secret.clone()) {
+            match validate_reply_msg(reply.clone(), self.reply_secret.clone()) {
                 Ok(hmac_matches) => {
                     if !hmac_matches {
                         return Err(anyhow::anyhow!(

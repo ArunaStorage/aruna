@@ -1,10 +1,14 @@
-use aruna_rust_api::api::notification::services::v2::Reply;
+use aruna_rust_api::api::notification::services::v2::{
+    anouncement_event::EventVariant, Reply,
+};
 use base64::{engine::general_purpose, Engine};
 use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::Sha256;
 
 use crate::database::enums::ObjectType;
+
+use super::handler::EventType;
 
 // ------------------------------------------- //
 // ----- Subject Generation ------------------ //
@@ -60,8 +64,67 @@ pub fn generate_announcement_subject() -> String {
 }
 
 //ToDo: Rust Doc
-pub fn generate_announcement_message_subject() -> String {
-    todo!()
+pub fn generate_announcement_message_subject(event_variant: &EventVariant) -> String {
+    match event_variant {
+        EventVariant::NewDataProxyId(_) => "AOS.ANNOUNCEMENT.DATAPROXY.NEW".to_string(),
+        EventVariant::RemoveDataProxyId(_) => "AOS.ANNOUNCEMENT.DATAPROXY.DELETE".to_string(),
+        EventVariant::UpdateDataProxyId(_) => "AOS.ANNOUNCEMENT.DATAPROXY.UPDATE".to_string(),
+        EventVariant::NewPubkey(_) => "AOS.ANNOUNCEMENT.PUBKEY.NEW".to_string(),
+        EventVariant::RemovePubkey(_) => "AOS.ANNOUNCEMENT.PUBKEY.DELETE".to_string(),
+        EventVariant::Downtime(_) => "AOS.ANNOUNCEMENT.DOWNTIME".to_string(),
+        EventVariant::Version(_) => "AOS.ANNOUNCEMENT.VERSION".to_string(),
+    }
+}
+
+//ToDo: This will be interesting ...
+pub fn parse_event_consumer_subject(subject: &str) -> anyhow::Result<EventType> {
+    // Evaluate general message variant
+    if subject.starts_with("AOS.RESOURCE") {
+        let include_subresources = subject.ends_with('>');
+        let placeholder_count = subject[13..].matches('*').count();
+        let resource_id = subject[13..].split('.').collect::<Vec<_>>()[match placeholder_count {
+            0 => 1,
+            1 => 3,
+            2 => 5,
+            3 => 7,
+            _ => return Err(anyhow::anyhow!("Invalid number of placeholders in subject")),
+        }]
+        .to_string();
+
+        // Use number of wildcards as hint for object type
+        match placeholder_count {
+            0 => Ok(EventType::Resource((
+                resource_id,
+                ObjectType::PROJECT,
+                include_subresources,
+            ))),
+            1 => Ok(EventType::Resource((
+                resource_id,
+                ObjectType::COLLECTION,
+                include_subresources,
+            ))),
+            2 => Ok(EventType::Resource((
+                resource_id,
+                ObjectType::DATASET,
+                include_subresources,
+            ))),
+            3 => Ok(EventType::Resource((
+                resource_id,
+                ObjectType::OBJECT,
+                include_subresources,
+            ))),
+            _ => Err(anyhow::anyhow!("Could not determine resource type")),
+        }
+    } else if subject.starts_with("AOS.USER") {
+        // Parse user_id
+        let user_id = subject.split('.').collect::<Vec<_>>()[2];
+        Ok(EventType::User(user_id.to_string()))
+    } else if subject.starts_with("AOS.ANNOUNCEMENT") {
+        // Variant does not matter at this moment
+        Ok(EventType::Announcement(None))
+    } else {
+        Err(anyhow::anyhow!("Invalid consumer subject"))
+    }
 }
 
 // ------------------------------------------- //
@@ -70,7 +133,7 @@ pub fn generate_announcement_message_subject() -> String {
 type HmacSha256 = Hmac<Sha256>;
 
 ///ToDo: Rust Doc
-pub fn calculate_reply_hmac(reply: String, secret: String) -> Reply {
+pub fn calculate_reply_hmac(reply_subject: &str, secret: String) -> Reply {
     // Generate random salt value
     let salt = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -81,14 +144,14 @@ pub fn calculate_reply_hmac(reply: String, secret: String) -> Reply {
     // Calculate hmac
     let mut mac =
         HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(format!("{}-{}", reply, salt).as_bytes());
+    mac.update(format!("{}-{}", reply_subject, salt).as_bytes());
 
     // Encode hmac in base64
     let base64_hmac = general_purpose::STANDARD.encode(mac.finalize().into_bytes());
 
     // Return reply
     Reply {
-        reply,
+        reply: reply_subject.to_string(),
         salt,
         hmac: base64_hmac,
     }
