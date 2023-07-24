@@ -17,10 +17,10 @@ pub fn generate_resource_subject(
 ) -> String {
     // No one cares about the specific graph hierarchy anymore
     let base_subject = match resource_variant {
-        ObjectType::PROJECT => format!("{}._.{}.", "RESOURCE", resource_id),
-        ObjectType::COLLECTION => format!("{}._.*._.{}.", "RESOURCE", resource_id),
-        ObjectType::DATASET => format!("{}._.*._.*._.{}.", "RESOURCE", resource_id),
-        ObjectType::OBJECT => format!("{}._.*._.*._.*._.{}.", "RESOURCE", resource_id),
+        ObjectType::PROJECT => format!("AOS.RESOURCE._.{}.", resource_id),
+        ObjectType::COLLECTION => format!("AOS.RESOURCE._.*._.{}.", resource_id),
+        ObjectType::DATASET => format!("AOS.RESOURCE._.*._.*._.{}.", resource_id),
+        ObjectType::OBJECT => format!("AOS.RESOURCE._.*._.*._.*._.{}.", resource_id),
     };
 
     if include_sub_resources {
@@ -37,26 +37,26 @@ pub fn generate_resource_message_subject(
 ) -> String {
     // No one cares about the specific graph anymore
     match resource_variant {
-        ObjectType::PROJECT => format!("{}._.{}", "RESOURCE", resource_id),
-        ObjectType::COLLECTION => format!("{}._.*._.{}", "RESOURCE", resource_id),
-        ObjectType::DATASET => format!("{}._.*._.*._.{}", "RESOURCE", resource_id),
-        ObjectType::OBJECT => format!("{}._.*._.*._.*._.{}", "RESOURCE", resource_id),
+        ObjectType::PROJECT => format!("AOS.RESOURCE._.{}._", resource_id),
+        ObjectType::COLLECTION => format!("AOS.RESOURCE._.*._.{}._", resource_id),
+        ObjectType::DATASET => format!("AOS.RESOURCE._.*._.*._.{}._", resource_id),
+        ObjectType::OBJECT => format!("AOS.RESOURCE._.*._.*._.*._.{}._", resource_id),
     }
 }
 
 //ToDo: Rust Doc
 pub fn generate_user_subject(user_id: &str) -> String {
-    format!("USER.{}.>", user_id)
+    format!("AOS.USER.{}.>", user_id)
 }
 
 ///ToDo: Rust Doc
 pub fn generate_user_message_subject(user_id: &str) -> String {
-    format!("USER.{}", user_id)
+    format!("AOS.USER.{}._", user_id)
 }
 
 //ToDo: Rust Doc
 pub fn generate_announcement_subject() -> String {
-    "ANNOUNCEMENT".to_string()
+    "AOS.ANNOUNCEMENT".to_string()
 }
 
 //ToDo: Rust Doc

@@ -24,7 +24,7 @@ use super::utils::{
 
 // ----- Constants used for notifications -------------------- //
 pub const STREAM_NAME: &str = "AOS_STREAM";
-pub const STREAM_SUBJECTS: [&str;3] = ["RESOURCE.>", "USER.>", "ANNOUNCEMENT.>"];
+pub const STREAM_SUBJECTS: [&str; 3] = ["AOS.RESOURCE.>", "AOS.USER.>", "AOS.ANNOUNCEMENT.>"];
 // ----------------------------------------------------------- //
 
 #[derive(Debug, Clone)]
@@ -85,8 +85,8 @@ impl EventHandler for NatsIoHandler {
                 generate_resource_subject(&resource_id, resource_type, inc_sub)
             }
             EventType::User(user_id) => generate_user_subject(&user_id),
-            EventType::Announcement(_) => generate_announcement_subject(), // Currently all announcement messages are consumed
-            EventType::All => ".>".to_string(),
+            EventType::Announcement(_) => generate_announcement_subject(), // Currently all announcement messages are consumed equally
+            EventType::All => "AOS.>".to_string(),
         };
 
         // Define consumer config
