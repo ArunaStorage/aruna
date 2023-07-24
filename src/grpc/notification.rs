@@ -389,7 +389,78 @@ impl EventNotificationService for NotificationServiceImpl {
         &self,
         request: tonic::Request<DeleteEventStreamingGroupRequest>,
     ) -> Result<tonic::Response<DeleteEventStreamingGroupResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received DeleteStreamConsumerRequest.");
+        log::debug!("{:?}", &request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request metadata
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Could not extract token from request metadata."
+        );
+
+        // Extract consumer id from request
+        let consumer_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.stream_consumer),
+            "Invalid stream consumer id"
+        );
+
+        // Check empty permission context just to validate registered and active user
+        let test = tonic_auth!(
+            &self.authorizer.check_context(&token, Context::Empty).await,
+            "Permission denied"
+        );
+
+        // Get transaction client
+        let mut client = self.database.get_client().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Database not avaliable.")
+        })?;
+
+        let transaction = client.transaction().await.map_err(|e| {
+            log::error!("{}", e);
+            tonic::Status::unavailable("Transaction creation failed")
+        })?;
+
+        let transaction_client = transaction.client();
+
+        // Fetch stream consumer to check permissions against user_id
+        if let Some(stream_consumer) = tonic_internal!(
+            StreamConsumer::get(consumer_ulid, transaction_client).await,
+            "Stream consumer fetch failed"
+        ) {
+            if let Some(user_ulid) = stream_consumer.user_id {
+                tonic_auth!(
+                    &self.authorizer.check_context(
+                        &token,
+                        Context::User(ApeUserPermission {
+                            id: user_ulid,
+                            allow_proxy: true,
+                        }),
+                    ).await,
+                    "Permission denied"
+                );
+            } else {
+                // What do with data proxies?
+            };
+
+            // Delete stream consumer
+            stream_consumer.delete(transaction_client).await;
+        } else {
+            return Err(Status::invalid_argument("Stream consumer does not exist"));
+        }
+
+        // Commit transaction
+        tonic_internal!(transaction.commit().await, "Transaction commit failed");
+
+        // Create and return gRPC response
+        let grpc_response = Response::new(DeleteEventStreamingGroupResponse {});
+
+        log::info!("Sending DeleteStreamConsumerResponse back to client.");
+        log::debug!("{:?}", &grpc_response);
+        return Ok(grpc_response);
     }
 }
 
