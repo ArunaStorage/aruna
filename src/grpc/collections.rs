@@ -8,7 +8,9 @@ use crate::database::enums::ObjectType;
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{ApeResourcePermission, Context, ResourceContext};
+use aruna_policy::ape::structs::{
+    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
+};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection,
     InternalRelation as APIInternalRelation, Relation, Stats,
@@ -62,7 +64,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
             id: parent_id,
-            level: crate::database::enums::PermissionLevels::WRITE, // append?
+            level: PermissionLevels::WRITE, // append?
             allow_sa: true,
         }));
 
