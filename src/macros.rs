@@ -15,6 +15,8 @@
 /// # use aruna_server::*;
 /// # use std::sync::Arc;
 /// # use aruna_server::database::connection::Database;
+/// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
+/// # use crate::middlelayer::db_handler::DatabaseHandler
 /// # use aruna_cache::notifications::NotificationCache;
 /// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 ///
@@ -33,9 +35,11 @@
 /// # use std::sync::Mutex;
 /// # use aruna_cache::notifications::NotificationCache;
 /// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+/// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
+/// # use crate::middlelayer::db_handler::DatabaseHandler
 ///
 /// pub struct MyFieldsServiceImpl {
-///     pub database: Arc<Database>,
+///     pub database_handler: DatabaseHandler;
 ///     pub authorizer: Arc<PolicyEvaluator>,
 ///     pub cache: Arc<NotificationCache>,
 ///     pub variable1: String,
@@ -43,9 +47,9 @@
 /// }
 ///
 /// impl MyFieldsServiceImpl {
-///     pub async fn new(database: Arc<Database>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, variable1:String, variable2: String) -> Self {
+///     pub async fn new(database_handler: DatabaseHandler, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, variable1:String, variable2: String) -> Self {
 ///         MyFieldsServiceImpl {
-///             database,
+///             database_handler,
 ///             authorizer,
 ///             cache,
 ///             variable1,
@@ -57,10 +61,9 @@
 ///
 #[macro_export]
 macro_rules! impl_grpc_server {
-
     ($struct_name:ident $(, $variable_name:ident:$variable_type:ty )*) => {
         pub struct $struct_name {
-            pub database: Arc<Database>,
+            pub database_handler: DatabaseHandler,
             pub authorizer: Arc<PolicyEvaluator>,
             pub cache: Arc<NotificationCache>,
             $(
@@ -69,9 +72,9 @@ macro_rules! impl_grpc_server {
         }
 
         impl $struct_name {
-            pub async fn new(database: Arc<Database>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database_handler: DatabaseHandler, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
-                    database,
+                    database_handler,
                     authorizer,
                     cache,
                     $(

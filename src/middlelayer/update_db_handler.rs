@@ -102,7 +102,7 @@ impl DatabaseHandler {
         &self,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
-    ) -> Result<(ObjectWithRelations, bool)> {
+    ) -> Result<(generic_resource::Resource, bool)> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();

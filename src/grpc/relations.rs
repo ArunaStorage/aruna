@@ -8,6 +8,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
 use crate::database::enums::ObjectType;
+use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::utils::conversions::get_token_from_md;
 use anyhow::Result;
 use aruna_cache::notifications::NotificationCache;

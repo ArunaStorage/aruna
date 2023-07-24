@@ -1,6 +1,6 @@
-use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
+use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
@@ -30,8 +30,7 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         request: Request<CreateProjectRequest>,
     ) -> Result<Response<CreateProjectResponse>> {
-        log::info!("Recieved CreateProjectRequest.");
-        log::debug!("{:?}", &request);
+        log_received!(request);
 
         let token = get_token_from_md(request.metadata()).map_err(|e| {
             log::debug!("{}", e);

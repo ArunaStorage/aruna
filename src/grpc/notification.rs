@@ -1,3 +1,4 @@
+use crate::middlelayer::db_handler::DatabaseHandler;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::{
     policy_evaluator::PolicyEvaluator,
