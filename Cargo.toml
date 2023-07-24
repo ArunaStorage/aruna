@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "aruna_server"
-version = "1.0.0"
+version = "2.0.0-rc.1"
 description = "Server application for AOS (Aruna Object Storage)"
 repository = "https://github.com/ArunaStorage/ArunaServer"
 license = "MIT OR Apache-2.0"
@@ -11,8 +11,8 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = "1.0.72"
 aruna-rust-api = "2.0.0-alpha.7"
-aruna_policy = "0.2.0-alpha.2"
-aruna-cache = "0.2.1-alpha.1"
+aruna_policy = "0.2.0"
+aruna-cache = "0.2.2"
 async-nats = "0.30.0"
 bigdecimal = "0.4.1"
 chrono = "0.4.26"
@@ -25,16 +25,14 @@ log = "0.4.19"
 prost = "0.11.9"
 prost-types = "0.11.9"
 prost-wkt-types = "0.4.2"
-r2d2 = { version = ">= 0.8.10, < 0.9.0"}
 rand = "0.8.5"
 rand_core = "0.6.4"
 regex = "1.9.1"
-reqsign = { version = "0.13.0", features = ["reqwest_request"]}
+reqsign = { version = "0.14.0", features = ["reqwest_request"]}
 reqwest = {version = "0.11.18", features = ["json"] }
-serde = {version = "1.0.174", features = ["derive"]}
+serde = {version = "1.0.175", features = ["derive"]}
 serde_json = {version = "1.0.103", features = ["raw_value"]}
 simple_logger = "4.2.0"
-time = "0.3.23"
 tokio = {version = "1.29.1", features = ["full"]}
 tokio-stream = { version = "0.1.14", features = ["net"] }
 toml = "0.7.6"
