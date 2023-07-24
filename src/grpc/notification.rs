@@ -339,7 +339,39 @@ impl EventNotificationService for NotificationServiceImpl {
         &self,
         request: tonic::Request<AcknowledgeMessageBatchRequest>,
     ) -> Result<tonic::Response<AcknowledgeMessageBatchResponse>, tonic::Status> {
-        todo!()
+        log::info!("Received AcknowledgeMessageBatchRequest.");
+        log::debug!("{:?}", &request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request metadata
+        let token = get_token_from_md(&request_metadata).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        // Check empty permission context just to validate registered and active user
+        tonic_auth!(
+            &self.authorizer.check_context(&token, Context::Empty).await,
+            "Permission denied"
+        );
+
+        // Acknowledge provided messages
+        if let Err(err) = &self
+            .natsio_handler
+            .acknowledge_from_reply(inner_request.replies)
+            .await
+        {
+            return Err(Status::aborted(err.to_string()));
+        }
+
+        // Create and return gRPC response
+        let grpc_response = Response::new(AcknowledgeMessageBatchResponse {});
+
+        log::info!("Sending AcknowledgeMessageBatchResponse back to client.");
+        log::debug!("{:?}", &grpc_response);
+        return Ok(grpc_response);
     }
 
     /// Deletes the notification stream group associated with the provided stream group id.
