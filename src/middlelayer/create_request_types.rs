@@ -3,6 +3,7 @@ use std::str::FromStr;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{ObjectStatus, ObjectType};
 use anyhow::Result;
+use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -40,6 +41,26 @@ impl Parent {
             Parent::Project(_) => ObjectType::PROJECT,
             Parent::Collection(_) => ObjectType::COLLECTION,
             Parent::Dataset(_) => ObjectType::DATASET,
+        }
+    }
+
+    pub fn get_context(&self) -> Result<Context> {
+        match self {
+            Parent::Project(_) => Ok(Context::res_proj(Some((
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )))),
+            Parent::Collection(_) => Ok(Context::res_col(
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )),
+            Parent::Dataset(_) => Ok(Context::res_ds(
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )),
         }
     }
 }

@@ -42,22 +42,27 @@ impl ProjectService for ProjectServiceImpl {
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let generic_project = tonic_internal!(
+        let (generic_project, shared_id, cache_res) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        // self.cache.cache.process_api_resource_update(
-        //     generic_project,
-        //     shared_id,
-        //     persistent_resource,
-        // );
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_project.clone(),
+                shared_id,
+                cache_res
+            ),
+            "Caching error"
+        );
 
-        Ok(tonic::Response::new(CreateProjectResponse {
+        let response = CreateProjectResponse {
             project: Some(generic_project.into_inner()?),
-        }))
+        };
+
+        return_with_log!(response);
     }
 
     async fn get_project(

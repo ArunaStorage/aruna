@@ -1,8 +1,10 @@
+use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 use aruna_policy::ape::structs::{
@@ -27,45 +29,54 @@ crate::impl_grpc_server!(DatasetServiceImpl);
 impl DatasetService for DatasetServiceImpl {
     async fn create_dataset(
         &self,
-        _request: Request<CreateDatasetRequest>,
+        request: Request<CreateDatasetRequest>,
     ) -> Result<Response<CreateDatasetResponse>> {
-        todo!()
-        // log_received!(request);
+        log_received!(&request);
 
-        // let token = tonic_auth!(
-        //     get_token_from_md(request.metadata()),
-        //     "Token authentication error."
-        // );
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let request = CreateRequest::Dataset(request.into_inner());
-        // let parent = request
-        //     .get_parent()
-        //     .ok_or(tonic::Status::invalid_argument("Parent missing."))?;
+        let request = CreateRequest::Dataset(request.into_inner());
 
-        // let ctx = Context::ResourceContext(ResourceContext::Dataset(ApeResourcePermission {
-        //     id: tonic_invalid!(parent.get_id(), "Invalid parent id."),
-        //     level: PermissionLevels::WRITE, // append?
-        //     allow_sa: true,
-        // }));
+        let parent_ctx = tonic_invalid!(
+            request
+                .get_parent()
+                .ok_or(tonic::Status::invalid_argument("Parent missing."))?
+                .get_context(),
+            "invalid parent"
+        );
 
-        // let user_id = tonic_auth!(
-        //     &self.authorizer.check_context(&token, ctx).await,
-        //     "Unauthorized."
-        // )
-        // .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        let user_id = tonic_auth!(
+            self.authorizer.check_context(&token, parent_ctx).await,
+            "Unauthorized"
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        // let dataset = match tonic_internal!(
-        //     self.database_handler
-        //         .create_resource(request, user_id)
-        //         .await,
-        //     "Internal database error."
-        // ) {
-        //     generic_resource::Resource::Dataset(d) => Some(d),
-        //     _ => return Err(tonic::Status::unknown("This should not happen.")),
-        // };
+        let (generic_dataset, shared_id, cache_res) = tonic_internal!(
+            self.database_handler
+                .create_resource(request, user_id)
+                .await,
+            "Internal database error"
+        );
 
-        // Ok(tonic::Response::new(CreateDatasetResponse { dataset }))
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_dataset.clone(),
+                shared_id,
+                cache_res
+            ),
+            "Caching error"
+        );
+
+        let response = CreateDatasetResponse {
+            dataset: Some(generic_dataset.into_inner()?),
+        };
+
+        return_with_log!(response);
     }
+
     async fn get_dataset(
         &self,
         _request: Request<GetDatasetRequest>,

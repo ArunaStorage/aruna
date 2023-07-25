@@ -2,6 +2,7 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 use aruna_policy::ape::structs::{
@@ -31,37 +32,45 @@ impl ObjectService for ObjectServiceImpl {
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
-            "Token authentication error."
+            "Token authentication error"
         );
 
         let request = CreateRequest::Object(request.into_inner());
-        let parent = request
-            .get_parent()
-            .ok_or(tonic::Status::invalid_argument("Parent missing."))?;
 
-        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
-            id: tonic_invalid!(parent.get_id(), "Invalid parent id."),
-            level: PermissionLevels::WRITE,
-            allow_sa: true,
-        }));
-
+        let parent_ctx = tonic_invalid!(
+            request
+                .get_parent()
+                .ok_or(tonic::Status::invalid_argument("Parent missing."))?
+                .get_context(),
+            "invalid parent"
+        );
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
+            self.authorizer.check_context(&token, parent_ctx).await,
+            "Unauthorized"
         )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let object = match tonic_internal!(
+        let (generic_object, shared_id, cache_res) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Object(o) => Some(o),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_object.clone(),
+                shared_id,
+                cache_res
+            ),
+            "Caching error"
+        );
+
+        let response = CreateObjectResponse {
+            object: Some(generic_object.into_inner()?),
         };
 
-        Ok(tonic::Response::new(CreateObjectResponse { object }))
+        return_with_log!(response);
     }
 
     async fn finish_object_staging(

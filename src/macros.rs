@@ -119,8 +119,20 @@ macro_rules! log_received {
     ($request:expr) => {
         log::info!(
             "Recieved {}",
-            $crate::utils::grpc_utils::type_name_of($request)
+            crate::utils::grpc_utils::type_name_of($request)
         );
         log::debug!("{:?}", $request);
+    };
+}
+
+#[macro_export]
+macro_rules! return_with_log {
+    ($response:expr) => {
+        log::info!(
+            "Returned {}",
+            crate::utils::grpc_utils::type_name_of(&$response)
+        );
+        log::debug!("{:?}", &$response);
+        return Ok(tonic::Response::new($response));
     };
 }

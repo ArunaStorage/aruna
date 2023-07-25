@@ -4,6 +4,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 use aruna_policy::ape::structs::{
@@ -35,39 +36,46 @@ impl CollectionService for CollectionServiceImpl {
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
-            "Token authentication error."
+            "Token authentication error"
         );
 
         let request = CreateRequest::Collection(request.into_inner());
-        let parent = request
-            .get_parent()
-            .ok_or(tonic::Status::invalid_argument("Parent missing."))?;
 
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: tonic_invalid!(parent.get_id(), "Invalid parent id."),
-            level: PermissionLevels::APPEND, // append?
-            allow_sa: true,
-        }));
+        let parent_ctx = tonic_invalid!(
+            request
+                .get_parent()
+                .ok_or(tonic::Status::invalid_argument("Parent missing."))?
+                .get_context(),
+            "invalid parent"
+        );
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
+            self.authorizer.check_context(&token, parent_ctx).await,
+            "Unauthorized"
         )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let collection = match tonic_internal!(
+        let (generic_collection, shared_id, cache_res) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => c,
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_collection.clone(),
+                shared_id,
+                cache_res,
+            ),
+            "Caching error"
+        );
+
+        let response = CreateCollectionResponse {
+            collection: Some(generic_collection.into_inner()?),
         };
 
-        Ok(tonic::Response::new(CreateCollectionResponse {
-            collection: Some(collection),
-        }))
+        return_with_log!(response);
     }
 
     async fn get_collection(
