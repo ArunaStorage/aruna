@@ -70,10 +70,10 @@ impl EventNotificationService for NotificationServiceImpl {
         let (request_metadata, _, inner_request) = request.into_parts();
 
         // Extract token from request metadata
-        let token = get_token_from_md(&request_metadata).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token extraction failed"
+        );
 
         // Evaluate fitting context and check permissions
         let perm_context = convert_target_to_context(inner_request.target)?;
@@ -84,36 +84,34 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Extract and convert delivery policy
         let deliver_policy = if let Some(stream_type) = inner_request.stream_type {
-            convert_stream_type(stream_type)
-                .map_err(|err| Status::invalid_argument(err.to_string()))?
+            tonic_invalid!(
+                convert_stream_type(stream_type),
+                "Stream type conversion failed"
+            )
         } else {
             DeliverPolicy::All
         };
 
         // Create stream consumer in Nats.io
-        let (consumer_id, consumer_config) = self
-            .natsio_handler
-            .create_event_consumer(EventType::All, deliver_policy)
-            .await
-            .map_err(|_| Status::internal("Consumer creation failed"))?;
+        let (consumer_id, consumer_config) = tonic_internal!(
+            self.natsio_handler
+                .create_event_consumer(EventType::All, deliver_policy)
+                .await,
+            "Consumer creation failed"
+        );
 
         // Create stream consumer in database
         let stream_consumer = StreamConsumer {
             id: DieselUlid::generate(),
-            user_id: None,
+            user_id: user_id,
             config: postgres_types::Json(consumer_config),
         };
 
         // Get database client
-        let client = &self
-            .database_handler
-            .database
-            .get_client()
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::unavailable("Database not avaliable.")
-            })?;
+        let client = tonic_internal!(
+            &self.database_handler.database.get_client().await,
+            "Database not available"
+        );
 
         // Create consumer in Nats.io and delete database stream consumer on error
         stream_consumer.create(client).await.map_err(|e| {
@@ -156,15 +154,17 @@ impl EventNotificationService for NotificationServiceImpl {
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
 
-        // Exrtact and
-        let consumer_id = DieselUlid::from_str(&inner_request.stream_consumer)
-            .map_err(|err| Status::invalid_argument(err.to_string()))?;
+        // Extract consumer id parameter
+        let consumer_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.stream_consumer),
+            "Invalid consumer id format"
+        );
 
         // Extract token from request metadata
-        let token = get_token_from_md(&request_metadata).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token extraction failed"
+        );
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
@@ -208,21 +208,21 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Fetch messages of event consumer
-        let nats_messages = self
-            .natsio_handler
-            .get_event_consumer_messages(consumer_id.to_string(), inner_request.batch_size)
-            .await
-            .map_err(|_| Status::internal("Stream consumer message fetch failed"))?;
+        let nats_messages = tonic_internal!(
+            self.natsio_handler
+                .get_event_consumer_messages(consumer_id.to_string(), inner_request.batch_size)
+                .await,
+            "Stream consumer message fetch failed"
+        );
 
         // Convert messages and add reply
         let mut proto_messages = vec![];
         for nats_message in nats_messages {
             // Convert Nats.io message to proto message
-            let mut msg_variant: MessageVariant = serde_json::from_slice(
-                nats_message.message.payload.to_vec().as_slice(),
-            )
-            .map_err(|_| tonic::Status::internal("Could not convert received Nats.io message"))?;
-
+            let mut msg_variant: MessageVariant = tonic_internal!(
+                serde_json::from_slice(nats_message.message.payload.to_vec().as_slice(),),
+                "Could not convert received Nats.io message"
+            );
             // Create reply option
             let reply_subject = nats_message.reply.as_ref().ok_or_else(|| {
                 tonic::Status::internal("Nats.io message is missing reply subject")
@@ -277,10 +277,10 @@ impl EventNotificationService for NotificationServiceImpl {
         let batch_size = inner_request.batch_size;
 
         // Extract token from request metadata
-        let token = get_token_from_md(&request_metadata).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token extraction failed"
+        );
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
@@ -322,13 +322,12 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Create multi-producer single-consumer channel
         let (tx, rx) = mpsc::channel(4);
-        let handler = self
-            .natsio_handler
-            .create_event_stream_handler(inner_request.stream_consumer)
-            .await
-            .map_err(|err| {
-                tonic::Status::internal(format!("Event stream handler creation failed: {err}"))
-            })?;
+        let handler = tonic_internal!(
+            self.natsio_handler
+                .create_event_stream_handler(inner_request.stream_consumer)
+                .await,
+            "Event stream handler creation failed"
+        );
 
         // Send messages in batches (if present)
         let cloned_reply_signing_secret = "Move this into NatsIoHandler?".to_string();
@@ -378,7 +377,9 @@ impl EventNotificationService for NotificationServiceImpl {
         });
 
         // Create gRPC response
-        let grpc_response = Response::new(ReceiverStream::new(rx));
+        let grpc_response: Response<
+            ReceiverStream<std::result::Result<GetEventMessageBatchStreamResponse, Status>>,
+        > = Response::new(ReceiverStream::new(rx));
 
         // Log some stuff and return response
         log::info!("Sending GetEventMessageBatchStreamStreamResponse back to client.");
@@ -411,10 +412,10 @@ impl EventNotificationService for NotificationServiceImpl {
         let (request_metadata, _, inner_request) = request.into_parts();
 
         // Extract token from request metadata
-        let token = get_token_from_md(&request_metadata).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token extraction failed"
+        );
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
@@ -462,7 +463,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Extract token from request metadata
         let token = tonic_auth!(
             get_token_from_md(&request_metadata),
-            "Could not extract token from request metadata."
+            "Token extraction failed"
         );
 
         // Extract consumer id from request
@@ -477,21 +478,14 @@ impl EventNotificationService for NotificationServiceImpl {
             "Permission denied"
         );
 
-        // Get transaction client
-        let mut client = self
-            .database_handler
-            .database
-            .get_client()
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::unavailable("Database not avaliable.")
-            })?;
+        // Get database client and begin transaction
+        let client = tonic_internal!(
+            &self.database_handler.database.get_client().await,
+            "Database not available"
+        );
 
-        let transaction = client.transaction().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Transaction creation failed")
-        })?;
+        let transaction =
+            tonic_internal!(client.transaction().await, "Transaction creation failed");
 
         let transaction_client = transaction.client();
 
@@ -548,8 +542,10 @@ fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy>
         StreamType::StreamFromDate(info) => {
             if let Some(timestamp) = info.timestamp {
                 Ok(DeliverPolicy::ByStartTime {
-                    start_time: OffsetDateTime::from_unix_timestamp(timestamp.seconds)
-                        .map_err(|_| Status::invalid_argument("Incorrect timestamp format"))?,
+                    start_time: tonic_invalid!(
+                        OffsetDateTime::from_unix_timestamp(timestamp.seconds),
+                        "Incorrect timestamp format"
+                    ),
                 })
             } else {
                 Err(anyhow::anyhow!("No timestamp provided"))
@@ -567,8 +563,10 @@ fn convert_target_to_context(consumer_target: Option<Target>) -> Result<Context,
         Some(stream_target) => {
             if let Target::Resource(resource) = stream_target {
                 let resource_permission = ApeResourcePermission {
-                    id: DieselUlid::from_str(&resource.resource_id)
-                        .map_err(|err| Status::invalid_argument(err.to_string()))?,
+                    id: tonic_invalid!(
+                        DieselUlid::from_str(&resource.resource_id),
+                        "Invalid resource id format"
+                    ),
                     level: PermissionLevels::READ,
                     allow_sa: true,
                 };
