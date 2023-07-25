@@ -33,6 +33,7 @@ reqwest = {version = "0.11.18", features = ["json"] }
 serde = {version = "1.0.175", features = ["derive"]}
 serde_json = {version = "1.0.103", features = ["raw_value"]}
 simple_logger = "4.2.0"
+time = "0.3.23"
 tokio = {version = "1.29.1", features = ["full"]}
 tokio-stream = { version = "0.1.14", features = ["net"] }
 toml = "0.7.6"
