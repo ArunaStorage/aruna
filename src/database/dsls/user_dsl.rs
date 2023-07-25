@@ -1,9 +1,11 @@
-use crate::database::enums::PermissionLevels;
+use crate::database::enums::DbPermissionLevel;
 use anyhow::Result;
+use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use postgres_types::Json;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio_postgres::Client;
 
 use super::super::crud::{CrudDb, PrimaryKey};
@@ -17,24 +19,29 @@ pub struct User {
     pub active: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Serialize, Deserialize, Clone, FromRow, Debug, Eq, PartialEq, PartialOrd)]
+pub struct APIToken {
+    pub pub_key: i32,
+    pub name: String,
+    pub created_at: NaiveDateTime,
+    pub expires_at: NaiveDateTime,
+    pub object_id: DieselUlid,
+    pub user_rights: DbPermissionLevel,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct UserAttributes {
     pub global_admin: bool,
     pub service_account: bool,
+    pub tokens: HashMap<DieselUlid, APIToken>,
     pub custom_attributes: Vec<CustomAttributes>,
-    pub permissions: Vec<Permission>,
+    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct CustomAttributes {
     pub attribute_name: String,
     pub attribute_value: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub struct Permission {
-    pub resource_id: DieselUlid,
-    pub permission_level: PermissionLevels,
 }
 
 #[async_trait::async_trait]
@@ -180,27 +187,64 @@ impl User {
 
     //ToDo: Rust Doc
     pub async fn add_user_permission(
-        _client: &Client,
-        _user_id: &DieselUlid,
-        _user_perm: Permission,
+        client: &Client,
+        user_id: &DieselUlid,
+        user_perm: HashMap<DieselUlid, DbPermissionLevel>,
     ) -> Result<()> {
-        let _query = "";
+        let query = "UPDATE users
+        SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
+        WHERE id = $2;";
 
-        todo!();
-        //let prepared = client.prepare(query).await?;
-        //client.execute(&prepared, &[&is_service_account, id]).await?;
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&Json(user_perm), user_id])
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove_user_permission(
+        client: &Client,
+        user_id: &DieselUlid,
+        user_perm: &DieselUlid,
+    ) -> Result<()> {
+        // let query = "UPDATE users
+        // SET attributes = attributes #- '{permissions, $1::TEXT}'::jsonb WHERE id = $2;";
+
+        let query = "UPDATE users SET attributes = jsonb_set(attributes, '{permissions}', (attributes->'permissions') - $1::TEXT) WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&user_perm.to_string(), user_id])
+            .await?;
+        Ok(())
     }
 
     //ToDo: Rust Doc
-    pub async fn remove_user_permission(
-        _client: &Client,
-        _user_id: &DieselUlid,
-        _user_perm: Permission,
+    pub async fn add_user_token(
+        client: &Client,
+        user_id: &DieselUlid,
+        token: HashMap<DieselUlid, APIToken>,
     ) -> Result<()> {
-        let _query = "";
+        let query = "UPDATE users
+            SET attributes = jsonb_set(attributes, '{tokens}', attributes->'tokens' || $1::jsonb, true) 
+            WHERE id = $2;";
 
-        todo!();
-        //let prepared = client.prepare(query).await?;
-        //client.execute(&prepared, &[&is_service_account, id]).await?;
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&Json(token), user_id]).await?;
+        Ok(())
+    }
+
+    pub async fn remove_user_token(
+        client: &Client,
+        user_id: &DieselUlid,
+        token_id: &DieselUlid,
+    ) -> Result<()> {
+        let query = "UPDATE users SET attributes = jsonb_set(attributes, '{tokens}', (attributes->'tokens') - $1::TEXT) WHERE id = $2;";
+
+        let prepared = client.prepare(query).await?;
+        client
+            .execute(&prepared, &[&token_id.to_string(), user_id])
+            .await?;
+        Ok(())
     }
 }

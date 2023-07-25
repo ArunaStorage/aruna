@@ -6,11 +6,12 @@ use aruna_server::database::{
             ExternalRelations, Hashes, Inbound, KeyValues, Object, ObjectWithRelations, Outbound,
         },
         relation_type_dsl::RelationType,
-        user_dsl::{Permission, User, UserAttributes},
+        user_dsl::{User, UserAttributes},
     },
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::collections::HashMap;
 
 mod init_db;
 
@@ -25,10 +26,11 @@ async fn create_object() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
-        permissions: vec![Permission {
-            resource_id: obj_id,
-            permission_level: aruna_server::database::enums::PermissionLevels::WRITE,
-        }],
+        tokens: HashMap::new(),
+        permissions: HashMap::from([(
+            obj_id,
+            aruna_server::database::enums::DbPermissionLevel::WRITE,
+        )]),
     });
 
     let user = User {
@@ -95,12 +97,10 @@ async fn get_object_with_relations_test() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
+        tokens: HashMap::new(),
         permissions: object_vec
             .iter()
-            .map(|o| Permission {
-                resource_id: *o,
-                permission_level: aruna_server::database::enums::PermissionLevels::WRITE,
-            })
+            .map(|o| (*o, aruna_server::database::enums::DbPermissionLevel::WRITE))
             .collect(),
     });
 
