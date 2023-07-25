@@ -17,6 +17,8 @@ use aruna_rust_api::api::storage::services::v2::{
     GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
     GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
@@ -315,62 +317,39 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_object(
         &self,
-        _request: Request<GetObjectRequest>,
+        request: Request<GetObjectRequest>,
     ) -> Result<Response<GetObjectResponse>> {
-        todo!()
-        // log::info!("Recieved GetObjectRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let inner_request = request.into_inner();
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error")
-        // })?;
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::READ, // append?
-        //     allow_sa: true,
-        // });
+        let request = request.into_inner();
 
-        // match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // let client = self.database.get_client().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
+        let object_id = tonic_invalid!(
+            DieselUlid::from_str(&request.object_id),
+            "ULID conversion error"
+        );
 
-        // let get_object = Object::get_object_with_relations(&object_id, &client)
-        //     .await
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::aborted("Database read error.")
-        //     })?;
+        let ctx = Context::res_obj(object_id, PermissionLevels::READ, true);
 
-        // let grpc_object = get_object.try_into().map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("Object conversion error.")
-        // })?;
-        // Ok(tonic::Response::new(GetObjectResponse {
-        //     object: Some(grpc_object),
-        // }))
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized"
+        );
+
+        let res = self
+            .cache
+            .get_resource(&aruna_cache::structs::Resource::Object(object_id))
+            .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
+
+        let response = GetObjectResponse {
+            object: Some(res.into_inner()?),
+        };
+
+        return_with_log!(response);
     }
 
     async fn get_upload_url(

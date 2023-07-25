@@ -20,6 +20,8 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
     UpdateDatasetKeyValuesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
@@ -79,66 +81,39 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn get_dataset(
         &self,
-        _request: Request<GetDatasetRequest>,
+        request: Request<GetDatasetRequest>,
     ) -> Result<Response<GetDatasetResponse>> {
-        todo!()
-        // log::info!("Recieved GetDatasetRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let inner_request = request.into_inner();
-        // let object_id = DieselUlid::from_str(&inner_request.dataset_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error")
-        // })?;
-        // let ctx = Context::Dataset(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::READ, // append?
-        //     allow_sa: true,
-        // });
+        let request = request.into_inner();
 
-        // match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // let mut client = self.database.get_client().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
-        // let transaction = client.transaction().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
+        let dataset_id = tonic_invalid!(
+            DieselUlid::from_str(&request.dataset_id),
+            "ULID conversion error"
+        );
 
-        // let client = transaction.client();
-        // let get_object = Object::get_object_with_relations(&object_id, client)
-        //     .await
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::aborted("Database read error.")
-        //     })?;
+        let ctx = Context::res_ds(dataset_id, PermissionLevels::READ, true);
 
-        // let dataset = Some(get_object.try_into().map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ObjectFromRelations conversion failed.")
-        // })?);
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized"
+        );
 
-        // Ok(tonic::Response::new(GetDatasetResponse { dataset }))
+        let res = self
+            .cache
+            .get_resource(&aruna_cache::structs::Resource::Dataset(dataset_id))
+            .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?;
+
+        let response = GetDatasetResponse {
+            dataset: Some(res.into_inner()?),
+        };
+
+        return_with_log!(response);
     }
 
     async fn update_dataset_name(

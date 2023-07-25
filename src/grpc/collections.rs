@@ -21,6 +21,8 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionKeyValuesRequest, UpdateCollectionKeyValuesResponse,
     UpdateCollectionNameRequest, UpdateCollectionNameResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
@@ -80,66 +82,39 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn get_collection(
         &self,
-        _request: Request<GetCollectionRequest>,
+        request: Request<GetCollectionRequest>,
     ) -> Result<Response<GetCollectionResponse>> {
-        todo!()
-        // log::info!("Recieved GetCollectionRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let inner_request = request.into_inner();
-        // let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error")
-        // })?;
-        // let ctx = Context::Collection(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::READ, // append?
-        //     allow_sa: true,
-        // });
+        let request = request.into_inner();
 
-        // match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // let mut client = self.database.get_client().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
-        // let transaction = client.transaction().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
+        let collection_id = tonic_invalid!(
+            DieselUlid::from_str(&request.collection_id),
+            "ULID conversion error"
+        );
 
-        // let client = transaction.client();
-        // let get_object = Object::get_object_with_relations(&object_id, client)
-        //     .await
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::aborted("Database read error.")
-        //     })?;
+        let ctx = Context::res_col(collection_id, PermissionLevels::READ, true);
 
-        // let collection = Some(get_object.try_into().map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ObjectFromRelations conversion failed.")
-        // })?);
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized"
+        );
 
-        // Ok(tonic::Response::new(GetCollectionResponse { collection }))
+        let res = self
+            .cache
+            .get_resource(&aruna_cache::structs::Resource::Collection(collection_id))
+            .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
+
+        let response = GetCollectionResponse {
+            collection: Some(res.into_inner()?),
+        };
+
+        return_with_log!(response);
     }
 
     async fn update_collection_name(

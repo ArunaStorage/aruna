@@ -4,7 +4,7 @@ use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::Context;
+use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
@@ -14,6 +14,8 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
     UpdateProjectKeyValuesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
@@ -67,49 +69,39 @@ impl ProjectService for ProjectServiceImpl {
 
     async fn get_project(
         &self,
-        _request: Request<GetProjectRequest>,
+        request: Request<GetProjectRequest>,
     ) -> Result<Response<GetProjectResponse>> {
-        todo!();
+        log_received!(&request);
 
-        // log::info!("Recieved GetCollectionRequest.");
-        // log::debug!("{:?}", &request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // // let token = tonic_auth!(
-        // //     get_token_from_md(request.metadata()),
-        // //     "Token authentication error."
-        // // );
+        let request = request.into_inner();
 
-        // let inner_request = request.into_inner();
-        // let object_id = tonic_invalid!(
-        //     DieselUlid::from_str(&inner_request.project_id),
-        //     "ULID conversion error"
-        // );
-        // let ctx = Context::ResourceContext(ResourceContext::Project(Some(ApeResourcePermission {
-        //     id: object_id,
-        //     level: PolicyLevels::READ, // append?
-        //     allow_sa: true,
-        // })));
+        let project_id = tonic_invalid!(
+            DieselUlid::from_str(&request.project_id),
+            "ULID conversion error"
+        );
 
-        // tonic_auth!(
-        //     self.authorizer.check_context(&token, ctx).await,
-        //     "unauthorized"
-        // );
-        // let mut client =
-        //     tonic_internal!(self.database.get_client().await, "Database not avaliable");
-        // let transaction = tonic_internal!(client.transaction().await, "Database not avaliable");
+        let ctx = Context::res_proj(Some((project_id, PermissionLevels::READ, true)));
 
-        // let client = transaction.client();
-        // let get_object = tonic_internal!(
-        //     Object::get_object_with_relations(&object_id, client).await,
-        //     "Database read error"
-        // );
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized"
+        );
 
-        // let project = Some(tonic_internal!(
-        //     get_object.try_into(),
-        //     "ObjectFromRelations conversion failed."
-        // ));
+        let res = self
+            .cache
+            .get_resource(&aruna_cache::structs::Resource::Project(project_id))
+            .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
 
-        // Ok(tonic::Response::new(GetProjectResponse { project }))
+        let response = GetProjectResponse {
+            project: Some(res.into_inner()?),
+        };
+
+        return_with_log!(response);
     }
 
     async fn update_project_name(
