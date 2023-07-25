@@ -161,19 +161,6 @@ CREATE TABLE IF NOT EXISTS pub_keys (
     pubkey TEXT NOT NULL
 );
 
--- Table with api tokens which are used to authorize user actions in a specific project and/or collection
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id UUID PRIMARY KEY NOT NULL,
-    user_id UUID NOT NULL REFERENCES users(id),
-    pub_key SMALLSERIAL NOT NULL REFERENCES pub_keys(id) ON DELETE CASCADE,
-    name TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    used_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMP,
-    object_id UUID DEFAULT NULL REFERENCES objects(id),
-    user_right "PermissionLevel"
-);
-
 /* ----- Notification Service -------------------------------------- */
 -- Table for the notification service to persist consumer
 CREATE TABLE IF NOT EXISTS stream_consumers (

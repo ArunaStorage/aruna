@@ -1,4 +1,3 @@
-pub mod api_token_dsl;
 pub mod endpoint_dsl;
 pub mod external_user_id_dsl;
 pub mod identity_provider_dsl;
