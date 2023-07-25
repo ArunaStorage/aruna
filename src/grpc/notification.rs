@@ -116,7 +116,8 @@ impl EventNotificationService for NotificationServiceImpl {
         // Create stream consumer in database and rollback Nats.io consumer on error
         if let Err(err) = stream_consumer.create(&client).await {
             // Try delete Nats.io consumer for rollback
-            self.natsio_handler
+            let _ = self
+                .natsio_handler
                 .delete_event_consumer(consumer_id.to_string())
                 .await;
 
