@@ -21,6 +21,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
     UpdateProjectKeyValuesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
 };
+use async_nats::jetstream::stream::DiscardPolicy;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -417,6 +418,47 @@ impl ProjectService for ProjectServiceImpl {
         //     project,
         // }))
     }
+    async fn delete_project(
+        &self,
+        request: Request<DeleteProjectRequest>,
+    ) -> Result<Response<DeleteProjectResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Project(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+
+        let ctx = Context::res_proj(Some((id, PermissionLevels::WRITE, true)));
+
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
+
+        let updates: Vec<(
+            generic_resource::Resource,
+            DieselUlid,
+            aruna_cache::structs::Resource,
+        )> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for u in updates {
+            tonic_internal!(
+                self.cache.cache.process_api_resource_update(u.0, u.1, u.2),
+                "Caching error"
+            );
+        }
+
+        let response = DeleteProjectResponse {};
+
+        return_with_log!(response);
+    }
     async fn get_projects(
         &self,
         _request: Request<GetProjectsRequest>,
@@ -428,35 +470,5 @@ impl ProjectService for ProjectServiceImpl {
         _request: Request<ArchiveProjectRequest>,
     ) -> Result<Response<ArchiveProjectResponse>> {
         todo!()
-    }
-    async fn delete_project(
-        &self,
-        request: Request<DeleteProjectRequest>,
-    ) -> Result<Response<DeleteProjectResponse>> {
-        log_received!(request);
-
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error."
-        );
-
-        let request = DeleteRequest::Project(request.into_inner());
-        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Project(Some(ApeResourcePermission {
-            id,
-            level: PolicyLevels::WRITE,
-            allow_sa: true,
-        })));
-
-        tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        );
-
-        tonic_internal!(
-            self.database_handler.delete_resource(request).await,
-            "Internal database error."
-        );
-        Ok(tonic::Response::new(DeleteProjectResponse {}))
     }
 }
