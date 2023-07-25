@@ -176,6 +176,7 @@ impl EventHandler for NatsIoHandler {
         return Ok(());
     }
 
+    ///ToDo: Rust Doc
     async fn create_event_stream_handler(
         &self,
         event_consumer_id: String,
@@ -206,12 +207,14 @@ impl EventHandler for NatsIoHandler {
 impl EventStreamHandler for NatsIOEventStreamHandler {
     async fn get_event_consumer_messages(
         &self,
+        max_batch_size: u32,
     ) -> anyhow::Result<Vec<async_nats::jetstream::Message>> {
         // Fetch messages from Nats.io
         let mut batch = self
             .consumer
             .batch()
             .expires(Duration::from_millis(250))
+            .max_messages(max_batch_size as usize)
             .messages()
             .await?;
 
