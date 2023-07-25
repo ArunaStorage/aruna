@@ -82,11 +82,13 @@ async fn get_object_with_relations_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = [dataset_id,
+    let object_vec = [
+        dataset_id,
         collection_one,
         collection_two,
         object_one,
-        object_two];
+        object_two,
+    ];
 
     let attributes = Json(UserAttributes {
         global_admin: false,
@@ -111,10 +113,9 @@ async fn get_object_with_relations_test() {
 
     user.create(client).await.unwrap();
 
-    let insert = "INSERT INTO relation_types (id, relation_name) VALUES ($1, $2);";
+    let insert = "INSERT INTO relation_types (relation_name) VALUES ($1);";
     let prepared = client.prepare(insert).await.unwrap();
     let rel_type = RelationType {
-        id: 1,
         relation_name: "BELONGS_TO".to_string(),
     };
 
