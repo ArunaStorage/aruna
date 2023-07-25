@@ -37,7 +37,7 @@
 /// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
 ///
 /// pub struct MyFieldsServiceImpl {
-///     pub database_handler: DatabaseHandler,
+///     pub database_handler: Arc<DatabaseHandler>,
 ///     pub authorizer: Arc<PolicyEvaluator>,
 ///     pub cache: Arc<NotificationCache>,
 ///     pub variable1: String,
@@ -45,7 +45,7 @@
 /// }
 ///
 /// impl MyFieldsServiceImpl {
-///     pub async fn new(database_handler: DatabaseHandler, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, variable1:String, variable2: String) -> Self {
+///     pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, variable1:String, variable2: String) -> Self {
 ///         MyFieldsServiceImpl {
 ///             database_handler,
 ///             authorizer,
@@ -61,7 +61,7 @@
 macro_rules! impl_grpc_server {
     ($struct_name:ident $(, $variable_name:ident:$variable_type:ty )*) => {
         pub struct $struct_name {
-            pub database_handler: DatabaseHandler,
+            pub database_handler: Arc<DatabaseHandler>,
             pub authorizer: Arc<PolicyEvaluator>,
             pub cache: Arc<NotificationCache>,
             $(
@@ -70,7 +70,7 @@ macro_rules! impl_grpc_server {
         }
 
         impl $struct_name {
-            pub async fn new(database_handler: DatabaseHandler, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
                     database_handler,
                     authorizer,
@@ -117,7 +117,10 @@ macro_rules! tonic_auth {
 #[macro_export]
 macro_rules! log_received {
     ($request:expr) => {
-        log::info!("Recieved {}", $crate::utils::type_name_of($request));
+        log::info!(
+            "Recieved {}",
+            $crate::utils::grpc_utils::type_name_of($request)
+        );
         log::debug!("{:?}", $request);
     };
 }

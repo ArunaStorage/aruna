@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS objects (
     object_type "ObjectType" NOT NULL DEFAULT 'PROJECT',
     external_relations JSONB NOT NULL,
     hashes JSONB NOT NULL DEFAULT '{}',
+    dynamic BOOL NOT NULL DEFAULT TRUE,
     UNIQUE(shared_id, revision_number)
 );
 CREATE INDEX IF NOT EXISTS objects_shared_rev_idx ON objects (shared_id, revision_number);

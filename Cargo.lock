@@ -98,9 +98,9 @@ dependencies = [
 
 [[package]]
 name = "aruna_policy"
-version = "0.2.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af42929263dcf6f5685f0cd94bd2ee7c9eec33c7be9b4f19fb16ce25b6f74d2e"
+checksum = "88e26ce6cd1771ecb3ad003faab97c6135160844bd10565695e730974ea2ee4c"
 dependencies = [
  "anyhow",
  "aruna-cache",

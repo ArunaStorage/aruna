@@ -130,6 +130,7 @@ impl DatabaseHandler {
                 hashes: Json(req.get_hashes(old)?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                dynamic: false,
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -155,6 +156,7 @@ impl DatabaseHandler {
                 hashes: old.hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                dynamic: false,
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {

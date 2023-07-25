@@ -15,7 +15,11 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<(
+        generic_resource::Resource,
+        aruna_cache::structs::Resource,
+        DieselUlid,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -41,6 +45,14 @@ impl DatabaseHandler {
                 Some(ir)
             }
         };
-        from_db_object(internal_relation, object)
+
+        let cache_res = object.get_cache_resource();
+        let shared_id = object.get_shared();
+
+        Ok((
+            from_db_object(internal_relation, object)?,
+            cache_res,
+            shared_id,
+        ))
     }
 }

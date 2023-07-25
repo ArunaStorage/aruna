@@ -81,6 +81,7 @@ pub struct Object {
     pub object_type: ObjectType,
     pub external_relations: Json<ExternalRelations>,
     pub hashes: Json<Hashes>,
+    pub dynamic: bool,
 }
 
 #[derive(FromRow, Debug, FromSql, Clone)]
@@ -107,8 +108,8 @@ pub struct InternalRelationWithULIDsAsStrings {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, shared_id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        let query = "INSERT INTO objects (id, shared_id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
         );";
 
         let prepared = client.prepare(query).await?;
@@ -131,6 +132,7 @@ impl CrudDb for Object {
                     &self.object_type,
                     &self.external_relations,
                     &self.hashes,
+                    &self.dynamic,
                 ],
             )
             .await?;
@@ -385,12 +387,25 @@ impl Object {
         client.query(&prepared, &[&id, &dataclass]).await?;
         Ok(())
     }
+
+    pub fn get_cache_resource(&self) -> aruna_cache::structs::Resource {
+        match self.object_type {
+            ObjectType::PROJECT => aruna_cache::structs::Resource::Project(self.id),
+            ObjectType::COLLECTION => aruna_cache::structs::Resource::Collection(self.id),
+            ObjectType::DATASET => aruna_cache::structs::Resource::Dataset(self.id),
+            ObjectType::OBJECT => aruna_cache::structs::Resource::Object(self.id),
+        }
+    }
+
+    pub fn get_shared(&self) -> DieselUlid {
+        self.shared_id
+    }
 }
 
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         match (&self.created_at, other.created_at) {
-            (Some(_), None) => {
+            (Some(_), None) | (None, Some(_)) | (None, None) => {
                 self.id == other.id
                     && self.revision_number == other.revision_number
                     && self.created_by == other.created_by
@@ -401,22 +416,11 @@ impl PartialEq for Object {
                     && self.object_type == other.object_type
                     && self.external_relations == other.external_relations
                     && self.hashes == other.hashes
+                    && self.dynamic == other.dynamic
             }
             (Some(_), Some(_)) => {
                 self.id == other.id
-                    && self.revision_number == other.revision_number
-                    && self.created_by == other.created_by
                     && self.created_at == other.created_at
-                    && self.content_len == other.content_len
-                    && self.key_values == other.key_values
-                    && self.object_status == other.object_status
-                    && self.data_class == other.data_class
-                    && self.object_type == other.object_type
-                    && self.external_relations == other.external_relations
-                    && self.hashes == other.hashes
-            }
-            (None, Some(_)) => {
-                self.id == other.id
                     && self.revision_number == other.revision_number
                     && self.created_by == other.created_by
                     && self.content_len == other.content_len
@@ -426,18 +430,7 @@ impl PartialEq for Object {
                     && self.object_type == other.object_type
                     && self.external_relations == other.external_relations
                     && self.hashes == other.hashes
-            }
-            (None, None) => {
-                self.id == other.id
-                    && self.revision_number == other.revision_number
-                    && self.created_by == other.created_by
-                    && self.content_len == other.content_len
-                    && self.key_values == other.key_values
-                    && self.object_status == other.object_status
-                    && self.data_class == other.data_class
-                    && self.object_type == other.object_type
-                    && self.external_relations == other.external_relations
-                    && self.hashes == other.hashes
+                    && self.dynamic == other.dynamic
             }
         }
     }

@@ -42,9 +42,10 @@ impl CollectionService for CollectionServiceImpl {
         let parent = request
             .get_parent()
             .ok_or(tonic::Status::invalid_argument("Parent missing."))?;
+
         let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
             id: tonic_invalid!(parent.get_id(), "Invalid parent id."),
-            level: PermissionLevels::WRITE, // append?
+            level: PermissionLevels::APPEND, // append?
             allow_sa: true,
         }));
 

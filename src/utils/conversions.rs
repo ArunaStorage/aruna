@@ -421,9 +421,14 @@ pub fn from_db_object(
         })
     };
 
+    let id = match object.dynamic {
+        true => object.shared_id.to_string(),
+        false => object.id.to_string(),
+    };
+
     match object.object_type {
         ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -433,10 +438,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -446,10 +451,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -459,10 +464,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -472,7 +477,7 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
             hashes: object.hashes.0.into(),
         })),
     }

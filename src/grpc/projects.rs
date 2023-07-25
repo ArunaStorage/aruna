@@ -1,6 +1,10 @@
+use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+use aruna_policy::ape::structs::Context;
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
@@ -19,89 +23,41 @@ crate::impl_grpc_server!(ProjectServiceImpl);
 impl ProjectService for ProjectServiceImpl {
     async fn create_project(
         &self,
-        _request: Request<CreateProjectRequest>,
+        request: Request<CreateProjectRequest>,
     ) -> Result<Response<CreateProjectResponse>> {
-        todo!();
-        // log_received!(request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let inner_request = request.into_inner();
+        let request = CreateRequest::Project(request.into_inner());
 
-        // // let ctx = Context::ResourceContext(ResourceContext::Project(None));
+        let ctx = Context::res_proj(None);
 
-        // let user_id = tonic_auth!(
-        //     self.authorizer.check_context(&token, ctx).await,
-        //     "Unauthorized."
-        // )
-        // .ok_or(tonic::Status::invalid_argument(
-        //     "Invalid user request, user_id is required",
-        // ))?;
+        let user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized"
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        // let id = DieselUlid::generate();
-        // let shared_id = DieselUlid::generate();
+        let generic_project = tonic_internal!(
+            self.database_handler
+                .create_resource(request, user_id)
+                .await,
+            "Internal database error"
+        );
 
-        // let key_values: KeyValues = tonic_invalid!(
-        //     inner_request.key_values.try_into(),
-        //     "KeyValue conversion error."
-        // );
-
-        // let external_relations: ExternalRelations = tonic_invalid!(
-        //     inner_request.external_relations.try_into(),
-        //     "ExternalRelation conversion error."
-        // );
-
-        // let create_object = Object {
-        //     id,
+        // self.cache.cache.process_api_resource_update(
+        //     generic_project,
         //     shared_id,
-        //     revision_number: 0,
-        //     name: inner_request.name,
-        //     description: inner_request.description,
-        //     created_at: None,
-        //     content_len: 0,
-        //     created_by: user_id,
-        //     count: 0,
-        //     key_values: Json(key_values.clone()),
-        //     object_status: crate::database::enums::ObjectStatus::AVAILABLE,
-        //     data_class: tonic_invalid!(
-        //         inner_request.data_class.try_into(),
-        //         "DataClass conversion error."
-        //     ),
-        //     object_type: crate::database::enums::ObjectType::PROJECT,
-        //     external_relations: Json(external_relations.clone()),
-        //     hashes: Json(Hashes(Vec::new())),
-        // };
-
-        // let client = tonic_internal!(self.database.get_client().await, "Database not avaliable.");
-        // tonic_internal!(
-        //     create_object.create(&client).await,
-        //     "Database transaction failed."
+        //     persistent_resource,
         // );
 
-        // let stats = Some(Stats {
-        //     count: 0,
-        //     size: 0,
-        //     last_updated: None, //TODO
-        // });
-        // let grpc_project = Project {
-        //     id: create_object.id.to_string(),
-        //     name: create_object.name,
-        //     description: create_object.description,
-        //     key_values: key_values.into(),
-        //     relations: Vec::new(),
-        //     data_class: create_object.data_class.into(),
-        //     created_at: None, // TODO
-        //     created_by: user_id.to_string(),
-        //     status: create_object.object_status.into(),
-        //     dynamic: true,
-        //     stats,
-        // };
-        // Ok(tonic::Response::new(CreateProjectResponse {
-        //     project: Some(grpc_project),
-        // }))
+        Ok(tonic::Response::new(CreateProjectResponse {
+            project: Some(generic_project.into_inner()?),
+        }))
     }
 
     async fn get_project(

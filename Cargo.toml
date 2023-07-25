@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = "1.0.72"
 aruna-rust-api = "2.0.0-alpha.7"
-aruna_policy = "0.2.0"
+aruna_policy = "0.2.2"
 aruna-cache = "0.2.2"
 async-nats = "0.30.0"
 bigdecimal = "0.4.1"

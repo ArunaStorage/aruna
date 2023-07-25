@@ -106,6 +106,13 @@ impl CreateRequest {
         }
     }
 
+    pub fn is_dynamic(&self) -> bool {
+        match self {
+            CreateRequest::Object(_) => false,
+            _ => true,
+        }
+    }
+
     pub fn get_status(&self) -> ObjectStatus {
         match self {
             CreateRequest::Project(_)
@@ -152,6 +159,7 @@ impl CreateRequest {
             object_type: self.get_type(),
             external_relations: Json(external_relations),
             hashes: Json(hashes),
+            dynamic: self.is_dynamic(),
         })
     }
 }
