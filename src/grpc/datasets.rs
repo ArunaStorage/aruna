@@ -117,6 +117,55 @@ impl DatasetService for DatasetServiceImpl {
         return_with_log!(response);
     }
 
+    async fn get_datasets(
+        &self,
+        _request: Request<GetDatasetsRequest>,
+    ) -> Result<Response<GetDatasetsResponse>> {
+        todo!()
+    }
+
+    async fn delete_dataset(
+        &self,
+        request: Request<DeleteDatasetRequest>,
+    ) -> Result<Response<DeleteDatasetResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Dataset(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+
+        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
+
+        let updates: Vec<(
+            generic_resource::Resource,
+            DieselUlid,
+            aruna_cache::structs::Resource,
+        )> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for u in updates {
+            tonic_internal!(
+                self.cache.cache.process_api_resource_update(u.0, u.1, u.2),
+                "Caching error"
+            );
+        }
+
+        let response = DeleteDatasetResponse {};
+
+        return_with_log!(response);
+    }
+
     async fn update_dataset_name(
         &self,
         request: Request<UpdateDatasetNameRequest>,
@@ -152,7 +201,6 @@ impl DatasetService for DatasetServiceImpl {
 
         Ok(tonic::Response::new(UpdateDatasetNameResponse { dataset }))
     }
-
     async fn update_dataset_description(
         &self,
         request: Request<UpdateDatasetDescriptionRequest>,
@@ -191,43 +239,6 @@ impl DatasetService for DatasetServiceImpl {
         }))
     }
 
-    async fn update_dataset_data_class(
-        &self,
-        request: Request<UpdateDatasetDataClassRequest>,
-    ) -> Result<Response<UpdateDatasetDataClassResponse>> {
-        log_received!(&request);
-
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error."
-        );
-
-        let request = DataClassUpdate::Dataset(request.into_inner());
-        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: dataset_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
-
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
-
-        let dataset = match tonic_internal!(
-            self.database_handler.update_dataclass(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
-
-        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
-            dataset,
-        }))
-    }
     async fn update_dataset_key_values(
         &self,
         request: Request<UpdateDatasetKeyValuesRequest>,
@@ -265,43 +276,42 @@ impl DatasetService for DatasetServiceImpl {
             dataset,
         }))
     }
-
-    async fn delete_dataset(
+    async fn update_dataset_data_class(
         &self,
-        request: Request<DeleteDatasetRequest>,
-    ) -> Result<Response<DeleteDatasetResponse>> {
-        log_received!(request);
+        request: Request<UpdateDatasetDataClassRequest>,
+    ) -> Result<Response<UpdateDatasetDataClassResponse>> {
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
             "Token authentication error."
         );
 
-        let request = DeleteRequest::Dataset(request.into_inner());
-        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Dataset(ApeResourcePermission {
-            id,
-            level: PermissionLevels::WRITE,
+        let request = DataClassUpdate::Dataset(request.into_inner());
+        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
+            id: dataset_id,
+            level: PermissionLevels::WRITE, // append?
             allow_sa: true,
         }));
 
-        tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        );
+        )
+        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
 
-        tonic_internal!(
-            self.database_handler.delete_resource(request).await,
+        let dataset = match tonic_internal!(
+            self.database_handler.update_dataclass(request).await,
             "Internal database error."
-        );
+        ) {
+            generic_resource::Resource::Dataset(d) => Some(d),
+            _ => return Err(tonic::Status::unknown("This should not happen.")),
+        };
 
-        Ok(tonic::Response::new(DeleteDatasetResponse {}))
-    }
-    async fn get_datasets(
-        &self,
-        _request: Request<GetDatasetsRequest>,
-    ) -> Result<Response<GetDatasetsResponse>> {
-        todo!()
+        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
+            dataset,
+        }))
     }
     async fn snapshot_dataset(
         &self,

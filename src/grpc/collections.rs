@@ -118,6 +118,55 @@ impl CollectionService for CollectionServiceImpl {
         return_with_log!(response);
     }
 
+    async fn get_collections(
+        &self,
+        _request: Request<GetCollectionsRequest>,
+    ) -> Result<Response<GetCollectionsResponse>> {
+        todo!()
+    }
+
+    async fn delete_collection(
+        &self,
+        request: Request<DeleteCollectionRequest>,
+    ) -> Result<Response<DeleteCollectionResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Collection(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+
+        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
+
+        let updates: Vec<(
+            generic_resource::Resource,
+            DieselUlid,
+            aruna_cache::structs::Resource,
+        )> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for u in updates {
+            tonic_internal!(
+                self.cache.cache.process_api_resource_update(u.0, u.1, u.2),
+                "Caching error"
+            );
+        }
+
+        let response = DeleteCollectionResponse {};
+
+        return_with_log!(response);
+    }
+
     async fn update_collection_name(
         &self,
         request: Request<UpdateCollectionNameRequest>,
@@ -194,44 +243,6 @@ impl CollectionService for CollectionServiceImpl {
         }))
     }
 
-    async fn update_collection_data_class(
-        &self,
-        request: Request<UpdateCollectionDataClassRequest>,
-    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
-        log_received!(&request);
-
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error."
-        );
-
-        let request = DataClassUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
-
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
-
-        let collection = match tonic_internal!(
-            self.database_handler.update_dataclass(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
-
-        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
-            collection,
-        }))
-    }
-
     async fn update_collection_key_values(
         &self,
         request: Request<UpdateCollectionKeyValuesRequest>,
@@ -269,43 +280,42 @@ impl CollectionService for CollectionServiceImpl {
             collection,
         }))
     }
-
-    async fn get_collections(
+    async fn update_collection_data_class(
         &self,
-        _request: Request<GetCollectionsRequest>,
-    ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
-    }
-    async fn delete_collection(
-        &self,
-        request: Request<DeleteCollectionRequest>,
-    ) -> Result<Response<DeleteCollectionResponse>> {
-        log_received!(request);
+        request: Request<UpdateCollectionDataClassRequest>,
+    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
             "Token authentication error."
         );
 
-        let request = DeleteRequest::Collection(request.into_inner());
+        let request = DataClassUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
         let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
             id: collection_id,
-            level: PermissionLevels::WRITE,
+            level: PermissionLevels::WRITE, // append?
             allow_sa: true,
         }));
 
-        tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        );
+        )
+        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
 
-        tonic_internal!(
-            self.database_handler.delete_resource(request).await,
+        let collection = match tonic_internal!(
+            self.database_handler.update_dataclass(request).await,
             "Internal database error."
-        );
+        ) {
+            generic_resource::Resource::Collection(c) => Some(c),
+            _ => return Err(tonic::Status::unknown("This should not happen.")),
+        };
 
-        Ok(tonic::Response::new(DeleteCollectionResponse {}))
+        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
+            collection,
+        }))
     }
     async fn snapshot_collection(
         &self,
