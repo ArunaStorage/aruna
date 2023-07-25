@@ -18,6 +18,7 @@ async fn create_user_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -52,6 +53,7 @@ async fn update_user_name_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -91,6 +93,7 @@ async fn update_user_email_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -130,6 +133,7 @@ async fn update_user_admin_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -169,6 +173,7 @@ async fn update_user_service_account_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -208,6 +213,7 @@ async fn delete_user_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -239,6 +245,7 @@ async fn add_permission_user_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -303,6 +310,7 @@ async fn remove_user_permission_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
@@ -404,6 +412,7 @@ async fn user_token_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
