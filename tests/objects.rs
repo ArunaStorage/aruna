@@ -57,6 +57,7 @@ async fn create_object() {
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: false,
     };
     create_object.create(&client).await.unwrap();
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
@@ -140,6 +141,7 @@ async fn get_object_with_relations_test() {
         object_type: aruna_server::database::enums::ObjectType::DATASET,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: true,
     };
     let create_collection_one = Object {
         id: collection_one,
@@ -157,6 +159,7 @@ async fn get_object_with_relations_test() {
         object_type: aruna_server::database::enums::ObjectType::COLLECTION,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: true,
     };
     let create_collection_two = Object {
         id: collection_two,
@@ -174,6 +177,7 @@ async fn get_object_with_relations_test() {
         object_type: aruna_server::database::enums::ObjectType::COLLECTION,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: true,
     };
     let create_object_one = Object {
         id: object_one,
@@ -191,6 +195,7 @@ async fn get_object_with_relations_test() {
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: false,
     };
     let create_object_two = Object {
         id: object_two,
@@ -208,6 +213,7 @@ async fn get_object_with_relations_test() {
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
+        dynamic: false,
     };
     let creates = vec![
         create_dataset.clone(),
