@@ -3,6 +3,7 @@ use std::str::FromStr;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{ObjectStatus, ObjectType};
 use anyhow::Result;
+use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -42,24 +43,44 @@ impl Parent {
             Parent::Dataset(_) => ObjectType::DATASET,
         }
     }
+
+    pub fn get_context(&self) -> Result<Context> {
+        match self {
+            Parent::Project(_) => Ok(Context::res_proj(Some((
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )))),
+            Parent::Collection(_) => Ok(Context::res_col(
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )),
+            Parent::Dataset(_) => Ok(Context::res_ds(
+                self.get_id()?,
+                PermissionLevels::APPEND,
+                true,
+            )),
+        }
+    }
 }
 
 impl CreateRequest {
     pub fn get_name(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.name,
-            CreateRequest::Collection(request) => request.name,
-            CreateRequest::Dataset(request) => request.name,
-            CreateRequest::Object(request) => request.name,
+            CreateRequest::Project(request) => request.name.to_string(),
+            CreateRequest::Collection(request) => request.name.to_string(),
+            CreateRequest::Dataset(request) => request.name.to_string(),
+            CreateRequest::Object(request) => request.name.to_string(),
         }
     }
 
     pub fn get_description(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.description,
-            CreateRequest::Collection(request) => request.description,
-            CreateRequest::Dataset(request) => request.description,
-            CreateRequest::Object(request) => request.description,
+            CreateRequest::Project(request) => request.description.to_string(),
+            CreateRequest::Collection(request) => request.description.to_string(),
+            CreateRequest::Dataset(request) => request.description.to_string(),
+            CreateRequest::Object(request) => request.description.to_string(),
         }
     }
 
@@ -92,7 +113,7 @@ impl CreateRequest {
 
     pub fn get_hashes(&self) -> Option<Vec<Hash>> {
         match self {
-            CreateRequest::Object(request) => Some(request.hashes),
+            CreateRequest::Object(request) => Some(request.hashes.clone()),
             _ => None,
         }
     }
@@ -103,6 +124,13 @@ impl CreateRequest {
             CreateRequest::Collection(_) => ObjectType::COLLECTION,
             CreateRequest::Dataset(_) => ObjectType::DATASET,
             CreateRequest::Object(_) => ObjectType::OBJECT,
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        match self {
+            CreateRequest::Object(_) => false,
+            _ => true,
         }
     }
 
@@ -117,10 +145,10 @@ impl CreateRequest {
 
     pub fn get_parent(&self) -> Option<Parent> {
         match self {
-            CreateRequest::Project(request) => None,
-            CreateRequest::Collection(request) => Some(request.parent?.into()),
-            CreateRequest::Dataset(request) => Some(request.parent?.into()),
-            CreateRequest::Object(request) => Some(request.parent?.into()),
+            CreateRequest::Project(_) => None,
+            CreateRequest::Collection(request) => Some(request.parent.clone()?.into()),
+            CreateRequest::Dataset(request) => Some(request.parent.clone()?.into()),
+            CreateRequest::Object(request) => Some(request.parent.clone()?.into()),
         }
     }
 
@@ -152,6 +180,7 @@ impl CreateRequest {
             object_type: self.get_type(),
             external_relations: Json(external_relations),
             hashes: Json(hashes),
+            dynamic: self.is_dynamic(),
         })
     }
 }

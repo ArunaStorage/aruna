@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS objects (
     object_type "ObjectType" NOT NULL DEFAULT 'PROJECT',
     external_relations JSONB NOT NULL,
     hashes JSONB NOT NULL DEFAULT '{}',
+    dynamic BOOL NOT NULL DEFAULT TRUE,
     UNIQUE(shared_id, revision_number)
 );
 CREATE INDEX IF NOT EXISTS objects_shared_rev_idx ON objects (shared_id, revision_number);
@@ -145,7 +146,7 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     id UUID PRIMARY KEY NOT NULL,
     origin_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     origin_type "ObjectType" NOT NULL,
-    type_id INT NOT NULL REFERENCES relation_types(relation_name) ON DELETE CASCADE,
+    relation_name VARCHAR(511) NOT NULL REFERENCES relation_types(relation_name) ON DELETE CASCADE,
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_type "ObjectType" NOT NULL,
     is_persistent BOOL NOT NULL DEFAULT FALSE

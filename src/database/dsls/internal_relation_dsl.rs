@@ -15,7 +15,7 @@ pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
     pub origin_type: ObjectType,
-    pub type_name: String,
+    pub relation_name: String,
     pub target_pid: DieselUlid,
     pub target_type: ObjectType,
     pub is_persistent: bool,
@@ -30,7 +30,7 @@ pub const INTERNAL_RELATION_VARIANT_POLICY: &str = "POLICY";
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, type_id, target_pid, target_type, is_persistent) VALUES (
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, is_persistent) VALUES (
             $1, $2, $3, $4, $5, $6, $7
         );";
 
@@ -43,7 +43,7 @@ impl CrudDb for InternalRelation {
                     &self.id,
                     &self.origin_pid,
                     &self.origin_type,
-                    &self.type_name,
+                    &self.relation_name,
                     &self.target_pid,
                     &self.target_type,
                     &self.is_persistent,

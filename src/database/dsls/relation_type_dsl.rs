@@ -5,7 +5,6 @@ use tokio_postgres::Client;
 
 #[derive(FromRow, Debug)]
 pub struct RelationType {
-    pub id: i16,
     pub relation_name: String,
 }
 
@@ -14,9 +13,7 @@ impl CrudDb for RelationType {
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO relation_types (id, relation_name) VALUES ($1, $2);";
         let prepared = client.prepare(query).await?;
-        client
-            .query(&prepared, &[&self.id, &self.relation_name])
-            .await?;
+        client.query(&prepared, &[&self.relation_name]).await?;
         Ok(())
     }
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
@@ -35,9 +32,9 @@ impl CrudDb for RelationType {
     }
 
     async fn delete(&self, client: &Client) -> Result<()> {
-        let query = "DELETE FROM relation_types WHERE id = $1";
+        let query = "DELETE FROM relation_types WHERE relation_name = $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&self.id]).await?;
+        client.execute(&prepared, &[&self.relation_name]).await?;
         Ok(())
     }
 }

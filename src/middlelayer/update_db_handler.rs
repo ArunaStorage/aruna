@@ -1,17 +1,15 @@
+use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::object_dsl::Object;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
-
-use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-
-use super::update_request_types::UpdateObject;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(
@@ -23,7 +21,7 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let dataclass = request.get_dataclass()?;
         let id = request.get_id()?;
-        let old_class: i32 = Object::get(id, &transaction_client)
+        let old_class: i32 = Object::get(id, transaction_client)
             .await?
             .ok_or(anyhow!("Resource not found."))?
             .data_class
@@ -31,12 +29,12 @@ impl DatabaseHandler {
         if old_class > dataclass.clone().into() {
             return Err(anyhow!("Dataclasses can only be relaxed."));
         }
-        Object::update_dataclass(id, dataclass, &transaction_client).await?;
+        Object::update_dataclass(id, dataclass, transaction_client).await?;
         let object_with_relations =
-            Object::get_object_with_relations(&id, &transaction_client).await?;
+            Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        Ok(object_with_relations.try_into()?)
+        object_with_relations.try_into()
     }
     pub async fn update_name(&self, request: NameUpdate) -> Result<generic_resource::Resource> {
         let mut client = self.database.get_client().await?;
@@ -44,12 +42,12 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let name = request.get_name();
         let id = request.get_id()?;
-        Object::update_name(id, name, &transaction_client).await?;
+        Object::update_name(id, name, transaction_client).await?;
         let object_with_relations =
-            Object::get_object_with_relations(&id, &transaction_client).await?;
+            Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        Ok(object_with_relations.try_into()?)
+        object_with_relations.try_into()
     }
     pub async fn update_description(
         &self,
@@ -60,11 +58,11 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let description = request.get_description();
         let id = request.get_id()?;
-        Object::update_description(id, description, &transaction_client).await?;
+        Object::update_description(id, description, transaction_client).await?;
         let object_with_relations =
-            Object::get_object_with_relations(&id, &transaction_client).await?;
+            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-        Ok(object_with_relations.try_into()?)
+        object_with_relations.try_into()
     }
     pub async fn update_keyvals(
         &self,
@@ -96,7 +94,7 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
 
-        Ok(object_with_relations.try_into()?)
+        object_with_relations.try_into()
     }
     pub async fn update_grpc_object(
         &self,
@@ -108,7 +106,7 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let req = UpdateObject(request.clone());
         let id = req.get_id()?;
-        let old = Object::get(id, &transaction_client)
+        let old = Object::get(id, transaction_client)
             .await?
             .ok_or(anyhow!("Object not found."))?;
         let flag = if request.name.is_some()
@@ -132,14 +130,12 @@ impl DatabaseHandler {
                 hashes: Json(req.get_hashes(old)?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                dynamic: false,
             };
             create_object.create(transaction_client).await?;
-            match request.parent {
-                Some(p) => {
-                    let relation = UpdateObject::add_parent_relation(id, p)?;
-                    relation.create(&transaction_client).await?;
-                }
-                None => (),
+            if let Some(p) = request.parent {
+                let relation = UpdateObject::add_parent_relation(id, p)?;
+                relation.create(transaction_client).await?;
             }
             true
         } else {
@@ -160,18 +156,16 @@ impl DatabaseHandler {
                 hashes: old.hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                dynamic: false,
             };
             update_object.update(transaction_client).await?;
-            match request.parent {
-                Some(p) => {
-                    let relation = UpdateObject::add_parent_relation(id, p)?;
-                    relation.create(&transaction_client).await?;
-                }
-                None => (),
+            if let Some(p) = request.parent {
+                let relation = UpdateObject::add_parent_relation(id, p)?;
+                relation.create(transaction_client).await?;
             }
             false
         };
-        let grpc_object = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let grpc_object = Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
 
         Ok((grpc_object.try_into()?, flag))

@@ -15,7 +15,11 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -35,12 +39,20 @@ impl DatabaseHandler {
                     is_persistent: false,
                     target_pid: object.id,
                     target_type: ObjectType::OBJECT,
-                    type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                 };
                 ir.create(transaction_client).await?;
                 Some(ir)
             }
         };
-        Ok(from_db_object(internal_relation, object)?)
+
+        let cache_res = object.get_cache_resource();
+        let shared_id = object.get_shared();
+
+        Ok((
+            from_db_object(internal_relation, object)?,
+            shared_id,
+            cache_res,
+        ))
     }
 }

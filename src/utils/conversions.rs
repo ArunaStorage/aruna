@@ -83,8 +83,8 @@ impl TryFrom<&KeyValue> for DBKeyValue {
     type Error = anyhow::Error;
     fn try_from(key_val: &KeyValue) -> Result<Self> {
         Ok(DBKeyValue {
-            key: key_val.key,
-            value: key_val.value,
+            key: key_val.key.clone(),
+            value: key_val.value.clone(),
             variant: key_val.variant.try_into()?,
         })
     }
@@ -120,11 +120,11 @@ impl TryFrom<&ExternalRelation> for DBExternalRelation {
         let (defined_variant, custom_variant) = match ex_rel.defined_variant {
             1 => (DefinedVariant::URL, None),
             2 => (DefinedVariant::IDENTIFIER, None),
-            3 => (DefinedVariant::CUSTOM, ex_rel.custom_variant),
+            3 => (DefinedVariant::CUSTOM, ex_rel.custom_variant.clone()),
             _ => return Err(anyhow!("Relation variant not defined.")),
         };
         Ok(DBExternalRelation {
-            identifier: ex_rel.identifier,
+            identifier: ex_rel.identifier.to_string(),
             defined_variant,
             custom_variant,
         })
@@ -381,13 +381,13 @@ pub fn from_db_internal_relation(
     resource_variant: i32,
 ) -> Result<APIInternalRelation> {
     let direction = if resource_is_origin { 1 } else { 2 };
-    let (defined_variant, custom_variant) = match internal.type_name.as_str() {
+    let (defined_variant, custom_variant) = match internal.relation_name.as_str() {
         INTERNAL_RELATION_VARIANT_BELONGS_TO => (1, None),
         INTERNAL_RELATION_VARIANT_ORIGIN => (2, None),
         INTERNAL_RELATION_VARIANT_VERSION => (3, None),
         INTERNAL_RELATION_VARIANT_METADATA => (4, None),
         INTERNAL_RELATION_VARIANT_POLICY => (5, None),
-        _ => (6, Some(internal.type_name)),
+        _ => (6, Some(internal.relation_name)),
     };
     Ok(APIInternalRelation {
         resource_id: internal.origin_pid.to_string(),
@@ -411,20 +411,24 @@ pub fn from_db_object(
             relation: Some(RelationEnum::External(r.into())),
         })
         .collect();
-    let parent_relation = match internal {
-        Some(i) => relations.push(Relation {
+    if let Some(i) = internal {
+        relations.push(Relation {
             relation: Some(RelationEnum::Internal(from_db_internal_relation(
-                i,
+                i.clone(),
                 false,
                 i.origin_type.try_into()?,
             )?)),
-        }),
-        None => (),
+        })
+    };
+
+    let id = match object.dynamic {
+        true => object.shared_id.to_string(),
+        false => object.id.to_string(),
     };
 
     match object.object_type {
         ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -434,10 +438,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -447,10 +451,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -460,10 +464,10 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
-            id: object.id.to_string(),
+            id,
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -473,7 +477,7 @@ pub fn from_db_object(
             created_at: None, // TODO
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
-            dynamic: false,
+            dynamic: object.dynamic,
             hashes: object.hashes.0.into(),
         })),
     }

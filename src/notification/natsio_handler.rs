@@ -52,7 +52,7 @@ impl EventHandler for NatsIoHandler {
                 None => return Err(anyhow::anyhow!("No event resource provided")),
             },
             MessageVariant::UserEvent(event) => generate_user_message_subject(&event.user_id),
-            MessageVariant::AnnouncementEvent(event) => todo!(), //generate_announcement_message_subject(event),
+            MessageVariant::AnnouncementEvent(_event) => todo!(), //generate_announcement_message_subject(event),
         };
 
         // Encode message

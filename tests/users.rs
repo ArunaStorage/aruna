@@ -1,6 +1,6 @@
 use aruna_server::database::{
     crud::CrudDb,
-    user_dsl::{User, UserAttributes},
+    dsls::user_dsl::{User, UserAttributes},
 };
 use diesel_ulid::DieselUlid;
 
