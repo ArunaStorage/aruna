@@ -2,6 +2,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::{Hashes, Object};
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
@@ -230,84 +231,30 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>> {
-        log::info!("Recieved DeleteObjectRequest.");
-        log::debug!("{:?}", &request);
+        log_received!(request);
 
-        let token = get_token_from_md(request.metadata()).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
 
-        let inner_request = request.into_inner();
-        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error")
-        })?;
-        let ctx = Context::Object(ResourcePermission {
-            id: object_id,
-            level: crate::database::enums::PermissionLevels::ADMIN,
-            allow_sa: false,
-        });
+        let request = DeleteRequest::Object(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+        let ctx = Context::ResourceContext(ResourceContext::Dataset(ApeResourcePermission {
+            id,
+            level: PermissionLevels::WRITE,
+            allow_sa: true,
+        }));
 
-        match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                    // ToDo!
-                    // PLACEHOLDER!
-                    DieselUlid::generate()
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
+        tonic_auth!(
+            &self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
 
-        let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error.")
-        })?;
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        let transaction = client.transaction().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        let transaction_client = transaction.client();
-        let object = Object::get(object_id, transaction_client)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::unavailable("Database call failed.")
-            })?
-            .ok_or(tonic::Status::not_found("Object not found."))?;
-        // Should only mark as deleted
-        match inner_request.with_revisions {
-            true => {
-                let revisions = Object::get_all_revisions(&object.shared_id, transaction_client)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::unavailable("Revisions not found")
-                    })?;
-                for r in revisions {
-                    r.delete(transaction_client).await.map_err(|e| {
-                        log::error!("{}", e);
-                        tonic::Status::aborted("Database delete transaction failed.")
-                    })?;
-                }
-            }
-            false => {
-                object.delete(transaction_client).await.map_err(|e| {
-                    log::error!("{}", e);
-                    tonic::Status::aborted("Database delete transaction failed.")
-                })?;
-            }
-        };
+        tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error."
+        );
         Ok(tonic::Response::new(DeleteObjectResponse {}))
     }
     async fn get_object(
