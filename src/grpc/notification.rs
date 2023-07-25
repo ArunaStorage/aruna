@@ -114,13 +114,14 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Create stream consumer in database and rollback Nats.io consumer on error
-        stream_consumer.create(&client).await.map_err(|e| {
-            // Try to delete consumer in Nats as rollback
-            let _ = self
+        if let Err(err) = stream_consumer.create(&client).await {
+            // Try delete Nats.io consumer for rollback
+            self
                 .natsio_handler
-                .delete_event_consumer(consumer_id.to_string());
-            Status::internal(e.to_string())
-        })?;
+                .delete_event_consumer(consumer_id.to_string()).await;
+
+            return Err(Status::internal(err.to_string()))
+        }
 
         // Create gRPC response
         let grpc_response = Response::new(CreateStreamConsumerResponse {
