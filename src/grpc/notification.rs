@@ -28,10 +28,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Result, Status};
 
 use crate::{
-    database::{
-        connection::Database, crud::CrudDb, dsls::notification_dsl::StreamConsumer,
-        enums::ObjectType,
-    },
+    database::{crud::CrudDb, dsls::notification_dsl::StreamConsumer, enums::ObjectType},
     notification::{
         handler::{EventHandler, EventType},
         natsio_handler::NatsIoHandler,
@@ -149,10 +146,15 @@ impl EventNotificationService for NotificationServiceImpl {
         };
 
         // Get database client
-        let client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
+        let client = &self
+            .database_handler
+            .database
+            .get_client()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unavailable("Database not avaliable.")
+            })?;
 
         // Create consumer in Nats.io and delete database stream consumer on error
         stream_consumer.create(&client).await.map_err(|e| {
@@ -212,10 +214,15 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Fetch stream consumer, parse subject and check specific permissions. This is shit.
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not available.")
-        })?;
+        let mut client = &self
+            .database_handler
+            .database
+            .get_client()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unavailable("Database not available.")
+            })?;
 
         let stream_consumer = StreamConsumer::get(consumer_id, &client)
             .await
@@ -414,10 +421,15 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Get transaction client
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
+        let mut client = self
+            .database_handler
+            .database
+            .get_client()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unavailable("Database not avaliable.")
+            })?;
 
         let transaction = client.transaction().await.map_err(|e| {
             log::error!("{}", e);
