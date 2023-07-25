@@ -36,6 +36,7 @@ async fn create_object() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes,
         active: true,
@@ -107,6 +108,7 @@ async fn get_object_with_relations_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes,
         active: true,

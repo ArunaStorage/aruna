@@ -295,7 +295,7 @@ impl Object {
         row.map(|e| -> Result<ObjectWithRelations> {
             //let inbound: Json<Inbound> = ;
             let inbound = Json(Inbound(
-                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(15)
+                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(16)
                     .0
                     .into_iter()
                     .map(|i| -> Result<InternalRelation> {
@@ -312,7 +312,7 @@ impl Object {
                     .collect::<Result<Vec<_>>>()?,
             ));
             let outbound = Json(Outbound(
-                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(16)
+                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(17)
                     .0
                     .into_iter()
                     .map(|i| -> Result<InternalRelation> {
