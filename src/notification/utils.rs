@@ -46,7 +46,7 @@ pub fn generate_resource_message_subject(
     }
 }
 
-//ToDo: Rust Doc
+///ToDo: Rust Doc
 pub fn generate_user_subject(user_id: &str) -> String {
     format!("AOS.USER.{}.>", user_id)
 }
@@ -56,12 +56,12 @@ pub fn generate_user_message_subject(user_id: &str) -> String {
     format!("AOS.USER.{}._", user_id)
 }
 
-//ToDo: Rust Doc
+///ToDo: Rust Doc
 pub fn generate_announcement_subject() -> String {
     "AOS.ANNOUNCEMENT".to_string()
 }
 
-//ToDo: Rust Doc
+///ToDo: Rust Doc
 pub fn generate_announcement_message_subject(event_variant: &EventVariant) -> String {
     match event_variant {
         EventVariant::NewDataProxyId(_) => "AOS.ANNOUNCEMENT.DATAPROXY.NEW".to_string(),
@@ -74,7 +74,7 @@ pub fn generate_announcement_message_subject(event_variant: &EventVariant) -> St
     }
 }
 
-//ToDo: This will be interesting ...
+///ToDo: Rust Doc
 pub fn parse_event_consumer_subject(subject: &str) -> anyhow::Result<EventType> {
     // Evaluate general message variant
     if subject.starts_with("AOS.RESOURCE") {
@@ -89,30 +89,17 @@ pub fn parse_event_consumer_subject(subject: &str) -> anyhow::Result<EventType> 
         }]
         .to_string();
 
-        // Use number of wildcards as hint for object type
-        match placeholder_count {
-            0 => Ok(EventType::Resource((
-                resource_id,
-                ObjectType::PROJECT,
-                include_subresources,
-            ))),
-            1 => Ok(EventType::Resource((
-                resource_id,
-                ObjectType::COLLECTION,
-                include_subresources,
-            ))),
-            2 => Ok(EventType::Resource((
-                resource_id,
-                ObjectType::DATASET,
-                include_subresources,
-            ))),
-            3 => Ok(EventType::Resource((
-                resource_id,
-                ObjectType::OBJECT,
-                include_subresources,
-            ))),
-            _ => Err(anyhow::anyhow!("Could not determine resource type")),
-        }
+        Ok(EventType::Resource((
+            resource_id,
+            match placeholder_count {
+                0 => ObjectType::PROJECT,
+                1 => ObjectType::COLLECTION,
+                2 => ObjectType::DATASET,
+                3 => ObjectType::OBJECT,
+                _ => return Err(anyhow::anyhow!("Could not determine resource type")),
+            },
+            include_subresources,
+        )))
     } else if subject.starts_with("AOS.USER") {
         // Parse user_id
         let user_id = subject.split('.').collect::<Vec<_>>()[2];
