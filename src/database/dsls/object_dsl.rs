@@ -1,9 +1,8 @@
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
 };
-
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
@@ -93,8 +92,10 @@ pub struct ObjectWithRelations {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Inbound(pub Vec<InternalRelation>);
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Outbound(pub Vec<InternalRelation>);
+
 #[derive(Serialize, Deserialize, FromRow, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct InternalRelationWithULIDsAsStrings {
     pub id: String,
@@ -105,6 +106,7 @@ pub struct InternalRelationWithULIDsAsStrings {
     pub target_type: ObjectType,
     pub is_persistent: bool,
 }
+
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
@@ -138,6 +140,7 @@ impl CrudDb for Object {
             .await?;
         Ok(())
     }
+
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
         let query = "SELECT * FROM objects WHERE id = $1";
         let prepared = client.prepare(query).await?;
@@ -146,6 +149,7 @@ impl CrudDb for Object {
             .await?
             .map(|e| Object::from_row(&e)))
     }
+
     async fn all(client: &Client) -> Result<Vec<Self>> {
         let query = "SELECT * FROM objects";
         let prepared = client.prepare(query).await?;
@@ -173,6 +177,7 @@ impl Object {
         client.execute(&prepared, &[&Json(kv), id]).await?;
         Ok(())
     }
+
     pub async fn remove_key_value(&self, client: &Client, kv: KeyValue) -> Result<()> {
         let element: i32 = self
             .key_values
@@ -226,6 +231,7 @@ impl Object {
         client.execute(&prepared, &[&element, &self.id]).await?;
         Ok(())
     }
+
     pub async fn finish_object_staging(
         id: &DieselUlid,
         client: &Client,
@@ -255,6 +261,7 @@ impl Object {
         };
         Ok(())
     }
+
     pub async fn get_latest_object_by_dynamic_id(
         id: &DieselUlid,
         client: &Client,
@@ -267,6 +274,7 @@ impl Object {
             .map(|e| Object::from_row(&e))?;
         Ok(object)
     }
+
     pub async fn get_all_revisions(id: &DieselUlid, client: &Client) -> Result<Vec<Object>> {
         let query = "SELECT * FROM objects WHERE shared_id = $1";
         let prepared = client.prepare(query).await?;
@@ -278,6 +286,7 @@ impl Object {
             .collect();
         Ok(object)
     }
+
     pub async fn get_object_with_relations(
         id: &DieselUlid,
         client: &Client,
@@ -335,6 +344,7 @@ impl Object {
             })
         })?
     }
+
     pub async fn update(&self, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
         SET description = $2, key_values = $3, data_class = $4)
@@ -355,6 +365,7 @@ impl Object {
             .await?;
         Ok(())
     }
+
     pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
         SET name = $2
@@ -363,6 +374,7 @@ impl Object {
         client.query(&prepared, &[&id, &name]).await?;
         Ok(())
     }
+
     pub async fn update_description(
         id: DieselUlid,
         description: String,
@@ -375,6 +387,7 @@ impl Object {
         client.query(&prepared, &[&id, &description]).await?;
         Ok(())
     }
+
     pub async fn update_dataclass(
         id: DieselUlid,
         dataclass: DataClass,
