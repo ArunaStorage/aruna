@@ -65,5 +65,8 @@ pub trait EventStreamHandler {
     // This call expected to return after a certain timeout even if no messages are available
     // This is currently specific to nats.io and needs to be generalized
     // TODO: Generalize
-    async fn get_event_consumer_messages(&self) -> anyhow::Result<Vec<Message>>;
+    async fn get_event_consumer_messages(
+        &self,
+        max_batch_size: u32,
+    ) -> anyhow::Result<Vec<Message>>;
 }

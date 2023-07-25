@@ -19,7 +19,7 @@ use aruna_rust_api::api::{
     },
     storage::models::v2::ResourceVariant,
 };
-use async_nats::jetstream::consumer::DeliverPolicy;
+use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -75,50 +75,8 @@ impl EventNotificationService for NotificationServiceImpl {
         })?;
 
         // Evaluate fitting context and check permissions
-        let perm_context = match inner_request.target {
-            Some(stream_target) => {
-                if let Target::Resource(resource) = stream_target {
-                    let resource_permission = ApeResourcePermission {
-                        id: DieselUlid::from_str(&resource.resource_id)
-                            .map_err(|err| Status::invalid_argument(err.to_string()))?,
-                        level: PermissionLevels::READ,
-                        allow_sa: true,
-                    };
-
-                    Context::ResourceContext(match resource.resource_variant() {
-                        ResourceVariant::Unspecified => {
-                            return Err(Status::invalid_argument("Unspecified resource variant"))
-                        }
-                        ResourceVariant::Project => {
-                            ResourceContext::Project(Some(resource_permission))
-                        }
-                        ResourceVariant::Collection => {
-                            ResourceContext::Collection(resource_permission)
-                        }
-                        ResourceVariant::Dataset => ResourceContext::Dataset(resource_permission),
-                        ResourceVariant::Object => ResourceContext::Object(resource_permission),
-                    })
-                } else if let Target::User(user_id) = stream_target {
-                    let user_ulid = DieselUlid::from_str(&user_id)
-                        .map_err(|_| Status::invalid_argument("Invalid user id format"))?;
-                    Context::User(ApeUserPermission {
-                        id: user_id,
-                        allow_proxy: true,
-                    })
-                } else if let Target::Anouncements(_) = stream_target {
-                    // Empty context -> just active user
-                    return Err(Status::unimplemented(
-                        "No permission checking context yet implemented",
-                    ));
-                } else {
-                    // Rest should be Target::All
-                    Context::GlobalAdmin
-                }
-            }
-            None => return Err(Status::invalid_argument("Event target required")),
-        };
-
-        tonic_auth!(
+        let perm_context = convert_target_to_context(inner_request.target)?;
+        let user_id = tonic_auth!(
             &self.authorizer.check_context(&token, perm_context).await,
             "Permission denied"
         );
@@ -228,34 +186,12 @@ impl EventNotificationService for NotificationServiceImpl {
             .await
             .map_err(|err| Status::aborted("Stream consumer fetech failed"))?;
 
-        let specific_context = if let Some(consumer) = stream_consumer {
-            match parse_event_consumer_subject(&consumer.config.0.filter_subject)
-                .map_err(|_| Status::invalid_argument("Invalid consumer subject format"))?
-            {
-                EventType::Resource((resource_id, object_type, _)) => {
-                    let res_perm = ApeResourcePermission {
-                        id: tonic_invalid!(
-                            DieselUlid::from_str(&resource_id),
-                            "Invalid resource id"
-                        ),
-                        level: PermissionLevels::READ,
-                        allow_sa: true,
-                    };
-
-                    Context::ResourceContext(match object_type {
-                        ObjectType::PROJECT => ResourceContext::Project(Some(res_perm)),
-                        ObjectType::COLLECTION => ResourceContext::Collection(res_perm),
-                        ObjectType::DATASET => ResourceContext::Dataset(res_perm),
-                        ObjectType::OBJECT => ResourceContext::Object(res_perm),
-                    })
-                }
-                EventType::User(user_id) => Context::User(ApeUserPermission {
-                    id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
-                    allow_proxy: true,
-                }),
-                EventType::Announcement(_) => Context::Empty,
-                EventType::All => Context::GlobalAdmin,
-            }
+        let specific_context: Context = if let Some(consumer) = stream_consumer {
+            tonic_invalid!(
+                parse_event_consumer_subject(&consumer.config.0.filter_subject),
+                "Invalid consumer subject"
+            )
+            .try_into()?
         } else {
             return Err(Status::invalid_argument(format!(
                 "Consumer with id {} does not exist.",
@@ -479,7 +415,6 @@ impl EventNotificationService for NotificationServiceImpl {
 // ------------------------------------------- //
 // ----- Helper functions -------------------- //
 // ------------------------------------------- //
-
 ///ToDo: Rust Doc
 fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy> {
     match stream_type {
@@ -498,4 +433,110 @@ fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy>
             start_sequence: info.sequence,
         }),
     }
+}
+
+//ToDo: Rust Doc
+fn convert_target_to_context(consumer_target: Option<Target>) -> Result<Context, Status> {
+    match consumer_target {
+        Some(stream_target) => {
+            if let Target::Resource(resource) = stream_target {
+                let resource_permission = ApeResourcePermission {
+                    id: DieselUlid::from_str(&resource.resource_id)
+                        .map_err(|err| Status::invalid_argument(err.to_string()))?,
+                    level: PermissionLevels::READ,
+                    allow_sa: true,
+                };
+
+                Ok(Context::ResourceContext(
+                    match resource.resource_variant() {
+                        ResourceVariant::Unspecified => {
+                            return Err(Status::invalid_argument("Unspecified resource variant"))
+                        }
+                        ResourceVariant::Project => {
+                            ResourceContext::Project(Some(resource_permission))
+                        }
+                        ResourceVariant::Collection => {
+                            ResourceContext::Collection(resource_permission)
+                        }
+                        ResourceVariant::Dataset => ResourceContext::Dataset(resource_permission),
+                        ResourceVariant::Object => ResourceContext::Object(resource_permission),
+                    },
+                ))
+            } else if let Target::User(user_id) = stream_target {
+                Ok(Context::User(ApeUserPermission {
+                    id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id format"),
+                    allow_proxy: true,
+                }))
+            } else if let Target::Anouncements(_) = stream_target {
+                // Empty context -> just active user
+                //return Err(Status::unimplemented("No permission checking context yet implemented",));
+                Ok(Context::Empty)
+            } else {
+                // Rest should be Target::All
+                Ok(Context::GlobalAdmin)
+            }
+        }
+        None => return Err(Status::invalid_argument("Event target required")),
+    }
+}
+
+/// TryInto implementation for EventType to convert into Context. The resulting Context
+/// can be used to check permissions of the user for the specific resource/user/...
+impl TryInto<Context> for EventType {
+    type Error = Status;
+
+    fn try_into(self) -> std::result::Result<Context, Self::Error> {
+        match self {
+            EventType::Resource((resource_id, object_type, _)) => {
+                let res_perm = ApeResourcePermission {
+                    id: tonic_invalid!(DieselUlid::from_str(&resource_id), "Invalid resource id"),
+                    level: PermissionLevels::READ,
+                    allow_sa: true,
+                };
+
+                Ok(Context::ResourceContext(match object_type {
+                    ObjectType::PROJECT => ResourceContext::Project(Some(res_perm)),
+                    ObjectType::COLLECTION => ResourceContext::Collection(res_perm),
+                    ObjectType::DATASET => ResourceContext::Dataset(res_perm),
+                    ObjectType::OBJECT => ResourceContext::Object(res_perm),
+                }))
+            }
+            EventType::User(user_id) => Ok(Context::User(ApeUserPermission {
+                id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
+                allow_proxy: true,
+            })),
+            EventType::Announcement(_) => Ok(Context::Empty),
+            EventType::All => Ok(Context::GlobalAdmin),
+        }
+    }
+}
+
+///ToDo: Rust Doc
+fn convert_nats_message_to_proto(
+    nats_message: Message,
+    reply_secret: &str,
+) -> Result<EventMessage, Status> {
+    // Deserialize message to proto message variant
+    let mut message_variant = tonic_internal!(
+        serde_json::from_slice(nats_message.message.payload.to_vec().as_slice(),),
+        "Could not convert received Nats.io message"
+    );
+
+    // Calculate message reply
+    let reply_subject = nats_message
+        .reply
+        .as_ref()
+        .ok_or_else(|| tonic::Status::internal("Nats.io message is missing reply subject"))?;
+    let msg_reply = calculate_reply_hmac(reply_subject, reply_secret.to_string());
+
+    // Modify message with reply
+    match message_variant {
+        MessageVariant::ResourceEvent(ref mut event) => event.reply = Some(msg_reply),
+        MessageVariant::UserEvent(ref mut event) => event.reply = Some(msg_reply),
+        MessageVariant::AnnouncementEvent(ref mut event) => event.reply = Some(msg_reply),
+    }
+
+    Ok(EventMessage {
+        message_variant: Some(message_variant),
+    })
 }
