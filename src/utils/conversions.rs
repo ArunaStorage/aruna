@@ -83,8 +83,8 @@ impl TryFrom<&KeyValue> for DBKeyValue {
     type Error = anyhow::Error;
     fn try_from(key_val: &KeyValue) -> Result<Self> {
         Ok(DBKeyValue {
-            key: key_val.key,
-            value: key_val.value,
+            key: key_val.key.clone(),
+            value: key_val.value.clone(),
             variant: key_val.variant.try_into()?,
         })
     }
@@ -120,11 +120,11 @@ impl TryFrom<&ExternalRelation> for DBExternalRelation {
         let (defined_variant, custom_variant) = match ex_rel.defined_variant {
             1 => (DefinedVariant::URL, None),
             2 => (DefinedVariant::IDENTIFIER, None),
-            3 => (DefinedVariant::CUSTOM, ex_rel.custom_variant),
+            3 => (DefinedVariant::CUSTOM, ex_rel.custom_variant.clone()),
             _ => return Err(anyhow!("Relation variant not defined.")),
         };
         Ok(DBExternalRelation {
-            identifier: ex_rel.identifier,
+            identifier: ex_rel.identifier.to_string(),
             defined_variant,
             custom_variant,
         })
@@ -411,15 +411,14 @@ pub fn from_db_object(
             relation: Some(RelationEnum::External(r.into())),
         })
         .collect();
-    let parent_relation = match internal {
-        Some(i) => relations.push(Relation {
+    if let Some(i) = internal {
+        relations.push(Relation {
             relation: Some(RelationEnum::Internal(from_db_internal_relation(
-                i,
+                i.clone(),
                 false,
                 i.origin_type.try_into()?,
             )?)),
-        }),
-        None => (),
+        })
     };
 
     match object.object_type {

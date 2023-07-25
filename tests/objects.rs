@@ -1,16 +1,14 @@
-use aruna_server::database::crud::CrudDb;
-use aruna_server::database::internal_relation_dsl::InternalRelation;
-use aruna_server::database::object_dsl::{
-    ExternalRelations,
-    Hashes, //InternalRelation2,
-    KeyValues,
-    Object,
-    ObjectWithRelations,
+use aruna_server::database::{
+    crud::CrudDb,
+    dsls::{
+        internal_relation_dsl::InternalRelation,
+        object_dsl::{
+            ExternalRelations, Hashes, Inbound, KeyValues, Object, ObjectWithRelations, Outbound,
+        },
+        relation_type_dsl::RelationType,
+        user_dsl::{Permission, User, UserAttributes},
+    },
 };
-use aruna_server::database::object_dsl::{Inbound, Outbound};
-use aruna_server::database::relation_type_dsl::RelationType;
-use aruna_server::database::user_dsl::User;
-use aruna_server::database::user_dsl::{Permission, UserAttributes};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
@@ -84,13 +82,11 @@ async fn get_object_with_relations_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = vec![
-        dataset_id,
+    let object_vec = [dataset_id,
         collection_one,
         collection_two,
         object_one,
-        object_two,
-    ];
+        object_two];
 
     let attributes = Json(UserAttributes {
         global_admin: false,
@@ -113,7 +109,7 @@ async fn get_object_with_relations_test() {
         active: true,
     };
 
-    user.create(&client).await.unwrap();
+    user.create(client).await.unwrap();
 
     let insert = "INSERT INTO relation_types (id, relation_name) VALUES ($1, $2);";
     let prepared = client.prepare(insert).await.unwrap();
@@ -221,7 +217,7 @@ async fn get_object_with_relations_test() {
     ];
 
     for c in creates {
-        c.create(&client).await.unwrap();
+        c.create(client).await.unwrap();
     }
     let create_relation_one = InternalRelation {
         id: DieselUlid::generate(),
@@ -267,7 +263,7 @@ async fn get_object_with_relations_test() {
     ];
     for r in rels {
         dbg!(&r);
-        r.create(&client).await.unwrap();
+        r.create(client).await.unwrap();
     }
     let compare_owr = ObjectWithRelations {
         object: create_dataset,
@@ -277,7 +273,7 @@ async fn get_object_with_relations_test() {
             create_relation_four.clone(),
         ])),
     };
-    let object_with_relations = Object::get_object_with_relations(&dataset_id, &client)
+    let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
         .await
         .unwrap();
 

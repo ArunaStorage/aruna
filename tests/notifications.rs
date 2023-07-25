@@ -1,4 +1,4 @@
-use aruna_server::database::{crud::CrudDb, notification_dsl::StreamConsumer};
+use aruna_server::database::{crud::CrudDb, dsls::notification_dsl::StreamConsumer};
 use async_nats::jetstream::consumer::Config;
 use diesel_ulid::DieselUlid;
 
@@ -105,10 +105,8 @@ async fn delete_stream_consumer() {
     stream_consumer.delete(&client).await.unwrap();
 
     // Try to fetch deleted stream consumer
-    if let Some(_) = StreamConsumer::get(stream_consumer.id, &client)
+    assert!(StreamConsumer::get(stream_consumer.id, &client)
         .await
         .unwrap()
-    {
-        panic!("StreamConsumer shouldn't exist.")
-    }
+        .is_some());
 }

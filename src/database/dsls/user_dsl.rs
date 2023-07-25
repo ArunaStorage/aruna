@@ -189,8 +189,6 @@ impl User {
         todo!();
         //let prepared = client.prepare(query).await?;
         //client.execute(&prepared, &[&is_service_account, id]).await?;
-
-        Ok(())
     }
 
     //ToDo: Rust Doc
@@ -204,7 +202,5 @@ impl User {
         todo!();
         //let prepared = client.prepare(query).await?;
         //client.execute(&prepared, &[&is_service_account, id]).await?;
-
-        Ok(())
     }
 }

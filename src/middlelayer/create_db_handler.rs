@@ -41,6 +41,6 @@ impl DatabaseHandler {
                 Some(ir)
             }
         };
-        Ok(from_db_object(internal_relation, object)?)
+        from_db_object(internal_relation, object)
     }
 }

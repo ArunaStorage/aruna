@@ -119,7 +119,7 @@ macro_rules! tonic_auth {
 #[macro_export]
 macro_rules! log_received {
     ($request:expr) => {
-        log::info!("Recieved {}", crate::utils::type_name_of($request));
+        log::info!("Recieved {}", $crate::utils::type_name_of($request));
         log::debug!("{:?}", $request);
     };
 }

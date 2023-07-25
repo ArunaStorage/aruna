@@ -1,5 +1,3 @@
-use crate::database::connection::Database;
-use crate::database::dsls::object_dsl::Object;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
@@ -22,8 +20,6 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionKeyValuesRequest, UpdateCollectionKeyValuesResponse,
     UpdateCollectionNameRequest, UpdateCollectionNameResponse,
 };
-use diesel_ulid::DieselUlid;
-use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
@@ -35,7 +31,7 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: Request<CreateCollectionRequest>,
     ) -> Result<Response<CreateCollectionResponse>> {
-        log_received!(request);
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -53,7 +49,7 @@ impl CollectionService for CollectionServiceImpl {
         }));
 
         let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;
@@ -75,72 +71,73 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn get_collection(
         &self,
-        request: Request<GetCollectionRequest>,
+        _request: Request<GetCollectionRequest>,
     ) -> Result<Response<GetCollectionResponse>> {
-        log::info!("Recieved GetCollectionRequest.");
-        log::debug!("{:?}", &request);
+        todo!()
+        // log::info!("Recieved GetCollectionRequest.");
+        // log::debug!("{:?}", &request);
 
-        let token = get_token_from_md(request.metadata()).map_err(|e| {
-            log::debug!("{}", e);
-            tonic::Status::unauthenticated("Token authentication error.")
-        })?;
+        // let token = get_token_from_md(request.metadata()).map_err(|e| {
+        //     log::debug!("{}", e);
+        //     tonic::Status::unauthenticated("Token authentication error.")
+        // })?;
 
-        let inner_request = request.into_inner();
-        let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ULID conversion error")
-        })?;
-        let ctx = Context::Collection(ResourcePermission {
-            id: object_id,
-            level: crate::database::enums::PermissionLevels::READ, // append?
-            allow_sa: true,
-        });
+        // let inner_request = request.into_inner();
+        // let object_id = DieselUlid::from_str(&inner_request.collection_id).map_err(|e| {
+        //     log::error!("{}", e);
+        //     tonic::Status::internal("ULID conversion error")
+        // })?;
+        // let ctx = Context::Collection(ResourcePermission {
+        //     id: object_id,
+        //     level: crate::database::enums::PermissionLevels::READ, // append?
+        //     allow_sa: true,
+        // });
 
-        match &self.authorizer.check_permissions(&token, ctx) {
-            Ok(b) => {
-                if *b {
-                    // ToDo!
-                    // PLACEHOLDER!
-                    DieselUlid::generate()
-                } else {
-                    return Err(tonic::Status::permission_denied("Not allowed."));
-                }
-            }
-            Err(e) => {
-                log::debug!("{}", e);
-                return Err(tonic::Status::permission_denied("Not allowed."));
-            }
-        };
-        let mut client = self.database.get_client().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
-        let transaction = client.transaction().await.map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
-        })?;
+        // match &self.authorizer.check_permissions(&token, ctx) {
+        //     Ok(b) => {
+        //         if *b {
+        //             // ToDo!
+        //             // PLACEHOLDER!
+        //             DieselUlid::generate()
+        //         } else {
+        //             return Err(tonic::Status::permission_denied("Not allowed."));
+        //         }
+        //     }
+        //     Err(e) => {
+        //         log::debug!("{}", e);
+        //         return Err(tonic::Status::permission_denied("Not allowed."));
+        //     }
+        // };
+        // let mut client = self.database.get_client().await.map_err(|e| {
+        //     log::error!("{}", e);
+        //     tonic::Status::unavailable("Database not avaliable.")
+        // })?;
+        // let transaction = client.transaction().await.map_err(|e| {
+        //     log::error!("{}", e);
+        //     tonic::Status::unavailable("Database not avaliable.")
+        // })?;
 
-        let client = transaction.client();
-        let get_object = Object::get_object_with_relations(&object_id, client)
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                tonic::Status::aborted("Database read error.")
-            })?;
+        // let client = transaction.client();
+        // let get_object = Object::get_object_with_relations(&object_id, client)
+        //     .await
+        //     .map_err(|e| {
+        //         log::error!("{}", e);
+        //         tonic::Status::aborted("Database read error.")
+        //     })?;
 
-        let collection = Some(get_object.try_into().map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::internal("ObjectFromRelations conversion failed.")
-        })?);
+        // let collection = Some(get_object.try_into().map_err(|e| {
+        //     log::error!("{}", e);
+        //     tonic::Status::internal("ObjectFromRelations conversion failed.")
+        // })?);
 
-        Ok(tonic::Response::new(GetCollectionResponse { collection }))
+        // Ok(tonic::Response::new(GetCollectionResponse { collection }))
     }
 
     async fn update_collection_name(
         &self,
         request: Request<UpdateCollectionNameRequest>,
     ) -> Result<Response<UpdateCollectionNameResponse>> {
-        log_received!(request);
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -155,8 +152,8 @@ impl CollectionService for CollectionServiceImpl {
             allow_sa: true,
         }));
 
-        let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;
@@ -178,7 +175,7 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: Request<UpdateCollectionDescriptionRequest>,
     ) -> Result<Response<UpdateCollectionDescriptionResponse>> {
-        log_received!(request);
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -193,8 +190,8 @@ impl CollectionService for CollectionServiceImpl {
             allow_sa: true,
         }));
 
-        let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;
@@ -216,7 +213,7 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: Request<UpdateCollectionDataClassRequest>,
     ) -> Result<Response<UpdateCollectionDataClassResponse>> {
-        log_received!(request);
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -231,8 +228,8 @@ impl CollectionService for CollectionServiceImpl {
             allow_sa: true,
         }));
 
-        let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;
@@ -254,7 +251,7 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         request: Request<UpdateCollectionKeyValuesRequest>,
     ) -> Result<Response<UpdateCollectionKeyValuesResponse>> {
-        log_received!(request);
+        log_received!(&request);
 
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -269,8 +266,8 @@ impl CollectionService for CollectionServiceImpl {
             allow_sa: true,
         }));
 
-        let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, ctx).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;

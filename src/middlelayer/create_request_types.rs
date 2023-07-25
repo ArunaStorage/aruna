@@ -47,19 +47,19 @@ impl Parent {
 impl CreateRequest {
     pub fn get_name(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.name,
-            CreateRequest::Collection(request) => request.name,
-            CreateRequest::Dataset(request) => request.name,
-            CreateRequest::Object(request) => request.name,
+            CreateRequest::Project(request) => request.name.to_string(),
+            CreateRequest::Collection(request) => request.name.to_string(),
+            CreateRequest::Dataset(request) => request.name.to_string(),
+            CreateRequest::Object(request) => request.name.to_string(),
         }
     }
 
     pub fn get_description(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.description,
-            CreateRequest::Collection(request) => request.description,
-            CreateRequest::Dataset(request) => request.description,
-            CreateRequest::Object(request) => request.description,
+            CreateRequest::Project(request) => request.description.to_string(),
+            CreateRequest::Collection(request) => request.description.to_string(),
+            CreateRequest::Dataset(request) => request.description.to_string(),
+            CreateRequest::Object(request) => request.description.to_string(),
         }
     }
 
@@ -92,7 +92,7 @@ impl CreateRequest {
 
     pub fn get_hashes(&self) -> Option<Vec<Hash>> {
         match self {
-            CreateRequest::Object(request) => Some(request.hashes),
+            CreateRequest::Object(request) => Some(request.hashes.clone()),
             _ => None,
         }
     }
@@ -117,10 +117,10 @@ impl CreateRequest {
 
     pub fn get_parent(&self) -> Option<Parent> {
         match self {
-            CreateRequest::Project(request) => None,
-            CreateRequest::Collection(request) => Some(request.parent?.into()),
-            CreateRequest::Dataset(request) => Some(request.parent?.into()),
-            CreateRequest::Object(request) => Some(request.parent?.into()),
+            CreateRequest::Project(_) => None,
+            CreateRequest::Collection(request) => Some(request.parent.clone()?.into()),
+            CreateRequest::Dataset(request) => Some(request.parent.clone()?.into()),
+            CreateRequest::Object(request) => Some(request.parent.clone()?.into()),
         }
     }
 

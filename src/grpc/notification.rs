@@ -23,6 +23,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
+use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Result, Status};
@@ -76,8 +77,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Evaluate fitting context and check permissions
         let perm_context = convert_target_to_context(inner_request.target)?;
-        let user_id = tonic_auth!(
-            &self.authorizer.check_context(&token, perm_context).await,
+        let _user_id = tonic_auth!(
+            self.authorizer.check_context(&token, perm_context).await,
             "Permission denied"
         );
 
@@ -115,7 +116,7 @@ impl EventNotificationService for NotificationServiceImpl {
             })?;
 
         // Create consumer in Nats.io and delete database stream consumer on error
-        stream_consumer.create(&client).await.map_err(|e| {
+        stream_consumer.create(client).await.map_err(|e| {
             let _ = self
                 .natsio_handler
                 .delete_event_consumer(consumer_id.to_string());
@@ -167,12 +168,12 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            &self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer.check_context(&token, Context::Empty).await,
             "Permission denied"
         );
 
         // Fetch stream consumer, parse subject and check specific permissions. This is shit.
-        let mut client = &self
+        let client = &self
             .database_handler
             .database
             .get_client()
@@ -182,9 +183,9 @@ impl EventNotificationService for NotificationServiceImpl {
                 tonic::Status::unavailable("Database not available.")
             })?;
 
-        let stream_consumer = StreamConsumer::get(consumer_id, &client)
+        let stream_consumer = StreamConsumer::get(consumer_id, client)
             .await
-            .map_err(|err| Status::aborted("Stream consumer fetech failed"))?;
+            .map_err(|_| Status::aborted("Stream consumer fetech failed"))?;
 
         let specific_context: Context = if let Some(consumer) = stream_consumer {
             tonic_invalid!(
@@ -200,8 +201,7 @@ impl EventNotificationService for NotificationServiceImpl {
         };
 
         tonic_auth!(
-            &self
-                .authorizer
+            self.authorizer
                 .check_context(&token, specific_context)
                 .await,
             "Nope."
@@ -284,12 +284,12 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            &self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer.check_context(&token, Context::Empty).await,
             "Permission denied"
         );
 
         // Fetch stream consumer, parse subject and check specific permissions. This is shit.
-        let mut client = &self
+        let client = &self
             .database_handler
             .database
             .get_client()
@@ -299,9 +299,9 @@ impl EventNotificationService for NotificationServiceImpl {
                 tonic::Status::unavailable("Database not available.")
             })?;
 
-        let stream_consumer = StreamConsumer::get(consumer_id, &client)
+        let stream_consumer = StreamConsumer::get(consumer_id, client)
             .await
-            .map_err(|err| Status::aborted("Stream consumer fetch failed"))?;
+            .map_err(|_| Status::aborted("Stream consumer fetch failed"))?;
 
         let specific_context: Context = if let Some(consumer) = stream_consumer {
             tonic_invalid!(
@@ -314,8 +314,7 @@ impl EventNotificationService for NotificationServiceImpl {
         };
 
         tonic_auth!(
-            &self
-                .authorizer
+            self.authorizer
                 .check_context(&token, specific_context)
                 .await,
             "Nope."
@@ -419,7 +418,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            &self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer.check_context(&token, Context::Empty).await,
             "Permission denied"
         );
 
@@ -473,8 +472,8 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Check empty permission context just to validate registered and active user
-        let test = tonic_auth!(
-            &self.authorizer.check_context(&token, Context::Empty).await,
+        let _test = tonic_auth!(
+            self.authorizer.check_context(&token, Context::Empty).await,
             "Permission denied"
         );
 
@@ -503,13 +502,15 @@ impl EventNotificationService for NotificationServiceImpl {
         ) {
             if let Some(user_ulid) = stream_consumer.user_id {
                 tonic_auth!(
-                    &self.authorizer.check_context(
-                        &token,
-                        Context::User(ApeUserPermission {
-                            id: user_ulid,
-                            allow_proxy: true,
-                        }),
-                    ).await,
+                    self.authorizer
+                        .check_context(
+                            &token,
+                            Context::User(ApeUserPermission {
+                                id: user_ulid,
+                                allow_proxy: true,
+                            }),
+                        )
+                        .await,
                     "Permission denied"
                 );
             } else {
@@ -517,7 +518,10 @@ impl EventNotificationService for NotificationServiceImpl {
             };
 
             // Delete stream consumer
-            stream_consumer.delete(transaction_client).await;
+            tonic_internal!(
+                stream_consumer.delete(transaction_client).await,
+                "Stream consumer delete failed"
+            );
         } else {
             return Err(Status::invalid_argument("Stream consumer does not exist"));
         }
@@ -548,7 +552,7 @@ fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy>
                         .map_err(|_| Status::invalid_argument("Incorrect timestamp format"))?,
                 })
             } else {
-                return Err(anyhow::anyhow!("No timestamp provided"));
+                Err(anyhow::anyhow!("No timestamp provided"))
             }
         }
         StreamType::StreamFromSequence(info) => Ok(DeliverPolicy::ByStartSequence {
@@ -584,9 +588,10 @@ fn convert_target_to_context(consumer_target: Option<Target>) -> Result<Context,
                         ResourceVariant::Object => ResourceContext::Object(resource_permission),
                     },
                 ))
-            } else if let Target::User(user_id) = stream_target {
+            } else if let Target::User(_) = stream_target {
                 Ok(Context::User(ApeUserPermission {
-                    id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id format"),
+                    // TODO: user_id
+                    id: tonic_invalid!(DieselUlid::from_str(""), "Invalid user id format"),
                     allow_proxy: true,
                 }))
             } else if let Target::Anouncements(_) = stream_target {
@@ -598,7 +603,7 @@ fn convert_target_to_context(consumer_target: Option<Target>) -> Result<Context,
                 Ok(Context::GlobalAdmin)
             }
         }
-        None => return Err(Status::invalid_argument("Event target required")),
+        None => Err(Status::invalid_argument("Event target required")),
     }
 }
 

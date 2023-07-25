@@ -1,28 +1,19 @@
-use std::str::FromStr;
-
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{
-    ExternalRelations, Hashes, KeyValue as DBKeyValue, KeyValues, Object,
-};
-use crate::database::enums::{DataClass, ObjectStatus, ObjectType};
-use crate::middlelayer::create_request_types::Parent;
+use crate::database::dsls::object_dsl::{Hashes, KeyValue as DBKeyValue, KeyValues, Object};
+use crate::database::enums::{DataClass, ObjectType};
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
-use aruna_rust_api::api::storage::{
-    models::v2::{ExternalRelation, KeyValue},
-    services::v2::{
-        UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
-        UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest,
-        UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
-        UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest, UpdateObjectRequest,
-        UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
-        UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
-    },
+use aruna_rust_api::api::storage::services::v2::{
+    UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
+    UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest, UpdateDatasetDataClassRequest,
+    UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest,
+    UpdateObjectRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
+    UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
 };
 use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 
 pub struct UpdateObject(pub UpdateObjectRequest);
 
@@ -70,9 +61,9 @@ impl DataClassUpdate {
 impl NameUpdate {
     pub fn get_name(&self) -> String {
         match self {
-            NameUpdate::Project(req) => req.name,
-            NameUpdate::Collection(req) => req.name,
-            NameUpdate::Dataset(req) => req.name,
+            NameUpdate::Project(req) => req.name.to_string(),
+            NameUpdate::Collection(req) => req.name.to_string(),
+            NameUpdate::Dataset(req) => req.name.to_string(),
         }
     }
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -88,9 +79,9 @@ impl NameUpdate {
 impl DescriptionUpdate {
     pub fn get_description(&self) -> String {
         match self {
-            DescriptionUpdate::Project(req) => req.description,
-            DescriptionUpdate::Collection(req) => req.description,
-            DescriptionUpdate::Dataset(req) => req.description,
+            DescriptionUpdate::Project(req) => req.description.to_string(),
+            DescriptionUpdate::Collection(req) => req.description.to_string(),
+            DescriptionUpdate::Dataset(req) => req.description.to_string(),
         }
     }
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -127,7 +118,7 @@ impl UpdateObject {
         Ok(DieselUlid::from_str(&self.0.object_id)?)
     }
     pub fn get_description(&self, old: Object) -> String {
-        match self.0.description {
+        match self.0.description.clone() {
             Some(d) => d,
             None => old.description,
         }
@@ -143,7 +134,7 @@ impl UpdateObject {
     }
     pub fn get_hashes(&self, old: Object) -> Result<Hashes> {
         Ok(match self.0.hashes.is_empty() {
-            false => self.0.hashes.try_into()?,
+            false => self.0.hashes.clone().try_into()?,
             true => old.hashes.0,
         })
     }
@@ -163,7 +154,7 @@ impl UpdateObject {
         Ok(KeyValues(key_values))
     }
     pub fn get_name(&self, old: Object) -> String {
-        match self.0.name {
+        match self.0.name.clone() {
             Some(n) => n,
             None => old.name,
         }
@@ -174,7 +165,7 @@ impl UpdateObject {
         if old > new {
             return Err(anyhow!("Dataclass can only be relaxed."));
         }
-        Ok(new.try_into()?)
+        new.try_into()
     }
     pub fn add_parent_relation(
         object_id: DieselUlid,
