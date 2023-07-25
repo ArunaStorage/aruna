@@ -16,7 +16,6 @@
 /// # use std::sync::Arc;
 /// # use aruna_server::database::connection::Database;
 /// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
-/// # use crate::middlelayer::db_handler::DatabaseHandler
 /// # use aruna_cache::notifications::NotificationCache;
 /// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 ///
@@ -36,10 +35,9 @@
 /// # use aruna_cache::notifications::NotificationCache;
 /// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 /// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
-/// # use crate::middlelayer::db_handler::DatabaseHandler
 ///
 /// pub struct MyFieldsServiceImpl {
-///     pub database_handler: DatabaseHandler;
+///     pub database_handler: DatabaseHandler,
 ///     pub authorizer: Arc<PolicyEvaluator>,
 ///     pub cache: Arc<NotificationCache>,
 ///     pub variable1: String,
