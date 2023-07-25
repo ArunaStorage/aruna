@@ -14,6 +14,7 @@ use super::super::crud::{CrudDb, PrimaryKey};
 pub struct User {
     pub id: DieselUlid,
     pub display_name: String,
+    pub external_id: Option<String>,
     pub email: String,
     pub attributes: Json<UserAttributes>,
     pub active: bool,
@@ -49,9 +50,9 @@ impl CrudDb for User {
     //ToDo: Rust Doc
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
-          (id, display_name, email, attributes, active) 
+          (id, display_name, external_id, email, attributes, active) 
         VALUES 
-          ($1, $2, $3, $4, $5);";
+          ($1, $2, $3, $4, $5, $6);";
 
         let prepared = client.prepare(query).await?;
 
@@ -61,6 +62,7 @@ impl CrudDb for User {
                 &[
                     &self.id,
                     &self.display_name,
+                    &self.external_id,
                     &self.email,
                     &self.attributes,
                     &self.active,
