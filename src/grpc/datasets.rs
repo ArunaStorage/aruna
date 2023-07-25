@@ -1,5 +1,6 @@
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -267,9 +268,34 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn delete_dataset(
         &self,
-        _request: Request<DeleteDatasetRequest>,
+        request: Request<DeleteDatasetRequest>,
     ) -> Result<Response<DeleteDatasetResponse>> {
-        todo!()
+        log_received!(request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Dataset(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+        let ctx = Context::ResourceContext(ResourceContext::Dataset(ApeResourcePermission {
+            id,
+            level: PermissionLevels::WRITE,
+            allow_sa: true,
+        }));
+
+        tonic_auth!(
+            &self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
+
+        tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error."
+        );
+
+        Ok(tonic::Response::new(DeleteDatasetResponse {}))
     }
     async fn get_datasets(
         &self,
