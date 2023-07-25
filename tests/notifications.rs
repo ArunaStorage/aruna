@@ -108,5 +108,5 @@ async fn delete_stream_consumer() {
     assert!(StreamConsumer::get(stream_consumer.id, &client)
         .await
         .unwrap()
-        .is_some());
+        .is_none());
 }
