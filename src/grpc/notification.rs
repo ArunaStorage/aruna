@@ -103,18 +103,18 @@ impl EventNotificationService for NotificationServiceImpl {
         // Create stream consumer in database
         let stream_consumer = StreamConsumer {
             id: DieselUlid::generate(),
-            user_id: user_id,
+            user_id: _user_id,
             config: postgres_types::Json(consumer_config),
         };
 
         // Get database client
         let client = tonic_internal!(
-            &self.database_handler.database.get_client().await,
+            self.database_handler.database.get_client().await,
             "Database not available"
         );
 
         // Create consumer in Nats.io and delete database stream consumer on error
-        stream_consumer.create(client).await.map_err(|e| {
+        stream_consumer.create(&client).await.map_err(|e| {
             let _ = self
                 .natsio_handler
                 .delete_event_consumer(consumer_id.to_string());
@@ -479,8 +479,8 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Get database client and begin transaction
-        let client = tonic_internal!(
-            &self.database_handler.database.get_client().await,
+        let mut client = tonic_internal!(
+            self.database_handler.database.get_client().await,
             "Database not available"
         );
 

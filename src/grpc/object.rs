@@ -3,7 +3,6 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
 use aruna_cache::notifications::NotificationCache;
-use aruna_cache::structs::Resource;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
 use aruna_policy::ape::structs::{
     ApeResourcePermission, Context, PermissionLevels, ResourceContext,
