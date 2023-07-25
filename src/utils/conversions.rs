@@ -381,13 +381,13 @@ pub fn from_db_internal_relation(
     resource_variant: i32,
 ) -> Result<APIInternalRelation> {
     let direction = if resource_is_origin { 1 } else { 2 };
-    let (defined_variant, custom_variant) = match internal.type_name.as_str() {
+    let (defined_variant, custom_variant) = match internal.relation_name.as_str() {
         INTERNAL_RELATION_VARIANT_BELONGS_TO => (1, None),
         INTERNAL_RELATION_VARIANT_ORIGIN => (2, None),
         INTERNAL_RELATION_VARIANT_VERSION => (3, None),
         INTERNAL_RELATION_VARIANT_METADATA => (4, None),
         INTERNAL_RELATION_VARIANT_POLICY => (5, None),
-        _ => (6, Some(internal.type_name)),
+        _ => (6, Some(internal.relation_name)),
     };
     Ok(APIInternalRelation {
         resource_id: internal.origin_pid.to_string(),

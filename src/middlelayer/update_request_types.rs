@@ -180,7 +180,7 @@ impl UpdateObject {
             id: DieselUlid::generate(),
             origin_pid: parent_id,
             origin_type: parent_type,
-            type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+            relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
             target_pid: object_id,
             target_type: ObjectType::OBJECT,
             is_persistent: false,

@@ -35,7 +35,7 @@ impl DatabaseHandler {
                     is_persistent: false,
                     target_pid: object.id,
                     target_type: ObjectType::OBJECT,
-                    type_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                 };
                 ir.create(transaction_client).await?;
                 Some(ir)

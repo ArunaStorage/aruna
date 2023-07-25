@@ -120,7 +120,7 @@ async fn get_object_with_relations_test() {
     };
 
     client
-        .execute(&prepared, &[&rel_type.id, &rel_type.relation_name])
+        .execute(&prepared, &[&rel_type.relation_name])
         .await
         .unwrap();
 
@@ -227,7 +227,7 @@ async fn get_object_with_relations_test() {
         target_pid: dataset_id,
         target_type: aruna_server::database::enums::ObjectType::DATASET,
         is_persistent: true,
-        type_name: "BELONGS_TO".to_string(),
+        relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_two = InternalRelation {
         id: DieselUlid::generate(),
@@ -236,7 +236,7 @@ async fn get_object_with_relations_test() {
         target_pid: dataset_id,
         target_type: aruna_server::database::enums::ObjectType::DATASET,
         is_persistent: true,
-        type_name: "BELONGS_TO".to_string(),
+        relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_three = InternalRelation {
         id: DieselUlid::generate(),
@@ -245,7 +245,7 @@ async fn get_object_with_relations_test() {
         target_pid: object_one,
         target_type: aruna_server::database::enums::ObjectType::OBJECT,
         is_persistent: true,
-        type_name: "BELONGS_TO".to_string(),
+        relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_four = InternalRelation {
         id: DieselUlid::generate(),
@@ -254,7 +254,7 @@ async fn get_object_with_relations_test() {
         target_pid: object_two,
         target_type: aruna_server::database::enums::ObjectType::OBJECT,
         is_persistent: true,
-        type_name: "BELONGS_TO".to_string(),
+        relation_name: "BELONGS_TO".to_string(),
     };
     let rels = vec![
         create_relation_one.clone(),
