@@ -23,7 +23,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use time::OffsetDateTime;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Result, Status};
 
@@ -262,7 +262,129 @@ impl EventNotificationService for NotificationServiceImpl {
         &self,
         request: tonic::Request<GetEventMessageBatchStreamRequest>,
     ) -> Result<tonic::Response<Self::GetEventMessageBatchStreamStream>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log::info!("Received GetEventMessageBatchStreamRequest.");
+        log::debug!("{:?}", &request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract consumer id and batch size parameter
+        let consumer_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.stream_consumer),
+            "Invalid consumer id format"
+        );
+        let batch_size = inner_request.batch_size;
+
+        // Extract token from request metadata
+        let token = get_token_from_md(&request_metadata).map_err(|e| {
+            log::debug!("{}", e);
+            tonic::Status::unauthenticated("Token authentication error.")
+        })?;
+
+        // Check empty permission context just to validate registered and active user
+        tonic_auth!(
+            &self.authorizer.check_context(&token, Context::Empty).await,
+            "Permission denied"
+        );
+
+        // Fetch stream consumer, parse subject and check specific permissions. This is shit.
+        let mut client = &self
+            .database_handler
+            .database
+            .get_client()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                tonic::Status::unavailable("Database not available.")
+            })?;
+
+        let stream_consumer = StreamConsumer::get(consumer_id, &client)
+            .await
+            .map_err(|err| Status::aborted("Stream consumer fetch failed"))?;
+
+        let specific_context: Context = if let Some(consumer) = stream_consumer {
+            tonic_invalid!(
+                parse_event_consumer_subject(&consumer.config.0.filter_subject),
+                "Invalid consumer subject"
+            )
+            .try_into()?
+        } else {
+            return Err(Status::invalid_argument("Stream consumer does not exist."));
+        };
+
+        tonic_auth!(
+            &self
+                .authorizer
+                .check_context(&token, specific_context)
+                .await,
+            "Nope."
+        );
+
+        // Create multi-producer single-consumer channel
+        let (tx, rx) = mpsc::channel(4);
+        let handler = self
+            .natsio_handler
+            .create_event_stream_handler(inner_request.stream_consumer)
+            .await
+            .map_err(|err| {
+                tonic::Status::internal(format!("Event stream handler creation failed: {err}"))
+            })?;
+
+        // Send messages in batches (if present)
+        let cloned_reply_signing_secret = "Move this into NatsIoHandler?".to_string();
+        tokio::spawn(async move {
+            loop {
+                let nats_messages = match handler.get_event_consumer_messages(batch_size).await {
+                    Ok(msgs) => msgs,
+                    Err(err) => {
+                        return Err::<Self::GetEventMessageBatchStreamStream, tonic::Status>(
+                            tonic::Status::aborted(format!(
+                                "Stream consumer message fetch failed: {err}"
+                            )),
+                        )
+                    }
+                };
+
+                let mut proto_messages = Vec::new();
+                //ToDo: Conversion from Nats.io to api::EventMessage
+                for nats_message in nats_messages.into_iter() {
+                    // Convert Nats.io message to proto message
+                    let event_message =
+                        convert_nats_message_to_proto(nats_message, &cloned_reply_signing_secret)?;
+
+                    // Push complete message to vector
+                    proto_messages.push(event_message)
+                }
+
+                // Send messages in stream if present
+                if !proto_messages.is_empty() {
+                    match tx
+                        .send(Ok(GetEventMessageBatchStreamResponse {
+                            messages: proto_messages,
+                        }))
+                        .await
+                    {
+                        Ok(_) => {
+                            log::info!("Successfully send stream response")
+                        }
+                        Err(err) => {
+                            return Err(tonic::Status::internal(format!(
+                                "failed to send response: {err}"
+                            )))
+                        }
+                    };
+                }
+            }
+        });
+
+        // Create gRPC response
+        let grpc_response = Response::new(ReceiverStream::new(rx));
+
+        // Log some stuff and return response
+        log::info!("Sending GetEventMessageBatchStreamStreamResponse back to client.");
+        log::debug!("{:?}", &grpc_response);
+        return Ok(grpc_response);
     }
 
     /// Manually acknowledges the provided message in the Nats cluster.
