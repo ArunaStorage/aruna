@@ -113,13 +113,15 @@ impl EventNotificationService for NotificationServiceImpl {
             "Database not available"
         );
 
-        // Create consumer in Nats.io and delete database stream consumer on error
-        stream_consumer.create(&client).await.map_err(|e| {
-            let _ = self
-                .natsio_handler
-                .delete_event_consumer(consumer_id.to_string());
-            Status::internal(e.to_string())
-        })?;
+        // Create stream consumer in database and rollback Nats.io consumer on error
+        if let Err(err) = stream_consumer.create(&client).await {
+            // Try delete Nats.io consumer for rollback
+            self.natsio_handler
+                .delete_event_consumer(consumer_id.to_string())
+                .await;
+
+            return Err(Status::internal(err.to_string()));
+        }
 
         // Create gRPC response
         let grpc_response = Response::new(CreateStreamConsumerResponse {
