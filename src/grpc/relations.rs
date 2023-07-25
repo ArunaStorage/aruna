@@ -24,7 +24,7 @@ impl RelationsService for RelationsServiceImpl {
     ) -> Result<tonic::Response<ModifyRelationsResponse>, tonic::Status> {
         todo!()
     }
-    /// GetHierachy
+    /// GetHierarchy
     ///
     /// Status: BETA
     ///
