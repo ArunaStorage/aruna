@@ -93,10 +93,10 @@ impl CrudDb for User {
 
 impl User {
     //ToDo: Rust Doc
-    pub async fn update_display_name<S: Into<String>>(
+    pub async fn update_display_name(
         client: &Client,
         user_id: &DieselUlid,
-        display_name: S,
+        display_name: impl Into<String>,
     ) -> Result<()> {
         let query = "UPDATE users
         SET display_name = $1
@@ -111,10 +111,10 @@ impl User {
     }
 
     //ToDo: Rust Doc
-    pub async fn update_email<S: Into<String>>(
+    pub async fn update_email(
         client: &Client,
         user_id: &DieselUlid,
-        email: S,
+        email: impl Into<String>,
     ) -> Result<()> {
         let query = "UPDATE users
         SET email = $1
