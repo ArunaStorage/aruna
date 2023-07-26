@@ -4,12 +4,6 @@
 
 Runtime="${ARUNA_RUNTIME:-docker}"
 
-Network="bridge"
-if [ "$Runtime" == "podman" ] ;
-then
-    Network="podman"
-fi
-
 # Start yugabyte container
 $Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:latest bin/yugabyted start --daemon=false
 
@@ -19,7 +13,11 @@ until [ "${Runtime} inspect -f {{.State.Running}} yugabyte"=="true" ]; do
 done;
 
 # Give the container some time to be available
-sleep 10;
+while ! $Runtime logs yugabyte | grep -q "Data placement constraint successfully verified";
+do
+    sleep 1
+    echo "db initializing..."
+done
 
 # Create database
 psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test' 
