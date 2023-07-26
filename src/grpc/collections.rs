@@ -55,21 +55,14 @@ impl CollectionService for CollectionServiceImpl {
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_collection, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_collection.clone(),
-                shared_id,
-                cache_res,
-            ),
-            "Caching error"
-        );
+        tonic_internal!(self.cache.add_object(id, info), "Caching error");
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
