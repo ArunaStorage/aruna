@@ -137,7 +137,7 @@ impl CollectionService for CollectionServiceImpl {
         let request = DeleteRequest::Collection(request.into_inner());
         let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
 
-        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+        let ctx = Context::res_col(id, PermissionLevels::ADMIN, true);
 
         tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,

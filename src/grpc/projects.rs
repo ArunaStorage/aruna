@@ -130,7 +130,7 @@ impl ProjectService for ProjectServiceImpl {
         let request = DeleteRequest::Project(request.into_inner());
         let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
 
-        let ctx = Context::res_proj(Some((id, PermissionLevels::WRITE, true)));
+        let ctx = Context::res_proj(Some((id, PermissionLevels::ADMIN, true)));
 
         tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,

@@ -315,7 +315,7 @@ impl ObjectService for ObjectServiceImpl {
         let request = DeleteRequest::Object(request.into_inner());
         let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
 
-        let ctx = Context::res_obj(id, PermissionLevels::WRITE, true);
+        let ctx = Context::res_obj(id, PermissionLevels::ADMIN, true);
 
         tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
