@@ -94,7 +94,6 @@ CREATE TABLE IF NOT EXISTS users (
 -- Table with objects which represent individual data blobs
 CREATE TABLE IF NOT EXISTS objects (
     id UUID NOT NULL PRIMARY KEY, -- The unique per object id
-    shared_id UUID NOT NULL,             -- A shared ID for all updated versions
     revision_number INT NOT NULL,
     name VARCHAR(511) NOT NULL,          -- Filename or subpath
     description VARCHAR(1023) NOT NULL,                 
@@ -111,6 +110,7 @@ CREATE TABLE IF NOT EXISTS objects (
     dynamic BOOL NOT NULL DEFAULT TRUE,
     UNIQUE(shared_id, revision_number)
 );
+
 CREATE INDEX IF NOT EXISTS objects_shared_rev_idx ON objects (shared_id, revision_number);
 CREATE INDEX IF NOT EXISTS objects_shared_single_idx ON objects (shared_id);
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);
@@ -121,7 +121,6 @@ CREATE TABLE IF NOT EXISTS endpoints (
     name TEXT NOT NULL,
     host_config JSONB NOT NULL,
     is_public BOOL NOT NULL DEFAULT TRUE,
-    pubkey TEXT NOT NULL,
     status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING'
 );
 
@@ -158,6 +157,7 @@ CREATE INDEX IF NOT EXISTS target_pid_idx ON internal_relations (target_pid);
 -- Table for available pubkeys
 CREATE TABLE IF NOT EXISTS pub_keys (
     id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
+    proxy UUID REFERENCES endpoints(id) ON DELETE CASCADE,
     pubkey TEXT NOT NULL
 );
 

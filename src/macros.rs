@@ -62,15 +62,15 @@ macro_rules! impl_grpc_server {
     ($struct_name:ident $(, $variable_name:ident:$variable_type:ty )*) => {
         pub struct $struct_name {
             pub database_handler: Arc<DatabaseHandler>,
-            pub authorizer: Arc<PolicyEvaluator>,
-            pub cache: Arc<NotificationCache>,
+            pub authorizer: Arc<Cache>,
+            pub cache: Arc<PermissionHandler>,
             $(
                 pub $variable_name:$variable_type,
             )*
         }
 
         impl $struct_name {
-            pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<Cache>, cache: Arc<PermissionHandler>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
                     database_handler,
                     authorizer,

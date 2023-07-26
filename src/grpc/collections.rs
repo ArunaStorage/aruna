@@ -5,11 +5,6 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{

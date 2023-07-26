@@ -15,7 +15,6 @@ pub struct Endpoint {
     pub host_config: Json<HostConfigs>,
     pub documentation_object: DieselUlid,
     pub is_public: bool,
-    pub pubkey: String,
     pub status: EndpointStatus,
 }
 
@@ -34,8 +33,8 @@ pub struct HostConfig {
 #[async_trait::async_trait]
 impl CrudDb for Endpoint {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO endpoints (id, name, host_config, documentation_object, is_public, pubkey, status) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+        let query = "INSERT INTO endpoints (id, name, host_config, documentation_object, is_public, status) VALUES (
+            $1, $2, $3, $4, $5, $6
         );";
 
         let prepared = client.prepare(query).await?;

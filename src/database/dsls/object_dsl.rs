@@ -66,7 +66,6 @@ pub enum Algorithm {
 #[derive(FromRow, FromSql, Debug, Clone)]
 pub struct Object {
     pub id: DieselUlid,
-    pub shared_id: DieselUlid,
     pub revision_number: i32,
     pub name: String,
     pub description: String,
@@ -110,8 +109,8 @@ pub struct InternalRelationWithULIDsAsStrings {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, shared_id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
         );";
 
         let prepared = client.prepare(query).await?;
@@ -121,7 +120,6 @@ impl CrudDb for Object {
                 &prepared,
                 &[
                     &self.id,
-                    &self.shared_id,
                     &self.revision_number,
                     &self.name,
                     &self.description,
@@ -262,31 +260,6 @@ impl Object {
         Ok(())
     }
 
-    pub async fn get_latest_object_by_dynamic_id(
-        id: &DieselUlid,
-        client: &Client,
-    ) -> Result<Object> {
-        let query = "SELECT * FROM objects WHERE shared_id = $1, revision_number = (SELECT MAX (revision_number) FROM objects WHERE shared_id = $1);";
-        let prepared = client.prepare(query).await?;
-        let object: Object = client
-            .query_one(&prepared, &[&id])
-            .await
-            .map(|e| Object::from_row(&e))?;
-        Ok(object)
-    }
-
-    pub async fn get_all_revisions(id: &DieselUlid, client: &Client) -> Result<Vec<Object>> {
-        let query = "SELECT * FROM objects WHERE shared_id = $1";
-        let prepared = client.prepare(query).await?;
-        let object: Vec<Object> = client
-            .query(&prepared, &[&id])
-            .await?
-            .iter()
-            .map(Object::from_row)
-            .collect();
-        Ok(object)
-    }
-
     pub async fn get_object_with_relations(
         id: &DieselUlid,
         client: &Client,
@@ -399,19 +372,6 @@ impl Object {
         let prepared = client.prepare(query).await?;
         client.query(&prepared, &[&id, &dataclass]).await?;
         Ok(())
-    }
-
-    pub fn get_cache_resource(&self) -> aruna_cache::structs::Resource {
-        match self.object_type {
-            ObjectType::PROJECT => aruna_cache::structs::Resource::Project(self.id),
-            ObjectType::COLLECTION => aruna_cache::structs::Resource::Collection(self.id),
-            ObjectType::DATASET => aruna_cache::structs::Resource::Dataset(self.id),
-            ObjectType::OBJECT => aruna_cache::structs::Resource::Object(self.id),
-        }
-    }
-
-    pub fn get_shared(&self) -> DieselUlid {
-        self.shared_id
     }
 }
 
