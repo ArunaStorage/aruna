@@ -23,28 +23,33 @@ impl DatabaseHandler {
         let resources = match request {
             DeleteRequest::Object(req) => {
                 if req.with_revisions {
-                    Object::set_deleted_shared(&id, &transaction_client).await?;
-                    Object::get_all_revisions(&id, &transaction_client).await?
+                    Object::set_deleted_shared(&id, transaction_client).await?;
+                    Object::get_all_revisions(&id, transaction_client).await?
                 } else {
-                    let object = Object::get(id, &transaction_client)
+                    let object = Object::get(id, transaction_client)
                         .await?
                         .ok_or(anyhow!("Resource not found."))?;
-                    object.delete(&transaction_client).await?;
+                    object.delete(transaction_client).await?;
                     vec![object]
                 }
             }
             _ => {
-                let resource = Object::get(id, &transaction_client)
+                let resource = Object::get(id, transaction_client)
                     .await?
                     .ok_or(anyhow!("Resource not found."))?;
-                resource.delete(&transaction_client).await?;
+                resource.delete(transaction_client).await?;
                 vec![resource]
             }
         };
         let mut result = Vec::new();
         for resource in resources {
-            let object = Object::get_object_with_relations(&resource.id, &transaction_client).await?;
-            result.push((object.try_into()?, resource.get_shared(), resource.get_cache_resource()));
+            let object =
+                Object::get_object_with_relations(&resource.id, transaction_client).await?;
+            result.push((
+                object.try_into()?,
+                resource.get_shared(),
+                resource.get_cache_resource(),
+            ));
         }
         transaction.commit().await?;
         Ok(result)
