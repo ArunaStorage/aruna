@@ -60,28 +60,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b13c32d80ecc7ab747b80c3784bce54ee8a7a0cc4fbda9bf4cda2cf6fe90854"
 
 [[package]]
-name = "aruna-cache"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d663e88284fe7299990ffbae51f109e08c92b71db49af87b405d864db9bee5e9"
-dependencies = [
- "ahash",
- "anyhow",
- "aruna-rust-api",
- "async-trait",
- "base64 0.21.2",
- "bincode",
- "dashmap",
- "diesel-ulid",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tonic",
- "xxhash-rust",
-]
-
-[[package]]
 name = "aruna-rust-api"
 version = "2.0.0-alpha.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -97,36 +75,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "aruna_policy"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88e26ce6cd1771ecb3ad003faab97c6135160844bd10565695e730974ea2ee4c"
-dependencies = [
- "anyhow",
- "aruna-cache",
- "aruna-rust-api",
- "base64 0.21.2",
- "diesel-ulid",
- "jsonwebtoken",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "aruna_server"
 version = "2.0.0-rc.1"
 dependencies = [
+ "ahash",
  "anyhow",
- "aruna-cache",
  "aruna-rust-api",
- "aruna_policy",
  "async-nats",
  "async-trait",
  "base64 0.21.2",
  "bigdecimal",
  "chrono",
+ "dashmap",
  "deadpool-postgres",
  "diesel-ulid",
  "dotenv",
@@ -198,28 +158,6 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "async-stream"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd56dd203fef61ac097dd65721a419ddccb106b2d2b70ba60a6b529f03961a51"
-dependencies = [
- "async-stream-impl",
- "futures-core",
- "pin-project-lite",
-]
-
-[[package]]
-name = "async-stream-impl"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16e62a023e7c117e27523144c5d2459f4397fcc3cab0085af8e2224f643a0193"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.27",
 ]
 
 [[package]]
@@ -328,15 +266,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
-]
-
-[[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -2893,7 +2822,6 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
 dependencies = [
- "async-stream",
  "async-trait",
  "axum",
  "base64 0.21.2",
@@ -2908,9 +2836,7 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
- "rustls-pemfile",
  "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tower",
  "tower-layer",
@@ -3384,12 +3310,6 @@ checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "xxhash-rust"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "735a71d46c4d68d71d4b24d03fdc2b98e38cea81730595801db779c04fe80d70"
 
 [[package]]
 name = "zeroize"
