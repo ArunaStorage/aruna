@@ -1,17 +1,11 @@
 use super::structs::{PubKey, ResourceInfo};
-use crate::database::{
-    dsls::{
-        internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO,
-        object_dsl::ObjectWithRelations,
-    },
-    enums::ObjectType,
+use crate::database::dsls::user_dsl::User;
+use crate::database::dsls::{
+    internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO, object_dsl::ObjectWithRelations,
 };
 use ahash::RandomState;
-use anyhow::{bail, Result};
-use aruna_rust_api::api::storage::{
-    models::v2::User,
-    services::v2::{get_hierachy_response::Graph, CollectionRelations, DatasetRelations},
-};
+use anyhow::anyhow;
+use anyhow::Result;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
@@ -68,63 +62,71 @@ impl Cache {
         self.user_cache.remove(id);
     }
 
-    pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
-        let init = self
-            .object_cache
-            .get(&id)
+    pub fn get_user_by_oidc(&self, external_id: &str) -> Result<User> {
+        self.user_cache
+            .iter()
+            .find(|x| x.value().external_id == external_id)
             .map(|x| x.value().clone())
-            .unwrap()
-            .resource;
-
-        let mut graph = Graph::default();
-
-        let get_objects = |x| {
-            if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
-                && x.target_type == ObjectType::OBJECT
-            {
-                Some(x.to_string())
-            } else {
-                None
-            }
-        };
-
-        let get_datasetcs = |x| {
-            if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
-                && x.target_type == ObjectType::DATASET
-            {
-                Some(DatasetRelations {
-                    origin: x.target_id,
-                    object_children: self
-                        .get_object(x.target_id)?
-                        .resource
-                        .outbound
-                        .0
-                         .0
-                        .iter()
-                        .filter_map(get_objects)
-                        .collect(),
-                })
-            } else {
-                None
-            }
-        };
-
-        match init.object.object_type {
-            crate::database::enums::ObjectType::PROJECT => todo!(),
-            crate::database::enums::ObjectType::COLLECTION => {
-                Ok(Graph::Collection(CollectionRelations {
-                    origin: id.to_string(),
-                    dataset_children: init.outbound.0 .0.iter().filter_map(),
-                    object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
-                }))
-            }
-            crate::database::enums::ObjectType::DATASET => Ok(Graph::Dataset(DatasetRelations {
-                origin: id.to_string(),
-                object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
-            })),
-            crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
-        }
+            .ok_or_else(|| anyhow!("User not found"))
     }
+
+    // pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
+    //     let init = self
+    //         .object_cache
+    //         .get(&id)
+    //         .map(|x| x.value().clone())
+    //         .unwrap()
+    //         .resource;
+
+    //     let mut graph = Graph::default();
+
+    //     let get_objects = |x| {
+    //         if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
+    //             && x.target_type == ObjectType::OBJECT
+    //         {
+    //             Some(x.to_string())
+    //         } else {
+    //             None
+    //         }
+    //     };
+
+    //     let get_datasetcs = |x| {
+    //         if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
+    //             && x.target_type == ObjectType::DATASET
+    //         {
+    //             Some(DatasetRelations {
+    //                 origin: x.target_id,
+    //                 object_children: self
+    //                     .get_object(x.target_id)?
+    //                     .resource
+    //                     .outbound
+    //                     .0
+    //                      .0
+    //                     .iter()
+    //                     .filter_map(get_objects)
+    //                     .collect(),
+    //             })
+    //         } else {
+    //             None
+    //         }
+    //     };
+
+    //     match init.object.object_type {
+    //         crate::database::enums::ObjectType::PROJECT => todo!(),
+    //         crate::database::enums::ObjectType::COLLECTION => {
+    //             Ok(Graph::Collection(CollectionRelations {
+    //                 origin: id.to_string(),
+    //                 dataset_children: init.outbound.0 .0.iter().filter_map(),
+    //                 object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
+    //             }))
+    //         }
+    //         crate::database::enums::ObjectType::DATASET => Ok(Graph::Dataset(DatasetRelations {
+    //             origin: id.to_string(),
+    //             object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
+    //         })),
+    //         crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
+    //     }
+    // }
 }
 
 #[cfg(test)]
