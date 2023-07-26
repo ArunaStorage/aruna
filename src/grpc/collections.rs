@@ -8,9 +8,7 @@ use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
+use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -179,30 +177,34 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = NameUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let collection = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_name(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateCollectionNameResponse {
+            collection: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateCollectionNameResponse {
-            collection,
-        }))
+        return_with_log!(response);
     }
 
     async fn update_collection_description(
@@ -217,30 +219,34 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = DescriptionUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid project id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let collection = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_description(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateCollectionDescriptionResponse {
+            collection: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateCollectionDescriptionResponse {
-            collection,
-        }))
+        return_with_log!(response);
     }
 
     async fn update_collection_key_values(
@@ -255,30 +261,34 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = KeyValueUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid project id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let collection = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_keyvals(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateCollectionKeyValuesResponse {
+            collection: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateCollectionKeyValuesResponse {
-            collection,
-        }))
+        return_with_log!(response);
     }
     async fn update_collection_data_class(
         &self,
@@ -292,30 +302,34 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = DataClassUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid project id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_col(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let collection = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateCollectionDataClassResponse {
+            collection: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
-            collection,
-        }))
+        return_with_log!(response);
     }
     async fn snapshot_collection(
         &self,
