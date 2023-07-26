@@ -15,11 +15,8 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-      - name: Prepare DB
-        run: ./tests/sources/startup.sh
-        shell: bash
-      - name: Load DB
-        run: ./tests/sources/load.sh
+      - name: SetupDB
+        run: ./tests/setup.sh
         shell: bash
       - uses: actions-rs/cargo@v1
         with:
