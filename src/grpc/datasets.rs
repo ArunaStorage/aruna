@@ -136,7 +136,7 @@ impl DatasetService for DatasetServiceImpl {
         let request = DeleteRequest::Dataset(request.into_inner());
         let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
 
-        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+        let ctx = Context::res_ds(id, PermissionLevels::ADMIN, true);
 
         tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,

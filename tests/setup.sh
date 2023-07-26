@@ -19,10 +19,11 @@ until [ "${Runtime} inspect -f {{.State.Running}} yugabyte"=="true" ]; do
 done;
 
 # Give the container some time to be available
-sleep 10;
+sleep 60;
 
 # Create database
-psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test' 
+psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test'
 
 # Import schema (script has to be called from project root)
-psql "postgres://yugabyte@localhost:5433" -f $(pwd)/src/database/schema.sql test
+psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/src/database/schema.sql
+
