@@ -32,20 +32,20 @@
 /// # use aruna_server::*;
 /// # use std::sync::Arc;
 /// # use std::sync::Mutex;
-/// # use aruna_cache::notifications::NotificationCache;
-/// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+/// # use aruna_server::caching::cache::Cache;
+/// # use aruna_server::auth::permission_handler::PermissionHandler;
 /// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
 ///
 /// pub struct MyFieldsServiceImpl {
 ///     pub database_handler: Arc<DatabaseHandler>,
-///     pub authorizer: Arc<PolicyEvaluator>,
-///     pub cache: Arc<NotificationCache>,
+///     pub authorizer: Arc<PermissionHandler>,
+///     pub cache: Arc<Cache>,
 ///     pub variable1: String,
 ///     pub variable2: String,
 /// }
 ///
 /// impl MyFieldsServiceImpl {
-///     pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PolicyEvaluator>, cache: Arc<NotificationCache>, variable1:String, variable2: String) -> Self {
+///     pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PermissionHandler>, cache: Arc<Cache>, variable1:String, variable2: String) -> Self {
 ///         MyFieldsServiceImpl {
 ///             database_handler,
 ///             authorizer,
@@ -62,15 +62,15 @@ macro_rules! impl_grpc_server {
     ($struct_name:ident $(, $variable_name:ident:$variable_type:ty )*) => {
         pub struct $struct_name {
             pub database_handler: Arc<DatabaseHandler>,
-            pub authorizer: Arc<Cache>,
-            pub cache: Arc<PermissionHandler>,
+            pub authorizer: Arc<PermissionHandler>,
+            pub cache: Arc<Cache>,
             $(
                 pub $variable_name:$variable_type,
             )*
         }
 
         impl $struct_name {
-            pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<Cache>, cache: Arc<PermissionHandler>, $($variable_name:$variable_type,)*) -> Self {
+            pub async fn new(database_handler: Arc<DatabaseHandler>, authorizer: Arc<PermissionHandler>, cache: Arc<Cache>, $($variable_name:$variable_type,)*) -> Self {
                 $struct_name {
                     database_handler,
                     authorizer,

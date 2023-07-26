@@ -1,10 +1,13 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -47,12 +50,12 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, parent_ctx).await,
+            self.authorizer.check_permissions(&token, vec![parent_ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_collection, shared_id, cache_res) = tonic_internal!(
+        let (generic_collection, cache_res) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
@@ -93,16 +96,16 @@ impl CollectionService for CollectionServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_col(collection_id, PermissionLevels::READ, true);
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_context(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Collection(collection_id))
+            .get_resource(&collection_id)
             .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
 
         let response = GetCollectionResponse {
@@ -125,17 +128,12 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = NameUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_context(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
 
         let collection = match tonic_internal!(
             self.database_handler.update_name(request).await,
@@ -163,17 +161,12 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = DescriptionUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_context(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
 
         let collection = match tonic_internal!(
             self.database_handler.update_description(request).await,
@@ -201,17 +194,12 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = DataClassUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_context(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
 
         let collection = match tonic_internal!(
             self.database_handler.update_dataclass(request).await,
@@ -239,17 +227,12 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = KeyValueUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_context(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
 
         let collection = match tonic_internal!(
             self.database_handler.update_keyvals(request).await,

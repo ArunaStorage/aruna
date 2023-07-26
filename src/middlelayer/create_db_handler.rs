@@ -15,11 +15,7 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
-    ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
-    )> {
+    ) -> Result<(generic_resource::Resource, DieselUlid)> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
