@@ -8,9 +8,7 @@ use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_cache::notifications::NotificationCache;
 use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
+use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -178,28 +176,34 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = NameUpdate::Dataset(request.into_inner());
-        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: dataset_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let dataset = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_name(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateDatasetNameResponse {
+            dataset: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateDatasetNameResponse { dataset }))
+        return_with_log!(response);
     }
     async fn update_dataset_description(
         &self,
@@ -213,30 +217,34 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = DescriptionUpdate::Dataset(request.into_inner());
-        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: dataset_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let dataset = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_description(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateDatasetDescriptionResponse {
+            dataset: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateDatasetDescriptionResponse {
-            dataset,
-        }))
+        return_with_log!(response);
     }
 
     async fn update_dataset_key_values(
@@ -251,30 +259,34 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = KeyValueUpdate::Dataset(request.into_inner());
-        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: dataset_id,
-            level: PermissionLevels::WRITE,
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let dataset = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_keyvals(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateDatasetKeyValuesResponse {
+            dataset: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateDatasetKeyValuesResponse {
-            dataset,
-        }))
+        return_with_log!(response);
     }
     async fn update_dataset_data_class(
         &self,
@@ -288,30 +300,34 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = DataClassUpdate::Dataset(request.into_inner());
-        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: dataset_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
 
-        let _user_id = tonic_auth!(
+        let ctx = Context::res_ds(id, PermissionLevels::WRITE, true);
+
+        tonic_auth!(
             self.authorizer.check_context(&token, ctx).await,
             "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        );
 
-        let dataset = match tonic_internal!(
+        let (generic_resource, shared_id, cached_rs) = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+            "Internal database error"
+        );
+
+        tonic_internal!(
+            self.cache.cache.process_api_resource_update(
+                generic_resource.clone(),
+                shared_id,
+                cached_rs
+            ),
+            "Caching error"
+        );
+
+        let response = UpdateDatasetDataClassResponse {
+            dataset: Some(generic_resource.into_inner()?),
         };
 
-        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
-            dataset,
-        }))
+        return_with_log!(response);
     }
     async fn snapshot_dataset(
         &self,

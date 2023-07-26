@@ -292,16 +292,15 @@ impl Object {
         let prepared = client.prepare(query).await?;
         let row = client.query_one(&prepared, &[&id]).await;
 
-        let closure = |i: InternalRelationWithULIDsAsStrings| -> Result<InternalRelation>
-            {
-                Ok(InternalRelation {
-                    id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
-                    origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
-                    origin_type: i.origin_type,
-                    relation_name: i.relation_name,
-                    target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
-                    target_type: i.target_type,
-                    is_persistent: i.is_persistent,
+        let closure = |i: InternalRelationWithULIDsAsStrings| -> Result<InternalRelation> {
+            Ok(InternalRelation {
+                id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
+                origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
+                origin_type: i.origin_type,
+                relation_name: i.relation_name,
+                target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
+                target_type: i.target_type,
+                is_persistent: i.is_persistent,
             })
         };
         row.map(|e| -> Result<ObjectWithRelations> {
@@ -391,14 +390,6 @@ impl Object {
 
     pub fn get_shared(&self) -> DieselUlid {
         self.shared_id
-    }
-    async fn set_deleted(id: &DieselUlid, client: &Client) -> Result<()> {
-        let query = "UPDATE objects 
-            SET object_status = 'DELETED'
-            WHERE id = $1";
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&id]).await?;
-        Ok(())
     }
     pub async fn set_deleted_shared(id: &DieselUlid, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
