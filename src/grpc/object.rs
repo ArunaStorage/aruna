@@ -270,20 +270,25 @@ impl ObjectService for ObjectServiceImpl {
         )
         .ok_or(tonic::Status::invalid_argument("User id missing."))?;
 
-        let (object, new_revision) = match tonic_internal!(
+        let (object, shared_id, cached_id, new_revision) = tonic_internal!(
             self.database_handler
                 .update_grpc_object(inner, user_id)
                 .await,
             "Internal database error."
-        ) {
-            (generic_resource::Resource::Object(o), new_rev) => (Some(o), new_rev),
-            (_, _) => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
 
-        Ok(tonic::Response::new(UpdateObjectResponse {
-            object,
+        tonic_internal!(
+            self.cache
+                .cache
+                .process_api_resource_update(object, shared_id, cached_id),
+            "Caching error"
+        );
+
+        let response = UpdateObjectResponse {
+            object: Some(object.into_inner()?),
             new_revision,
-        }))
+        };
+        return_with_log!(response);
     }
 
     async fn clone_object(
