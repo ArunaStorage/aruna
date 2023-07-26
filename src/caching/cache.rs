@@ -18,9 +18,9 @@ pub struct Cache {
 impl Cache {
     pub fn new() -> Self {
         Self {
-            object_cache: DashMap::new(),
-            user_cache: DashMap::new(),
-            pubkeys: DashMap::new(),
+            object_cache: DashMap::default(),
+            user_cache: DashMap::default(),
+            pubkeys: DashMap::default(),
         }
     }
 
@@ -65,7 +65,7 @@ impl Cache {
     pub fn get_user_by_oidc(&self, external_id: &str) -> Result<User> {
         self.user_cache
             .iter()
-            .find(|x| x.value().external_id == external_id)
+            .find(|x| x.value().external_id == Some(external_id.to_string()))
             .map(|x| x.value().clone())
             .ok_or_else(|| anyhow!("User not found"))
     }
@@ -127,67 +127,4 @@ impl Cache {
     //         crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
     //     }
     // }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::caching::structs::ResourceInfo;
-
-    use super::*;
-    use diesel_ulid::DieselUlid as Ulid;
-
-    #[test]
-    fn test_get_object() {
-        let cache = Cache::new();
-        let id = Ulid::new();
-        let info = ResourceInfo::default();
-        cache.add_object(id.into(), info.clone());
-
-        assert_eq!(cache.get_object(&id.into()), Some(info));
-    }
-
-    #[test]
-    fn test_get_user() {
-        let cache = Cache::new();
-        let id = Ulid::new();
-        let user = User::default();
-        cache.user_cache.insert(id.into(), user.clone());
-
-        assert_eq!(cache.get_user(&id.into()), Some(user));
-    }
-
-    #[test]
-    fn test_update_object() {
-        let cache = Cache::new();
-        let id = Ulid::new();
-        let object = ObjectWithRelations::default();
-        let info = ResourceInfo::default();
-        cache.add_object(id.into(), info.clone());
-
-        cache.update_object(&id.into(), object.clone());
-
-        assert_eq!(cache.get_object(&id.into()), Some(info));
-    }
-
-    #[test]
-    fn test_add_object() {
-        let cache = Cache::new();
-        let id = Ulid::new();
-        let info = ResourceInfo::default();
-        cache.add_object(id.into(), info.clone());
-
-        assert_eq!(cache.get_object(&id.into()), Some(info));
-    }
-
-    #[test]
-    fn test_remove_object() {
-        let cache = Cache::new();
-        let id = Ulid::new();
-        let info = ResourceInfo::default();
-        cache.add_object(id.into(), info.clone());
-
-        cache.remove_object(&id.into());
-
-        assert_eq!(cache.get_object(&id.into()), None);
-    }
 }

@@ -1,13 +1,10 @@
+use crate::auth::structs::Context;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -202,17 +199,12 @@ impl ObjectService for ObjectServiceImpl {
         let req = UpdateObject(inner.clone());
         let object_id = tonic_invalid!(req.get_id(), "Invalid object id.");
 
-        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
-            id: object_id,
-            level: PermissionLevels::WRITE,
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, true);
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+            self.authorizer.check_context(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
 
         let (object, shared_id, cached_id, new_revision) = tonic_internal!(
             self.database_handler
@@ -338,16 +330,16 @@ impl ObjectService for ObjectServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_obj(object_id, PermissionLevels::READ, true);
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_context(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Object(object_id))
+            .get_resource(&object_id)
             .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
 
         let response = GetObjectResponse {

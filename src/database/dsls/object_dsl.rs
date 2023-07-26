@@ -48,16 +48,16 @@ pub struct ExternalRelation {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct ExternalRelations(pub Vec<ExternalRelation>);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Hashes(pub Vec<Hash>);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Hash {
     pub alg: Algorithm,
     pub hash: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Algorithm {
     MD5,
     SHA256,

@@ -1,6 +1,5 @@
 use super::{structs::Context, token_handler::TokenHandler};
 use crate::caching::cache::Cache;
-use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -17,7 +16,11 @@ impl PermissionHandler {
         }
     }
 
-    pub fn check_permissions(&self, token: &str, ctxs: Vec<Context>) -> Result<Option<DieselUlid>> {
+    pub fn check_permissions(
+        &self,
+        token: &str,
+        ctxs: Vec<Context>,
+    ) -> Result<Option<DieselUlid>, tonic::Status> {
         Ok(None)
     }
 }

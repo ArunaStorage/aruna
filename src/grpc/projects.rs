@@ -1,10 +1,9 @@
+use crate::auth::structs::Context;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
@@ -36,10 +35,10 @@ impl ProjectService for ProjectServiceImpl {
 
         let request = CreateRequest::Project(request.into_inner());
 
-        let ctx = Context::res_proj(None);
+        let ctx = Context::default();
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_context(&token, vec![ctx]).await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
@@ -85,16 +84,16 @@ impl ProjectService for ProjectServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_proj(Some((project_id, PermissionLevels::READ, true)));
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_context(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Project(project_id))
+            .get_resource(&project_id)
             .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
 
         let response = GetProjectResponse {

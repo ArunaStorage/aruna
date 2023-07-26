@@ -1,9 +1,7 @@
-use std::str::FromStr;
-
+use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
-use crate::database::enums::{ObjectStatus, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use anyhow::Result;
-use aruna_policy::ape::structs::{Context, PermissionLevels};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -13,6 +11,7 @@ use aruna_rust_api::api::storage::{
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::str::FromStr;
 
 pub enum CreateRequest {
     Project(CreateProjectRequest),
@@ -45,23 +44,11 @@ impl Parent {
     }
 
     pub fn get_context(&self) -> Result<Context> {
-        match self {
-            Parent::Project(_) => Ok(Context::res_proj(Some((
-                self.get_id()?,
-                PermissionLevels::APPEND,
-                true,
-            )))),
-            Parent::Collection(_) => Ok(Context::res_col(
-                self.get_id()?,
-                PermissionLevels::APPEND,
-                true,
-            )),
-            Parent::Dataset(_) => Ok(Context::res_ds(
-                self.get_id()?,
-                PermissionLevels::APPEND,
-                true,
-            )),
-        }
+        Ok(Context::res_ctx(
+            self.get_id()?,
+            DbPermissionLevel::APPEND,
+            true,
+        ))
     }
 }
 
@@ -155,7 +142,6 @@ impl CreateRequest {
     pub fn into_new_db_object(&self, user_id: DieselUlid) -> Result<Object> {
         // Conversions
         let id = DieselUlid::generate();
-        let shared_id = DieselUlid::generate();
         let key_values: KeyValues = self.get_key_values().try_into()?;
         let external_relations: ExternalRelations = self.get_external_relations().try_into()?;
         let data_class = self.get_data_class().try_into()?;
@@ -166,7 +152,6 @@ impl CreateRequest {
 
         Ok(Object {
             id,
-            shared_id,
             revision_number: 0,
             name: self.get_name(),
             description: self.get_description(),

@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -12,6 +13,7 @@ use std::sync::RwLock;
 
 use crate::caching::cache::Cache;
 use crate::caching::structs::PubKey;
+use crate::database::enums::DbPermissionLevel;
 
 #[derive(Deserialize, Debug)]
 struct KeyCloakResponse {
@@ -56,48 +58,61 @@ impl TokenHandler {
         }
     }
 
-    pub async fn process_token(&self, token: &str) -> Result<(DieselUlid, Option<DieselUlid>)> {
+    pub async fn process_token(&self, token: &str) -> Result<Option<DieselUlid>> {
         let decoded = general_purpose::STANDARD.decode(token)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let checked_claims = match claims.iss.as_str() {
+        let (user_id, permissions) = match claims.iss.as_str() {
             "oidc.test.com" => self.validate_oidc_only(token).await?,
             "aruna" => self.validate_aruna(token).await?,
             _ => return Err(anyhow!("Unknown issuer")),
         };
-
-        let (user_id, token_id) = match checked_claims.uid {
-            Some(uid) => (
-                DieselUlid::from_str(&uid)?,
-                Some(DieselUlid::from_str(&checked_claims.sub)?),
-            ),
-            None => (None, None),
-        };
-
-        Ok((user_id, token_id))
+        Ok(user_id)
     }
 
-    async fn validate_aruna(&self, token: &str) -> Result<ArunaTokenClaims> {
+    async fn validate_aruna(
+        &self,
+        token: &str,
+    ) -> Result<(Option<DieselUlid>, Vec<(DieselUlid, DbPermissionLevel)>)> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
 
         let key = self
             .cache
-            .cache
             .pubkeys
             .get(&kid.parse::<i32>()?)
             .ok_or_else(|| anyhow!("Unspecified kid"))?
             .clone();
 
+        // TODO: Fix dataproxy permissions
         let dec_key = match key {
-            PubKey::DataProxy(k) => k,
+            PubKey::DataProxy(k) => {
+                let claims =
+                    decode::<ArunaTokenClaims>(token, &k, &Validation::new(Algorithm::EdDSA))?;
+                return Ok((None, vec![]));
+            }
             PubKey::Server(k) => k,
         };
-        Ok(decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?.claims)
+        let claims =
+            decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
+
+        let user = self
+            .cache
+            .get_user(&DieselUlid::from_str(&claims.claims.sub)?);
+
+        if let Some(user) = user {
+            let perms = user.get_permissions(None)?;
+            return Ok((Some(user.id), perms));
+        }
+
+        bail!("User not found")
     }
 
-    async fn validate_oidc_only(&self, token: &str) -> Result<String> {
+    async fn validate_oidc_only(
+        &self,
+        token: &str,
+    ) -> Result<(Option<DieselUlid>, Vec<(DieselUlid, DbPermissionLevel)>)> {
         let header = decode_header(token)?;
         // Validate key
         let read = {
@@ -112,7 +127,12 @@ impl TokenHandler {
                 &Validation::new(header.alg),
             )?,
         };
-        Ok(token_data.claims.sub)
+
+        let user = self.cache.get_user_by_oidc(&token_data.claims.sub)?;
+
+        let perms = user.get_permissions(None)?;
+
+        Ok((Some(user.id), perms))
     }
 
     async fn get_token_realminfo(&self) -> Result<DecodingKey> {

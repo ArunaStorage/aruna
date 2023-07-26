@@ -10,7 +10,7 @@ use tokio_postgres::Client;
 
 use super::super::crud::{CrudDb, PrimaryKey};
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Clone)]
 pub struct User {
     pub id: DieselUlid,
     pub display_name: String,
