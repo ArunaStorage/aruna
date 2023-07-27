@@ -2,7 +2,7 @@ use aruna_server::database::{
     crud::CrudDb,
     dsls::{
         internal_relation_dsl::InternalRelation,
-        object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
+        object_dsl::{ExternalRelations, Hashes, KeyValues, Object},
         relation_type_dsl::RelationType,
         user_dsl::{User, UserAttributes},
     },

@@ -31,13 +31,13 @@ impl Cache {
     }
 
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
-        self.object_cache.get_mut(id).map(|mut x| {
+        if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
-        });
+        }
     }
 
     pub fn add_object(&self, rel: ObjectWithRelations) {
-        self.object_cache.insert(rel.object.id.clone(), rel);
+        self.object_cache.insert(rel.object.id, rel);
     }
 
     pub fn remove_object(&self, id: &DieselUlid) {

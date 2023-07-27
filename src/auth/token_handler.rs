@@ -62,7 +62,7 @@ impl TokenHandler {
         let decoded = general_purpose::STANDARD.decode(token)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let (user_id, permissions) = match claims.iss.as_str() {
+        let (user_id, _permissions) = match claims.iss.as_str() {
             "oidc.test.com" => self.validate_oidc_only(token).await?,
             "aruna" => self.validate_aruna(token).await?,
             _ => return Err(anyhow!("Unknown issuer")),
@@ -88,7 +88,7 @@ impl TokenHandler {
         // TODO: Fix dataproxy permissions
         let dec_key = match key {
             PubKey::DataProxy(k) => {
-                let claims =
+                let _claims =
                     decode::<ArunaTokenClaims>(token, &k, &Validation::new(Algorithm::EdDSA))?;
                 return Ok((None, vec![]));
             }

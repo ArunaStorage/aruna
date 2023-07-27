@@ -260,14 +260,14 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 .0
                 .iter()
                 .chain(object_with_relations.inbound_belongs_to.0.iter())
-                .map(|r| r.clone().into())
+                .map(|r| r.clone())
                 .collect::<Vec<InternalRelation>>(),
             object_with_relations
                 .outbound
                 .0
                 .iter()
                 .chain(object_with_relations.outbound_belongs_to.0.iter())
-                .map(|r| r.clone().into())
+                .map(|r| r.clone())
                 .collect::<Vec<InternalRelation>>(),
         );
 

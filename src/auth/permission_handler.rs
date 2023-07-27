@@ -18,8 +18,8 @@ impl PermissionHandler {
 
     pub fn check_permissions(
         &self,
-        token: &str,
-        ctxs: Vec<Context>,
+        _token: &str,
+        _ctxs: Vec<Context>,
     ) -> Result<Option<DieselUlid>, tonic::Status> {
         Ok(None)
     }

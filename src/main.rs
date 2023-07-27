@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use aruna_server::database;
 

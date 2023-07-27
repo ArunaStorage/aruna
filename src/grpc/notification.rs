@@ -75,7 +75,7 @@ impl EventNotificationService for NotificationServiceImpl {
         {
             Target::Resource(ResourceTarget {
                 resource_id,
-                resource_variant,
+                resource_variant: _,
             }) => Context::res_ctx(
                 tonic_invalid!(
                     DieselUlid::from_str(&resource_id),
@@ -602,7 +602,7 @@ impl TryInto<Context> for EventType {
 
     fn try_into(self) -> std::result::Result<Context, Self::Error> {
         match self {
-            EventType::Resource((resource_id, object_type, _)) => Ok(Context::res_ctx(
+            EventType::Resource((resource_id, _object_type, _)) => Ok(Context::res_ctx(
                 tonic_invalid!(DieselUlid::from_str(&resource_id), "Invalid resource id"),
                 DbPermissionLevel::READ,
                 true,
