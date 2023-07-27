@@ -4,9 +4,10 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Inbound, ObjectWithRelations, Outbound};
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::ObjectType;
 use anyhow::{anyhow, Result};
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
@@ -22,8 +23,8 @@ impl DatabaseHandler {
         let object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
-        let internal_relation: Option<InternalRelation> = match request.get_type() {
-            ObjectType::PROJECT => None,
+        let internal_relation: DashMap<DieselUlid, InternalRelation> = match request.get_type() {
+            ObjectType::PROJECT => DashMap::new(),
             _ => {
                 let parent = request
                     .get_parent()
@@ -38,16 +39,16 @@ impl DatabaseHandler {
                     relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                 };
                 ir.create(transaction_client).await?;
-                Some(ir)
+                DashMap::from_iter([(parent.get_id()?, ir)])
             }
         };
 
         Ok(ObjectWithRelations {
             object: object,
-            inbound: Json(Inbound(
-                internal_relation.map(|x| vec![x]).unwrap_or_default(),
-            )),
-            outbound: Json(Outbound(vec![])),
+            inbound: Json(DashMap::new()),
+            inbound_belongs_to: Json(internal_relation),
+            outbound: Json(DashMap::new()),
+            outbound_belongs_to: Json(DashMap::new()),
         })
     }
 }

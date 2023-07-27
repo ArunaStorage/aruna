@@ -260,50 +260,8 @@ impl Object {
         WHERE o.id = $1
         GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
-        let row = client.query_one(&prepared, &[&id]).await;
-
-        row.map(|e| -> Result<ObjectWithRelations> {
-            //let inbound: Json<Inbound> = ;
-            let inbound = Json(Inbound(
-                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(16)
-                    .0
-                    .into_iter()
-                    .map(|i| -> Result<InternalRelation> {
-                        Ok(InternalRelation {
-                            id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
-                            origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
-                            origin_type: i.origin_type,
-                            relation_name: i.relation_name,
-                            target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
-                            target_type: i.target_type,
-                            is_persistent: i.is_persistent,
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            ));
-            let outbound = Json(Outbound(
-                e.get::<usize, Json<Vec<InternalRelationWithULIDsAsStrings>>>(17)
-                    .0
-                    .into_iter()
-                    .map(|i| -> Result<InternalRelation> {
-                        Ok(InternalRelation {
-                            id: DieselUlid::from(uuid::Uuid::parse_str(&i.id)?),
-                            origin_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.origin_pid)?),
-                            origin_type: i.origin_type,
-                            relation_name: i.relation_name,
-                            target_pid: DieselUlid::from(uuid::Uuid::parse_str(&i.target_pid)?),
-                            target_type: i.target_type,
-                            is_persistent: i.is_persistent,
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            ));
-            Ok(ObjectWithRelations {
-                object: Object::from_row(&e),
-                inbound,
-                outbound,
-            })
-        })?
+        let row = client.query_one(&prepared, &[&id]).await?;
+        Ok(ObjectWithRelations::from_row(&row))
     }
 
     pub async fn update(&self, client: &Client) -> Result<()> {
