@@ -83,7 +83,10 @@ impl EventNotificationService for NotificationServiceImpl {
                 DbPermissionLevel::READ,
                 true,
             ),
-            Target::User(_) => Context::self_ctx(),
+            Target::User(user_id) => Context::user_ctx(tonic_invalid!(
+                DieselUlid::from_str(&user_id),
+                "Invalid user"
+            )),
             Target::Anouncements(_) => Context::default(),
             Target::All(_) => Context::admin(),
         };
