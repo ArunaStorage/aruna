@@ -7,10 +7,9 @@ use aruna_rust_api::api::notification::services::v2::{
     event_message::MessageVariant,
     event_notification_service_server::EventNotificationService,
     AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse, CreateStreamConsumerRequest,
-    CreateStreamConsumerResponse, DeleteEventStreamingGroupRequest,
-    DeleteEventStreamingGroupResponse, EventMessage, GetEventMessageBatchRequest,
-    GetEventMessageBatchResponse, GetEventMessageBatchStreamRequest,
-    GetEventMessageBatchStreamResponse, ResourceTarget,
+    CreateStreamConsumerResponse, DeleteStreamConsumerRequest, DeleteStreamConsumerResponse,
+    EventMessage, GetEventMessageBatchRequest, GetEventMessageBatchResponse,
+    GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse, ResourceTarget,
 };
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
@@ -466,10 +465,10 @@ impl EventNotificationService for NotificationServiceImpl {
     ///
     /// - `Result<tonic::Response<DeleteEventStreamingGroupResponse>, tonic::Status>` -
     /// An empty response signals deletion success; Error else.
-    async fn delete_event_streaming_group(
+    async fn delete_stream_consumer(
         &self,
-        request: tonic::Request<DeleteEventStreamingGroupRequest>,
-    ) -> Result<tonic::Response<DeleteEventStreamingGroupResponse>, tonic::Status> {
+        request: tonic::Request<DeleteStreamConsumerRequest>,
+    ) -> Result<tonic::Response<DeleteStreamConsumerResponse>, tonic::Status> {
         log::info!("Received DeleteStreamConsumerRequest.");
         log::debug!("{:?}", &request);
 
@@ -534,7 +533,7 @@ impl EventNotificationService for NotificationServiceImpl {
         tonic_internal!(transaction.commit().await, "Transaction commit failed");
 
         // Create and return gRPC response
-        let grpc_response = Response::new(DeleteEventStreamingGroupResponse {});
+        let grpc_response = Response::new(DeleteStreamConsumerResponse {});
 
         log::info!("Sending DeleteStreamConsumerResponse back to client.");
         log::debug!("{:?}", &grpc_response);

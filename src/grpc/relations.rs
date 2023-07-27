@@ -2,8 +2,8 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
-use aruna_rust_api::api::storage::services::v2::GetHierachyRequest;
-use aruna_rust_api::api::storage::services::v2::GetHierachyResponse;
+use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
+use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsResponse;
 use std::sync::Arc;
@@ -29,10 +29,10 @@ impl RelationsService for RelationsServiceImpl {
     /// Status: BETA
     ///
     /// Gets all downstream hierarchy relations from a resource
-    async fn get_hierachy(
+    async fn get_hierarchy(
         &self,
-        _request: tonic::Request<GetHierachyRequest>,
-    ) -> Result<tonic::Response<GetHierachyResponse>, tonic::Status> {
+        _request: tonic::Request<GetHierarchyRequest>,
+    ) -> Result<tonic::Response<GetHierarchyResponse>, tonic::Status> {
         todo!()
     }
     //     async fn modify_relations(
