@@ -6,6 +6,7 @@ use crate::database::{
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json};
@@ -86,8 +87,10 @@ pub struct Object {
 #[derive(FromRow, Debug, FromSql, Clone)]
 pub struct ObjectWithRelations {
     pub object: Object,
-    pub inbound: Json<Inbound>,
-    pub outbound: Json<Outbound>,
+    pub inbound: Json<DashMap<DieselUlid, InternalRelation>>,
+    pub inbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
+    pub outbound: Json<DashMap<DieselUlid, InternalRelation>>,
+    pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -292,12 +295,14 @@ impl Object {
         client: &Client,
     ) -> Result<ObjectWithRelations> {
         let query = "SELECT o.*,
-            JSON_AGG(ir1.*) FILTER (WHERE ir1.target_pid = o.id) inbound,
-            JSON_AGG(ir1.*) FILTER (WHERE ir1.origin_pid = o.id) outbound
-            FROM objects o
-            LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
-            WHERE o.id = $1
-            GROUP BY o.id;";
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+        FROM objects o
+        LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+        WHERE o.id = $1
+        GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
         let row = client.query_one(&prepared, &[&id]).await;
 

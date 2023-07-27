@@ -6,7 +6,6 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
