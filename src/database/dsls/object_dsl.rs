@@ -92,23 +92,6 @@ pub struct ObjectWithRelations {
     pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub struct Inbound(pub Vec<InternalRelation>);
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub struct Outbound(pub Vec<InternalRelation>);
-
-#[derive(Serialize, Deserialize, FromRow, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub struct InternalRelationWithULIDsAsStrings {
-    pub id: String,
-    pub origin_pid: String,
-    pub origin_type: ObjectType,
-    pub relation_name: String,
-    pub target_pid: String,
-    pub target_type: ObjectType,
-    pub is_persistent: bool,
-}
-
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
