@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
@@ -116,7 +118,6 @@ impl DatabaseHandler {
             // Create new object
             let create_object = Object {
                 id: DieselUlid::generate(),
-                shared_id: id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number + 1,
@@ -131,6 +132,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
+                endpoints: Json(HashMap::new()),
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -142,7 +144,6 @@ impl DatabaseHandler {
             // Update in place
             let update_object = Object {
                 id: old.id,
-                shared_id: id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number,
@@ -157,6 +158,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
+                endpoints: Json(HashMap::new()),
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {

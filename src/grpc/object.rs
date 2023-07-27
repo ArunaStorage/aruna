@@ -1,13 +1,12 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -47,26 +46,22 @@ impl ObjectService for ObjectServiceImpl {
             "invalid parent"
         );
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, parent_ctx).await,
+            self.authorizer.check_permissions(&token, vec![parent_ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_object, shared_id, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_object.clone(),
-                shared_id,
-                cache_res
-            ),
-            "Caching error"
-        );
+        self.cache.add_object(object_with_rel.clone());
+
+        let generic_object: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid object");
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
@@ -202,17 +197,13 @@ impl ObjectService for ObjectServiceImpl {
         let req = UpdateObject(inner.clone());
         let object_id = tonic_invalid!(req.get_id(), "Invalid object id.");
 
-        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
-            id: object_id,
-            level: PermissionLevels::WRITE,
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, true);
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
         )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        .ok_or_else(|| tonic::Status::invalid_argument("Invalid user"))?;
 
         let (object, new_revision) = match tonic_internal!(
             self.database_handler
@@ -333,20 +324,23 @@ impl ObjectService for ObjectServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_obj(object_id, PermissionLevels::READ, true);
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Object(object_id))
+            .get_object(&object_id)
             .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
 
+        let generic_object: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid object");
+
         let response = GetObjectResponse {
-            object: Some(res.into_inner()?),
+            object: Some(generic_object.into_inner()?),
         };
 
         return_with_log!(response);

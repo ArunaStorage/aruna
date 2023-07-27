@@ -254,49 +254,32 @@ impl From<ObjectType> for i32 {
 impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
     type Error = anyhow::Error;
     fn try_from(object_with_relations: ObjectWithRelations) -> Result<generic_resource::Resource> {
-        let (to_relations, from_relations) = (
-            object_with_relations.inbound.0 .0,
-            match object_with_relations.outbound.0 .0.is_empty() {
-                true => None,
-                false => Some(object_with_relations.outbound.0 .0),
-            },
+        let (inbound, outbound) = (
+            object_with_relations
+                .inbound
+                .0
+                .iter()
+                .chain(object_with_relations.inbound_belongs_to.0.iter())
+                .map(|r| r.clone())
+                .collect::<Vec<InternalRelation>>(),
+            object_with_relations
+                .outbound
+                .0
+                .iter()
+                .chain(object_with_relations.outbound_belongs_to.0.iter())
+                .map(|r| r.clone())
+                .collect::<Vec<InternalRelation>>(),
         );
 
-        let mut from_relations = match from_relations {
-            Some(r) => {
-                let mut relations: Vec<Relation> = Vec::new();
-                for relation in r.into_iter() {
-                    relations.push(Relation {
-                        relation: Some(RelationEnum::Internal(
-                            from_db_internal_relation(
-                                relation.clone(),
-                                true,
-                                relation.target_type.into(),
-                            )
-                            .map_err(|e| {
-                                log::error!("{}", e);
-                                tonic::Status::internal("Internal custom type conversion error.")
-                            })?,
-                        )),
-                    });
-                }
-                relations
-            }
-            None => Vec::new(),
-        };
+        let mut inbound = inbound
+            .into_iter()
+            .map(|r| from_db_internal_relation(r, true))
+            .collect::<Result<Vec<Relation>>>()?;
 
-        let mut to_relations_converted: Vec<Relation> = Vec::new();
-        for relation in to_relations.into_iter() {
-            to_relations_converted.push(Relation {
-                relation: Some(RelationEnum::Internal(
-                    from_db_internal_relation(relation.clone(), false, relation.origin_type.into())
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::internal("Internal custom type conversion error.")
-                        })?,
-                )),
-            });
-        }
+        let mut outbound = outbound
+            .into_iter()
+            .map(|r| from_db_internal_relation(r, false))
+            .collect::<Result<Vec<Relation>>>()?;
         let mut relations: Vec<Relation> = object_with_relations
             .object
             .external_relations
@@ -307,8 +290,8 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 relation: Some(RelationEnum::External(r.into())),
             })
             .collect();
-        relations.append(&mut to_relations_converted);
-        relations.append(&mut from_relations);
+        relations.append(&mut inbound);
+        relations.append(&mut outbound);
         let stats = Some(Stats {
             count: object_with_relations.object.count as i64,
             size: 0, // TODO
@@ -375,12 +358,28 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
     }
 }
 
-pub fn from_db_internal_relation(
-    internal: InternalRelation,
-    resource_is_origin: bool,
-    resource_variant: i32,
-) -> Result<APIInternalRelation> {
-    let direction = if resource_is_origin { 1 } else { 2 };
+pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Result<Relation> {
+    let (direction, resource_variant) = if inbound {
+        (
+            1,
+            match internal.origin_type {
+                ObjectType::PROJECT => 1,
+                ObjectType::COLLECTION => 2,
+                ObjectType::DATASET => 3,
+                ObjectType::OBJECT => 4,
+            },
+        )
+    } else {
+        (
+            2,
+            match internal.target_type {
+                ObjectType::PROJECT => 1,
+                ObjectType::COLLECTION => 2,
+                ObjectType::DATASET => 3,
+                ObjectType::OBJECT => 4,
+            },
+        )
+    };
     let (defined_variant, custom_variant) = match internal.relation_name.as_str() {
         INTERNAL_RELATION_VARIANT_BELONGS_TO => (1, None),
         INTERNAL_RELATION_VARIANT_ORIGIN => (2, None),
@@ -389,12 +388,15 @@ pub fn from_db_internal_relation(
         INTERNAL_RELATION_VARIANT_POLICY => (5, None),
         _ => (6, Some(internal.relation_name)),
     };
-    Ok(APIInternalRelation {
-        resource_id: internal.origin_pid.to_string(),
-        resource_variant,
-        direction, // 1 for inbound, 2 for outbound
-        defined_variant,
-        custom_variant,
+
+    Ok(Relation {
+        relation: Some(RelationEnum::Internal(APIInternalRelation {
+            resource_id: internal.origin_pid.to_string(),
+            resource_variant,
+            direction, // 1 for inbound, 2 for outbound
+            defined_variant,
+            custom_variant,
+        })),
     })
 }
 
@@ -412,23 +414,12 @@ pub fn from_db_object(
         })
         .collect();
     if let Some(i) = internal {
-        relations.push(Relation {
-            relation: Some(RelationEnum::Internal(from_db_internal_relation(
-                i.clone(),
-                false,
-                i.origin_type.try_into()?,
-            )?)),
-        })
-    };
-
-    let id = match object.dynamic {
-        true => object.shared_id.to_string(),
-        false => object.id.to_string(),
+        relations.push(from_db_internal_relation(i.clone(), false)?)
     };
 
     match object.object_type {
         ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -441,7 +432,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -454,7 +445,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -467,7 +458,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),

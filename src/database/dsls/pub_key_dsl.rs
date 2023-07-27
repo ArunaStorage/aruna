@@ -1,20 +1,24 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
+use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
 #[derive(FromRow, Debug)]
 pub struct PubKey {
     pub id: i32,
+    pub proxy: Option<DieselUlid>,
     pub pubkey: String,
 }
 
 #[async_trait::async_trait]
 impl CrudDb for PubKey {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO pub_keys (id, pubkey) VALUES ($1, $2);";
+        let query = "INSERT INTO pub_keys (id, proxy, pubkey) VALUES ($1, $2, $3);";
         let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&self.id, &self.pubkey]).await?;
+        client
+            .query(&prepared, &[&self.id, &self.proxy, &self.pubkey])
+            .await?;
         Ok(())
     }
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {

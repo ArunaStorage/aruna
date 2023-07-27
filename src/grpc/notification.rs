@@ -1,23 +1,16 @@
-use crate::middlelayer::db_handler::DatabaseHandler;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::{
-    policy_evaluator::PolicyEvaluator,
-    structs::{
-        ApeResourcePermission, ApeUserPermission, Context, PermissionLevels, ResourceContext,
-    },
-};
-use aruna_rust_api::api::{
-    notification::services::v2::{
-        create_stream_consumer_request::{StreamType, Target},
-        event_message::MessageVariant,
-        event_notification_service_server::EventNotificationService,
-        AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse,
-        CreateStreamConsumerRequest, CreateStreamConsumerResponse,
-        DeleteEventStreamingGroupRequest, DeleteEventStreamingGroupResponse, EventMessage,
-        GetEventMessageBatchRequest, GetEventMessageBatchResponse,
-        GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse,
-    },
-    storage::models::v2::ResourceVariant,
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::{database::enums::DbPermissionLevel, middlelayer::db_handler::DatabaseHandler};
+use aruna_rust_api::api::notification::services::v2::{
+    create_stream_consumer_request::{StreamType, Target},
+    event_message::MessageVariant,
+    event_notification_service_server::EventNotificationService,
+    AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse, CreateStreamConsumerRequest,
+    CreateStreamConsumerResponse, DeleteEventStreamingGroupRequest,
+    DeleteEventStreamingGroupResponse, EventMessage, GetEventMessageBatchRequest,
+    GetEventMessageBatchResponse, GetEventMessageBatchStreamRequest,
+    GetEventMessageBatchStreamResponse, ResourceTarget,
 };
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
@@ -29,7 +22,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Result, Status};
 
 use crate::{
-    database::{crud::CrudDb, dsls::notification_dsl::StreamConsumer, enums::ObjectType},
+    database::{crud::CrudDb, dsls::notification_dsl::StreamConsumer},
     notification::{
         handler::{EventHandler, EventType},
         natsio_handler::NatsIoHandler,
@@ -76,9 +69,28 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Evaluate fitting context and check permissions
-        let perm_context = convert_target_to_context(inner_request.target)?;
+        let perm_context = match inner_request
+            .target
+            .ok_or_else(|| tonic::Status::invalid_argument("Missing context"))?
+        {
+            Target::Resource(ResourceTarget {
+                resource_id,
+                resource_variant: _,
+            }) => Context::res_ctx(
+                tonic_invalid!(
+                    DieselUlid::from_str(&resource_id),
+                    "Invalid resource id format"
+                ),
+                DbPermissionLevel::READ,
+                true,
+            ),
+            Target::User(_) => Context::self_ctx(),
+            Target::Anouncements(_) => Context::default(),
+            Target::All(_) => Context::admin(),
+        };
         let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, perm_context).await,
+            self.authorizer
+                .check_permissions(&token, vec![perm_context]),
             "Permission denied"
         );
 
@@ -171,7 +183,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -198,16 +211,15 @@ impl EventNotificationService for NotificationServiceImpl {
             .try_into()?
         } else {
             return Err(Status::invalid_argument(format!(
-                "Consumer with id {} does not exist.",
+                "Consumer with id {} does not exist",
                 consumer_id
             )));
         };
 
         tonic_auth!(
             self.authorizer
-                .check_context(&token, specific_context)
-                .await,
-            "Nope."
+                .check_permissions(&token, vec![specific_context]),
+            "Invalid permissions"
         );
 
         // Fetch messages of event consumer
@@ -287,7 +299,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -318,8 +331,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         tonic_auth!(
             self.authorizer
-                .check_context(&token, specific_context)
-                .await,
+                .check_permissions(&token, vec![specific_context]),
             "Nope."
         );
 
@@ -422,7 +434,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -477,7 +490,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         let _test = tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -500,14 +514,7 @@ impl EventNotificationService for NotificationServiceImpl {
             if let Some(user_ulid) = stream_consumer.user_id {
                 tonic_auth!(
                     self.authorizer
-                        .check_context(
-                            &token,
-                            Context::User(ApeUserPermission {
-                                id: user_ulid,
-                                allow_proxy: true,
-                            }),
-                        )
-                        .await,
+                        .check_permissions(&token, vec![Context::user_ctx(user_ulid)]),
                     "Permission denied"
                 );
             } else {
@@ -560,85 +567,6 @@ fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy>
     }
 }
 
-//ToDo: Rust Doc
-fn convert_target_to_context(consumer_target: Option<Target>) -> Result<Context, Status> {
-    match consumer_target {
-        Some(stream_target) => {
-            if let Target::Resource(resource) = stream_target {
-                let resource_permission = ApeResourcePermission {
-                    id: tonic_invalid!(
-                        DieselUlid::from_str(&resource.resource_id),
-                        "Invalid resource id format"
-                    ),
-                    level: PermissionLevels::READ,
-                    allow_sa: true,
-                };
-
-                Ok(Context::ResourceContext(
-                    match resource.resource_variant() {
-                        ResourceVariant::Unspecified => {
-                            return Err(Status::invalid_argument("Unspecified resource variant"))
-                        }
-                        ResourceVariant::Project => {
-                            ResourceContext::Project(Some(resource_permission))
-                        }
-                        ResourceVariant::Collection => {
-                            ResourceContext::Collection(resource_permission)
-                        }
-                        ResourceVariant::Dataset => ResourceContext::Dataset(resource_permission),
-                        ResourceVariant::Object => ResourceContext::Object(resource_permission),
-                    },
-                ))
-            } else if let Target::User(_) = stream_target {
-                Ok(Context::User(ApeUserPermission {
-                    // TODO: user_id
-                    id: tonic_invalid!(DieselUlid::from_str(""), "Invalid user id format"),
-                    allow_proxy: true,
-                }))
-            } else if let Target::Anouncements(_) = stream_target {
-                // Empty context -> just active user
-                //return Err(Status::unimplemented("No permission checking context yet implemented",));
-                Ok(Context::Empty)
-            } else {
-                // Rest should be Target::All
-                Ok(Context::GlobalAdmin)
-            }
-        }
-        None => Err(Status::invalid_argument("Event target required")),
-    }
-}
-
-/// TryInto implementation for EventType to convert into Context. The resulting Context
-/// can be used to check permissions of the user for the specific resource/user/...
-impl TryInto<Context> for EventType {
-    type Error = Status;
-
-    fn try_into(self) -> std::result::Result<Context, Self::Error> {
-        match self {
-            EventType::Resource((resource_id, object_type, _)) => {
-                let res_perm = ApeResourcePermission {
-                    id: tonic_invalid!(DieselUlid::from_str(&resource_id), "Invalid resource id"),
-                    level: PermissionLevels::READ,
-                    allow_sa: true,
-                };
-
-                Ok(Context::ResourceContext(match object_type {
-                    ObjectType::PROJECT => ResourceContext::Project(Some(res_perm)),
-                    ObjectType::COLLECTION => ResourceContext::Collection(res_perm),
-                    ObjectType::DATASET => ResourceContext::Dataset(res_perm),
-                    ObjectType::OBJECT => ResourceContext::Object(res_perm),
-                }))
-            }
-            EventType::User(user_id) => Ok(Context::User(ApeUserPermission {
-                id: tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
-                allow_proxy: true,
-            })),
-            EventType::Announcement(_) => Ok(Context::Empty),
-            EventType::All => Ok(Context::GlobalAdmin),
-        }
-    }
-}
-
 ///ToDo: Rust Doc
 fn convert_nats_message_to_proto(
     nats_message: Message,
@@ -667,4 +595,24 @@ fn convert_nats_message_to_proto(
     Ok(EventMessage {
         message_variant: Some(message_variant),
     })
+}
+
+impl TryInto<Context> for EventType {
+    type Error = Status;
+
+    fn try_into(self) -> std::result::Result<Context, Self::Error> {
+        match self {
+            EventType::Resource((resource_id, _object_type, _)) => Ok(Context::res_ctx(
+                tonic_invalid!(DieselUlid::from_str(&resource_id), "Invalid resource id"),
+                DbPermissionLevel::READ,
+                true,
+            )),
+            EventType::User(user_id) => Ok(Context::user_ctx(tonic_invalid!(
+                DieselUlid::from_str(&user_id),
+                "Invalid user id"
+            ))),
+            EventType::Announcement(_) => Ok(Context::default()),
+            EventType::All => Ok(Context::admin()),
+        }
+    }
 }

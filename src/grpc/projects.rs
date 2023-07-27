@@ -1,10 +1,12 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{Context, PermissionLevels};
+use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
@@ -36,29 +38,25 @@ impl ProjectService for ProjectServiceImpl {
 
         let request = CreateRequest::Project(request.into_inner());
 
-        let ctx = Context::res_proj(None);
+        let ctx = Context::default();
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_project, shared_id, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_project.clone(),
-                shared_id,
-                cache_res
-            ),
-            "Caching error"
-        );
+        self.cache.add_object(object_with_rel.clone());
+
+        let generic_project: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid project");
 
         let response = CreateProjectResponse {
             project: Some(generic_project.into_inner()?),
@@ -85,20 +83,23 @@ impl ProjectService for ProjectServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_proj(Some((project_id, PermissionLevels::READ, true)));
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Project(project_id))
+            .get_object(&project_id)
             .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
 
+        let generic_project: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid project");
+
         let response = GetProjectResponse {
-            project: Some(res.into_inner()?),
+            project: Some(generic_project.into_inner()?),
         };
 
         return_with_log!(response);
