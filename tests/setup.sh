@@ -10,6 +10,12 @@ then
     Network="podman"
 fi
 
+# Nats.io container (No cluster port)
+#podman run -d --name nats-js-server --rm -p 4222:4222 -p 8222:8222 nats:latest --http_port 8222 --js
+
+# Meilisearch container
+#podman run -d --rm -p 7700:7700 -e MEILI_MASTER_KEY='MASTER_KEY' getmeili/meilisearch:latest
+
 # Start yugabyte container
 $Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:latest bin/yugabyted start --daemon=false
 
@@ -25,4 +31,4 @@ sleep 10;
 psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test' 
 
 # Import schema (script has to be called from project root)
-psql "postgres://yugabyte@localhost:5433" -f $(pwd)/src/database/schema.sql test
+psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/src/database/schema.sql
