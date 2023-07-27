@@ -3,8 +3,10 @@ use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
+use ahash::HashMap;
 use ahash::RandomState;
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -161,7 +163,78 @@ impl Cache {
         &self,
         ctxs: &[Context],
         permitted: &[(DieselUlid, DbPermissionLevel)],
+        user_id: &DieselUlid,
     ) -> bool {
+        let mut resources = HashMap::default();
+
+        for ctx in ctxs {
+            match &ctx.variant {
+                crate::auth::structs::ContextVariant::Activated => {
+                    return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
+                }
+                crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
+                    resources.insert(id.clone(), perm.clone());
+                }
+                crate::auth::structs::ContextVariant::User((uid, _)) => {
+                    if uid == user_id {
+                        return true;
+                    } else {
+                        return self
+                            .get_user(user_id)
+                            .map(|e| !e.attributes.0.service_account)
+                            .unwrap_or_default();
+                    }
+                }
+                crate::auth::structs::ContextVariant::GlobalAdmin
+                | crate::auth::structs::ContextVariant::GlobalProxy => {
+                    return self
+                        .get_user(user_id)
+                        .map(|e| !e.attributes.0.global_admin)
+                        .unwrap_or_default()
+                }
+            }
+        }
+
+        for (id, got_perm) in permitted {
+            if let Some(needed_perm) = resources.get(id) {
+                if got_perm >= needed_perm {
+                    resources.remove(id);
+                    if resources.is_empty() {
+                        return true;
+                    }
+                }
+            }
+            match self.traverse_down(id, got_perm.clone(), &mut resources) {
+                Ok(true) => return true,
+                Ok(false) => continue,
+                Err(_) => return false,
+            }
+        }
         false
+    }
+
+    pub fn traverse_down(
+        &self,
+        id: &DieselUlid,
+        perm: DbPermissionLevel,
+        ctxs: &mut HashMap<DieselUlid, DbPermissionLevel>,
+    ) -> Result<bool> {
+        if ctxs.is_empty() {
+            return Ok(true);
+        }
+        if let Some(x) = self.get_object(id) {
+            for parent in x.get_children() {
+                if let Some(got_perm) = ctxs.remove(&parent) {
+                    if got_perm >= perm {
+                        bail!("Invalid permissions")
+                    }
+                    if ctxs.is_empty() {
+                        return Ok(true);
+                    }
+                }
+                return self.traverse_down(&parent, perm, ctxs);
+            }
+        }
+        Ok(false)
     }
 }

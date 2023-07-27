@@ -49,6 +49,13 @@ impl PermissionHandler {
             }
         }
 
-        Ok(Some(main_id))
+        if self
+            .cache
+            .check_permissions_with_contexts(&ctxs, &permissions, &main_id)
+        {
+            Ok(Some(main_id))
+        } else {
+            Err(tonic::Status::unauthenticated("Invalid permissions"))
+        }
     }
 }
