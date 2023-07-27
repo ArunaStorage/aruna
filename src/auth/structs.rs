@@ -41,6 +41,14 @@ impl Context {
             is_self: false,
         }
     }
+
+    pub fn self_ctx() -> Self {
+        Self {
+            variant: ContextVariant::User(DieselUlid::default()),
+            allow_service_account: false,
+            is_self: true,
+        }
+    }
 }
 
 impl Default for Context {

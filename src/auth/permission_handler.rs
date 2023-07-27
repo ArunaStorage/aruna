@@ -16,11 +16,16 @@ impl PermissionHandler {
         }
     }
 
-    pub fn check_permissions(
+    pub async fn check_permissions(
         &self,
-        _token: &str,
+        token: &str,
         _ctxs: Vec<Context>,
     ) -> Result<Option<DieselUlid>, tonic::Status> {
+        let (user_id, permissions, is_proxy) = tonic_auth!(
+            self.token_handler.process_token(token).await,
+            "Unauthorized"
+        );
+
         Ok(None)
     }
 }

@@ -101,6 +101,7 @@ impl TokenHandler {
             PubKey::DataProxy(k) => {
                 let claims =
                     decode::<ArunaTokenClaims>(token, &k, &Validation::new(Algorithm::EdDSA))?;
+
                 let uid = DieselUlid::from_str(&claims.claims.sub)?;
                 return Ok((Some(uid), vec![], true));
             }

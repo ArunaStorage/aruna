@@ -41,7 +41,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::default();
 
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
@@ -86,7 +86,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
