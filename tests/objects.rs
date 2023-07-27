@@ -24,8 +24,9 @@ async fn create_object() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
-        tokens: HashMap::new(),
-        permissions: HashMap::from([(
+        tokens: DashMap::default(),
+        trusted_endpoints: DashMap::default(),
+        permissions: DashMap::from_iter([(
             obj_id,
             aruna_server::database::enums::DbPermissionLevel::WRITE,
         )]),
@@ -96,7 +97,8 @@ async fn get_object_with_relations_test() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
-        tokens: HashMap::new(),
+        trusted_endpoints: DashMap::default(),
+        tokens: DashMap::default(),
         permissions: object_vec
             .iter()
             .map(|o| (*o, aruna_server::database::enums::DbPermissionLevel::WRITE))

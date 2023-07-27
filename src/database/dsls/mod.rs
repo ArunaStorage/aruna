@@ -8,3 +8,6 @@ pub mod object_location_dsl;
 pub mod pub_key_dsl;
 pub mod relation_type_dsl;
 pub mod user_dsl;
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Empty {}

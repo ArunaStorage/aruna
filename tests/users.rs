@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use aruna_server::database::{
     crud::CrudDb,
     dsls::user_dsl::{APIToken, User, UserAttributes},
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
 mod init_db;
@@ -23,9 +22,10 @@ async fn create_user_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: false,
-            tokens: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
             custom_attributes: vec![],
-            permissions: HashMap::new(),
+            permissions: DashMap::default(),
         }),
         active: true,
     };
@@ -37,7 +37,7 @@ async fn create_user_test() {
         assert_eq!(user.id, created_user.id);
         assert_eq!(user.display_name, created_user.display_name);
         assert_eq!(user.email, created_user.email);
-        assert_eq!(user.attributes, created_user.attributes);
+        assert_eq!(user.attributes.0, created_user.attributes.0);
         assert_eq!(user.active, created_user.active);
     } else {
         panic!("User should exist.")
@@ -58,8 +58,9 @@ async fn update_user_name_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -98,8 +99,9 @@ async fn update_user_email_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -138,8 +140,9 @@ async fn update_user_admin_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -178,8 +181,9 @@ async fn update_user_service_account_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -218,8 +222,9 @@ async fn delete_user_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -250,8 +255,9 @@ async fn add_permission_user_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: HashMap::new(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -315,8 +321,9 @@ async fn remove_user_permission_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            tokens: HashMap::new(),
-            permissions: [
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::from_iter([
                 (
                     perm1,
                     aruna_server::database::enums::DbPermissionLevel::ADMIN,
@@ -329,9 +336,7 @@ async fn remove_user_permission_test() {
                     perm3,
                     aruna_server::database::enums::DbPermissionLevel::WRITE,
                 ),
-            ]
-            .into_iter()
-            .collect(),
+            ]),
             custom_attributes: vec![],
         }),
         active: true,
@@ -417,7 +422,8 @@ async fn user_token_test() {
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: HashMap::new(),
+            permissions: DashMap::default(),
+            trusted_endpoints: DashMap::default(),
             tokens: [
                 (
                     perm1,
