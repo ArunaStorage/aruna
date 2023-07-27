@@ -24,6 +24,8 @@ use aruna_rust_api::api::storage::models::v2::{
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use tonic::metadata::MetadataMap;
 
 pub fn type_name_of<T>(_: T) -> &'static str {
@@ -497,6 +499,69 @@ impl From<create_object_request::Parent> for Parent {
             create_object_request::Parent::ProjectId(pid) => Parent::Project(pid),
             create_object_request::Parent::CollectionId(cid) => Parent::Collection(cid),
             create_object_request::Parent::DatasetId(did) => Parent::Dataset(did),
+        }
+    }
+}
+// This looks stupid, but actually is really helpful when converting relations
+impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelation {
+    type Error = anyhow::Error;
+    fn try_from(
+        internal: (&APIInternalRelation, (DieselUlid, ObjectType)),
+    ) -> Result<InternalRelation> {
+        let (internal, (object_id, object_type)) = internal;
+        let (origin_pid, origin_type, target_pid, target_type) = match internal.direction {
+            0 => return Err(anyhow!("Undefined direction")),
+            1 => (
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+                object_id,
+                object_type,
+            ),
+            2 => (
+                object_id,
+                object_type,
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+            ),
+
+            _ => return Err(anyhow!("Internal relation direction conversion error")),
+        };
+        match internal.defined_variant {
+            0 => return Err(anyhow!("Undefined internal relation variant")),
+            i if i > 0 && i < 6 => {
+                let relation_name = match i {
+                    1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
+                    3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                    4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
+                    5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
+                    _ => return Err(anyhow!("Undefined internal relation variant")),
+                };
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    target_pid,
+                    target_type,
+                    is_persistent: false,
+                    relation_name,
+                })
+            }
+            6 => {
+                let relation_name = internal
+                    .custom_variant
+                    .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    relation_name,
+                    target_pid,
+                    target_type,
+                    is_persistent: false,
+                })
+            }
+            _ => return Err(anyhow!("Relation type not found")),
         }
     }
 }

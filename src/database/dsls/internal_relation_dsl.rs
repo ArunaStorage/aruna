@@ -99,15 +99,14 @@ impl InternalRelation {
         Ok(())
     }
     // Checks if relation between two objects already exists
-    pub async fn get_by_pids(
-        from: DieselUlid,
-        to: DieselUlid,
-        client: &Client,
-    ) -> Result<Option<InternalRelation>> {
-        let query = "SELECT * FROM internal_relations WHERE origin_pid = $1 AND target_pid = $2 ";
+    pub async fn get_by_pids(&self, client: &Client) -> Result<Option<InternalRelation>> {
+        let origin = self.origin_pid;
+        let target = self.target_pid;
+        let relation_name = &self.relation_name;
+        let query = "SELECT * FROM internal_relations WHERE origin_pid = $1 AND target_pid = $2 AND relation_name = $3";
         let prepared = client.prepare(query).await?;
         let opt = client
-            .query_opt(&prepared, &[&from, &to])
+            .query_opt(&prepared, &[&origin, &target, &relation_name])
             .await?
             .map(|e| InternalRelation::from_row(&e));
         Ok(opt)

@@ -1,6 +1,9 @@
 use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::relations_request_types::ModifyRelations;
+use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
 use aruna_rust_api::api::storage::services::v2::GetHierachyRequest;
 use aruna_rust_api::api::storage::services::v2::GetHierachyResponse;
@@ -20,10 +23,44 @@ impl RelationsService for RelationsServiceImpl {
     /// Modifys all relations to / from a resource
     async fn modify_relations(
         &self,
-        _request: tonic::Request<ModifyRelationsRequest>,
+        request: tonic::Request<ModifyRelationsRequest>,
     ) -> Result<tonic::Response<ModifyRelationsResponse>, tonic::Status> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = ModifyRelations(request.into_inner());
+
+        let (resource, labels_info) = tonic_invalid!(
+            self.database_handler.get_resource(request).await,
+            "Request not valid"
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, labels_info.resources_to_check),
+            "Unauthorized"
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+
+        let object = tonic_internal!(
+            self.database_handler
+                .modify_relations(
+                    resource,
+                    labels_info.labels_to_add,
+                    labels_info.labels_to_remove
+                )
+                .await,
+            "Database error"
+        );
+
+        self.cache.update_object(&object.object.id, object);
+
+        return_with_log!(ModifyRelationsResponse {});
     }
+
     /// GetHierarchy
     ///
     /// Status: BETA

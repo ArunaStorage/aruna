@@ -186,7 +186,7 @@ impl Object {
     pub async fn add_external_relations(
         id: &DieselUlid,
         client: &Client,
-        rel: ExternalRelation,
+        rel: Vec<ExternalRelation>,
     ) -> Result<()> {
         let query = "UPDATE objects
         SET external_relations = external_relations || $1::jsonb
