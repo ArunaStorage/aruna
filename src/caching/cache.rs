@@ -1,6 +1,8 @@
 use super::structs::PubKey;
+use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
+use crate::database::enums::DbPermissionLevel;
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -125,4 +127,41 @@ impl Cache {
     //         crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
     //     }
     // }
+
+    pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
+        ctxs.iter().all(|x| match &x.variant {
+            crate::auth::structs::ContextVariant::Activated => true,
+            crate::auth::structs::ContextVariant::ResourceContext((id, _)) => {
+                if let Some(obj) = self.get_object(&id) {
+                    obj.object.endpoints.0.contains_key(&endpoint_id)
+                } else {
+                    false
+                }
+            }
+            crate::auth::structs::ContextVariant::User((uid, permlevel)) => {
+                if *permlevel == DbPermissionLevel::READ {
+                    if let Some(user) = self.get_user(&uid) {
+                        user.attributes
+                            .0
+                            .trusted_endpoints
+                            .contains_key(endpoint_id)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            crate::auth::structs::ContextVariant::GlobalAdmin => false,
+            crate::auth::structs::ContextVariant::GlobalProxy => true,
+        })
+    }
+
+    pub fn check_permissions_with_contexts(
+        &self,
+        ctxs: &[Context],
+        permitted: &[(DieselUlid, DbPermissionLevel)],
+    ) -> bool {
+        false
+    }
 }

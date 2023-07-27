@@ -37,11 +37,11 @@ struct KeyCloakResponse {
 #[derive(Debug, Serialize, Deserialize)]
 struct ArunaTokenClaims {
     iss: String,
-    // User_id / Dataproxy_id
+    // User_id / Proxy ID
     sub: String,
-    // Token ID
+    // Associated token_id or User_id (if proxy)
     #[serde(skip_serializing_if = "Option::is_none")]
-    tid: Option<String>,
+    uid: Option<String>,
     exp: usize,
 }
 
@@ -64,7 +64,8 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
-        Option<DieselUlid>,
+        DieselUlid,         // Proxy or Token Id
+        Option<DieselUlid>, // User_id
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
     )> {
@@ -82,6 +83,7 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
+        DieselUlid,
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
@@ -102,8 +104,22 @@ impl TokenHandler {
                 let claims =
                     decode::<ArunaTokenClaims>(token, &k, &Validation::new(Algorithm::EdDSA))?;
 
-                let uid = DieselUlid::from_str(&claims.claims.sub)?;
-                return Ok((Some(uid), vec![], true));
+                let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
+
+                let (option_user, perms) = match claims.claims.uid {
+                    Some(uid) => {
+                        let uid = DieselUlid::from_str(&uid)?;
+                        (
+                            Some(uid),
+                            self.cache
+                                .get_user(&uid)
+                                .ok_or_else(|| anyhow!("Invalid user"))?
+                                .get_permissions(None)?,
+                        )
+                    }
+                    None => (None, vec![]),
+                };
+                return Ok((sub_id, option_user, perms, true));
             }
             PubKey::Server(k) => k,
         };
@@ -114,9 +130,14 @@ impl TokenHandler {
 
         let user = self.cache.get_user(&uid);
 
+        let token = match claims.claims.uid {
+            Some(uid) => Some(DieselUlid::from_str(&uid)?),
+            None => None,
+        };
+
         if let Some(user) = user {
-            let perms = user.get_permissions(None)?;
-            return Ok((Some(user.id), perms, false));
+            let perms = user.get_permissions(token)?;
+            return Ok((user.id, token, perms, false));
         }
         bail!("Invalid user")
     }
@@ -125,6 +146,7 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
+        DieselUlid,
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
@@ -148,7 +170,7 @@ impl TokenHandler {
 
         let perms = user.get_permissions(None)?;
 
-        Ok((Some(user.id), perms, false))
+        Ok((user.id, None, perms, false))
     }
 
     async fn get_token_realminfo(&self) -> Result<DecodingKey> {

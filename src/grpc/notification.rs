@@ -83,12 +83,12 @@ impl EventNotificationService for NotificationServiceImpl {
                 DbPermissionLevel::READ,
                 true,
             ),
-            Target::User(user_id) => Context::user_ctx(tonic_invalid!(
-                DieselUlid::from_str(&user_id),
-                "Invalid user"
-            )),
+            Target::User(user_id) => Context::user_ctx(
+                tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user"),
+                DbPermissionLevel::READ,
+            ),
             Target::Anouncements(_) => Context::default(),
-            Target::All(_) => Context::admin(),
+            Target::All(_) => Context::proxy(),
         };
         let _user_id = tonic_auth!(
             self.authorizer
@@ -523,7 +523,10 @@ impl EventNotificationService for NotificationServiceImpl {
             if let Some(user_ulid) = stream_consumer.user_id {
                 tonic_auth!(
                     self.authorizer
-                        .check_permissions(&token, vec![Context::user_ctx(user_ulid)])
+                        .check_permissions(
+                            &token,
+                            vec![Context::user_ctx(user_ulid, DbPermissionLevel::WRITE)]
+                        )
                         .await,
                     "Permission denied"
                 );
@@ -617,10 +620,10 @@ impl TryInto<Context> for EventType {
                 DbPermissionLevel::READ,
                 true,
             )),
-            EventType::User(user_id) => Ok(Context::user_ctx(tonic_invalid!(
-                DieselUlid::from_str(&user_id),
-                "Invalid user id"
-            ))),
+            EventType::User(user_id) => Ok(Context::user_ctx(
+                tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
+                DbPermissionLevel::READ,
+            )),
             EventType::Announcement(_) => Ok(Context::default()),
             EventType::All => Ok(Context::admin()),
         }
