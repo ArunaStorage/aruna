@@ -1,10 +1,6 @@
-use dashmap::DashSet;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
-
-use crate::database::dsls::{
-    internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO, object_dsl::ObjectWithRelations,
-};
 
 #[derive(Clone)]
 pub enum PubKey {
@@ -12,30 +8,19 @@ pub enum PubKey {
     Server(DecodingKey),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ResourceInfo {
-    pub resource: ObjectWithRelations,
-    pub endpoints: Vec<DieselUlid>,
-    pub children: DashSet<DieselUlid>,
-}
-
 impl ObjectWithRelations {
     pub fn get_children(&self) -> Vec<DieselUlid> {
-        self.outbound
+        self.outbound_belongs_to
             .0
-             .0
             .iter()
-            .filter(|x| x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO)
             .map(|x| x.target_pid)
             .collect::<Vec<_>>()
     }
 
     pub fn get_parents(&self) -> Vec<DieselUlid> {
-        self.inbound
+        self.inbound_belongs_to
             .0
-             .0
             .iter()
-            .filter(|x| x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO)
             .map(|x| x.origin_pid)
             .collect::<Vec<_>>()
     }

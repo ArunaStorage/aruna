@@ -1,8 +1,6 @@
-use super::structs::{PubKey, ResourceInfo};
+use super::structs::PubKey;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
-use crate::database::dsls::{
-    internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO, object_dsl::ObjectWithRelations,
-};
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -10,7 +8,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
 pub struct Cache {
-    pub object_cache: DashMap<DieselUlid, ResourceInfo, RandomState>,
+    pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
     pub user_cache: DashMap<DieselUlid, User, RandomState>,
     pub pubkeys: DashMap<i32, PubKey, RandomState>,
 }
@@ -24,7 +22,7 @@ impl Cache {
         }
     }
 
-    pub fn get_object(&self, id: &DieselUlid) -> Option<ResourceInfo> {
+    pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
         self.object_cache.get(id).map(|x| x.value().clone())
     }
 
@@ -34,12 +32,12 @@ impl Cache {
 
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
         self.object_cache.get_mut(id).map(|mut x| {
-            x.value_mut().resource = object;
+            *x.value_mut() = object;
         });
     }
 
-    pub fn add_object(&self, id: DieselUlid, info: ResourceInfo) {
-        self.object_cache.insert(id, info);
+    pub fn add_object(&self, rel: ObjectWithRelations) {
+        self.object_cache.insert(rel.object.id.clone(), rel);
     }
 
     pub fn remove_object(&self, id: &DieselUlid) {

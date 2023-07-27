@@ -11,6 +11,7 @@ use aruna_rust_api::api::storage::{
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 pub enum CreateRequest {
@@ -166,6 +167,7 @@ impl CreateRequest {
             external_relations: Json(external_relations),
             hashes: Json(hashes),
             dynamic: self.is_dynamic(),
+            endpoints: Json(HashMap::new()),
         })
     }
 }

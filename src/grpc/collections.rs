@@ -63,7 +63,7 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error"
         );
 
-        self.cache.add_object(id, info);
+        self.cache.add_object(object_with_rel.clone());
 
         let generic_collection: generic_resource::Resource =
             tonic_invalid!(object_with_rel.try_into(), "Invalid collection");
@@ -96,17 +96,20 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&collection_id)
+            .get_object(&collection_id)
             .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
 
+        let generic_collection: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid collection");
+
         let response = GetCollectionResponse {
-            collection: Some(res.into_inner()?),
+            collection: Some(generic_collection.into_inner()?),
         };
 
         return_with_log!(response);
@@ -128,7 +131,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -161,7 +164,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -194,7 +197,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -227,7 +230,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 

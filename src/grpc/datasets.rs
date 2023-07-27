@@ -8,6 +8,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -49,26 +50,22 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, parent_ctx).await,
+            self.authorizer.check_permissions(&token, vec![parent_ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_dataset, shared_id, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_dataset.clone(),
-                shared_id,
-                cache_res
-            ),
-            "Caching error"
-        );
+        self.cache.add_object(object_with_rel.clone());
+
+        let generic_dataset: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid dataset");
 
         let response = CreateDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -98,17 +95,20 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&dataset_id)
+            .get_object(&dataset_id)
             .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?;
 
+        let generic_dataset: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid dataset");
+
         let response = GetDatasetResponse {
-            dataset: Some(res.into_inner()?),
+            dataset: Some(generic_dataset.into_inner()?),
         };
 
         return_with_log!(response);
@@ -131,7 +131,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -162,7 +162,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -195,7 +195,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
@@ -227,7 +227,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
