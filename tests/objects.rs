@@ -46,7 +46,6 @@ async fn create_object() {
 
     let create_object = Object {
         id: obj_id,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "a".to_string(),
         description: "b".to_string(),
@@ -129,7 +128,6 @@ async fn get_object_with_relations_test() {
 
     let create_dataset = Object {
         id: dataset_id,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "dataset".to_string(),
         description: "test".to_string(),
@@ -147,7 +145,6 @@ async fn get_object_with_relations_test() {
     };
     let create_collection_one = Object {
         id: collection_one,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "collection_one".to_string(),
         description: "test".to_string(),
@@ -165,7 +162,6 @@ async fn get_object_with_relations_test() {
     };
     let create_collection_two = Object {
         id: collection_two,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "collection_two".to_string(),
         description: "test".to_string(),
@@ -183,7 +179,6 @@ async fn get_object_with_relations_test() {
     };
     let create_object_one = Object {
         id: object_one,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "object_one".to_string(),
         description: "test".to_string(),
@@ -201,7 +196,6 @@ async fn get_object_with_relations_test() {
     };
     let create_object_two = Object {
         id: object_two,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "object_two".to_string(),
         description: "test".to_string(),

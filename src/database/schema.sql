@@ -108,11 +108,9 @@ CREATE TABLE IF NOT EXISTS objects (
     external_relations JSONB NOT NULL,
     hashes JSONB NOT NULL DEFAULT '{}',
     dynamic BOOL NOT NULL DEFAULT TRUE,
-    UNIQUE(shared_id, revision_number)
+    endpoints JSONB NOT NULL DEFAULT '{}',
+    UNIQUE(id, object_type)
 );
-
-CREATE INDEX IF NOT EXISTS objects_shared_rev_idx ON objects (shared_id, revision_number);
-CREATE INDEX IF NOT EXISTS objects_shared_single_idx ON objects (shared_id);
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);
 
 -- Table with endpoints
@@ -124,15 +122,6 @@ CREATE TABLE IF NOT EXISTS endpoints (
     status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING'
 );
 
--- Table with object locations which describe
-CREATE TABLE IF NOT EXISTS object_locations (
-    id UUID PRIMARY KEY,
-    endpoint_id UUID NOT NULL REFERENCES endpoints(id),
-    object_id UUID NOT NULL REFERENCES objects(id),
-    is_primary BOOL NOT NULL DEFAULT TRUE,
-    -- TRUE if TRUE otherwise NULL
-    UNIQUE (object_id, is_primary)
-);
 /* ----- Object Relations ------------------------------------------ */
 -- Table to store custom relation types
 CREATE TABLE IF NOT EXISTS relation_types (
@@ -143,12 +132,14 @@ CREATE TABLE IF NOT EXISTS relation_types (
 -- Table to store all internal relations between objects
 CREATE TABLE IF NOT EXISTS internal_relations (
     id UUID PRIMARY KEY NOT NULL,
-    origin_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
+    origin_pid UUID NOT NULL,
     origin_type "ObjectType" NOT NULL,
-    relation_name VARCHAR(511) NOT NULL REFERENCES relation_types(relation_name) ON DELETE CASCADE,
+    relation_name VARCHAR(511) NOT NULL,
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_type "ObjectType" NOT NULL,
-    is_persistent BOOL NOT NULL DEFAULT FALSE
+    is_persistent BOOL NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (origin_pid, origin_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
+    FOREIGN KEY (target_pid, target_type) REFERENCES objects(id, object_type) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS origin_pid_idx ON internal_relations (origin_pid);

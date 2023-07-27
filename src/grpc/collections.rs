@@ -8,6 +8,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::IntoGenericInner;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -62,7 +63,10 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error"
         );
 
-        tonic_internal!(self.cache.add_object(id, info), "Caching error");
+        self.cache.add_object(id, info);
+
+        let generic_collection: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid collection");
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),

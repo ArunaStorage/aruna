@@ -1,3 +1,4 @@
+use dashmap::DashSet;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 
@@ -15,6 +16,7 @@ pub enum PubKey {
 pub struct ResourceInfo {
     pub resource: ObjectWithRelations,
     pub endpoints: Vec<DieselUlid>,
+    pub children: DashSet<DieselUlid>,
 }
 
 impl ObjectWithRelations {

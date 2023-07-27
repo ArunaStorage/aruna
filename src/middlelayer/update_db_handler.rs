@@ -116,7 +116,6 @@ impl DatabaseHandler {
             // Create new object
             let create_object = Object {
                 id: DieselUlid::generate(),
-                shared_id: id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number + 1,
@@ -142,7 +141,6 @@ impl DatabaseHandler {
             // Update in place
             let update_object = Object {
                 id: old.id,
-                shared_id: id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number,

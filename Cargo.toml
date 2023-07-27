@@ -47,7 +47,7 @@ hex = "0.4.3"
 base64 = "0.21.2"
 tower = "0.4.13"
 async-trait = "0.1.72"
-dashmap = "5.5.0"
+dashmap = {version = "5.5.0", features = ["serde"]}
 ahash = "0.8.3"
 
 # Postgres interaction
