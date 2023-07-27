@@ -76,12 +76,13 @@ impl EventNotificationService for NotificationServiceImpl {
             Target::Resource(ResourceTarget {
                 resource_id,
                 resource_variant,
-            }) => Context::resource_context(
+            }) => Context::res_ctx(
                 tonic_invalid!(
                     DieselUlid::from_str(&resource_id),
                     "Invalid resource id format"
                 ),
                 DbPermissionLevel::READ,
+                true,
             ),
             Target::User(_) => Context::self_ctx(),
             Target::Anouncements(_) => Context::default(),
@@ -89,8 +90,7 @@ impl EventNotificationService for NotificationServiceImpl {
         };
         let _user_id = tonic_auth!(
             self.authorizer
-                .check_context(&token, vec![perm_context])
-                .await,
+                .check_permissions(&token, vec![perm_context]),
             "Permission denied"
         );
 
@@ -184,8 +184,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
             self.authorizer
-                .check_context(&token, vec![Context::default()])
-                .await,
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -212,16 +211,15 @@ impl EventNotificationService for NotificationServiceImpl {
             .try_into()?
         } else {
             return Err(Status::invalid_argument(format!(
-                "Consumer with id {} does not exist.",
+                "Consumer with id {} does not exist",
                 consumer_id
             )));
         };
 
         tonic_auth!(
             self.authorizer
-                .check_context(&token, specific_context)
-                .await,
-            "Nope."
+                .check_permissions(&token, vec![specific_context]),
+            "Invalid permissions"
         );
 
         // Fetch messages of event consumer
@@ -301,7 +299,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -332,8 +331,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         tonic_auth!(
             self.authorizer
-                .check_context(&token, specific_context)
-                .await,
+                .check_permissions(&token, vec![specific_context]),
             "Nope."
         );
 
@@ -436,7 +434,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -491,7 +490,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Check empty permission context just to validate registered and active user
         let _test = tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
         );
 
@@ -514,8 +514,7 @@ impl EventNotificationService for NotificationServiceImpl {
             if let Some(user_ulid) = stream_consumer.user_id {
                 tonic_auth!(
                     self.authorizer
-                        .check_context(&token, Context::user_context(user_ulid))
-                        .await,
+                        .check_permissions(&token, vec![Context::user_ctx(user_ulid)]),
                     "Permission denied"
                 );
             } else {
@@ -596,4 +595,24 @@ fn convert_nats_message_to_proto(
     Ok(EventMessage {
         message_variant: Some(message_variant),
     })
+}
+
+impl TryInto<Context> for EventType {
+    type Error = Status;
+
+    fn try_into(self) -> std::result::Result<Context, Self::Error> {
+        match self {
+            EventType::Resource((resource_id, object_type, _)) => Ok(Context::res_ctx(
+                tonic_invalid!(DieselUlid::from_str(&resource_id), "Invalid resource id"),
+                DbPermissionLevel::READ,
+                true,
+            )),
+            EventType::User(user_id) => Ok(Context::user_ctx(tonic_invalid!(
+                DieselUlid::from_str(&user_id),
+                "Invalid user id"
+            ))),
+            EventType::Announcement(_) => Ok(Context::default()),
+            EventType::All => Ok(Context::admin()),
+        }
+    }
 }

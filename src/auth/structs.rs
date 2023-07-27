@@ -68,7 +68,7 @@ impl User {
     ) -> Result<Vec<(DieselUlid, DbPermissionLevel)>> {
         if let Some(token) = token {
             if let Some(token) = self.attributes.0.tokens.get(&token) {
-                return Ok(vec![(token.object_id, token.user_rights)]);
+                return Ok(vec![(token.object_id.clone(), token.user_rights.clone())]);
             } else {
                 bail!("Token not found")
             }
@@ -78,7 +78,7 @@ impl User {
                 .0
                 .permissions
                 .iter()
-                .map(|(k, v)| (*k, *v))
+                .map(|(k, v)| (*k, v.clone()))
                 .collect())
         }
     }

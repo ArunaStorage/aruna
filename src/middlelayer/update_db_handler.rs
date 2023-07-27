@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
@@ -174,6 +176,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
+                endpoints: Json(HashMap::new()),
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -199,6 +202,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
+                endpoints: Json(HashMap::new()),
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {
