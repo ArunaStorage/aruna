@@ -2,11 +2,11 @@ use aruna_server::database::{
     crud::CrudDb,
     dsls::{
         internal_relation_dsl::InternalRelation,
-        object_dsl::{ExternalRelations, Hashes, KeyValues, Object},
-        relation_type_dsl::RelationType,
+        object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
         user_dsl::{User, UserAttributes},
     },
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::collections::HashMap;
@@ -272,19 +272,30 @@ async fn get_object_with_relations_test() {
         dbg!(&r);
         r.create(client).await.unwrap();
     }
-    // let compare_owr = ObjectWithRelations {
-    //     object: create_dataset,
-    //     inbound: Json(Inbound(vec![create_relation_one, create_relation_two])),
-    //     outbound: Json(Outbound(vec![
-    //         create_relation_three,
-    //         create_relation_four.clone(),
-    //     ])),
-    // };
+    let compare_owr = ObjectWithRelations {
+        object: create_dataset,
+        inbound: Json(DashMap::new()),
+        inbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_one.origin_pid.clone(), create_relation_one),
+            (create_relation_two.origin_pid.clone(), create_relation_two),
+        ])),
+        outbound: Json(DashMap::new()),
+        outbound_belongs_to: Json(DashMap::from_iter([
+            (
+                create_relation_three.target_pid.clone(),
+                create_relation_three,
+            ),
+            (
+                create_relation_four.target_pid.clone(),
+                create_relation_four.clone(),
+            ),
+        ])),
+    };
     let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
         .await
         .unwrap();
 
-    // dbg!(&object_with_relations);
-    // dbg!(&compare_owr);
-    // assert!(object_with_relations == compare_owr);
+    dbg!(&object_with_relations);
+    dbg!(&compare_owr);
+    assert!(object_with_relations == compare_owr);
 }
