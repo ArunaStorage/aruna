@@ -86,6 +86,7 @@ pub struct Object {
 
 #[derive(FromRow, Debug, FromSql, Clone)]
 pub struct ObjectWithRelations {
+    #[from_row(flatten)]
     pub object: Object,
     pub inbound: Json<DashMap<DieselUlid, InternalRelation>>,
     pub inbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
