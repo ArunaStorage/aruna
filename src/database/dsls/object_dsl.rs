@@ -11,7 +11,7 @@ use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tokio_postgres::Client;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -81,6 +81,7 @@ pub struct Object {
     pub external_relations: Json<ExternalRelations>,
     pub hashes: Json<Hashes>,
     pub dynamic: bool,
+    pub endpoints: Json<HashMap<DieselUlid, bool>>,
 }
 
 #[derive(FromRow, Debug, FromSql, Clone)]
@@ -95,8 +96,8 @@ pub struct ObjectWithRelations {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
         );";
 
         let prepared = client.prepare(query).await?;
@@ -119,6 +120,7 @@ impl CrudDb for Object {
                     &self.external_relations,
                     &self.hashes,
                     &self.dynamic,
+                    &self.endpoints,
                 ],
             )
             .await?;
@@ -358,10 +360,38 @@ impl Eq for Object {}
 impl PartialEq for ObjectWithRelations {
     fn eq(&self, other: &Self) -> bool {
         // Faster than comparing vecs
-        let self_inbound_set: HashSet<_> = self.inbound.0 .0.iter().cloned().collect();
-        let other_inbound_set: HashSet<_> = other.inbound.0 .0.iter().cloned().collect();
-        let self_outbound_set: HashSet<_> = self.outbound.0 .0.iter().cloned().collect();
-        let other_outbound_set: HashSet<_> = other.outbound.0 .0.iter().cloned().collect();
+        let self_inbound_set: HashSet<_> =
+            self.inbound.0.iter().map(|r| r.value().clone()).collect();
+        let other_inbound_set: HashSet<_> =
+            other.inbound.0.iter().map(|r| r.value().clone()).collect();
+        let self_inbound_belongs_to_set: HashSet<_> = self
+            .inbound_belongs_to
+            .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
+        let other_inbound_belongs_to_set: HashSet<_> = other
+            .inbound_belongs_to
+            .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
+        let self_outbound_set: HashSet<_> =
+            self.outbound.0.iter().map(|r| r.value().clone()).collect();
+        let other_outbound_set: HashSet<_> =
+            other.outbound.0.iter().map(|r| r.value().clone()).collect();
+        let self_outbound_belongs_to_set: HashSet<_> = self
+            .outbound_belongs_to
+            .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
+        let other_outbound_belongs_to_set: HashSet<_> = other
+            .outbound_belongs_to
+            .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
         self.object == other.object
             && self_inbound_set
                 .iter()
@@ -369,6 +399,12 @@ impl PartialEq for ObjectWithRelations {
             && self_outbound_set
                 .iter()
                 .all(|item| other_outbound_set.contains(item))
+            && self_inbound_belongs_to_set
+                .iter()
+                .all(|item| other_inbound_belongs_to_set.contains(item))
+            && self_outbound_belongs_to_set
+                .iter()
+                .all(|item| other_outbound_belongs_to_set.contains(item))
     }
 }
 impl Eq for ObjectWithRelations {}
