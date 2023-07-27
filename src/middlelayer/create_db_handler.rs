@@ -34,7 +34,7 @@ impl DatabaseHandler {
                     origin_pid: parent.get_id()?,
                     origin_type: parent.get_type(),
                     is_persistent: false,
-                    target_pid: object.id.clone(),
+                    target_pid: object.id,
                     target_type: object.object_type.clone(),
                     relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                 };
@@ -44,7 +44,7 @@ impl DatabaseHandler {
         };
 
         Ok(ObjectWithRelations {
-            object: object,
+            object,
             inbound: Json(DashMap::new()),
             inbound_belongs_to: Json(internal_relation),
             outbound: Json(DashMap::new()),
