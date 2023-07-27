@@ -16,8 +16,8 @@
 /// # use std::sync::Arc;
 /// # use aruna_server::database::connection::Database;
 /// # use aruna_server::middlelayer::db_handler::DatabaseHandler;
-/// # use aruna_cache::notifications::NotificationCache;
-/// # use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+/// # use aruna_server::caching::cache::Cache;
+/// # use aruna_server::auth::permission_handler::PermissionHandler;
 ///
 /// // Without any additional argument (only name)
 /// impl_grpc_server!(MyServiceImpl);

@@ -114,16 +114,16 @@ async fn get_object_with_relations_test() {
 
     user.create(client).await.unwrap();
 
-    let insert = "INSERT INTO relation_types (relation_name) VALUES ($1);";
-    let prepared = client.prepare(insert).await.unwrap();
-    let rel_type = RelationType {
-        relation_name: "BELONGS_TO".to_string(),
-    };
+    // let insert = "INSERT INTO relation_types (relation_name) VALUES ($1);";
+    // let prepared = client.prepare(insert).await.unwrap();
+    // let rel_type = RelationType {
+    //     relation_name: "BELONGS_TO".to_string(),
+    // };
 
-    client
-        .execute(&prepared, &[&rel_type.relation_name])
-        .await
-        .unwrap();
+    // client
+    //     .execute(&prepared, &[&rel_type.relation_name])
+    //     .await
+    //     .unwrap();
 
     let create_dataset = Object {
         id: dataset_id,
@@ -280,9 +280,9 @@ async fn get_object_with_relations_test() {
     //         create_relation_four.clone(),
     //     ])),
     // };
-    // let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
-    //     .await
-    //     .unwrap();
+    let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
+        .await
+        .unwrap();
 
     // dbg!(&object_with_relations);
     // dbg!(&compare_owr);
