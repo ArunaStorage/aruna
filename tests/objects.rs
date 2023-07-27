@@ -274,12 +274,12 @@ async fn get_object_with_relations_test() {
     }
     let compare_owr = ObjectWithRelations {
         object: create_dataset,
-        inbound: Json(DashMap::new()),
+        inbound: Json(DashMap::default()),
         inbound_belongs_to: Json(DashMap::from_iter([
             (create_relation_one.origin_pid.clone(), create_relation_one),
             (create_relation_two.origin_pid.clone(), create_relation_two),
         ])),
-        outbound: Json(DashMap::new()),
+        outbound: Json(DashMap::default()),
         outbound_belongs_to: Json(DashMap::from_iter([
             (
                 create_relation_three.target_pid.clone(),

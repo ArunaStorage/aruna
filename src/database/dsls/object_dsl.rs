@@ -3,6 +3,7 @@ use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
 };
+use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
@@ -88,10 +89,10 @@ pub struct Object {
 pub struct ObjectWithRelations {
     #[from_row(flatten)]
     pub object: Object,
-    pub inbound: Json<DashMap<DieselUlid, InternalRelation>>,
-    pub inbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
-    pub outbound: Json<DashMap<DieselUlid, InternalRelation>>,
-    pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation>>,
+    pub inbound: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
+    pub inbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
+    pub outbound: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
+    pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
 }
 
 #[async_trait::async_trait]
