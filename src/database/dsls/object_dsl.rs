@@ -410,3 +410,35 @@ impl PartialEq for ObjectWithRelations {
     }
 }
 impl Eq for ObjectWithRelations {}
+
+impl ObjectWithRelations {
+    pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
+        Self {
+            object: Object {
+                id: id.clone(),
+                created_at: None,
+                revision_number: 0,
+                created_by: DieselUlid::generate(),
+                content_len: 0,
+                key_values: Json(KeyValues(vec![])),
+                object_status: ObjectStatus::AVAILABLE,
+                data_class: DataClass::PUBLIC,
+                object_type: ObjectType::OBJECT,
+                external_relations: Json(ExternalRelations(vec![])),
+                hashes: Json(Hashes(vec![])),
+                dynamic: false,
+                name: "aname".to_string(),
+                description: "aname".to_string(),
+                count: 0,
+                endpoints: Json(HashMap::default()),
+            },
+            inbound: Json(DashMap::default()),
+            inbound_belongs_to: Json(DashMap::default()),
+            outbound: Json(DashMap::default()),
+            outbound_belongs_to: Json(DashMap::from_iter([(
+                to.clone(),
+                InternalRelation::default(),
+            )])),
+        }
+    }
+}

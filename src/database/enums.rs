@@ -22,9 +22,21 @@ pub enum DataClass {
 }
 
 #[derive(
-    Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize,
+    Debug,
+    ToSql,
+    FromSql,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    Serialize,
+    Deserialize,
+    Default,
 )]
 pub enum ObjectType {
+    #[default]
     PROJECT,
     COLLECTION,
     DATASET,

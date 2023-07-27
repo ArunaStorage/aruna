@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use super::structs::PubKey;
 use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -222,19 +224,67 @@ impl Cache {
         if ctxs.is_empty() {
             return Ok(true);
         }
-        if let Some(x) = self.get_object(id) {
-            for parent in x.get_children() {
-                if let Some(got_perm) = ctxs.remove(&parent) {
-                    if got_perm >= perm {
-                        bail!("Invalid permissions")
+
+        let mut queue = VecDeque::new();
+        queue.push_back(id.clone());
+
+        while let Some(x) = queue.pop_front() {
+            if let Some(x) = self.get_object(&x) {
+                for child in x.get_children() {
+                    if let Some(got_perm) = ctxs.remove(&child) {
+                        if got_perm > perm {
+                            bail!("Invalid permissions")
+                        }
+                        if ctxs.is_empty() {
+                            return Ok(true);
+                        }
                     }
-                    if ctxs.is_empty() {
-                        return Ok(true);
-                    }
+                    queue.push_back(child);
                 }
-                return self.traverse_down(&parent, perm, ctxs);
             }
         }
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diesel_ulid::DieselUlid;
+
+    #[test]
+    fn test_traverse_down_with_relations() {
+        let cache = Cache::new();
+        let id1 = DieselUlid::generate();
+        let id2 = DieselUlid::generate();
+        let id3 = DieselUlid::generate();
+        let id4 = DieselUlid::generate();
+        let id5 = DieselUlid::generate();
+
+        let mut ctxs = HashMap::default();
+        ctxs.insert(id2, DbPermissionLevel::READ);
+        ctxs.insert(id3, DbPermissionLevel::READ);
+        ctxs.insert(id4, DbPermissionLevel::READ);
+
+        let mut ctxs1 = ctxs.clone();
+        let mut ctxs2 = ctxs.clone();
+        let mut ctxs3 = ctxs.clone();
+
+        cache.add_object(ObjectWithRelations::random_object_to(&id1, &id2));
+        cache.add_object(ObjectWithRelations::random_object_to(&id2, &id3));
+        cache.add_object(ObjectWithRelations::random_object_to(&id3, &id4));
+        cache.add_object(ObjectWithRelations::random_object_to(&id4, &id5));
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::READ, &mut ctxs1);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::ADMIN, &mut ctxs2);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::NONE, &mut ctxs3);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
     }
 }
