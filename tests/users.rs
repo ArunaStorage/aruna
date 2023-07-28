@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use aruna_server::database::{
     crud::CrudDb,
-    dsls::user_dsl::{User, UserAttributes},
+    dsls::user_dsl::{APIToken, User, UserAttributes},
 };
 use diesel_ulid::DieselUlid;
 
@@ -16,12 +18,14 @@ async fn create_user_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: false,
+            tokens: HashMap::new(),
             custom_attributes: vec![],
-            permissions: vec![],
+            permissions: HashMap::new(),
         }),
         active: true,
     };
@@ -49,11 +53,13 @@ async fn update_user_name_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: vec![],
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -87,11 +93,13 @@ async fn update_user_email_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: vec![],
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -125,11 +133,13 @@ async fn update_user_admin_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: vec![],
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -163,11 +173,13 @@ async fn update_user_service_account_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: vec![],
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -201,11 +213,13 @@ async fn delete_user_test() {
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes: postgres_types::Json(UserAttributes {
             global_admin: false,
             service_account: true,
-            permissions: vec![],
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
             custom_attributes: vec![],
         }),
         active: true,
@@ -220,4 +234,291 @@ async fn delete_user_test() {
     if User::get(user.id, &client).await.unwrap().is_some() {
         panic!("User should not exist anymore")
     }
+}
+
+#[tokio::test]
+async fn add_permission_user_test() {
+    let db = crate::init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    // Define and create user in database
+    let user = User {
+        id: DieselUlid::generate(),
+        display_name: "aha".to_string(),
+        external_id: None,
+        email: "aja".to_string(),
+        attributes: postgres_types::Json(UserAttributes {
+            global_admin: false,
+            service_account: true,
+            tokens: HashMap::new(),
+            permissions: HashMap::new(),
+            custom_attributes: vec![],
+        }),
+        active: true,
+    };
+
+    user.create(&client).await.unwrap();
+
+    User::add_user_permission(
+        &client,
+        &user.id,
+        [(
+            DieselUlid::generate(),
+            aruna_server::database::enums::DbPermissionLevel::ADMIN,
+        )]
+        .into_iter()
+        .collect(),
+    )
+    .await
+    .unwrap();
+
+    User::add_user_permission(
+        &client,
+        &user.id,
+        [(
+            DieselUlid::generate(),
+            aruna_server::database::enums::DbPermissionLevel::READ,
+        )]
+        .into_iter()
+        .collect(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .permissions
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn remove_user_permission_test() {
+    let db = crate::init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    let perm1 = DieselUlid::generate();
+    let perm2 = DieselUlid::generate();
+    let perm3 = DieselUlid::generate();
+    // Define and create user in database
+    let user = User {
+        id: DieselUlid::generate(),
+        display_name: "aha".to_string(),
+        external_id: None,
+        email: "aja".to_string(),
+        attributes: postgres_types::Json(UserAttributes {
+            global_admin: false,
+            service_account: true,
+            tokens: HashMap::new(),
+            permissions: [
+                (
+                    perm1,
+                    aruna_server::database::enums::DbPermissionLevel::ADMIN,
+                ),
+                (
+                    perm2,
+                    aruna_server::database::enums::DbPermissionLevel::READ,
+                ),
+                (
+                    perm3,
+                    aruna_server::database::enums::DbPermissionLevel::WRITE,
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            custom_attributes: vec![],
+        }),
+        active: true,
+    };
+
+    user.create(&client).await.unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .permissions
+            .len(),
+        3
+    );
+
+    User::remove_user_permission(&client, &user.id, &perm2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .permissions
+            .len(),
+        2
+    );
+
+    User::remove_user_permission(&client, &user.id, &perm1)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .permissions
+            .len(),
+        1
+    );
+
+    User::remove_user_permission(&client, &user.id, &perm3)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .permissions
+            .len(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn user_token_test() {
+    let db = crate::init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    let perm1 = DieselUlid::generate();
+    let perm2 = DieselUlid::generate();
+    let perm3 = DieselUlid::generate();
+    // Define and create user in database
+    let user = User {
+        id: DieselUlid::generate(),
+        display_name: "aha".to_string(),
+        external_id: None,
+        email: "aja".to_string(),
+        attributes: postgres_types::Json(UserAttributes {
+            global_admin: false,
+            service_account: true,
+            permissions: HashMap::new(),
+            tokens: [
+                (
+                    perm1,
+                    APIToken {
+                        pub_key: 1,
+                        name: "test".to_string(),
+                        created_at: chrono::Utc::now().naive_utc(),
+                        expires_at: chrono::Utc::now().naive_utc(),
+                        object_id: DieselUlid::generate(),
+                        user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
+                    },
+                ),
+                (
+                    perm2,
+                    APIToken {
+                        pub_key: 1,
+                        name: "test".to_string(),
+                        created_at: chrono::Utc::now().naive_utc(),
+                        expires_at: chrono::Utc::now().naive_utc(),
+                        object_id: DieselUlid::generate(),
+                        user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
+                    },
+                ),
+                (
+                    perm3,
+                    APIToken {
+                        pub_key: 1,
+                        name: "test".to_string(),
+                        created_at: chrono::Utc::now().naive_utc(),
+                        expires_at: chrono::Utc::now().naive_utc(),
+                        object_id: DieselUlid::generate(),
+                        user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            custom_attributes: vec![],
+        }),
+        active: true,
+    };
+
+    user.create(&client).await.unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .tokens
+            .len(),
+        3
+    );
+
+    User::remove_user_token(&client, &user.id, &perm2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .tokens
+            .len(),
+        2
+    );
+
+    User::remove_user_token(&client, &user.id, &perm1)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .tokens
+            .len(),
+        1
+    );
+
+    User::remove_user_token(&client, &user.id, &perm3)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        User::get(user.id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .attributes
+            .0
+            .tokens
+            .len(),
+        0
+    );
 }

@@ -1,9 +1,11 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
+use crate::middlelayer::relations_request_types::ModifyRelations;
+use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
-use aruna_rust_api::api::storage::services::v2::GetHierachyRequest;
-use aruna_rust_api::api::storage::services::v2::GetHierachyResponse;
+use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
+use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsResponse;
 use std::sync::Arc;
@@ -20,19 +22,53 @@ impl RelationsService for RelationsServiceImpl {
     /// Modifys all relations to / from a resource
     async fn modify_relations(
         &self,
-        _request: tonic::Request<ModifyRelationsRequest>,
+        request: tonic::Request<ModifyRelationsRequest>,
     ) -> Result<tonic::Response<ModifyRelationsResponse>, tonic::Status> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = ModifyRelations(request.into_inner());
+
+        let (resource, labels_info) = tonic_invalid!(
+            self.database_handler.get_resource(request).await,
+            "Request not valid"
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, labels_info.resources_to_check),
+            "Unauthorized"
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+
+        let object = tonic_internal!(
+            self.database_handler
+                .modify_relations(
+                    resource,
+                    labels_info.labels_to_add,
+                    labels_info.labels_to_remove
+                )
+                .await,
+            "Database error"
+        );
+
+        self.cache.update_object(&object.object.id, object.clone());
+
+        return_with_log!(ModifyRelationsResponse {});
     }
+
     /// GetHierarchy
     ///
     /// Status: BETA
     ///
     /// Gets all downstream hierarchy relations from a resource
-    async fn get_hierachy(
+    async fn get_hierarchy(
         &self,
-        _request: tonic::Request<GetHierachyRequest>,
-    ) -> Result<tonic::Response<GetHierachyResponse>, tonic::Status> {
+        _request: tonic::Request<GetHierarchyRequest>,
+    ) -> Result<tonic::Response<GetHierarchyResponse>, tonic::Status> {
         todo!()
     }
     //     async fn modify_relations(

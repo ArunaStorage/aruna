@@ -2,15 +2,14 @@ use aruna_server::database::{
     crud::CrudDb,
     dsls::{
         internal_relation_dsl::InternalRelation,
-        object_dsl::{
-            ExternalRelations, Hashes, Inbound, KeyValues, Object, ObjectWithRelations, Outbound,
-        },
-        relation_type_dsl::RelationType,
-        user_dsl::{Permission, User, UserAttributes},
+        object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
+        user_dsl::{User, UserAttributes},
     },
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::collections::HashMap;
 
 mod init_db;
 
@@ -25,15 +24,17 @@ async fn create_object() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
-        permissions: vec![Permission {
-            resource_id: obj_id,
-            permission_level: aruna_server::database::enums::PermissionLevels::WRITE,
-        }],
+        tokens: HashMap::new(),
+        permissions: HashMap::from([(
+            obj_id,
+            aruna_server::database::enums::DbPermissionLevel::WRITE,
+        )]),
     });
 
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes,
         active: true,
@@ -43,7 +44,6 @@ async fn create_object() {
 
     let create_object = Object {
         id: obj_id,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "a".to_string(),
         description: "b".to_string(),
@@ -58,6 +58,7 @@ async fn create_object() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
+        endpoints: Json(HashMap::new()),
     };
     create_object.create(&client).await.unwrap();
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
@@ -95,18 +96,17 @@ async fn get_object_with_relations_test() {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
+        tokens: HashMap::new(),
         permissions: object_vec
             .iter()
-            .map(|o| Permission {
-                resource_id: *o,
-                permission_level: aruna_server::database::enums::PermissionLevels::WRITE,
-            })
+            .map(|o| (*o, aruna_server::database::enums::DbPermissionLevel::WRITE))
             .collect(),
     });
 
     let user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        external_id: None,
         email: "aja".to_string(),
         attributes,
         active: true,
@@ -114,20 +114,19 @@ async fn get_object_with_relations_test() {
 
     user.create(client).await.unwrap();
 
-    let insert = "INSERT INTO relation_types (relation_name) VALUES ($1);";
-    let prepared = client.prepare(insert).await.unwrap();
-    let rel_type = RelationType {
-        relation_name: "BELONGS_TO".to_string(),
-    };
+    // let insert = "INSERT INTO relation_types (relation_name) VALUES ($1);";
+    // let prepared = client.prepare(insert).await.unwrap();
+    // let rel_type = RelationType {
+    //     relation_name: "BELONGS_TO".to_string(),
+    // };
 
-    client
-        .execute(&prepared, &[&rel_type.relation_name])
-        .await
-        .unwrap();
+    // client
+    //     .execute(&prepared, &[&rel_type.relation_name])
+    //     .await
+    //     .unwrap();
 
     let create_dataset = Object {
         id: dataset_id,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "dataset".to_string(),
         description: "test".to_string(),
@@ -142,10 +141,10 @@ async fn get_object_with_relations_test() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
+        endpoints: Json(HashMap::new()),
     };
     let create_collection_one = Object {
         id: collection_one,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "collection_one".to_string(),
         description: "test".to_string(),
@@ -160,10 +159,10 @@ async fn get_object_with_relations_test() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
+        endpoints: Json(HashMap::new()),
     };
     let create_collection_two = Object {
         id: collection_two,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "collection_two".to_string(),
         description: "test".to_string(),
@@ -178,10 +177,10 @@ async fn get_object_with_relations_test() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
+        endpoints: Json(HashMap::new()),
     };
     let create_object_one = Object {
         id: object_one,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "object_one".to_string(),
         description: "test".to_string(),
@@ -196,10 +195,10 @@ async fn get_object_with_relations_test() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
+        endpoints: Json(HashMap::new()),
     };
     let create_object_two = Object {
         id: object_two,
-        shared_id: DieselUlid::generate(),
         revision_number: 0,
         name: "object_two".to_string(),
         description: "test".to_string(),
@@ -214,6 +213,7 @@ async fn get_object_with_relations_test() {
         external_relations: Json(ExternalRelations(vec![])),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
+        endpoints: Json(HashMap::new()),
     };
     let creates = vec![
         create_dataset.clone(),
@@ -274,10 +274,21 @@ async fn get_object_with_relations_test() {
     }
     let compare_owr = ObjectWithRelations {
         object: create_dataset,
-        inbound: Json(Inbound(vec![create_relation_one, create_relation_two])),
-        outbound: Json(Outbound(vec![
-            create_relation_three,
-            create_relation_four.clone(),
+        inbound: Json(DashMap::new()),
+        inbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_one.origin_pid.clone(), create_relation_one),
+            (create_relation_two.origin_pid.clone(), create_relation_two),
+        ])),
+        outbound: Json(DashMap::new()),
+        outbound_belongs_to: Json(DashMap::from_iter([
+            (
+                create_relation_three.target_pid.clone(),
+                create_relation_three,
+            ),
+            (
+                create_relation_four.target_pid.clone(),
+                create_relation_four.clone(),
+            ),
         ])),
     };
     let object_with_relations = Object::get_object_with_relations(&dataset_id, client)

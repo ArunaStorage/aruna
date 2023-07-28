@@ -24,6 +24,8 @@ use aruna_rust_api::api::storage::models::v2::{
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use tonic::metadata::MetadataMap;
 
 pub fn type_name_of<T>(_: T) -> &'static str {
@@ -43,7 +45,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
             splitted.len()
         );
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[0] != "Bearer" {
@@ -52,7 +54,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[0]
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[1].is_empty() {
@@ -61,7 +63,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[1].len()
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     Ok(splitted[1].to_string())
@@ -282,49 +284,32 @@ impl From<ObjectType> for i32 {
 impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
     type Error = anyhow::Error;
     fn try_from(object_with_relations: ObjectWithRelations) -> Result<generic_resource::Resource> {
-        let (to_relations, from_relations) = (
-            object_with_relations.inbound.0 .0,
-            match object_with_relations.outbound.0 .0.is_empty() {
-                true => None,
-                false => Some(object_with_relations.outbound.0 .0),
-            },
+        let (inbound, outbound) = (
+            object_with_relations
+                .inbound
+                .0
+                .iter()
+                .chain(object_with_relations.inbound_belongs_to.0.iter())
+                .map(|r| r.clone())
+                .collect::<Vec<InternalRelation>>(),
+            object_with_relations
+                .outbound
+                .0
+                .iter()
+                .chain(object_with_relations.outbound_belongs_to.0.iter())
+                .map(|r| r.clone())
+                .collect::<Vec<InternalRelation>>(),
         );
 
-        let mut from_relations = match from_relations {
-            Some(r) => {
-                let mut relations: Vec<Relation> = Vec::new();
-                for relation in r.into_iter() {
-                    relations.push(Relation {
-                        relation: Some(RelationEnum::Internal(
-                            from_db_internal_relation(
-                                relation.clone(),
-                                true,
-                                relation.target_type.into(),
-                            )
-                            .map_err(|e| {
-                                log::error!("{}", e);
-                                tonic::Status::internal("Internal custom type conversion error.")
-                            })?,
-                        )),
-                    });
-                }
-                relations
-            }
-            None => Vec::new(),
-        };
+        let mut inbound = inbound
+            .into_iter()
+            .map(|r| from_db_internal_relation(r, true))
+            .collect::<Result<Vec<Relation>>>()?;
 
-        let mut to_relations_converted: Vec<Relation> = Vec::new();
-        for relation in to_relations.into_iter() {
-            to_relations_converted.push(Relation {
-                relation: Some(RelationEnum::Internal(
-                    from_db_internal_relation(relation.clone(), false, relation.origin_type.into())
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            tonic::Status::internal("Internal custom type conversion error.")
-                        })?,
-                )),
-            });
-        }
+        let mut outbound = outbound
+            .into_iter()
+            .map(|r| from_db_internal_relation(r, false))
+            .collect::<Result<Vec<Relation>>>()?;
         let mut relations: Vec<Relation> = object_with_relations
             .object
             .external_relations
@@ -335,8 +320,8 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 relation: Some(RelationEnum::External(r.into())),
             })
             .collect();
-        relations.append(&mut to_relations_converted);
-        relations.append(&mut from_relations);
+        relations.append(&mut inbound);
+        relations.append(&mut outbound);
         let stats = Some(Stats {
             count: object_with_relations.object.count as i64,
             size: 0, // TODO
@@ -352,7 +337,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -365,7 +350,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -378,7 +363,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -391,7 +376,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 created_at: object_with_relations.object.created_at.map(|t| t.into()),
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false,
+                dynamic: object_with_relations.object.dynamic,
                 hashes: object_with_relations.object.hashes.0.into(),
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
@@ -403,12 +388,28 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
     }
 }
 
-pub fn from_db_internal_relation(
-    internal: InternalRelation,
-    resource_is_origin: bool,
-    resource_variant: i32,
-) -> Result<APIInternalRelation> {
-    let direction = if resource_is_origin { 1 } else { 2 };
+pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Result<Relation> {
+    let (direction, resource_variant) = if inbound {
+        (
+            1,
+            match internal.origin_type {
+                ObjectType::PROJECT => 1,
+                ObjectType::COLLECTION => 2,
+                ObjectType::DATASET => 3,
+                ObjectType::OBJECT => 4,
+            },
+        )
+    } else {
+        (
+            2,
+            match internal.target_type {
+                ObjectType::PROJECT => 1,
+                ObjectType::COLLECTION => 2,
+                ObjectType::DATASET => 3,
+                ObjectType::OBJECT => 4,
+            },
+        )
+    };
     let (defined_variant, custom_variant) = match internal.relation_name.as_str() {
         INTERNAL_RELATION_VARIANT_BELONGS_TO => (1, None),
         INTERNAL_RELATION_VARIANT_ORIGIN => (2, None),
@@ -417,12 +418,15 @@ pub fn from_db_internal_relation(
         INTERNAL_RELATION_VARIANT_POLICY => (5, None),
         _ => (6, Some(internal.relation_name)),
     };
-    Ok(APIInternalRelation {
-        resource_id: internal.origin_pid.to_string(),
-        resource_variant,
-        direction, // 1 for inbound, 2 for outbound
-        defined_variant,
-        custom_variant,
+
+    Ok(Relation {
+        relation: Some(RelationEnum::Internal(APIInternalRelation {
+            resource_id: internal.origin_pid.to_string(),
+            resource_variant,
+            direction, // 1 for inbound, 2 for outbound
+            defined_variant,
+            custom_variant,
+        })),
     })
 }
 
@@ -440,23 +444,12 @@ pub fn from_db_object(
         })
         .collect();
     if let Some(i) = internal {
-        relations.push(Relation {
-            relation: Some(RelationEnum::Internal(from_db_internal_relation(
-                i.clone(),
-                false,
-                i.origin_type.try_into()?,
-            )?)),
-        })
-    };
-
-    let id = match object.dynamic {
-        true => object.shared_id.to_string(),
-        false => object.id.to_string(),
+        relations.push(from_db_internal_relation(i.clone(), false)?)
     };
 
     match object.object_type {
         ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -469,7 +462,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -482,7 +475,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -495,7 +488,7 @@ pub fn from_db_object(
             dynamic: object.dynamic,
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
-            id,
+            id: object.id.to_string(),
             name: object.name,
             description: object.description,
             key_values: object.key_values.0.into(),
@@ -534,6 +527,70 @@ impl From<create_object_request::Parent> for Parent {
             create_object_request::Parent::ProjectId(pid) => Parent::Project(pid),
             create_object_request::Parent::CollectionId(cid) => Parent::Collection(cid),
             create_object_request::Parent::DatasetId(did) => Parent::Dataset(did),
+        }
+    }
+}
+// This looks stupid, but actually is really helpful when converting relations
+impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelation {
+    type Error = anyhow::Error;
+    fn try_from(
+        internal: (&APIInternalRelation, (DieselUlid, ObjectType)),
+    ) -> Result<InternalRelation> {
+        let (internal, (object_id, object_type)) = internal;
+        let (origin_pid, origin_type, target_pid, target_type) = match internal.direction {
+            0 => return Err(anyhow!("Undefined direction")),
+            1 => (
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+                object_id,
+                object_type,
+            ),
+            2 => (
+                object_id,
+                object_type,
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+            ),
+
+            _ => return Err(anyhow!("Internal relation direction conversion error")),
+        };
+        match internal.defined_variant {
+            0 => Err(anyhow!("Undefined internal relation variant")),
+            i if i > 0 && i < 6 => {
+                let relation_name = match i {
+                    1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
+                    3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                    4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
+                    5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
+                    _ => return Err(anyhow!("Undefined internal relation variant")),
+                };
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    target_pid,
+                    target_type,
+                    is_persistent: false,
+                    relation_name,
+                })
+            }
+            6 => {
+                let relation_name = internal
+                    .clone()
+                    .custom_variant
+                    .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    relation_name,
+                    target_pid,
+                    target_type,
+                    is_persistent: false,
+                })
+            }
+            _ => Err(anyhow!("Relation type not found")),
         }
     }
 }

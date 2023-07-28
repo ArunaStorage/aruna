@@ -1,13 +1,14 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -47,32 +48,83 @@ impl ObjectService for ObjectServiceImpl {
             "invalid parent"
         );
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, parent_ctx).await,
+            self.authorizer.check_permissions(&token, vec![parent_ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_object, shared_id, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_object.clone(),
-                shared_id,
-                cache_res
-            ),
-            "Caching error"
-        );
+        self.cache.add_object(object_with_rel.clone());
+
+        let generic_object: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid object");
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
         };
 
         return_with_log!(response);
+    }
+
+    async fn get_upload_url(
+        &self,
+        _request: Request<GetUploadUrlRequest>,
+    ) -> Result<Response<GetUploadUrlResponse>> {
+        todo!()
+        // log::info!("Recieved CreateObjectRequest.");
+        // log::debug!("{:?}", &request);
+
+        // let token = get_token_from_md(request.metadata()).map_err(|e| {
+        //     log::debug!("{}", e);
+        //     tonic::Status::unauthenticated("Token authentication error.")
+        // })?;
+
+        // let inner_request = request.into_inner();
+
+        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
+        //     log::error!("{}", e);
+        //     tonic::Status::internal("ULID conversion error.")
+        // })?;
+        // let ctx = Context::Object(ResourcePermission {
+        //     id: object_id,
+        //     level: crate::database::enums::PermissionLevels::WRITE, // append?
+        //     allow_sa: true,
+        // });
+
+        // let user_id = match &self.authorizer.check_permissions(&token, ctx) {
+        //     Ok(b) => {
+        //         if *b {
+        //             // ToDo!
+        //             // PLACEHOLDER!
+        //             DieselUlid::generate()
+        //         } else {
+        //             return Err(tonic::Status::permission_denied("Not allowed."));
+        //         }
+        //     }
+        //     Err(e) => {
+        //         log::debug!("{}", e);
+        //         return Err(tonic::Status::permission_denied("Not allowed."));
+        //     }
+        // };
+        // //TODO
+        // Err(tonic::Status::unimplemented(
+        //     "GetUploadURL is not implemented.",
+        // ))
+    }
+    async fn get_download_url(
+        &self,
+        _request: Request<GetDownloadUrlRequest>,
+    ) -> Result<Response<GetDownloadUrlResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "GetDownloadURL is not implemented.",
+        ))
     }
 
     async fn finish_object_staging(
@@ -202,118 +254,75 @@ impl ObjectService for ObjectServiceImpl {
         let req = UpdateObject(inner.clone());
         let object_id = tonic_invalid!(req.get_id(), "Invalid object id.");
 
-        let ctx = Context::ResourceContext(ResourceContext::Object(ApeResourcePermission {
-            id: object_id,
-            level: PermissionLevels::WRITE,
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, true);
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
         )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        .ok_or_else(|| tonic::Status::invalid_argument("Invalid user"))?;
 
-        let (object, new_revision) = match tonic_internal!(
+        let (object, new_revision) = tonic_internal!(
             self.database_handler
                 .update_grpc_object(inner, user_id)
                 .await,
             "Internal database error."
-        ) {
-            (generic_resource::Resource::Object(o), new_rev) => (Some(o), new_rev),
-            (_, _) => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
 
-        Ok(tonic::Response::new(UpdateObjectResponse {
-            object,
+        self.cache.update_object(&object.object.id, object.clone());
+
+        let object: generic_resource::Resource =
+            tonic_internal!(object.try_into(), "Object conversion error");
+        let response = UpdateObjectResponse {
+            object: Some(object.into_inner()?),
             new_revision,
-        }))
+        };
+        return_with_log!(response);
+    }
+
+    async fn clone_object(
+        &self,
+        _request: Request<CloneObjectRequest>,
+    ) -> Result<Response<CloneObjectResponse>> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "CloneObject is not implemented.",
+        ))
     }
 
     async fn delete_object(
         &self,
-        _request: Request<DeleteObjectRequest>,
+        request: Request<DeleteObjectRequest>,
     ) -> Result<Response<DeleteObjectResponse>> {
-        todo!()
-        // log::info!("Recieved DeleteObjectRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
 
-        // let inner_request = request.into_inner();
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error")
-        // })?;
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::ADMIN,
-        //     allow_sa: false,
-        // });
+        let request = DeleteRequest::Object(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid object id");
 
-        // match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
+        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
 
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error.")
-        // })?;
-        // let mut client = self.database.get_client().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
-        // let transaction = client.transaction().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
-        // })?;
-        // let transaction_client = transaction.client();
-        // let object = Object::get(object_id, transaction_client)
-        //     .await
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::unavailable("Database call failed.")
-        //     })?
-        //     .ok_or(tonic::Status::not_found("Object not found."))?;
-        // // Should only mark as deleted
-        // match inner_request.with_revisions {
-        //     true => {
-        //         let revisions = Object::get_all_revisions(&object.shared_id, transaction_client)
-        //             .await
-        //             .map_err(|e| {
-        //                 log::error!("{}", e);
-        //                 tonic::Status::unavailable("Revisions not found")
-        //             })?;
-        //         for r in revisions {
-        //             r.delete(transaction_client).await.map_err(|e| {
-        //                 log::error!("{}", e);
-        //                 tonic::Status::aborted("Database delete transaction failed.")
-        //             })?;
-        //         }
-        //     }
-        //     false => {
-        //         object.delete(transaction_client).await.map_err(|e| {
-        //             log::error!("{}", e);
-        //             tonic::Status::aborted("Database delete transaction failed.")
-        //         })?;
-        //     }
-        // };
-        // Ok(tonic::Response::new(DeleteObjectResponse {}))
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized."
+        );
+
+        let updates: Vec<ObjectWithRelations> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for o in updates {
+            self.cache.update_object(&o.object.id, o.clone());
+        }
+
+        let response = DeleteObjectResponse {};
+
+        return_with_log!(response);
     }
     async fn get_object(
         &self,
@@ -333,88 +342,26 @@ impl ObjectService for ObjectServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_obj(object_id, PermissionLevels::READ, true);
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Object(object_id))
+            .get_object(&object_id)
             .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
 
+        let generic_object: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid object");
+
         let response = GetObjectResponse {
-            object: Some(res.into_inner()?),
+            object: Some(generic_object.into_inner()?),
         };
 
         return_with_log!(response);
-    }
-
-    async fn get_upload_url(
-        &self,
-        _request: Request<GetUploadUrlRequest>,
-    ) -> Result<Response<GetUploadUrlResponse>> {
-        todo!()
-        // log::info!("Recieved CreateObjectRequest.");
-        // log::debug!("{:?}", &request);
-
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
-
-        // let inner_request = request.into_inner();
-
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error.")
-        // })?;
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::WRITE, // append?
-        //     allow_sa: true,
-        // });
-
-        // let user_id = match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // //TODO
-        // Err(tonic::Status::unimplemented(
-        //     "GetUploadURL is not implemented.",
-        // ))
-    }
-
-    async fn get_download_url(
-        &self,
-        _request: Request<GetDownloadUrlRequest>,
-    ) -> Result<Response<GetDownloadUrlResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "GetDownloadURL is not implemented.",
-        ))
-    }
-    async fn clone_object(
-        &self,
-        _request: Request<CloneObjectRequest>,
-    ) -> Result<Response<CloneObjectResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "CloneObject is not implemented.",
-        ))
     }
     async fn get_objects(
         &self,

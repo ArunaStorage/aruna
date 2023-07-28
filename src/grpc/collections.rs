@@ -1,15 +1,16 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::policy_evaluator::PolicyEvaluator;
-use aruna_policy::ape::structs::{
-    ApeResourcePermission, Context, PermissionLevels, ResourceContext,
-};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -52,26 +53,22 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let user_id = tonic_auth!(
-            self.authorizer.check_context(&token, parent_ctx).await,
+            self.authorizer.check_permissions(&token, vec![parent_ctx]),
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
-        let (generic_collection, shared_id, cache_res) = tonic_internal!(
+        let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        tonic_internal!(
-            self.cache.cache.process_api_resource_update(
-                generic_collection.clone(),
-                shared_id,
-                cache_res,
-            ),
-            "Caching error"
-        );
+        self.cache.add_object(object_with_rel.clone());
+
+        let generic_collection: generic_resource::Resource =
+            tonic_invalid!(object_with_rel.try_into(), "Invalid collection");
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
@@ -98,21 +95,66 @@ impl CollectionService for CollectionServiceImpl {
             "ULID conversion error"
         );
 
-        let ctx = Context::res_col(collection_id, PermissionLevels::READ, true);
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized"
         );
 
         let res = self
             .cache
-            .get_resource(&aruna_cache::structs::Resource::Collection(collection_id))
+            .get_object(&collection_id)
             .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
 
+        let generic_collection: generic_resource::Resource =
+            tonic_invalid!(res.try_into(), "Invalid collection");
+
         let response = GetCollectionResponse {
-            collection: Some(res.into_inner()?),
+            collection: Some(generic_collection.into_inner()?),
         };
+
+        return_with_log!(response);
+    }
+
+    async fn get_collections(
+        &self,
+        _request: Request<GetCollectionsRequest>,
+    ) -> Result<Response<GetCollectionsResponse>> {
+        todo!()
+    }
+
+    async fn delete_collection(
+        &self,
+        request: Request<DeleteCollectionRequest>,
+    ) -> Result<Response<DeleteCollectionResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Collection(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id");
+
+        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized."
+        );
+
+        let updates: Vec<ObjectWithRelations> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for o in updates {
+            self.cache.update_object(&o.object.id, o.clone());
+        }
+
+        let response = DeleteCollectionResponse {};
 
         return_with_log!(response);
     }
@@ -130,28 +172,24 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = NameUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionNameResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionNameResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -168,66 +206,24 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = DescriptionUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
-
-        let collection = match tonic_internal!(
-            self.database_handler.update_description(request).await,
-            "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
-
-        Ok(tonic::Response::new(UpdateCollectionDescriptionResponse {
-            collection,
-        }))
-    }
-
-    async fn update_collection_data_class(
-        &self,
-        request: Request<UpdateCollectionDataClassRequest>,
-    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
-        log_received!(&request);
-
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error."
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
         );
 
-        let request = DataClassUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
-
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
-
-        let collection = match tonic_internal!(
-            self.database_handler.update_dataclass(request).await,
+        let collection = tonic_internal!(
+            self.database_handler.update_description(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionDescriptionResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -244,42 +240,58 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = KeyValueUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::ResourceContext(ResourceContext::Collection(ApeResourcePermission {
-            id: collection_id,
-            level: PermissionLevels::WRITE, // append?
-            allow_sa: true,
-        }));
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let _user_id = tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
-            "Unauthorized."
-        )
-        .ok_or(tonic::Status::invalid_argument("User id missing."))?;
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_keyvals(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionKeyValuesResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionKeyValuesResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
-    async fn get_collections(
+    async fn update_collection_data_class(
         &self,
-        _request: Request<GetCollectionsRequest>,
-    ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
-    }
-    async fn delete_collection(
-        &self,
-        _request: Request<DeleteCollectionRequest>,
-    ) -> Result<Response<DeleteCollectionResponse>> {
-        todo!()
+        request: Request<UpdateCollectionDataClassRequest>,
+    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DataClassUpdate::Collection(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
+
+        let collection = tonic_internal!(
+            self.database_handler.update_dataclass(request).await,
+            "Internal database error."
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
+        Ok(Response::new(UpdateCollectionDataClassResponse {
+            collection: Some(collection.into_inner()?),
+        }))
     }
     async fn snapshot_collection(
         &self,

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use aruna_server::database;
 
@@ -18,18 +16,18 @@ pub async fn main() -> Result<()> {
     )?;
     db.initialize_db().await?;
 
-    let notifications_cache = Arc::new(
-        aruna_cache::notifications::NotificationCache::new(
-            "a_token",
-            "a_server",
-            Box::new(aruna_server::middlelayer::query_handler::DBQueryHandler {}),
-        )
-        .await?,
-    );
+    // let notifications_cache = Arc::new(
+    //     aruna_cache::notifications::NotificationCache::new(
+    //         "a_token",
+    //         "a_server",
+    //         Box::new(aruna_server::middlelayer::query_handler::DBQueryHandler {}),
+    //     )
+    //     .await?,
+    // );
 
-    let _authorizer =
-        aruna_policy::ape::policy_evaluator::PolicyEvaluator::new("", notifications_cache.clone())
-            .await?;
+    // let _authorizer =
+    //     aruna_policy::ape::policy_evaluator::PolicyEvaluator::new("", notifications_cache.clone())
+    //         .await?;
 
     Ok(())
 }

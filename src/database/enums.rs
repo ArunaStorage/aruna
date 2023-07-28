@@ -49,7 +49,7 @@ impl TryFrom<i32> for ObjectType {
 }
 
 #[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum PermissionLevels {
+pub enum DbPermissionLevel {
     DENY,
     NONE,
     READ,
@@ -75,17 +75,17 @@ pub enum EndpointStatus {
     MAINTENANCE,
 }
 
-impl TryFrom<i32> for PermissionLevels {
+impl TryFrom<i32> for DbPermissionLevel {
     type Error = Box<dyn Error + Sync + Send>;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(PermissionLevels::DENY),
-            2 => Ok(PermissionLevels::NONE),
-            3 => Ok(PermissionLevels::READ),
-            4 => Ok(PermissionLevels::APPEND),
-            5 => Ok(PermissionLevels::WRITE),
-            6 => Ok(PermissionLevels::ADMIN),
+            1 => Ok(DbPermissionLevel::DENY),
+            2 => Ok(DbPermissionLevel::NONE),
+            3 => Ok(DbPermissionLevel::READ),
+            4 => Ok(DbPermissionLevel::APPEND),
+            5 => Ok(DbPermissionLevel::WRITE),
+            6 => Ok(DbPermissionLevel::ADMIN),
             _ => Err(anyhow!("Unknown permission level").into()),
         }
     }
