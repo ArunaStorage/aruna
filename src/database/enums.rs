@@ -3,8 +3,11 @@ use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, Default, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize,
+)]
 pub enum ObjectStatus {
+    #[default]
     INITIALIZING,
     VALIDATING,
     AVAILABLE,
@@ -13,7 +16,7 @@ pub enum ObjectStatus {
     DELETED,
 }
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub enum DataClass {
     PUBLIC,
     PRIVATE,

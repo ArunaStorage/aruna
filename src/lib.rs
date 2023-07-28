@@ -4,4 +4,5 @@ pub mod database;
 pub mod grpc;
 pub mod middlelayer;
 pub mod notification;
+pub mod search;
 pub mod utils;

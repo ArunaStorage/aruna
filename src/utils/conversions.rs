@@ -15,7 +15,7 @@ use crate::database::{
 };
 use crate::middlelayer::create_request_types::Parent;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Status};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
     ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
@@ -165,6 +165,34 @@ impl From<ObjectStatus> for i32 {
         }
     }
 }
+impl TryFrom<i32> for ObjectStatus {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            1 => Ok(ObjectStatus::INITIALIZING),
+            2 => Ok(ObjectStatus::VALIDATING),
+            3 => Ok(ObjectStatus::AVAILABLE),
+            4 => Ok(ObjectStatus::UNAVAILABLE),
+            5 => Ok(ObjectStatus::ERROR),
+            6 => Ok(ObjectStatus::DELETED),
+            _ => Err(anyhow!("Object status not defined")),
+        }
+    }
+}
+impl Into<Status> for ObjectStatus {
+    fn into(self) -> Status {
+        match self {
+            ObjectStatus::INITIALIZING => Status::Initializing,
+            ObjectStatus::VALIDATING => Status::Validating,
+            ObjectStatus::AVAILABLE => Status::Available,
+            ObjectStatus::UNAVAILABLE => Status::Unavailable,
+            ObjectStatus::ERROR => Status::Error,
+            ObjectStatus::DELETED => Status::Error,
+        }
+    }
+}
+
 impl From<KeyValues> for Vec<KeyValue> {
     fn from(keyval: KeyValues) -> Self {
         keyval
