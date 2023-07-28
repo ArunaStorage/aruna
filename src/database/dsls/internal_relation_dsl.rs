@@ -155,4 +155,26 @@ impl InternalRelation {
         );
         Ok((to_object, from_object))
     }
+    pub fn clone_persistent(&self, replace: DieselUlid) -> Self {
+        InternalRelation {
+            id: DieselUlid::generate(),
+            origin_pid: replace,
+            origin_type: self.origin_type.clone(),
+            relation_name: self.relation_name.clone(),
+            target_pid: self.target_pid,
+            target_type: self.target_type.clone(),
+            is_persistent: true,
+        }
+    }
+    pub fn clone_dynamic(&self, replace: DieselUlid) -> Self {
+        InternalRelation {
+            id: self.id,
+            origin_pid: replace,
+            origin_type: self.origin_type.clone(),
+            relation_name: self.relation_name.clone(),
+            target_pid: self.target_pid,
+            target_type: self.target_type.clone(),
+            is_persistent: false,
+        }
+    }
 }

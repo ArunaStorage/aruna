@@ -52,6 +52,7 @@ impl ModifyRelations {
                 external: external_add_relations,
                 internal: internal_add_relations,
             },
+            // Needs to check if removed relations are static
             labels_to_remove: LabelsToRemove {
                 external: external_rm_relations,
                 internal: internal_rm_relations,

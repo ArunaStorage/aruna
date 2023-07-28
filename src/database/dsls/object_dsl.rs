@@ -330,6 +330,27 @@ impl Object {
         client.execute(&prepared, &[&id]).await?;
         Ok(())
     }
+    pub fn get_cloned_persistent(&self, new_id: DieselUlid) -> Self {
+        let object = self.clone();
+        Object {
+            id: new_id,
+            revision_number: object.revision_number,
+            name: object.name,
+            description: object.description,
+            created_at: object.created_at,
+            created_by: object.created_by,
+            content_len: object.content_len,
+            count: object.count,
+            key_values: object.key_values,
+            object_status: object.object_status,
+            data_class: object.data_class,
+            object_type: object.object_type,
+            external_relations: object.external_relations,
+            hashes: object.hashes,
+            dynamic: false,
+            endpoints: object.endpoints,
+        }
+    }
 }
 
 impl PartialEq for Object {
