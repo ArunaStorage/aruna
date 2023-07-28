@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use aws_sdk_s3::{
@@ -11,6 +10,8 @@ use aws_sdk_s3::{
 };
 use tokio_stream::StreamExt;
 
+use super::storage_backend::Location;
+use super::storage_backend::PartETag;
 use super::storage_backend::StorageBackend;
 
 #[derive(Debug, Clone)]

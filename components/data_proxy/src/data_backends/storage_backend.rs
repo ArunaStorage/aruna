@@ -1,5 +1,4 @@
 use anyhow::Result;
-use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use std::fmt::Debug;
@@ -90,4 +89,16 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     /// * `location` - The location of the object
     async fn delete_object(&self, location: Location) -> Result<()>;
+}
+
+#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
+pub struct Location {
+    pub bucket: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
+pub struct PartETag {
+    pub part_number: i32,
+    pub etag: String,
 }

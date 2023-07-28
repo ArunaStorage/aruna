@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
-use backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures::try_join;
 use service_server::server::{InternalServerImpl, ProxyServer};
 use std::io::Write;
@@ -15,8 +15,8 @@ use crate::{
     },
 };
 
-mod backends;
 mod bundler;
+mod data_backends;
 mod data_server;
 mod helpers;
 mod service_server;
