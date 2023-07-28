@@ -4,6 +4,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -111,6 +112,55 @@ impl CollectionService for CollectionServiceImpl {
         let response = GetCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
         };
+
+        return_with_log!(response);
+    }
+
+    async fn get_collections(
+        &self,
+        _request: Request<GetCollectionsRequest>,
+    ) -> Result<Response<GetCollectionsResponse>> {
+        todo!()
+    }
+
+    async fn delete_collection(
+        &self,
+        request: Request<DeleteCollectionRequest>,
+    ) -> Result<Response<DeleteCollectionResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Collection(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+
+        let ctx = Context::res_col(id, PermissionLevels::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_context(&token, ctx).await,
+            "Unauthorized."
+        );
+
+        let updates: Vec<(
+            generic_resource::Resource,
+            DieselUlid,
+            aruna_cache::structs::Resource,
+        )> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for u in updates {
+            tonic_internal!(
+                self.cache.cache.process_api_resource_update(u.0, u.1, u.2),
+                "Caching error"
+            );
+        }
+
+        let response = DeleteCollectionResponse {};
 
         return_with_log!(response);
     }

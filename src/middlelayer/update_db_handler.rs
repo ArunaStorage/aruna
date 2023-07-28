@@ -17,7 +17,11 @@ impl DatabaseHandler {
     pub async fn update_dataclass(
         &self,
         request: DataClassUpdate,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -36,9 +40,21 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        object_with_relations.try_into()
+        let object = object_with_relations.clone().object;
+        Ok((
+            object_with_relations.try_into()?,
+            object.get_shared(),
+            object.get_cache_resource(),
+        ))
     }
-    pub async fn update_name(&self, request: NameUpdate) -> Result<generic_resource::Resource> {
+    pub async fn update_name(
+        &self,
+        request: NameUpdate,
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -49,12 +65,21 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        object_with_relations.try_into()
+        let object = object_with_relations.clone().object;
+        Ok((
+            object_with_relations.try_into()?,
+            object.get_shared(),
+            object.get_cache_resource(),
+        ))
     }
     pub async fn update_description(
         &self,
         request: DescriptionUpdate,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -64,12 +89,21 @@ impl DatabaseHandler {
         let object_with_relations =
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-        object_with_relations.try_into()
+        let object = object_with_relations.clone().object;
+        Ok((
+            object_with_relations.try_into()?,
+            object.get_shared(),
+            object.get_cache_resource(),
+        ))
     }
     pub async fn update_keyvals(
         &self,
         request: KeyValueUpdate,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -96,13 +130,23 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
 
-        object_with_relations.try_into()
+        let object = object_with_relations.clone().object;
+        Ok((
+            object_with_relations.try_into()?,
+            object.get_shared(),
+            object.get_cache_resource(),
+        ))
     }
     pub async fn update_grpc_object(
         &self,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
-    ) -> Result<(generic_resource::Resource, bool)> {
+    ) -> Result<(
+        generic_resource::Resource,
+        DieselUlid,
+        aruna_cache::structs::Resource,
+        bool, // Creates revision
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -169,7 +213,12 @@ impl DatabaseHandler {
         };
         let grpc_object = Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-
-        Ok((grpc_object.try_into()?, flag))
+        let object = grpc_object.clone().object;
+        Ok((
+            grpc_object.try_into()?,
+            object.get_shared(),
+            object.get_cache_resource(),
+            flag,
+        ))
     }
 }

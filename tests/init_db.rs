@@ -6,6 +6,6 @@ pub async fn init_db() -> Database {
     let database_port = 5433;
     let database_user = "yugabyte";
     let db = Database::new(database_host, database_port, database_name, database_user).unwrap();
-    db.initialize_db().await.unwrap();
+    //db.initialize_db().await.unwrap();
     db
 }
