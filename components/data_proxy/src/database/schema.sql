@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS objects (
     endpoints JSONB NOT NULL DEFAULT '{}',
     children JSONB NOT NULL DEFAULT '{}',
     encryption_key TEXT,
+    compressed bool NOT NULL DEFAULT FALSE,
     bucket TEXT,
     key TEXT,
     UNIQUE(id, object_type)
