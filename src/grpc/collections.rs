@@ -117,6 +117,13 @@ impl CollectionService for CollectionServiceImpl {
         return_with_log!(response);
     }
 
+    async fn get_collections(
+        &self,
+        _request: Request<GetCollectionsRequest>,
+    ) -> Result<Response<GetCollectionsResponse>> {
+        todo!()
+    }
+
     async fn delete_collection(
         &self,
         request: Request<DeleteCollectionRequest>,
@@ -220,39 +227,6 @@ impl CollectionService for CollectionServiceImpl {
         }))
     }
 
-    async fn update_collection_data_class(
-        &self,
-        request: Request<UpdateCollectionDataClassRequest>,
-    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
-        log_received!(&request);
-
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error."
-        );
-
-        let request = DataClassUpdate::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
-
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
-            "Unauthorized"
-        );
-
-        let collection = tonic_internal!(
-            self.database_handler.update_dataclass(request).await,
-            "Internal database error."
-        );
-        self.cache
-            .update_object(&collection.object.id, collection.clone());
-        let collection: generic_resource::Resource =
-            tonic_internal!(collection.try_into(), "Collection conversion error");
-        Ok(Response::new(UpdateCollectionDataClassResponse {
-            collection: Some(collection.into_inner()?),
-        }))
-    }
-
     async fn update_collection_key_values(
         &self,
         request: Request<UpdateCollectionKeyValuesRequest>,
@@ -287,11 +261,37 @@ impl CollectionService for CollectionServiceImpl {
         }))
     }
 
-    async fn get_collections(
+    async fn update_collection_data_class(
         &self,
-        _request: Request<GetCollectionsRequest>,
-    ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
+        request: Request<UpdateCollectionDataClassRequest>,
+    ) -> Result<Response<UpdateCollectionDataClassResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DataClassUpdate::Collection(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
+
+        let collection = tonic_internal!(
+            self.database_handler.update_dataclass(request).await,
+            "Internal database error."
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
+        Ok(Response::new(UpdateCollectionDataClassResponse {
+            collection: Some(collection.into_inner()?),
+        }))
     }
     async fn snapshot_collection(
         &self,

@@ -45,7 +45,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
             splitted.len()
         );
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[0] != "Bearer" {
@@ -54,7 +54,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[0]
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[1].is_empty() {
@@ -63,7 +63,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[1].len()
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     Ok(splitted[1].to_string())
@@ -527,7 +527,7 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
             _ => return Err(anyhow!("Internal relation direction conversion error")),
         };
         match internal.defined_variant {
-            0 => return Err(anyhow!("Undefined internal relation variant")),
+            0 => Err(anyhow!("Undefined internal relation variant")),
             i if i > 0 && i < 6 => {
                 let relation_name = match i {
                     1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
@@ -562,7 +562,7 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
                     is_persistent: false,
                 })
             }
-            _ => return Err(anyhow!("Relation type not found")),
+            _ => Err(anyhow!("Relation type not found")),
         }
     }
 }

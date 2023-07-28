@@ -108,6 +108,18 @@ impl ProjectService for ProjectServiceImpl {
         return_with_log!(response);
     }
 
+    async fn get_projects(
+        &self,
+        _request: Request<GetProjectsRequest>,
+    ) -> Result<Response<GetProjectsResponse>> {
+        todo!()
+    }
+    async fn delete_project(
+        &self,
+        _request: Request<DeleteProjectRequest>,
+    ) -> Result<Response<DeleteProjectResponse>> {
+        todo!()
+    }
     async fn update_project_name(
         &self,
         request: Request<UpdateProjectNameRequest>,
@@ -240,22 +252,10 @@ impl ProjectService for ProjectServiceImpl {
             project: Some(project.into_inner()?),
         }))
     }
-    async fn get_projects(
-        &self,
-        _request: Request<GetProjectsRequest>,
-    ) -> Result<Response<GetProjectsResponse>> {
-        todo!()
-    }
     async fn archive_project(
         &self,
         _request: Request<ArchiveProjectRequest>,
     ) -> Result<Response<ArchiveProjectResponse>> {
-        todo!()
-    }
-    async fn delete_project(
-        &self,
-        _request: Request<DeleteProjectRequest>,
-    ) -> Result<Response<DeleteProjectResponse>> {
         todo!()
     }
 }
