@@ -50,7 +50,9 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![parent_ctx]),
+            self.authorizer
+                .check_permissions(&token, vec![parent_ctx])
+                .await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
@@ -95,7 +97,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -131,7 +133,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -162,7 +164,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -195,7 +197,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -227,7 +229,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 

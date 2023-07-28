@@ -1,8 +1,14 @@
+use std::collections::VecDeque;
+
 use super::structs::PubKey;
+use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
+use crate::database::enums::DbPermissionLevel;
+use ahash::HashMap;
 use ahash::RandomState;
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -125,4 +131,160 @@ impl Cache {
     //         crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
     //     }
     // }
+
+    pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
+        ctxs.iter().all(|x| match &x.variant {
+            crate::auth::structs::ContextVariant::Activated => true,
+            crate::auth::structs::ContextVariant::ResourceContext((id, _)) => {
+                if let Some(obj) = self.get_object(&id) {
+                    obj.object.endpoints.0.contains_key(&endpoint_id)
+                } else {
+                    false
+                }
+            }
+            crate::auth::structs::ContextVariant::User((uid, permlevel)) => {
+                if *permlevel == DbPermissionLevel::READ {
+                    if let Some(user) = self.get_user(&uid) {
+                        user.attributes
+                            .0
+                            .trusted_endpoints
+                            .contains_key(endpoint_id)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            crate::auth::structs::ContextVariant::GlobalAdmin => false,
+            crate::auth::structs::ContextVariant::GlobalProxy => true,
+        })
+    }
+
+    pub fn check_permissions_with_contexts(
+        &self,
+        ctxs: &[Context],
+        permitted: &[(DieselUlid, DbPermissionLevel)],
+        user_id: &DieselUlid,
+    ) -> bool {
+        let mut resources = HashMap::default();
+
+        for ctx in ctxs {
+            match &ctx.variant {
+                crate::auth::structs::ContextVariant::Activated => {
+                    return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
+                }
+                crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
+                    resources.insert(id.clone(), perm.clone());
+                }
+                crate::auth::structs::ContextVariant::User((uid, _)) => {
+                    if uid == user_id {
+                        return true;
+                    } else {
+                        return self
+                            .get_user(user_id)
+                            .map(|e| !e.attributes.0.service_account)
+                            .unwrap_or_default();
+                    }
+                }
+                crate::auth::structs::ContextVariant::GlobalAdmin
+                | crate::auth::structs::ContextVariant::GlobalProxy => {
+                    return self
+                        .get_user(user_id)
+                        .map(|e| !e.attributes.0.global_admin)
+                        .unwrap_or_default()
+                }
+            }
+        }
+
+        for (id, got_perm) in permitted {
+            if let Some(needed_perm) = resources.get(id) {
+                if got_perm >= needed_perm {
+                    resources.remove(id);
+                    if resources.is_empty() {
+                        return true;
+                    }
+                }
+            }
+            match self.traverse_down(id, got_perm.clone(), &mut resources) {
+                Ok(true) => return true,
+                Ok(false) => continue,
+                Err(_) => return false,
+            }
+        }
+        false
+    }
+
+    pub fn traverse_down(
+        &self,
+        id: &DieselUlid,
+        perm: DbPermissionLevel,
+        ctxs: &mut HashMap<DieselUlid, DbPermissionLevel>,
+    ) -> Result<bool> {
+        if ctxs.is_empty() {
+            return Ok(true);
+        }
+
+        let mut queue = VecDeque::new();
+        queue.push_back(id.clone());
+
+        while let Some(x) = queue.pop_front() {
+            if let Some(x) = self.get_object(&x) {
+                for child in x.get_children() {
+                    if let Some(got_perm) = ctxs.remove(&child) {
+                        if got_perm > perm {
+                            bail!("Invalid permissions")
+                        }
+                        if ctxs.is_empty() {
+                            return Ok(true);
+                        }
+                    }
+                    queue.push_back(child);
+                }
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diesel_ulid::DieselUlid;
+
+    #[test]
+    fn test_traverse_down_with_relations() {
+        let cache = Cache::new();
+        let id1 = DieselUlid::generate();
+        let id2 = DieselUlid::generate();
+        let id3 = DieselUlid::generate();
+        let id4 = DieselUlid::generate();
+        let id5 = DieselUlid::generate();
+
+        let mut ctxs = HashMap::default();
+        ctxs.insert(id2, DbPermissionLevel::READ);
+        ctxs.insert(id3, DbPermissionLevel::READ);
+        ctxs.insert(id4, DbPermissionLevel::READ);
+
+        let mut ctxs1 = ctxs.clone();
+        let mut ctxs2 = ctxs.clone();
+        let mut ctxs3 = ctxs.clone();
+
+        cache.add_object(ObjectWithRelations::random_object_to(&id1, &id2));
+        cache.add_object(ObjectWithRelations::random_object_to(&id2, &id3));
+        cache.add_object(ObjectWithRelations::random_object_to(&id3, &id4));
+        cache.add_object(ObjectWithRelations::random_object_to(&id4, &id5));
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::READ, &mut ctxs1);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::ADMIN, &mut ctxs2);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+
+        let result = cache.traverse_down(&id1, DbPermissionLevel::NONE, &mut ctxs3);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
+    }
 }
