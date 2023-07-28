@@ -309,7 +309,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -322,7 +322,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -335,7 +335,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -348,7 +348,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 created_at: object_with_relations.object.created_at.map(|t| t.into()),
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false,
+                dynamic: object_with_relations.object.dynamic,
                 hashes: object_with_relations.object.hashes.0.into(),
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
@@ -549,6 +549,7 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
             }
             6 => {
                 let relation_name = internal
+                    .clone()
                     .custom_variant
                     .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
                 Ok(InternalRelation {

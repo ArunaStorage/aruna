@@ -2,26 +2,18 @@ use std::collections::HashMap;
 
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::Object;
+use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
 impl DatabaseHandler {
-    pub async fn update_dataclass(
-        &self,
-        request: DataClassUpdate,
-    ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
-    )> {
+    pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -40,21 +32,9 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        let object = object_with_relations.clone().object;
-        Ok((
-            object_with_relations.try_into()?,
-            object.get_shared(),
-            object.get_cache_resource(),
-        ))
+        Ok(object_with_relations)
     }
-    pub async fn update_name(
-        &self,
-        request: NameUpdate,
-    ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
-    )> {
+    pub async fn update_name(&self, request: NameUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -65,21 +45,12 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        let object = object_with_relations.clone().object;
-        Ok((
-            object_with_relations.try_into()?,
-            object.get_shared(),
-            object.get_cache_resource(),
-        ))
+        Ok(object_with_relations)
     }
     pub async fn update_description(
         &self,
         request: DescriptionUpdate,
-    ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
-    )> {
+    ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -89,21 +60,9 @@ impl DatabaseHandler {
         let object_with_relations =
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-        let object = object_with_relations.clone().object;
-        Ok((
-            object_with_relations.try_into()?,
-            object.get_shared(),
-            object.get_cache_resource(),
-        ))
+        Ok(object_with_relations)
     }
-    pub async fn update_keyvals(
-        &self,
-        request: KeyValueUpdate,
-    ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
-    )> {
+    pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -129,22 +88,14 @@ impl DatabaseHandler {
         let object_with_relations =
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-
-        let object = object_with_relations.clone().object;
-        Ok((
-            object_with_relations.try_into()?,
-            object.get_shared(),
-            object.get_cache_resource(),
-        ))
+        Ok(object_with_relations)
     }
     pub async fn update_grpc_object(
         &self,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
     ) -> Result<(
-        generic_resource::Resource,
-        DieselUlid,
-        aruna_cache::structs::Resource,
+        ObjectWithRelations,
         bool, // Creates revision
     )> {
         let mut client = self.database.get_client().await?;
@@ -211,14 +162,9 @@ impl DatabaseHandler {
             }
             false
         };
-        let grpc_object = Object::get_object_with_relations(&id, transaction_client).await?;
+        let object_with_relations =
+            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-        let object = grpc_object.clone().object;
-        Ok((
-            grpc_object.try_into()?,
-            object.get_shared(),
-            object.get_cache_resource(),
-            flag,
-        ))
+        Ok((object_with_relations, flag))
     }
 }

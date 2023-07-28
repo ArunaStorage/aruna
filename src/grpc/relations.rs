@@ -55,7 +55,7 @@ impl RelationsService for RelationsServiceImpl {
             "Database error"
         );
 
-        self.cache.update_object(&object.object.id, object);
+        self.cache.update_object(&object.object.id, object.clone());
 
         return_with_log!(ModifyRelationsResponse {});
     }

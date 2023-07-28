@@ -1,21 +1,15 @@
-use crate::database::crud::CrudDb;
+use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_VERSION;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::{database::dsls::object_dsl::Object, middlelayer::delete_request_types::DeleteRequest};
-use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use anyhow::Result;
 use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
     pub async fn delete_resource(
         &self,
         request: DeleteRequest,
-    ) -> Result<
-        Vec<(
-            generic_resource::Resource,
-            DieselUlid,
-            aruna_cache::structs::Resource,
-        )>,
-    > {
+    ) -> Result<Vec<ObjectWithRelations>> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -23,33 +17,36 @@ impl DatabaseHandler {
         let resources = match request {
             DeleteRequest::Object(req) => {
                 if req.with_revisions {
-                    Object::set_deleted_shared(&id, transaction_client).await?;
-                    Object::get_all_revisions(&id, transaction_client).await?
+                    let object =
+                        Object::get_object_with_relations(&id, &transaction_client).await?;
+                    let mut objects: Vec<DieselUlid> = object
+                        .inbound
+                        .0
+                        .iter()
+                        .filter_map(|o| match o.relation_name.as_str() {
+                            INTERNAL_RELATION_VARIANT_VERSION => Some(o.origin_pid),
+                            _ => None,
+                        })
+                        .collect();
+                    objects.push(id);
+                    for id in objects.clone() {
+                        Object::set_deleted(&id, &transaction_client).await?
+                    }
+                    objects
                 } else {
-                    let object = Object::get(id, transaction_client)
-                        .await?
-                        .ok_or(anyhow!("Resource not found."))?;
-                    object.delete(transaction_client).await?;
-                    vec![object]
+                    Object::set_deleted(&id, &transaction_client).await?;
+                    vec![id]
                 }
             }
             _ => {
-                let resource = Object::get(id, transaction_client)
-                    .await?
-                    .ok_or(anyhow!("Resource not found."))?;
-                resource.delete(transaction_client).await?;
-                vec![resource]
+                Object::set_deleted(&id, &transaction_client).await?;
+                vec![id]
             }
         };
         let mut result = Vec::new();
-        for resource in resources {
-            let object =
-                Object::get_object_with_relations(&resource.id, transaction_client).await?;
-            result.push((
-                object.try_into()?,
-                resource.get_shared(),
-                resource.get_cache_resource(),
-            ));
+        for id in resources {
+            let object = Object::get_object_with_relations(&id, transaction_client).await?;
+            result.push(object);
         }
         transaction.commit().await?;
         Ok(result)

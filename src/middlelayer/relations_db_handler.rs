@@ -1,14 +1,11 @@
 use crate::database::crud::CrudDb;
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::relations_request_types::{
     LabelsToAdd, LabelsToRemove, ModifyLabels, ModifyRelations,
 };
-use crate::{database::dsls::object_dsl::Object, middlelayer::delete_request_types::DeleteRequest};
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
-use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
     pub async fn modify_relations(

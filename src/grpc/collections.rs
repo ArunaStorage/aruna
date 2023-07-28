@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -116,13 +117,6 @@ impl CollectionService for CollectionServiceImpl {
         return_with_log!(response);
     }
 
-    async fn get_collections(
-        &self,
-        _request: Request<GetCollectionsRequest>,
-    ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
-    }
-
     async fn delete_collection(
         &self,
         request: Request<DeleteCollectionRequest>,
@@ -135,29 +129,22 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = DeleteRequest::Collection(request.into_inner());
-        let id = tonic_invalid!(request.get_id(), "Invalid collection id.");
+        let id = tonic_invalid!(request.get_id(), "Invalid collection id");
 
-        let ctx = Context::res_col(id, PermissionLevels::ADMIN, true);
+        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
-            self.authorizer.check_context(&token, ctx).await,
+            self.authorizer.check_permissions(&token, vec![ctx]),
             "Unauthorized."
         );
 
-        let updates: Vec<(
-            generic_resource::Resource,
-            DieselUlid,
-            aruna_cache::structs::Resource,
-        )> = tonic_internal!(
+        let updates: Vec<ObjectWithRelations> = tonic_internal!(
             self.database_handler.delete_resource(request).await,
             "Internal database error"
         );
 
-        for u in updates {
-            tonic_internal!(
-                self.cache.cache.process_api_resource_update(u.0, u.1, u.2),
-                "Caching error"
-            );
+        for o in updates {
+            self.cache.update_object(&o.object.id, o.clone());
         }
 
         let response = DeleteCollectionResponse {};
@@ -185,16 +172,17 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionNameResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionNameResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -218,16 +206,17 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_description(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionDescriptionResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionDescriptionResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -251,16 +240,16 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
-
-        Ok(tonic::Response::new(UpdateCollectionDataClassResponse {
-            collection,
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
+        Ok(Response::new(UpdateCollectionDataClassResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -284,16 +273,17 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = match tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler.update_keyvals(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Collection(c) => Some(c),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&collection.object.id, collection.clone());
+        let collection: generic_resource::Resource =
+            tonic_internal!(collection.try_into(), "Collection conversion error");
 
-        Ok(tonic::Response::new(UpdateCollectionKeyValuesResponse {
-            collection,
+        Ok(Response::new(UpdateCollectionKeyValuesResponse {
+            collection: Some(collection.into_inner()?),
         }))
     }
 
@@ -301,12 +291,6 @@ impl CollectionService for CollectionServiceImpl {
         &self,
         _request: Request<GetCollectionsRequest>,
     ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
-    }
-    async fn delete_collection(
-        &self,
-        _request: Request<DeleteCollectionRequest>,
-    ) -> Result<Response<DeleteCollectionResponse>> {
         todo!()
     }
     async fn snapshot_collection(

@@ -322,6 +322,14 @@ impl Object {
         client.query(&prepared, &[&id, &dataclass]).await?;
         Ok(())
     }
+    pub async fn set_deleted(id: &DieselUlid, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+            SET object_status = 'DELETED'
+            WHERE id = $1";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&id]).await?;
+        Ok(())
+    }
 }
 
 impl PartialEq for Object {
