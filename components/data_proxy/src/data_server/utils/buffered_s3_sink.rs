@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
-use crate::backends::storage_backend::StorageBackend;
+use crate::data_backends::storage_backend::{Location, PartETag, StorageBackend};
 use anyhow::{anyhow, Result};
 use aruna_file::transformer::{Sink, Transformer};
-use aruna_rust_api::api::internal::v1::{Location, PartETag};
 use async_channel::{Receiver, Sender};
 use bytes::{BufMut, BytesMut};
+use std::sync::Arc;
 
 pub struct BufferedS3Sink {
     backend: Arc<Box<dyn StorageBackend>>,

@@ -1,8 +1,3 @@
-use aruna_rust_api::api::internal::v1::{
-    internal_proxy_notifier_service_client::InternalProxyNotifierServiceClient,
-    GetOrCreateEncryptionKeyRequest, GetOrCreateObjectByPathRequest,
-    GetOrCreateObjectByPathResponse, Location,
-};
 use s3s::{
     auth::{Credentials, SecretKey},
     s3_error, S3Error,
