@@ -514,9 +514,17 @@ impl EventNotificationService for NotificationServiceImpl {
                 // What do with data proxies?
             };
 
-            // Delete stream consumer
+            // Delete stream consumer in database
             tonic_internal!(
                 stream_consumer.delete(transaction_client).await,
+                "Stream consumer delete failed"
+            );
+
+            // Delete Nats.io stream consumer
+            tonic_internal!(
+                self.natsio_handler
+                    .delete_event_consumer(stream_consumer.id.to_string())
+                    .await,
                 "Stream consumer delete failed"
             );
         } else {
