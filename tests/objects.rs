@@ -278,17 +278,14 @@ async fn get_object_with_relations_test() {
         object: create_dataset,
         inbound: Json(DashMap::default()),
         inbound_belongs_to: Json(DashMap::from_iter([
-            (create_relation_one.origin_pid.clone(), create_relation_one),
-            (create_relation_two.origin_pid.clone(), create_relation_two),
+            (create_relation_one.origin_pid, create_relation_one),
+            (create_relation_two.origin_pid, create_relation_two),
         ])),
         outbound: Json(DashMap::default()),
         outbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_three.target_pid, create_relation_three),
             (
-                create_relation_three.target_pid.clone(),
-                create_relation_three,
-            ),
-            (
-                create_relation_four.target_pid.clone(),
+                create_relation_four.target_pid,
                 create_relation_four.clone(),
             ),
         ])),

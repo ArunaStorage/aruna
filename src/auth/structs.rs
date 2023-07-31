@@ -87,7 +87,7 @@ impl User {
                 .0
                 .permissions
                 .iter()
-                .map(|e| (e.key().clone(), e.value().clone()))
+                .map(|e| (*e.key(), e.value().clone()))
                 .collect())
         }
     }

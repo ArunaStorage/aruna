@@ -17,20 +17,20 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        Object::add_external_relations(&resource.id, &transaction_client, labels_to_add.external)
+        Object::add_external_relations(&resource.id, transaction_client, labels_to_add.external)
             .await?;
         for internal_to_add in labels_to_add.internal {
-            internal_to_add.create(&transaction_client).await?;
+            internal_to_add.create(transaction_client).await?;
         }
         for external_to_remove in labels_to_remove.external {
             resource
-                .remove_external_relation(&transaction_client, external_to_remove)
+                .remove_external_relation(transaction_client, external_to_remove)
                 .await?;
         }
         for internal_to_remove in labels_to_remove.internal {
-            internal_to_remove.delete(&transaction_client).await?;
+            internal_to_remove.delete(transaction_client).await?;
         }
-        let object = Object::get_object_with_relations(&resource.id, &transaction_client).await?;
+        let object = Object::get_object_with_relations(&resource.id, transaction_client).await?;
         transaction.commit().await?;
         Ok(object)
     }
