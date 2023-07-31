@@ -4,11 +4,10 @@ use aruna_rust_api::api::storage::models::v2::{
     generic_resource::Resource, Collection, Dataset, KeyValue as ApiKeyValue,
     KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
 };
-use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use meilisearch_sdk::{task_info::TaskInfo, Client};
+use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tonic::Status;
 
 use crate::database::{
     dsls::object_dsl::{KeyValue, KeyValueVariant},
@@ -46,7 +45,7 @@ pub struct ObjectDocument {
     pub size: i64,             // Yay or nay?
     pub labels: Vec<KeyValue>, // Without specific internal labels
     pub dataclass: DataClass,
-    pub created_at: chrono::NaiveDateTime,
+    pub created_at: i64,        // Converted to UNIX timestamp for filtering/sorting
     pub created_by: DieselUlid, // Should be the user name or something like that
 }
 
@@ -86,7 +85,7 @@ impl Into<Project> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(self.created_at.into()),
+            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -98,14 +97,6 @@ impl TryFrom<Project> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(project: Project) -> Result<Self, Self::Error> {
-        // Evaluate created_at timestamp
-        let create_timestamp = if let Some(timestamp) = project.created_at {
-            NaiveDateTime::from_timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
-                .ok_or_else(|| anyhow::anyhow!(""))?
-        } else {
-            NaiveDateTime::default()
-        };
-
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
@@ -116,7 +107,7 @@ impl TryFrom<Project> for ObjectDocument {
             size: 0, // project.stats.size ?
             labels: convert_proto_to_key_value(project.key_values)?,
             dataclass: DataClass::try_from(project.data_class)?,
-            created_at: create_timestamp,
+            created_at: project.created_at.unwrap_or_default().seconds,
             created_by: DieselUlid::from_str(&project.created_by)?,
         })
     }
@@ -133,7 +124,7 @@ impl Into<Collection> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(self.created_at.into()),
+            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -145,14 +136,6 @@ impl TryFrom<Collection> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(collection: Collection) -> Result<Self, Self::Error> {
-        // Evaluate created_at timestamp
-        let create_timestamp = if let Some(timestamp) = collection.created_at {
-            NaiveDateTime::from_timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
-                .ok_or_else(|| anyhow::anyhow!(""))?
-        } else {
-            NaiveDateTime::from_timestamp_opt(0, 0).ok_or_else(|| Status::invalid_argument(""))?
-        };
-
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
@@ -163,7 +146,7 @@ impl TryFrom<Collection> for ObjectDocument {
             size: 0, // collection.stats.size ?
             labels: convert_proto_to_key_value(collection.key_values)?,
             dataclass: DataClass::try_from(collection.data_class)?,
-            created_at: create_timestamp,
+            created_at: collection.created_at.unwrap_or_default().seconds,
             created_by: DieselUlid::from_str(&collection.created_by)?,
         })
     }
@@ -180,7 +163,7 @@ impl Into<Dataset> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(self.created_at.into()),
+            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -192,14 +175,6 @@ impl TryFrom<Dataset> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(dataset: Dataset) -> Result<Self, Self::Error> {
-        // Evaluate created_at timestamp
-        let create_timestamp = if let Some(timestamp) = dataset.created_at {
-            NaiveDateTime::from_timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
-                .ok_or_else(|| anyhow::anyhow!(""))?
-        } else {
-            NaiveDateTime::from_timestamp_opt(0, 0).ok_or_else(|| Status::invalid_argument(""))?
-        };
-
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
@@ -210,7 +185,7 @@ impl TryFrom<Dataset> for ObjectDocument {
             size: 0, // dataset.stats.size ?
             labels: convert_proto_to_key_value(dataset.key_values)?,
             dataclass: DataClass::try_from(dataset.data_class)?,
-            created_at: create_timestamp,
+            created_at: dataset.created_at.unwrap_or_default().seconds,
             created_by: DieselUlid::from_str(&dataset.created_by)?,
         })
     }
@@ -227,7 +202,7 @@ impl Into<Object> for ObjectDocument {
             relations: vec![],
             content_len: self.size,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(self.created_at.into()),
+            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -240,14 +215,6 @@ impl TryFrom<Object> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(object: Object) -> Result<Self, Self::Error> {
-        // Evaluate created_at timestamp
-        let create_timestamp = if let Some(timestamp) = object.created_at {
-            NaiveDateTime::from_timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
-                .ok_or_else(|| anyhow::anyhow!(""))?
-        } else {
-            NaiveDateTime::from_timestamp_opt(0, 0).ok_or_else(|| Status::invalid_argument(""))?
-        };
-
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&object.id)?,
@@ -258,7 +225,7 @@ impl TryFrom<Object> for ObjectDocument {
             size: 0, // dataset.stats.size ?
             labels: convert_proto_to_key_value(object.key_values)?,
             dataclass: DataClass::try_from(object.data_class)?,
-            created_at: create_timestamp,
+            created_at: object.created_at.unwrap_or_default().seconds,
             created_by: DieselUlid::from_str(&object.created_by)?,
         })
     }
