@@ -27,7 +27,7 @@ use s3s::S3;
 use sha2::Sha256;
 use std::sync::Arc;
 
-use crate::backends::storage_backend::StorageBackend;
+use crate::data_backends::storage_backend::StorageBackend;
 use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 
 use super::data_handler::DataHandler;

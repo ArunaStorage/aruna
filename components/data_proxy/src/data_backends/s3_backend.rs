@@ -1,3 +1,7 @@
+use crate::structs::Location;
+use crate::structs::PartETag;
+
+use super::storage_backend::StorageBackend;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
@@ -9,10 +13,6 @@ use aws_sdk_s3::{
     Client,
 };
 use tokio_stream::StreamExt;
-
-use super::storage_backend::Location;
-use super::storage_backend::PartETag;
-use super::storage_backend::StorageBackend;
 
 #[derive(Debug, Clone)]
 pub struct S3Backend {
@@ -58,7 +58,7 @@ impl StorageBackend for S3Backend {
             .s3_client
             .put_object()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_key(Some(location.key))
             .set_content_length(Some(content_len))
             .body(bytestream)
             .send()
@@ -87,7 +87,7 @@ impl StorageBackend for S3Backend {
             .s3_client
             .get_object()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_key(Some(location.key))
             .set_range(range);
 
         let mut object_request = match object.send().await {
@@ -109,7 +109,7 @@ impl StorageBackend for S3Backend {
             .s3_client
             .head_object()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_key(Some(location.key))
             .send()
             .await;
 
@@ -125,7 +125,7 @@ impl StorageBackend for S3Backend {
             .s3_client
             .create_multipart_upload()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_key(Some(location.key))
             .send()
             .await?;
 
@@ -148,7 +148,7 @@ impl StorageBackend for S3Backend {
             .s3_client
             .upload_part()
             .set_bucket(Some(location.bucket))
-            .set_key(Some(location.path))
+            .set_key(Some(location.key))
             .set_part_number(Some(part_number))
             .set_content_length(Some(content_len))
             .set_upload_id(Some(upload_id))
@@ -157,7 +157,7 @@ impl StorageBackend for S3Backend {
             .await?;
 
         return Ok(PartETag {
-            part_number: part_number as i64,
+            part_number: part_number,
             etag: upload.e_tag.ok_or_else(|| anyhow!("Missing etag"))?,
         });
     }
@@ -185,7 +185,7 @@ impl StorageBackend for S3Backend {
         self.s3_client
             .complete_multipart_upload()
             .bucket(location.bucket)
-            .key(location.path)
+            .key(location.key)
             .upload_id(upload_id)
             .multipart_upload(
                 CompletedMultipartUpload::builder()
@@ -209,7 +209,7 @@ impl StorageBackend for S3Backend {
         self.s3_client
             .delete_object()
             .bucket(location.bucket)
-            .key(location.path)
+            .key(location.key)
             .send()
             .await?;
         Ok(())

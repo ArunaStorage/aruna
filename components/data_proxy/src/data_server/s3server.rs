@@ -4,7 +4,7 @@ use s3s::service::S3Service;
 use std::{net::TcpListener, sync::Arc};
 use tracing::info;
 
-use crate::backends::storage_backend::StorageBackend;
+use crate::data_backends::storage_backend::StorageBackend;
 
 use super::{auth::AuthProvider, data_handler::DataHandler, s3service::S3ServiceServer};
 

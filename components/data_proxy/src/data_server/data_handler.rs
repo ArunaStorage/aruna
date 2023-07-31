@@ -1,4 +1,4 @@
-use crate::backends::storage_backend::StorageBackend;
+use crate::data_backends::storage_backend::StorageBackend;
 use crate::data_server::utils::buffered_s3_sink::BufferedS3Sink;
 use crate::data_server::utils::utils::validate_expected_hashes;
 use crate::ServiceSettings;

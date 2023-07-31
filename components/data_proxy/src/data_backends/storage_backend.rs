@@ -3,6 +3,8 @@ use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use std::fmt::Debug;
 
+use crate::structs::{Location, PartETag};
+
 /// A generic backend API for storing and retrieving objects
 /// Represents a very simple object storage API
 /// Data is always read and written in chunks and send via channels following a CSP style pattern
@@ -89,16 +91,4 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     /// * `location` - The location of the object
     async fn delete_object(&self, location: Location) -> Result<()>;
-}
-
-#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
-pub struct Location {
-    pub bucket: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
-pub struct PartETag {
-    pub part_number: i32,
-    pub etag: String,
 }

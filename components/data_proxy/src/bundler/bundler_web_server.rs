@@ -1,4 +1,4 @@
-use crate::backends::storage_backend::StorageBackend;
+use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
