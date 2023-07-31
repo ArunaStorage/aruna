@@ -351,6 +351,14 @@ impl Object {
             endpoints: object.endpoints,
         }
     }
+    pub async fn archive(id: &DieselUlid, client: &Client) -> Result<()> {
+        let query = "UPDATE objects 
+            SET dynamic = false 
+            WHERE id = $1";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[id]).await?;
+        Ok(())
+    }
 }
 
 impl PartialEq for Object {

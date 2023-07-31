@@ -6,6 +6,7 @@ use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
+use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -188,9 +189,10 @@ impl DatasetService for DatasetServiceImpl {
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(Response::new(UpdateDatasetNameResponse {
+        let response = UpdateDatasetNameResponse {
             dataset: Some(dataset.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
 
     async fn update_dataset_description(
@@ -222,9 +224,10 @@ impl DatasetService for DatasetServiceImpl {
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetDescriptionResponse {
+        let response = UpdateDatasetDescriptionResponse {
             dataset: Some(dataset.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_dataset_key_values(
         &self,
@@ -255,9 +258,10 @@ impl DatasetService for DatasetServiceImpl {
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetKeyValuesResponse {
+        let response = UpdateDatasetKeyValuesResponse {
             dataset: Some(dataset.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
 
     async fn update_dataset_data_class(
@@ -289,14 +293,46 @@ impl DatasetService for DatasetServiceImpl {
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
+        let response = UpdateDatasetDataClassResponse {
             dataset: Some(dataset.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn snapshot_dataset(
         &self,
-        _request: Request<SnapshotDatasetRequest>,
+        request: Request<SnapshotDatasetRequest>,
     ) -> Result<Response<SnapshotDatasetResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = SnapshotRequest::Dataset(request.into_inner());
+        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
+
+        // this only contains one entry with a dataset
+        let dataset = tonic_internal!(
+            self.database_handler.snapshot(request).await,
+            "Internal database error."
+        )[0]
+        .clone();
+        self.cache
+            .update_object(&dataset.object.id, dataset.clone());
+
+        let dataset: generic_resource::Resource =
+            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+
+        let response = SnapshotDatasetResponse {
+            dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }

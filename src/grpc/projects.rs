@@ -4,6 +4,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -148,10 +149,10 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Collection conversion error");
-
-        Ok(Response::new(UpdateProjectNameResponse {
+        let response = UpdateProjectNameResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_description(
         &self,
@@ -182,9 +183,10 @@ impl ProjectService for ProjectServiceImpl {
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Collection conversion error");
 
-        Ok(Response::new(UpdateProjectDescriptionResponse {
+        let response = UpdateProjectDescriptionResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_key_values(
         &self,
@@ -215,9 +217,10 @@ impl ProjectService for ProjectServiceImpl {
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Collection conversion error");
 
-        Ok(Response::new(UpdateProjectKeyValuesResponse {
+        let response = UpdateProjectKeyValuesResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_data_class(
         &self,
@@ -247,15 +250,47 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Collection conversion error");
-
-        Ok(Response::new(UpdateProjectDataClassResponse {
+        let response = UpdateProjectDataClassResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn archive_project(
         &self,
-        _request: Request<ArchiveProjectRequest>,
+        request: Request<ArchiveProjectRequest>,
     ) -> Result<Response<ArchiveProjectResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = SnapshotRequest::Project(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]),
+            "Unauthorized"
+        );
+
+        // this only contains one entry with a dataset
+        let resources = tonic_internal!(
+            self.database_handler.snapshot(request).await,
+            "Internal database error."
+        );
+        for resource in &resources {
+            self.cache
+                .update_object(&resource.object.id, resource.clone());
+        }
+        let project: generic_resource::Resource =
+            // First entry is always the archived project 
+            tonic_internal!(resources[0].clone().try_into(), "Dataset conversion error");
+
+        let response = ArchiveProjectResponse {
+            project: Some(project.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }
