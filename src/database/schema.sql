@@ -149,7 +149,8 @@ CREATE INDEX IF NOT EXISTS target_pid_idx ON internal_relations (target_pid);
 CREATE TABLE IF NOT EXISTS pub_keys (
     id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
     proxy UUID REFERENCES endpoints(id) ON DELETE CASCADE,
-    pubkey TEXT NOT NULL
+    pubkey TEXT NOT NULL,
+    UNIQUE(pubkey)
 );
 
 /* ----- Notification Service -------------------------------------- */

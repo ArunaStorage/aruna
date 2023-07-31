@@ -1,5 +1,5 @@
 use super::{structs::Context, token_handler::TokenHandler};
-use crate::caching::cache::Cache;
+use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -16,11 +16,46 @@ impl PermissionHandler {
         }
     }
 
-    pub fn check_permissions(
+    pub async fn check_permissions(
         &self,
-        _token: &str,
-        _ctxs: Vec<Context>,
+        token: &str,
+        mut ctxs: Vec<Context>,
     ) -> Result<Option<DieselUlid>, tonic::Status> {
-        Ok(None)
+        let (mut main_id, associated_id, permissions, is_proxy) = tonic_auth!(
+            self.token_handler.process_token(token).await,
+            "Unauthorized"
+        );
+
+        if is_proxy {
+            match associated_id {
+                Some(id) => {
+                    ctxs.push(Context::user_ctx(id, DbPermissionLevel::READ));
+                    if !self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                        return Err(tonic::Status::unauthenticated(
+                            "Invalid proxy authentication",
+                        ));
+                    }
+                    main_id = id;
+                }
+                None => {
+                    if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                        return Ok(None);
+                    } else {
+                        return Err(tonic::Status::unauthenticated(
+                            "Invalid proxy authentication",
+                        ));
+                    }
+                }
+            }
+        }
+
+        if self
+            .cache
+            .check_permissions_with_contexts(&ctxs, &permissions, &main_id)
+        {
+            Ok(Some(main_id))
+        } else {
+            Err(tonic::Status::unauthenticated("Invalid permissions"))
+        }
     }
 }

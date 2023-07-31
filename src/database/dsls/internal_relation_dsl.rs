@@ -9,7 +9,18 @@ use tokio_postgres::Client;
 use super::super::enums::ObjectType;
 
 #[derive(
-    Serialize, Deserialize, Hash, ToSql, FromRow, Debug, FromSql, Clone, PartialEq, Eq, PartialOrd,
+    Serialize,
+    Deserialize,
+    Hash,
+    ToSql,
+    FromRow,
+    Debug,
+    FromSql,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
 )]
 pub struct InternalRelation {
     pub id: DieselUlid,

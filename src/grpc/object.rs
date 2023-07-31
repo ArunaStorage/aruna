@@ -48,7 +48,9 @@ impl ObjectService for ObjectServiceImpl {
             "invalid parent"
         );
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![parent_ctx]),
+            self.authorizer
+                .check_permissions(&token, vec![parent_ctx])
+                .await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
@@ -257,7 +259,7 @@ impl ObjectService for ObjectServiceImpl {
         let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, true);
 
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         )
         .ok_or_else(|| tonic::Status::invalid_argument("Invalid user"))?;
@@ -345,7 +347,7 @@ impl ObjectService for ObjectServiceImpl {
         let ctx = Context::res_ctx(object_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 

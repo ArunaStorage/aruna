@@ -1,14 +1,19 @@
 use crate::database::enums::DbPermissionLevel;
-use anyhow::Result;
+use ahash::RandomState;
+use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use postgres_types::Json;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use tokio_postgres::Client;
 
-use super::super::crud::{CrudDb, PrimaryKey};
+use super::{
+    super::crud::{CrudDb, PrimaryKey},
+    Empty,
+};
 
 #[derive(Debug, FromRow, Clone)]
 pub struct User {
@@ -30,13 +35,14 @@ pub struct APIToken {
     pub user_rights: DbPermissionLevel,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserAttributes {
     pub global_admin: bool,
     pub service_account: bool,
-    pub tokens: HashMap<DieselUlid, APIToken>,
+    pub tokens: DashMap<DieselUlid, APIToken, RandomState>,
+    pub trusted_endpoints: DashMap<DieselUlid, Empty, RandomState>,
     pub custom_attributes: Vec<CustomAttributes>,
-    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
+    pub permissions: DashMap<DieselUlid, DbPermissionLevel, RandomState>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -250,3 +256,34 @@ impl User {
         Ok(())
     }
 }
+
+impl Display for UserAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_string(&self)
+                .map_err(|_| anyhow!("Invalid json"))
+                .unwrap_or_default()
+        )
+    }
+}
+
+impl PartialEq for UserAttributes {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl PartialEq for User {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.display_name == other.display_name
+            && self.external_id == other.external_id
+            && self.email == other.email
+            && self.attributes.0.to_string() == other.attributes.0.to_string()
+            && self.active == other.active
+    }
+}
+
+impl Eq for User {}
