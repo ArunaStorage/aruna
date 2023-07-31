@@ -1,14 +1,16 @@
-use aruna_cache::notifications::NotificationCache;
-use aruna_policy::ape::{policy_evaluator::PolicyEvaluator, structs::Context};
+use crate::auth::permission_handler::PermissionHandler;
+use crate::caching::cache::Cache;
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
     services::v2::{
-        search_service_server::SearchService, SearchResourcesRequest, SearchResourcesResponse,
+        search_service_server::SearchService, GetPublicResourceRequest, GetPublicResourceResponse,
+        SearchResourcesRequest, SearchResourcesResponse,
     },
 };
 use std::sync::Arc;
 
 use crate::{
+    auth::structs::Context,
     middlelayer::db_handler::DatabaseHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument},
     utils::conversions::get_token_from_md,
@@ -34,10 +36,17 @@ impl SearchService for SearchServiceImpl {
             "Token extraction failed"
         );
 
-        tonic_auth!(
-            self.authorizer.check_context(&token, Context::Empty).await,
+        let _ = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()]),
             "Permission denied"
-        );
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+
+        // Check if: 0 < limit <= 100
+        if inner_request.limit <= 0 || inner_request.limit > 100 {
+            return Err(tonic::Status::invalid_argument("Limit must be between 0 and 100"));
+        }
 
         // Search meilisearch index
         let (objects, estimated_total) = tonic_internal!(
@@ -46,7 +55,7 @@ impl SearchService for SearchServiceImpl {
                     &MeilisearchIndexes::OBJECT.to_string(), // Currently only one index is used for all resources
                     &inner_request.query,
                     &inner_request.filter,
-                    100, // Should be defined in request
+                    inner_request.limit as usize,
                     inner_request.offset as usize,
                 )
                 .await,
@@ -72,5 +81,13 @@ impl SearchService for SearchServiceImpl {
         };
 
         return_with_log!(response);
+    }
+
+    ///ToDo: Rust Doc
+    async fn get_public_resource(
+        &self,
+        _request: tonic::Request<GetPublicResourceRequest>,
+    ) -> Result<tonic::Response<GetPublicResourceResponse>, tonic::Status> {
+        todo!()
     }
 }
