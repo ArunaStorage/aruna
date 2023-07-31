@@ -144,7 +144,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized."
         );
 
@@ -248,7 +248,7 @@ impl CollectionService for CollectionServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 

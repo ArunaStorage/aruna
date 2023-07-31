@@ -143,7 +143,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized."
         );
 
@@ -247,7 +247,7 @@ impl DatasetService for DatasetServiceImpl {
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 

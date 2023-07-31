@@ -137,7 +137,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -170,7 +170,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -204,7 +204,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -238,7 +238,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -271,7 +271,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 

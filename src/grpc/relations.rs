@@ -39,7 +39,8 @@ impl RelationsService for RelationsServiceImpl {
         );
         tonic_auth!(
             self.authorizer
-                .check_permissions(&token, labels_info.resources_to_check),
+                .check_permissions(&token, labels_info.resources_to_check)
+                .await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;

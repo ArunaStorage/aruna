@@ -2,6 +2,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::enums::ObjectType;
+use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, SnapshotCollectionRequest, SnapshotDatasetRequest,
@@ -222,7 +223,7 @@ impl SnapshotRequest {
         Ok(relations)
     }
     async fn get_other_relations(
-        iter: DashMap<DieselUlid, InternalRelation>,
+        iter: DashMap<DieselUlid, InternalRelation, RandomState>,
         new_id: DieselUlid,
         client: &Client,
     ) -> Result<Vec<InternalRelation>> {
