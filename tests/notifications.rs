@@ -7,7 +7,7 @@ mod init_db;
 #[tokio::test]
 async fn create_stream_consumer() {
     // Init database connection
-    let db = crate::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -41,7 +41,7 @@ async fn create_stream_consumer() {
 #[tokio::test]
 async fn get_stream_consumer() {
     // Init database connection
-    let db = crate::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -73,7 +73,7 @@ async fn get_stream_consumer() {
 #[tokio::test]
 async fn delete_stream_consumer() {
     // Init database connection
-    let db = crate::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer

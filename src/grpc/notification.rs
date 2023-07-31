@@ -53,7 +53,7 @@ impl EventNotificationService for NotificationServiceImpl {
     async fn create_stream_consumer(
         &self,
         request: tonic::Request<CreateStreamConsumerRequest>,
-    ) -> Result<tonic::Response<CreateStreamConsumerResponse>, tonic::Status> {
+    ) -> Result<Response<CreateStreamConsumerResponse>, Status> {
         // Log some stuff
         log::info!("Received CreateStreamConsumerRequest.");
         log::debug!("{:?}", &request);
@@ -70,7 +70,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Evaluate fitting context and check permissions
         let perm_context = match inner_request
             .target
-            .ok_or_else(|| tonic::Status::invalid_argument("Missing context"))?
+            .ok_or_else(|| Status::invalid_argument("Missing context"))?
         {
             Target::Resource(ResourceTarget {
                 resource_id,
@@ -164,7 +164,7 @@ impl EventNotificationService for NotificationServiceImpl {
     async fn get_event_message_batch(
         &self,
         request: tonic::Request<GetEventMessageBatchRequest>,
-    ) -> Result<tonic::Response<GetEventMessageBatchResponse>, tonic::Status> {
+    ) -> Result<Response<GetEventMessageBatchResponse>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchRequest.");
         log::debug!("{:?}", &request);
@@ -200,7 +200,7 @@ impl EventNotificationService for NotificationServiceImpl {
             .await
             .map_err(|e| {
                 log::error!("{}", e);
-                tonic::Status::unavailable("Database not available.")
+                Status::unavailable("Database not available.")
             })?;
 
         let stream_consumer = StreamConsumer::get(consumer_id, client)
@@ -244,9 +244,10 @@ impl EventNotificationService for NotificationServiceImpl {
                 "Could not convert received Nats.io message"
             );
             // Create reply option
-            let reply_subject = nats_message.reply.as_ref().ok_or_else(|| {
-                tonic::Status::internal("Nats.io message is missing reply subject")
-            })?;
+            let reply_subject = nats_message
+                .reply
+                .as_ref()
+                .ok_or_else(|| Status::internal("Nats.io message is missing reply subject"))?;
             let msg_reply =
                 calculate_reply_hmac(reply_subject, self.natsio_handler.reply_secret.clone());
 
@@ -275,13 +276,13 @@ impl EventNotificationService for NotificationServiceImpl {
 
     ///ToDo: Rust Doc
     type GetEventMessageBatchStreamStream =
-        ReceiverStream<Result<GetEventMessageBatchStreamResponse, tonic::Status>>;
+        ReceiverStream<Result<GetEventMessageBatchStreamResponse, Status>>;
 
     ///ToDo: Rust Doc
     async fn get_event_message_batch_stream(
         &self,
         request: tonic::Request<GetEventMessageBatchStreamRequest>,
-    ) -> Result<tonic::Response<Self::GetEventMessageBatchStreamStream>, tonic::Status> {
+    ) -> Result<Response<Self::GetEventMessageBatchStreamStream>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchStreamRequest.");
         log::debug!("{:?}", &request);
@@ -318,7 +319,7 @@ impl EventNotificationService for NotificationServiceImpl {
             .await
             .map_err(|e| {
                 log::error!("{}", e);
-                tonic::Status::unavailable("Database not available.")
+                Status::unavailable("Database not available.")
             })?;
 
         let stream_consumer = StreamConsumer::get(consumer_id, client)
@@ -358,10 +359,8 @@ impl EventNotificationService for NotificationServiceImpl {
                 let nats_messages = match handler.get_event_consumer_messages(batch_size).await {
                     Ok(msgs) => msgs,
                     Err(err) => {
-                        return Err::<Self::GetEventMessageBatchStreamStream, tonic::Status>(
-                            tonic::Status::aborted(format!(
-                                "Stream consumer message fetch failed: {err}"
-                            )),
+                        return Err::<Self::GetEventMessageBatchStreamStream, Status>(
+                            Status::aborted(format!("Stream consumer message fetch failed: {err}")),
                         )
                     }
                 };
@@ -389,9 +388,7 @@ impl EventNotificationService for NotificationServiceImpl {
                             log::info!("Successfully send stream response")
                         }
                         Err(err) => {
-                            return Err(tonic::Status::internal(format!(
-                                "failed to send response: {err}"
-                            )))
+                            return Err(Status::internal(format!("failed to send response: {err}")))
                         }
                     };
                 }
@@ -426,7 +423,7 @@ impl EventNotificationService for NotificationServiceImpl {
     async fn acknowledge_message_batch(
         &self,
         request: tonic::Request<AcknowledgeMessageBatchRequest>,
-    ) -> Result<tonic::Response<AcknowledgeMessageBatchResponse>, tonic::Status> {
+    ) -> Result<Response<AcknowledgeMessageBatchResponse>, Status> {
         log::info!("Received AcknowledgeMessageBatchRequest.");
         log::debug!("{:?}", &request);
 
@@ -477,7 +474,7 @@ impl EventNotificationService for NotificationServiceImpl {
     async fn delete_stream_consumer(
         &self,
         request: tonic::Request<DeleteStreamConsumerRequest>,
-    ) -> Result<tonic::Response<DeleteStreamConsumerResponse>, tonic::Status> {
+    ) -> Result<Response<DeleteStreamConsumerResponse>, Status> {
         log::info!("Received DeleteStreamConsumerRequest.");
         log::debug!("{:?}", &request);
 
@@ -595,7 +592,7 @@ fn convert_nats_message_to_proto(
     let reply_subject = nats_message
         .reply
         .as_ref()
-        .ok_or_else(|| tonic::Status::internal("Nats.io message is missing reply subject"))?;
+        .ok_or_else(|| Status::internal("Nats.io message is missing reply subject"))?;
     let msg_reply = calculate_reply_hmac(reply_subject, reply_secret.to_string());
 
     // Modify message with reply

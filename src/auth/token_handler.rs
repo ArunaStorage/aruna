@@ -75,7 +75,7 @@ impl TokenHandler {
         match claims.iss.as_str() {
             "oidc.test.com" => self.validate_oidc_only(token).await,
             "aruna" => self.validate_aruna(token).await,
-            _ => return Err(anyhow!("Unknown issuer")),
+            _ => Err(anyhow!("Unknown issuer")),
         }
     }
 

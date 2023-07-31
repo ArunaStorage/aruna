@@ -452,7 +452,7 @@ impl ObjectWithRelations {
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
         Self {
             object: Object {
-                id: id.clone(),
+                id: *id,
                 created_at: None,
                 revision_number: 0,
                 created_by: DieselUlid::generate(),
@@ -472,10 +472,7 @@ impl ObjectWithRelations {
             inbound: Json(DashMap::default()),
             inbound_belongs_to: Json(DashMap::default()),
             outbound: Json(DashMap::default()),
-            outbound_belongs_to: Json(DashMap::from_iter([(
-                to.clone(),
-                InternalRelation::default(),
-            )])),
+            outbound_belongs_to: Json(DashMap::from_iter([(*to, InternalRelation::default())])),
         }
     }
 }

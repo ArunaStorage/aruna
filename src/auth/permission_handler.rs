@@ -38,12 +38,12 @@ impl PermissionHandler {
                     main_id = id;
                 }
                 None => {
-                    if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
-                        return Ok(None);
+                    return if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                        Ok(None)
                     } else {
-                        return Err(tonic::Status::unauthenticated(
+                        Err(tonic::Status::unauthenticated(
                             "Invalid proxy authentication",
-                        ));
+                        ))
                     }
                 }
             }

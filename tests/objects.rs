@@ -15,7 +15,7 @@ mod init_db;
 
 #[tokio::test]
 async fn create_object() {
-    let db = crate::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
@@ -63,11 +63,11 @@ async fn create_object() {
     };
     create_object.create(&client).await.unwrap();
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
-    assert!(get_obj == create_object);
+    assert_eq!(get_obj, create_object);
 }
 #[tokio::test]
 async fn get_object_with_relations_test() {
-    let db = crate::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client
         .transaction()
@@ -278,17 +278,14 @@ async fn get_object_with_relations_test() {
         object: create_dataset,
         inbound: Json(DashMap::default()),
         inbound_belongs_to: Json(DashMap::from_iter([
-            (create_relation_one.origin_pid.clone(), create_relation_one),
-            (create_relation_two.origin_pid.clone(), create_relation_two),
+            (create_relation_one.origin_pid, create_relation_one),
+            (create_relation_two.origin_pid, create_relation_two),
         ])),
         outbound: Json(DashMap::default()),
         outbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_three.target_pid, create_relation_three),
             (
-                create_relation_three.target_pid.clone(),
-                create_relation_three,
-            ),
-            (
-                create_relation_four.target_pid.clone(),
+                create_relation_four.target_pid,
                 create_relation_four.clone(),
             ),
         ])),
@@ -299,5 +296,5 @@ async fn get_object_with_relations_test() {
 
     dbg!(&object_with_relations);
     dbg!(&compare_owr);
-    assert!(object_with_relations == compare_owr);
+    assert_eq!(object_with_relations, compare_owr);
 }

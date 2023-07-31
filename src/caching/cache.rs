@@ -178,13 +178,12 @@ impl Cache {
                     resources.insert(id.clone(), perm.clone());
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {
-                    if uid == user_id {
-                        return true;
+                    return if uid == user_id {
+                        true
                     } else {
-                        return self
-                            .get_user(user_id)
+                        self.get_user(user_id)
                             .map(|e| !e.attributes.0.service_account)
-                            .unwrap_or_default();
+                            .unwrap_or_default()
                     }
                 }
                 crate::auth::structs::ContextVariant::GlobalAdmin

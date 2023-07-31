@@ -116,10 +116,7 @@ impl CreateRequest {
     }
 
     pub fn is_dynamic(&self) -> bool {
-        match self {
-            CreateRequest::Object(_) => false,
-            _ => true,
-        }
+        !matches!(self, CreateRequest::Object(_))
     }
 
     pub fn get_status(&self) -> ObjectStatus {
