@@ -1,9 +1,8 @@
+use crate::structs::{ObjectLocation, PartETag};
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use std::fmt::Debug;
-
-use crate::structs::{Location, PartETag};
 
 /// A generic backend API for storing and retrieving objects
 /// Represents a very simple object storage API
@@ -19,7 +18,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn put_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
-        location: Location,
+        location: ObjectLocation,
         content_len: i64,
     ) -> Result<()>;
 
@@ -33,13 +32,13 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `sender` - The target for the individual chunks of data
     async fn get_object(
         &self,
-        location: Location,
+        location: ObjectLocation,
         range: Option<String>,
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()>;
 
     /// Gets meta information about a specific object
-    async fn head_object(&self, location: Location) -> Result<i64>;
+    async fn head_object(&self, location: ObjectLocation) -> Result<i64>;
 
     /// Initiates a multipart upload.
     /// Returns the UploadID of the multipart upload
@@ -48,7 +47,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     ///
     /// * `location` - The location of the object which to load
-    async fn init_multipart_upload(&self, location: Location) -> Result<String>;
+    async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String>;
 
     /// Uploads one part of an object in a multipart uploads
     /// Returns the ETag of the uploaded object
@@ -62,7 +61,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn upload_multi_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
-        location: Location,
+        location: ObjectLocation,
         upload_id: String,
         content_len: i64,
         part_number: i32,
@@ -76,7 +75,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// * `upload_id` - The upload id of the multipart uploads
     async fn finish_multipart_upload(
         &self,
-        location: Location,
+        location: ObjectLocation,
         parts: Vec<PartETag>,
         upload_id: String,
     ) -> Result<()>;
@@ -90,5 +89,5 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
-    async fn delete_object(&self, location: Location) -> Result<()>;
+    async fn delete_object(&self, location: ObjectLocation) -> Result<()>;
 }

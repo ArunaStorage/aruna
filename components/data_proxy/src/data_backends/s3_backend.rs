@@ -1,4 +1,4 @@
-use crate::structs::Location;
+use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
 
 use super::storage_backend::StorageBackend;
@@ -45,7 +45,7 @@ impl StorageBackend for S3Backend {
     async fn put_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
-        location: Location,
+        location: ObjectLocation,
         content_len: i64,
     ) -> Result<()> {
         self.check_and_create_bucket(location.bucket.clone())
@@ -79,7 +79,7 @@ impl StorageBackend for S3Backend {
     // The chunks are then transfered into the sender.
     async fn get_object(
         &self,
-        location: Location,
+        location: ObjectLocation,
         range: Option<String>,
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()> {
@@ -104,7 +104,7 @@ impl StorageBackend for S3Backend {
         return Ok(());
     }
 
-    async fn head_object(&self, location: Location) -> Result<i64> {
+    async fn head_object(&self, location: ObjectLocation) -> Result<i64> {
         let object = self
             .s3_client
             .head_object()
@@ -117,7 +117,7 @@ impl StorageBackend for S3Backend {
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
-    async fn init_multipart_upload(&self, location: Location) -> Result<String> {
+    async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String> {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
@@ -135,7 +135,7 @@ impl StorageBackend for S3Backend {
     async fn upload_multi_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
-        location: Location,
+        location: ObjectLocation,
         upload_id: String,
         content_len: i64,
         part_number: i32,
@@ -164,7 +164,7 @@ impl StorageBackend for S3Backend {
 
     async fn finish_multipart_upload(
         &self,
-        location: Location,
+        location: ObjectLocation,
         parts: Vec<PartETag>,
         upload_id: String,
     ) -> Result<()> {
@@ -205,7 +205,7 @@ impl StorageBackend for S3Backend {
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
-    async fn delete_object(&self, location: Location) -> Result<()> {
+    async fn delete_object(&self, location: ObjectLocation) -> Result<()> {
         self.s3_client
             .delete_object()
             .bucket(location.bucket)

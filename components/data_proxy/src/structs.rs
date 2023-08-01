@@ -3,6 +3,8 @@ use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
     PROJECT,
@@ -12,7 +14,8 @@ pub enum ObjectType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Location {
+pub struct ObjectLocation {
+    pub id: DieselUlid,
     pub bucket: String,
     pub key: String,
     pub encryption_key: Option<String>,
@@ -35,11 +38,42 @@ pub struct Object {
     dynamic: bool,
     endpoints: Vec<DieselUlid>,
     children: HashSet<DieselUlid>,
-    location: Location,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PartETag {
     pub part_number: i32,
     pub etag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PubKey {
+    pub id: i32,
+    pub key: String,
+    pub is_proxy: bool,
+}
+
+impl TryFrom<GenericBytes<i32>> for PubKey {
+    type Error = anyhow::Error;
+    fn try_from(value: GenericBytes<i32>) -> Result<Self, Self::Error> {
+        Ok(bincode::deserialize(&value.data)?)
+    }
+}
+
+impl TryInto<GenericBytes<i32>> for PubKey {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<GenericBytes<i32>, Self::Error> {
+        let data = bincode::serialize(&self.key)?;
+        Ok(GenericBytes {
+            id: self.id,
+            data: data.into(),
+            table: Self::get_table(),
+        })
+    }
+}
+
+impl WithGenericBytes<i32> for PubKey {
+    fn get_table() -> Table {
+        Table::PubKeys
+    }
 }
