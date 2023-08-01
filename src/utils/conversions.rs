@@ -303,7 +303,7 @@ impl From<ObjectMapping<DieselUlid>> for ResourceId {
         match value {
             ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
             ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
-            ObjectMapping::DATABASE(id) => ResourceId::DatasetId(id.to_string()),
+            ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
             ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
         }
     }
@@ -376,7 +376,7 @@ pub fn convert_permission_to_proto(
             permission_level: PermissionLevel::from(perm) as i32,
             resource_id: Some(ResourceId::CollectionId(resource_id.to_string())),
         },
-        ObjectMapping::DATABASE(perm) => Permission {
+        ObjectMapping::DATASET(perm) => Permission {
             permission_level: PermissionLevel::from(perm) as i32,
             resource_id: Some(ResourceId::DatasetId(resource_id.to_string())),
         },

@@ -76,7 +76,7 @@ impl User {
                     match mapping {
                         ObjectMapping::PROJECT(id)
                         | ObjectMapping::COLLECTION(id)
-                        | ObjectMapping::DATABASE(id)
+                        | ObjectMapping::DATASET(id)
                         | ObjectMapping::OBJECT(id) => id,
                     }
                 } else {
@@ -101,7 +101,7 @@ impl User {
                         match object_mapping {
                             ObjectMapping::PROJECT(perm)
                             | ObjectMapping::COLLECTION(perm)
-                            | ObjectMapping::DATABASE(perm)
+                            | ObjectMapping::DATASET(perm)
                             | ObjectMapping::OBJECT(perm) => *perm,
                         },
                     )

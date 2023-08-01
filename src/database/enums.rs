@@ -28,7 +28,7 @@ pub enum DataClass {
 pub enum ObjectMapping<T> {
     PROJECT(T),
     COLLECTION(T),
-    DATABASE(T),
+    DATASET(T),
     OBJECT(T),
 }
 
