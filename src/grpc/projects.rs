@@ -7,8 +7,10 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
+
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -24,7 +26,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
-crate::impl_grpc_server!(ProjectServiceImpl);
+crate::impl_grpc_server!(ProjectServiceImpl, search_client: Arc<MeilisearchClient>);
 
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {
@@ -34,6 +36,7 @@ impl ProjectService for ProjectServiceImpl {
     ) -> Result<Response<CreateProjectResponse>> {
         log_received!(&request);
 
+        // Extract token from request and check permissions
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
             "Token authentication error"
@@ -49,6 +52,7 @@ impl ProjectService for ProjectServiceImpl {
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
 
+        // Create project in database
         let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
@@ -56,13 +60,24 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error"
         );
 
+        // Update local cache
         self.cache.add_object(object_with_rel.clone());
 
-        let generic_project: generic_resource::Resource =
-            tonic_invalid!(object_with_rel.try_into(), "Invalid project");
+        // Add or update project in search index
+        if let Err(err) = self
+            .search_client
+            .add_or_update_stuff::<ObjectDocument>(
+                &[ObjectDocument::from(object_with_rel.object.clone())],
+                MeilisearchIndexes::OBJECT,
+            )
+            .await
+        {
+            log::warn!("Search index update failed: {}", err)
+        }
 
+        // Create and return gRPC response
         let response = CreateProjectResponse {
-            project: Some(generic_project.into_inner()?),
+            project: Some(generic_resource::Resource::from(object_with_rel).into_inner()?),
         };
 
         return_with_log!(response);
