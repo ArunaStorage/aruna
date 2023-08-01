@@ -76,6 +76,6 @@ pub fn checksum_resource(gen_res: generic_resource::Resource) -> anyhow::Result<
 ///ToDo: Rust Doc
 pub fn checksum_user(user: &User) -> anyhow::Result<String> {
     Ok(general_purpose::STANDARD_NO_PAD
-        .encode(xxh3_128(&bincode::serialize(user)?).to_be_bytes())
+        .encode(xxh3_128(&bincode::serialize(&user.attributes)?).to_be_bytes())
         .to_string())
 }

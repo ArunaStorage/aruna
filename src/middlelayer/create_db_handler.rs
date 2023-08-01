@@ -6,7 +6,9 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::ObjectType;
+
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
@@ -43,12 +45,29 @@ impl DatabaseHandler {
             }
         };
 
-        Ok(ObjectWithRelations {
-            object,
+        // Create DTO which combines the object and its internal relations
+        let object_with_rel = ObjectWithRelations {
+            object: object,
             inbound: Json(DashMap::new()),
             inbound_belongs_to: Json(internal_relation),
             outbound: Json(DashMap::new()),
             outbound_belongs_to: Json(DashMap::new()),
-        })
+        };
+
+        // Try to emit object created notification
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_with_rel, EventVariant::Created)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            // Commit transaction and return
+            transaction.commit().await?;
+            Ok(object_with_rel)
+        }
     }
 }
