@@ -419,9 +419,8 @@ impl From<DbPermissionLevel> for PermissionLevel {
     }
 }
 
-impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
-    type Error = anyhow::Error;
-    fn try_from(object_with_relations: ObjectWithRelations) -> Result<generic_resource::Resource> {
+impl From<ObjectWithRelations> for generic_resource::Resource {
+    fn from(object_with_relations: ObjectWithRelations) -> generic_resource::Resource {
         let (inbound, outbound) = (
             object_with_relations
                 .inbound
@@ -442,12 +441,12 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
         let mut inbound = inbound
             .into_iter()
             .map(|r| from_db_internal_relation(r, true))
-            .collect::<Result<Vec<Relation>>>()?;
+            .collect::<Vec<_>>();
 
         let mut outbound = outbound
             .into_iter()
             .map(|r| from_db_internal_relation(r, false))
-            .collect::<Result<Vec<Relation>>>()?;
+            .collect::<Vec<_>>();
         let mut relations: Vec<Relation> = object_with_relations
             .object
             .external_relations
@@ -466,7 +465,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
             last_updated: object_with_relations.object.created_at.map(|t| t.into()),
         });
 
-        let obj = match object_with_relations.object.object_type {
+        match object_with_relations.object.object_type {
             ObjectType::PROJECT => generic_resource::Resource::Project(GRPCProject {
                 id: object_with_relations.object.id.to_string(),
                 name: object_with_relations.object.name,
@@ -520,13 +519,11 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 status: object_with_relations.object.object_status.into(),
                 relations,
             }),
-        };
-
-        Ok(obj)
+        }
     }
 }
 
-pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Result<Relation> {
+pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Relation {
     let (direction, resource_variant) = if inbound {
         (
             1,
@@ -557,7 +554,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
         _ => (6, Some(internal.relation_name)),
     };
 
-    Ok(Relation {
+    Relation {
         relation: Some(RelationEnum::Internal(APIInternalRelation {
             resource_id: internal.origin_pid.to_string(),
             resource_variant,
@@ -565,7 +562,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
             defined_variant,
             custom_variant,
         })),
-    })
+    }
 }
 
 pub fn from_db_object(
@@ -582,7 +579,7 @@ pub fn from_db_object(
         })
         .collect();
     if let Some(i) = internal {
-        relations.push(from_db_internal_relation(i.clone(), false)?)
+        relations.push(from_db_internal_relation(i.clone(), false))
     };
 
     match object.object_type {
