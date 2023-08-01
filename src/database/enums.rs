@@ -25,7 +25,7 @@ pub enum DataClass {
 }
 
 #[derive(
-    Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize,
+    Copy, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize,
 )]
 pub enum ObjectType {
     PROJECT,

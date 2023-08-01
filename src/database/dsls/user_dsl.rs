@@ -1,4 +1,4 @@
-use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::{DbPermissionLevel, ObjectType};
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
@@ -27,6 +27,7 @@ pub struct APIToken {
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
     pub object_id: DieselUlid,
+    pub object_type: ObjectType,
     pub user_rights: DbPermissionLevel,
 }
 

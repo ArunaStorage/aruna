@@ -5,6 +5,8 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_VERSION,
 };
 use crate::database::dsls::object_dsl::Object;
+use crate::database::dsls::user_dsl::{APIToken, User};
+use crate::database::enums::DbPermissionLevel;
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
@@ -15,7 +17,11 @@ use crate::database::{
 };
 use crate::middlelayer::create_request_types::Parent;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::{generic_resource, ResourceVariant, Status};
+use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
+use aruna_rust_api::api::storage::models::v2::{
+    generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
+    Token, User as ApiUser, UserAttributes,
+};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
     ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
@@ -288,6 +294,103 @@ impl From<ObjectType> for ResourceVariant {
             ObjectType::COLLECTION => ResourceVariant::Collection,
             ObjectType::DATASET => ResourceVariant::Dataset,
             ObjectType::OBJECT => ResourceVariant::Object,
+        }
+    }
+}
+
+// Conversion from database model user token to proto user
+impl From<User> for ApiUser {
+    fn from(db_user: User) -> Self {
+        // Convert and collect tokens
+        let api_tokens = db_user
+            .attributes
+            .0
+            .tokens
+            .into_iter()
+            .map(|(_, token)| token.into())
+            .collect::<Vec<_>>();
+
+        // Collect custom attributes
+        let api_custom_attributes = db_user
+            .attributes
+            .0
+            .custom_attributes
+            .into_iter()
+            .map(|ca| CustomAttributes {
+                attribute_name: ca.attribute_name,
+                attribute_value: ca.attribute_value,
+            })
+            .collect::<Vec<_>>();
+
+        // Collect personal permissions
+        let api_permissions = db_user
+            .attributes
+            .0
+            .permissions
+            .into_iter()
+            .map(|(resource_id, perm)| Permission {
+                permission_level: Into::<PermissionLevel>::into(perm) as i32,
+                resource_id: None, //ToDo: No info which object type is present
+            })
+            .collect::<Vec<_>>();
+
+        // Return proto user
+        ApiUser {
+            id: db_user.id.to_string(),
+            external_id: db_user.external_id.unwrap_or_default(),
+            display_name: db_user.display_name,
+            active: db_user.active,
+            email: db_user.email,
+            attributes: Some(UserAttributes {
+                global_admin: db_user.attributes.0.global_admin,
+                service_account: db_user.attributes.0.service_account,
+                tokens: api_tokens,
+                custom_attributes: api_custom_attributes,
+                personal_permissions: api_permissions,
+            }),
+        }
+    }
+}
+
+// Conversion from database model token to proto token
+impl From<APIToken> for Token {
+    fn from(db_token: APIToken) -> Self {
+        Token {
+            id: "deprecated".to_string(), // Maybe removed in the next API release
+            name: db_token.name,
+            created_at: Some(db_token.created_at.into()),
+            expires_at: Some(db_token.expires_at.into()),
+            permission: Some(Permission {
+                permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
+                resource_id: match db_token.object_type {
+                    ObjectType::PROJECT => {
+                        Some(ResourceId::ProjectId(db_token.object_id.to_string()))
+                    }
+                    ObjectType::COLLECTION => {
+                        Some(ResourceId::CollectionId(db_token.object_id.to_string()))
+                    }
+                    ObjectType::DATASET => {
+                        Some(ResourceId::DatasetId(db_token.object_id.to_string()))
+                    }
+                    ObjectType::OBJECT => {
+                        Some(ResourceId::ObjectId(db_token.object_id.to_string()))
+                    }
+                },
+            }),
+        }
+    }
+}
+
+// Conversion from database model permission level to proto permission level
+impl From<DbPermissionLevel> for PermissionLevel {
+    fn from(db_perm: DbPermissionLevel) -> Self {
+        match db_perm {
+            DbPermissionLevel::DENY => PermissionLevel::Unspecified, // Should not exist on db side
+            DbPermissionLevel::NONE => PermissionLevel::None,
+            DbPermissionLevel::READ => PermissionLevel::Read,
+            DbPermissionLevel::APPEND => PermissionLevel::Append,
+            DbPermissionLevel::WRITE => PermissionLevel::Write,
+            DbPermissionLevel::ADMIN => PermissionLevel::Admin,
         }
     }
 }
