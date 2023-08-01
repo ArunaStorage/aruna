@@ -136,15 +136,15 @@ impl Cache {
         ctxs.iter().all(|x| match &x.variant {
             crate::auth::structs::ContextVariant::Activated => true,
             crate::auth::structs::ContextVariant::ResourceContext((id, _)) => {
-                if let Some(obj) = self.get_object(&id) {
-                    obj.object.endpoints.0.contains_key(&endpoint_id)
+                if let Some(obj) = self.get_object(id) {
+                    obj.object.endpoints.0.contains_key(endpoint_id)
                 } else {
                     false
                 }
             }
             crate::auth::structs::ContextVariant::User((uid, permlevel)) => {
                 if *permlevel == DbPermissionLevel::READ {
-                    if let Some(user) = self.get_user(&uid) {
+                    if let Some(user) = self.get_user(uid) {
                         user.attributes
                             .0
                             .trusted_endpoints
@@ -175,7 +175,7 @@ impl Cache {
                     return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
                 }
                 crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
-                    resources.insert(id.clone(), perm.clone());
+                    resources.insert(*id, perm.clone());
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {
                     return if uid == user_id {
@@ -225,7 +225,7 @@ impl Cache {
         }
 
         let mut queue = VecDeque::new();
-        queue.push_back(id.clone());
+        queue.push_back(*id);
 
         while let Some(x) = queue.pop_front() {
             if let Some(x) = self.get_object(&x) {
@@ -276,11 +276,11 @@ mod tests {
 
         let result = cache.traverse_down(&id1, DbPermissionLevel::READ, &mut ctxs1);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         let result = cache.traverse_down(&id1, DbPermissionLevel::ADMIN, &mut ctxs2);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         let result = cache.traverse_down(&id1, DbPermissionLevel::NONE, &mut ctxs3);
         assert!(result.is_err());
