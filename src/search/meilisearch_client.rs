@@ -10,7 +10,7 @@ use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::database::{
-    dsls::object_dsl::{KeyValue, KeyValueVariant},
+    dsls::object_dsl::{KeyValue, KeyValueVariant, Object as DbObject},
     enums::{DataClass, ObjectStatus, ObjectType},
 };
 
@@ -45,8 +45,35 @@ pub struct ObjectDocument {
     pub size: i64,             // Yay or nay?
     pub labels: Vec<KeyValue>, // Without specific internal labels
     pub dataclass: DataClass,
-    pub created_at: i64,        // Converted to UNIX timestamp for filtering/sorting
+    pub created_at: i64, // Converted to UNIX timestamp for filtering/sorting
     pub created_by: DieselUlid, // Should be the user name or something like that
+}
+
+// Coversion from database model Object into ObjectDocument
+impl From<DbObject> for ObjectDocument {
+    fn from(db_object: DbObject) -> Self {
+        // Remove internal/unimportant labels
+        let filtered_labels = db_object
+            .key_values
+            .0
+             .0
+            .into_iter()
+            .filter(|kv| !kv.key.starts_with("app.aruna-storage"))
+            .collect::<Vec<_>>();
+
+        ObjectDocument {
+            id: db_object.id,
+            resource_type: db_object.object_type,
+            resource_status: db_object.object_status,
+            name: db_object.name,
+            description: db_object.description,
+            size: db_object.content_len,
+            labels: filtered_labels,
+            dataclass: db_object.data_class,
+            created_at: db_object.created_at.unwrap_or_default().timestamp(),
+            created_by: db_object.created_by,
+        }
+    }
 }
 
 // Conversion from ObjectDocument into generic API resource.
@@ -85,7 +112,10 @@ impl Into<Project> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
+            created_at: Some(Timestamp {
+                seconds: self.created_at,
+                nanos: 0,
+            }),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -124,7 +154,10 @@ impl Into<Collection> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
+            created_at: Some(Timestamp {
+                seconds: self.created_at,
+                nanos: 0,
+            }),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -163,7 +196,10 @@ impl Into<Dataset> for ObjectDocument {
             relations: vec![],
             stats: None,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
+            created_at: Some(Timestamp {
+                seconds: self.created_at,
+                nanos: 0,
+            }),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
@@ -202,7 +238,10 @@ impl Into<Object> for ObjectDocument {
             relations: vec![],
             content_len: self.size,
             data_class: DataClass::from(self.dataclass) as i32,
-            created_at: Some(Timestamp {seconds: self.created_at, nanos: 0}),
+            created_at: Some(Timestamp {
+                seconds: self.created_at,
+                nanos: 0,
+            }),
             created_by: self.created_by.to_string(),
             status: Into::<ApiStatus>::into(self.resource_status) as i32,
             dynamic: false, // Needed information?
