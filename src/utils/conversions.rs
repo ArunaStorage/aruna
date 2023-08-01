@@ -15,7 +15,7 @@ use crate::database::{
 };
 use crate::middlelayer::create_request_types::Parent;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::{generic_resource, Status};
+use aruna_rust_api::api::storage::models::v2::{generic_resource, ResourceVariant, Status};
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
     ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
@@ -277,6 +277,17 @@ impl From<ObjectType> for i32 {
             ObjectType::COLLECTION => 2,
             ObjectType::DATASET => 3,
             ObjectType::OBJECT => 4,
+        }
+    }
+}
+
+impl From<ObjectType> for ResourceVariant {
+    fn from(object_type: ObjectType) -> Self {
+        match object_type {
+            ObjectType::PROJECT => ResourceVariant::Project,
+            ObjectType::COLLECTION => ResourceVariant::Collection,
+            ObjectType::DATASET => ResourceVariant::Dataset,
+            ObjectType::OBJECT => ResourceVariant::Object,
         }
     }
 }
