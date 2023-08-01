@@ -35,7 +35,6 @@ impl DatabaseHandler {
                         id: DieselUlid::generate(),
                         origin_pid: parent.get_id()?,
                         origin_type: parent.get_type(),
-                        is_persistent: false,
                         target_pid: object.id,
                         target_type: object.object_type.clone(),
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),

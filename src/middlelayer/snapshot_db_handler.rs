@@ -18,7 +18,7 @@ impl DatabaseHandler {
                 SnapshotRequest::get_cloned_collection(resource, transaction_client).await?,
             ),
             SnapshotRequest::Dataset(_) => SnapshotResponse::SnapshotDataset(
-                SnapshotRequest::get_cloned_dataset(resource, transaction_client).await?,
+                SnapshotRequest::get_cloned_dataset(resource).await?,
             ),
         };
         let result = snapshot_resources.snapshot(transaction_client).await?;

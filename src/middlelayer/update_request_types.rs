@@ -3,6 +3,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::object_dsl::{Hashes, KeyValue as DBKeyValue, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectType};
+use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
 use aruna_rust_api::api::storage::services::v2::{
@@ -12,6 +13,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateObjectRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
     UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 
@@ -167,6 +169,10 @@ impl UpdateObject {
         }
         new.try_into()
     }
+    pub fn get_endpoints(&self, old: Object) -> Result<DashMap<DieselUlid, bool, RandomState>> {
+        // TODO -> Currently not implemented in APICall
+        Ok(old.endpoints.0)
+    }
     pub fn add_parent_relation(
         object_id: DieselUlid,
         parent: UpdateParent,
@@ -183,7 +189,6 @@ impl UpdateObject {
             relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
             target_pid: object_id,
             target_type: ObjectType::OBJECT,
-            is_persistent: false,
         })
     }
 }

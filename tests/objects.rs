@@ -9,7 +9,6 @@ use aruna_server::database::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use std::collections::HashMap;
 
 mod init_db;
 
@@ -56,10 +55,10 @@ async fn create_object() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::CONFIDENTIAL,
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     create_object.create(&client).await.unwrap();
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
@@ -140,10 +139,10 @@ async fn get_object_with_relations_test() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::PUBLIC,
         object_type: aruna_server::database::enums::ObjectType::DATASET,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     let create_collection_one = Object {
         id: collection_one,
@@ -158,10 +157,10 @@ async fn get_object_with_relations_test() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::PUBLIC,
         object_type: aruna_server::database::enums::ObjectType::COLLECTION,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     let create_collection_two = Object {
         id: collection_two,
@@ -176,10 +175,10 @@ async fn get_object_with_relations_test() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::PUBLIC,
         object_type: aruna_server::database::enums::ObjectType::COLLECTION,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: true,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     let create_object_one = Object {
         id: object_one,
@@ -194,10 +193,10 @@ async fn get_object_with_relations_test() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::PUBLIC,
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     let create_object_two = Object {
         id: object_two,
@@ -212,10 +211,10 @@ async fn get_object_with_relations_test() {
         object_status: aruna_server::database::enums::ObjectStatus::AVAILABLE,
         data_class: aruna_server::database::enums::DataClass::PUBLIC,
         object_type: aruna_server::database::enums::ObjectType::OBJECT,
-        external_relations: Json(ExternalRelations(vec![])),
+        external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
-        endpoints: Json(HashMap::new()),
+        endpoints: Json(DashMap::default()),
     };
     let creates = vec![
         create_dataset.clone(),
@@ -234,7 +233,6 @@ async fn get_object_with_relations_test() {
         origin_type: aruna_server::database::enums::ObjectType::COLLECTION,
         target_pid: dataset_id,
         target_type: aruna_server::database::enums::ObjectType::DATASET,
-        is_persistent: true,
         relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_two = InternalRelation {
@@ -243,7 +241,6 @@ async fn get_object_with_relations_test() {
         origin_type: aruna_server::database::enums::ObjectType::COLLECTION,
         target_pid: dataset_id,
         target_type: aruna_server::database::enums::ObjectType::DATASET,
-        is_persistent: true,
         relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_three = InternalRelation {
@@ -252,7 +249,6 @@ async fn get_object_with_relations_test() {
         origin_type: aruna_server::database::enums::ObjectType::DATASET,
         target_pid: object_one,
         target_type: aruna_server::database::enums::ObjectType::OBJECT,
-        is_persistent: true,
         relation_name: "BELONGS_TO".to_string(),
     };
     let create_relation_four = InternalRelation {
@@ -261,7 +257,6 @@ async fn get_object_with_relations_test() {
         origin_type: aruna_server::database::enums::ObjectType::DATASET,
         target_pid: object_two,
         target_type: aruna_server::database::enums::ObjectType::OBJECT,
-        is_persistent: true,
         relation_name: "BELONGS_TO".to_string(),
     };
     let rels = vec![
@@ -293,8 +288,5 @@ async fn get_object_with_relations_test() {
     let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
         .await
         .unwrap();
-
-    dbg!(&object_with_relations);
-    dbg!(&compare_owr);
     assert_eq!(object_with_relations, compare_owr);
 }

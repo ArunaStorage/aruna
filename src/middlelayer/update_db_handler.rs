@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
@@ -123,11 +121,11 @@ impl DatabaseHandler {
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
                 key_values: Json(req.get_all_kvs(old.clone())?),
-                hashes: Json(req.get_hashes(old)?),
+                hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
-                endpoints: Json(HashMap::new()),
+                endpoints: Json(req.get_endpoints(old)?),
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -149,11 +147,11 @@ impl DatabaseHandler {
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
                 key_values: Json(req.get_add_keyvals(old.clone())?),
-                hashes: old.hashes,
+                hashes: old.clone().hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
-                endpoints: Json(HashMap::new()),
+                endpoints: Json(req.get_endpoints(old)?),
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {

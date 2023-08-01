@@ -29,7 +29,6 @@ pub struct InternalRelation {
     pub relation_name: String,
     pub target_pid: DieselUlid,
     pub target_type: ObjectType,
-    pub is_persistent: bool,
 }
 
 pub const INTERNAL_RELATION_VARIANT_BELONGS_TO: &str = "BELONGS_TO";
@@ -41,8 +40,8 @@ pub const INTERNAL_RELATION_VARIANT_POLICY: &str = "POLICY";
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, is_persistent) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type) VALUES (
+            $1, $2, $3, $4, $5, $6
         );";
 
         let prepared = client.prepare(query).await?;
@@ -57,7 +56,6 @@ impl CrudDb for InternalRelation {
                     &self.relation_name,
                     &self.target_pid,
                     &self.target_type,
-                    &self.is_persistent,
                 ],
             )
             .await?;
@@ -109,6 +107,12 @@ impl InternalRelation {
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
     }
+    pub async fn batch_create(relations: &Vec<InternalRelation>, client: &Client) -> Result<()> {
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type) VALUES $1;";
+        let prepared = client.prepare(query).await?;
+        client.query(&prepared, &[&relations]).await?;
+        Ok(())
+    }
     // Checks if relation between two objects already exists
     pub async fn get_by_pids(&self, client: &Client) -> Result<Option<InternalRelation>> {
         let origin = self.origin_pid;
@@ -123,62 +127,21 @@ impl InternalRelation {
         Ok(opt)
     }
     // Gets all outbound relations for pid
-    pub async fn get_all_by_id(
-        id: DieselUlid,
-        client: &Client,
-    ) -> Result<(
-        Vec<InternalRelation>, // outbound relations
-        Vec<InternalRelation>, // inbound relations
-    )> {
-        let outbound = "SELECT * FROM internal_relations 
-            WHERE origin_pid = $1;";
-        let inbound = "SELECT * FROM internal_relations 
-            WHERE target_pid = $1;";
-        let prep_outbound = client.prepare(outbound).await?;
-        let prep_inbound = client.prepare(inbound).await?;
-        let outbounds = client
-            .query_opt(&prep_outbound, &[&id])
-            .await?
-            .iter()
-            .map(InternalRelation::from_row)
-            .collect();
-        let inbounds = client
-            .query_opt(&prep_inbound, &[&id])
-            .await?
-            .iter()
-            .map(InternalRelation::from_row)
-            .collect();
+    pub async fn get_all_by_id(id: DieselUlid, client: &Client) -> Result<Vec<InternalRelation>> {
+        let query = "SELECT * FROM internal_relations 
+            WHERE origin_pid = $1 OR target_pid = $2;";
 
-        Ok((outbounds, inbounds))
-    }
-    // Gets all inbound and outbound relations for id
-    pub async fn get_filtered_by_id(
-        id: DieselUlid,
-        client: &Client,
-    ) -> Result<(Vec<InternalRelation>, Option<Vec<InternalRelation>>)> {
-        let from_query = "SELECT * FROM internal_relations 
-            WHERE origin_pid = $1;";
-        let to_query = "SELECT * FROM internal_relations 
-            WHERE target_pid = $1;";
-        let to_prepared = client.prepare(to_query).await?;
-        let from_prepared = client.prepare(from_query).await?;
-        let to_object = client
-            .query(&to_prepared, &[&id])
+        let prepared = client.prepare(query).await?;
+        let relations = client
+            .query_opt(&prepared, &[&id])
             .await?
             .iter()
             .map(InternalRelation::from_row)
             .collect();
-        let from_object = Some(
-            client
-                .query(&from_prepared, &[&id])
-                .await?
-                .iter()
-                .map(InternalRelation::from_row)
-                .collect(),
-        );
-        Ok((to_object, from_object))
+        Ok(relations)
     }
-    pub fn clone_persistent(&self, replace: DieselUlid) -> Self {
+
+    pub fn clone_relation(&self, replace: DieselUlid) -> Self {
         InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: replace,
@@ -186,26 +149,12 @@ impl InternalRelation {
             relation_name: self.relation_name.clone(),
             target_pid: self.target_pid,
             target_type: self.target_type.clone(),
-            is_persistent: true,
         }
     }
-    pub fn clone_dynamic(&self, replace: DieselUlid) -> Self {
-        InternalRelation {
-            id: self.id,
-            origin_pid: replace,
-            origin_type: self.origin_type.clone(),
-            relation_name: self.relation_name.clone(),
-            target_pid: self.target_pid,
-            target_type: self.target_type.clone(),
-            is_persistent: false,
-        }
-    }
-    pub async fn archive(id: &DieselUlid, client: &Client) -> Result<()> {
-        let query = "UPDATE internal_relations 
-            SET is_persistent = true 
-            WHERE id = $1;";
+    pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
+        let query = "DELETE FROM internal_relations WHERE id IN $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[id]).await?;
+        client.execute(&prepared, &[ids]).await?;
         Ok(())
     }
 }
