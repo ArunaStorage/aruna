@@ -1,8 +1,11 @@
 use std::time::Duration;
 
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
-use aruna_rust_api::api::notification::services::v2::Reply;
+use aruna_rust_api::api::notification::services::v2::{
+    EventVariant, Reply, Resource, ResourceEvent, UserEvent,
+};
 
+use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
 use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
@@ -13,7 +16,10 @@ use futures::future::try_join_all;
 use futures::StreamExt;
 use prost::bytes::Bytes;
 
+use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::dsls::user_dsl::User;
 use crate::database::enums::ObjectType;
+use crate::utils::grpc_utils::{checksum_resource, checksum_user};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
@@ -200,6 +206,56 @@ impl EventHandler for NatsIoHandler {
 
         // Return empty Ok to signal success
         Ok(())
+    }
+}
+
+impl NatsIoHandler {
+    /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
+    pub async fn register_resource_event(
+        &self,
+        object: &ObjectWithRelations,
+        event_variant: EventVariant,
+    ) -> anyhow::Result<()> {
+        // Calculate resource checksum
+        let resource_checksum = tonic_internal!(
+            checksum_resource(tonic_internal!(
+                object.clone().try_into(),
+                "Proto conversion failed"
+            )),
+            "Checksum calculation failed"
+        );
+
+        // Emit resource event message
+        self.register_event(MessageVariant::ResourceEvent(ResourceEvent {
+            resource: Some(Resource {
+                resource_id: object.object.id.to_string(),
+                associated_id: "deprecated".to_string(), //ToDo: Will be removed with the next API version release
+                persistent_resource_id: object.object.dynamic,
+                checksum: resource_checksum,
+                resource_variant: ResourceVariant::from(object.object.object_type) as i32,
+            }),
+            event_variant: event_variant as i32,
+            reply: None, // Will be filled on message fetch
+        }))
+        .await
+    }
+
+    /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
+    pub async fn register_user_event(
+        &self,
+        user: User,
+        event_variant: EventVariant,
+    ) -> anyhow::Result<()> {
+        // Calculate user checksum
+        let user_checksum = tonic_internal!(checksum_user(&ApiUser::from(user.clone())), "");
+
+        self.register_event(MessageVariant::UserEvent(UserEvent {
+            user_id: user.id.to_string(),
+            event_variant: event_variant as i32,
+            checksum: user_checksum,
+            reply: None,
+        }))
+        .await
     }
 }
 
