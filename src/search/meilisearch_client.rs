@@ -77,13 +77,13 @@ impl From<DbObject> for ObjectDocument {
 }
 
 // Conversion from ObjectDocument into generic API resource.
-impl Into<Resource> for ObjectDocument {
-    fn into(self) -> Resource {
-        match self.resource_type {
-            ObjectType::PROJECT => Resource::Project(self.into()),
-            ObjectType::COLLECTION => Resource::Collection(self.into()),
-            ObjectType::DATASET => Resource::Dataset(self.into()),
-            ObjectType::OBJECT => Resource::Object(self.into()),
+impl From<ObjectDocument> for Resource {
+    fn from(val: ObjectDocument) -> Self {
+        match val.resource_type {
+            ObjectType::PROJECT => Resource::Project(val.into()),
+            ObjectType::COLLECTION => Resource::Collection(val.into()),
+            ObjectType::DATASET => Resource::Dataset(val.into()),
+            ObjectType::OBJECT => Resource::Object(val.into()),
         }
     }
 }
@@ -101,24 +101,24 @@ impl TryFrom<Resource> for ObjectDocument {
     }
 }
 
-// Conversion to API Project from ObjectDocument
-impl Into<Project> for ObjectDocument {
-    fn into(self) -> Project {
+// Conversion from ObjectDocument into API Project
+impl From<ObjectDocument> for Project {
+    fn from(object_document: ObjectDocument) -> Self {
         Project {
-            id: self.id.to_string(),
-            name: self.name,
-            description: self.description,
-            key_values: convert_labels_to_proto(self.labels),
+            id: object_document.id.to_string(),
+            name: object_document.name,
+            description: object_document.description,
+            key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: DataClass::from(self.dataclass) as i32,
+            data_class: object_document.dataclass as i32,
             created_at: Some(Timestamp {
-                seconds: self.created_at,
+                seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: self.created_by.to_string(),
-            status: Into::<ApiStatus>::into(self.resource_status) as i32,
-            dynamic: false, // Needed information?
+            created_by: object_document.created_by.to_string(),
+            status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
+            dynamic: false, // Meaningful information?
         }
     }
 }
@@ -134,7 +134,11 @@ impl TryFrom<Project> for ObjectDocument {
             resource_status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
-            size: 0, // project.stats.size ?
+            size: if let Some(stats) = project.stats {
+                stats.size
+            } else {
+                0
+            },
             labels: convert_proto_to_key_value(project.key_values)?,
             dataclass: DataClass::try_from(project.data_class)?,
             created_at: project.created_at.unwrap_or_default().seconds,
@@ -143,23 +147,23 @@ impl TryFrom<Project> for ObjectDocument {
     }
 }
 
-// Conversion to Collection from ObjectDocument
-impl Into<Collection> for ObjectDocument {
-    fn into(self) -> Collection {
+// Conversion from ObjectDocument into API Collection
+impl From<ObjectDocument> for Collection {
+    fn from(object_document: ObjectDocument) -> Collection {
         Collection {
-            id: self.id.to_string(),
-            name: self.name,
-            description: self.description,
-            key_values: convert_labels_to_proto(self.labels),
+            id: object_document.id.to_string(),
+            name: object_document.name,
+            description: object_document.description,
+            key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: DataClass::from(self.dataclass) as i32,
+            data_class: object_document.dataclass as i32,
             created_at: Some(Timestamp {
-                seconds: self.created_at,
+                seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: self.created_by.to_string(),
-            status: Into::<ApiStatus>::into(self.resource_status) as i32,
+            created_by: object_document.created_by.to_string(),
+            status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: false, // Needed information?
         }
     }
@@ -176,7 +180,11 @@ impl TryFrom<Collection> for ObjectDocument {
             resource_status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
-            size: 0, // collection.stats.size ?
+            size: if let Some(stats) = collection.stats {
+                stats.size
+            } else {
+                0
+            },
             labels: convert_proto_to_key_value(collection.key_values)?,
             dataclass: DataClass::try_from(collection.data_class)?,
             created_at: collection.created_at.unwrap_or_default().seconds,
@@ -185,23 +193,23 @@ impl TryFrom<Collection> for ObjectDocument {
     }
 }
 
-// Conversion to Dataset from ObjectDocument
-impl Into<Dataset> for ObjectDocument {
-    fn into(self) -> Dataset {
+// Conversion from ObjectDocument into API Dataset
+impl From<ObjectDocument> for Dataset {
+    fn from(object_document: ObjectDocument) -> Dataset {
         Dataset {
-            id: self.id.to_string(),
-            name: self.name,
-            description: self.description,
-            key_values: convert_labels_to_proto(self.labels),
+            id: object_document.id.to_string(),
+            name: object_document.name,
+            description: object_document.description,
+            key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: DataClass::from(self.dataclass) as i32,
+            data_class: object_document.dataclass as i32,
             created_at: Some(Timestamp {
-                seconds: self.created_at,
+                seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: self.created_by.to_string(),
-            status: Into::<ApiStatus>::into(self.resource_status) as i32,
+            created_by: object_document.created_by.to_string(),
+            status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: false, // Needed information?
         }
     }
@@ -218,7 +226,11 @@ impl TryFrom<Dataset> for ObjectDocument {
             resource_status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
-            size: 0, // dataset.stats.size ?
+            size: if let Some(stats) = dataset.stats {
+                stats.size
+            } else {
+                0
+            },
             labels: convert_proto_to_key_value(dataset.key_values)?,
             dataclass: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
@@ -227,23 +239,23 @@ impl TryFrom<Dataset> for ObjectDocument {
     }
 }
 
-// Conversion to Object from ObjectDocument
-impl Into<Object> for ObjectDocument {
-    fn into(self) -> Object {
+// Conversion from ObjectDocument into API Object
+impl From<ObjectDocument> for Object {
+    fn from(object_document: ObjectDocument) -> Object {
         Object {
-            id: self.id.to_string(),
-            name: self.name,
-            description: self.description,
-            key_values: convert_labels_to_proto(self.labels),
+            id: object_document.id.to_string(),
+            name: object_document.name,
+            description: object_document.description,
+            key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            content_len: self.size,
-            data_class: DataClass::from(self.dataclass) as i32,
+            content_len: object_document.size,
+            data_class: object_document.dataclass as i32,
             created_at: Some(Timestamp {
-                seconds: self.created_at,
+                seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: self.created_by.to_string(),
-            status: Into::<ApiStatus>::into(self.resource_status) as i32,
+            created_by: object_document.created_by.to_string(),
+            status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: false, // Needed information?
             hashes: vec![],
         }
@@ -261,7 +273,7 @@ impl TryFrom<Object> for ObjectDocument {
             resource_status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
-            size: 0, // dataset.stats.size ?
+            size: object.content_len,            
             labels: convert_proto_to_key_value(object.key_values)?,
             dataclass: DataClass::try_from(object.data_class)?,
             created_at: object.created_at.unwrap_or_default().seconds,
@@ -270,9 +282,9 @@ impl TryFrom<Object> for ObjectDocument {
     }
 }
 
-impl Into<ApiKeyValueVariant> for KeyValueVariant {
-    fn into(self) -> ApiKeyValueVariant {
-        match self {
+impl From<KeyValueVariant> for ApiKeyValueVariant {
+    fn from(val: KeyValueVariant) -> Self {
+        match val {
             KeyValueVariant::HOOK => ApiKeyValueVariant::Hook,
             KeyValueVariant::LABEL => ApiKeyValueVariant::Label,
             KeyValueVariant::STATIC_LABEL => ApiKeyValueVariant::StaticLabel,
@@ -288,7 +300,7 @@ fn convert_proto_to_key_value(key_values: Vec<ApiKeyValue>) -> anyhow::Result<Ve
 
     match whatev {
         Ok(some_vec) => Ok(some_vec),
-        Err(err) => return Err(anyhow::anyhow!(err.to_string())),
+        Err(err) => Err(anyhow::anyhow!(err.to_string())),
     }
 }
 
@@ -321,11 +333,7 @@ impl MeilisearchClient {
 
         Ok(MeilisearchClient {
             _server_url: meilisearch_instance_url.to_string(),
-            _api_key: if let Some(api_key) = meilisearch_instance_api_key {
-                Some(api_key.to_string())
-            } else {
-                None
-            },
+            _api_key: meilisearch_instance_api_key.map(|api_key| api_key.to_string()),
             client: meilisearch_client,
         })
     }
