@@ -191,7 +191,7 @@ impl User {
     pub async fn add_user_permission(
         client: &Client,
         user_id: &DieselUlid,
-        user_perm: HashMap<DieselUlid, DbPermissionLevel>,
+        user_perm: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>>,
     ) -> Result<()> {
         let query = "UPDATE users
         SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
