@@ -83,4 +83,13 @@ pub trait WithGenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync>:
             table: T::get_table(),
         })?)
     }
+    async fn delete<T: WithGenericBytes<X>>(id: DieselUlid, client: &Client) -> Result<()>
+    where
+        <T as TryFrom<GenericBytes<X>>>::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let query = format!("DELETE FROM {} WHERE id = $1;", T::get_table());
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &[&id]).await?;
+        Ok(())
+    }
 }
