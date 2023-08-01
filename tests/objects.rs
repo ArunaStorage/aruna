@@ -73,7 +73,7 @@ async fn get_object_with_relations_test() {
         .await
         .map_err(|e| {
             log::error!("{}", e);
-            tonic::Status::unavailable("Database not avaliable.")
+            tonic::Status::unavailable("Database not available.")
         })
         .unwrap();
 

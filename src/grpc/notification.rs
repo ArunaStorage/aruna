@@ -205,7 +205,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         let stream_consumer = StreamConsumer::get(consumer_id, client)
             .await
-            .map_err(|_| Status::aborted("Stream consumer fetech failed"))?;
+            .map_err(|_| Status::aborted("Stream consumer fetch failed"))?;
 
         let specific_context: Context = if let Some(consumer) = stream_consumer {
             tonic_invalid!(
@@ -418,7 +418,7 @@ impl EventNotificationService for NotificationServiceImpl {
     /// ## Returns:
     ///
     /// * `Result<tonic::Response<AcknowledgeMessageBatchResponse>, tonic::Status>` -
-    /// An empty response signals success that the specific messages could be acknowklkedged.
+    /// An empty response signals success that the specific messages could be acknowledged.
     ///
     async fn acknowledge_message_batch(
         &self,

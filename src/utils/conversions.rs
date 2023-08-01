@@ -33,6 +33,9 @@ pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
+//noinspection ALL
+//noinspection ALL
+//noinspection ALL
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")
@@ -107,6 +110,7 @@ impl TryFrom<i32> for KeyValueVariant {
 
 impl TryFrom<&Vec<ExternalRelation>> for ExternalRelations {
     type Error = anyhow::Error;
+    //noinspection ALL
     fn try_from(ex_rels: &Vec<ExternalRelation>) -> Result<Self> {
         let relations: DashMap<String, DBExternalRelation, RandomState> = DashMap::default();
         for r in ex_rels {
@@ -169,6 +173,7 @@ impl From<ObjectStatus> for i32 {
     }
 }
 impl From<KeyValues> for Vec<KeyValue> {
+    //noinspection ALL
     fn from(keyval: KeyValues) -> Self {
         keyval
             .0

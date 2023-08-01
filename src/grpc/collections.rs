@@ -311,7 +311,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = SnapshotRequest::Collection(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
@@ -319,7 +319,7 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        // this only contains one entry with a dataset
+        // this only contains one entry with a collection
         let resources = tonic_internal!(
             self.database_handler.snapshot(request).await,
             "Internal database error."
@@ -330,7 +330,7 @@ impl CollectionService for CollectionServiceImpl {
         }
         let collection: generic_resource::Resource =
         // First entry is always the snapshot collection
-            tonic_internal!(resources[0].clone().try_into(), "Dataset conversion error");
+            tonic_internal!(resources[0].clone().try_into(), "Collection conversion error");
 
         let response = SnapshotCollectionResponse {
             collection: Some(collection.into_inner()?),

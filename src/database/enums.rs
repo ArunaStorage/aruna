@@ -105,7 +105,7 @@ impl TryFrom<&[u8]> for ObjectStatus {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         match String::from_utf8_lossy(value).as_ref() {
-            "INIALIZING" => Ok(ObjectStatus::INITIALIZING),
+            "INITIALIZING" => Ok(ObjectStatus::INITIALIZING),
             "VALIDATING" => Ok(ObjectStatus::VALIDATING),
             "AVAILABLE" => Ok(ObjectStatus::AVAILABLE),
             "ERROR" => Ok(ObjectStatus::ERROR),

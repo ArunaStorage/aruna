@@ -200,9 +200,9 @@ impl Object {
     pub async fn remove_external_relation(
         id: &DieselUlid,
         client: &Client,
-        rel: &Vec<ExternalRelation>,
+        rel: &[ExternalRelation],
     ) -> Result<()> {
-        let keys: Vec<String> = rel.into_iter().map(|e| e.identifier.clone()).collect();
+        let keys: Vec<String> = rel.iter().map(|e| e.identifier.clone()).collect();
         let query =
             "UPDATE objects SET external_relations = external_relations - $1::TEXT WHERE id = $2;";
 
@@ -532,8 +532,8 @@ impl ObjectWithRelations {
                 external_relations: Json(ExternalRelations(DashMap::default())),
                 hashes: Json(Hashes(vec![])),
                 dynamic: false,
-                name: "aname".to_string(),
-                description: "aname".to_string(),
+                name: "a_name".to_string(),
+                description: "a_name".to_string(),
                 count: 0,
                 endpoints: Json(DashMap::default()),
             },

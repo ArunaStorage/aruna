@@ -79,7 +79,7 @@ impl ObjectService for ObjectServiceImpl {
         _request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>> {
         todo!()
-        // log::info!("Recieved CreateObjectRequest.");
+        // log::info!("Received CreateObjectRequest.");
         // log::debug!("{:?}", &request);
 
         // let token = get_token_from_md(request.metadata()).map_err(|e| {
@@ -134,7 +134,7 @@ impl ObjectService for ObjectServiceImpl {
         _request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>> {
         todo!()
-        // log::info!("Recieved FinishObjectStagingRequest.");
+        // log::info!("Received FinishObjectStagingRequest.");
         // log::debug!("{:?}", &request);
 
         // let token = get_token_from_md(request.metadata()).map_err(|e| {
@@ -162,7 +162,7 @@ impl ObjectService for ObjectServiceImpl {
 
         // let client = self.database.get_client().await.map_err(|e| {
         //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not avaliable.")
+        //     tonic::Status::unavailable("Database not available.")
         // })?;
         // let object_pid = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
         //     log::error!("{}", e);

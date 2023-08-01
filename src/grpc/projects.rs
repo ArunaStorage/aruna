@@ -133,8 +133,8 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = NameUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -148,7 +148,7 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectNameResponse {
             project: Some(project.into_inner()?),
         };
@@ -166,8 +166,8 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = DescriptionUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -181,7 +181,7 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
 
         let response = UpdateProjectDescriptionResponse {
             project: Some(project.into_inner()?),
@@ -200,8 +200,8 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = KeyValueUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -215,7 +215,7 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
 
         let response = UpdateProjectKeyValuesResponse {
             project: Some(project.into_inner()?),
@@ -234,8 +234,8 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = DataClassUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -249,7 +249,7 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectDataClassResponse {
             project: Some(project.into_inner()?),
         };
