@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use aruna_server::database::{
     crud::CrudDb,
-    dsls::user_dsl::{APIToken, User, UserAttributes},
+    dsls::user_dsl::{APIToken, User, UserAttributes}, enums::ObjectMapping,
 };
 use diesel_ulid::DieselUlid;
 
@@ -264,7 +264,7 @@ async fn add_permission_user_test() {
         &user.id,
         [(
             DieselUlid::generate(),
-            aruna_server::database::enums::DbPermissionLevel::ADMIN,
+            ObjectMapping::PROJECT(aruna_server::database::enums::DbPermissionLevel::ADMIN),
         )]
         .into_iter()
         .collect(),
@@ -277,7 +277,7 @@ async fn add_permission_user_test() {
         &user.id,
         [(
             DieselUlid::generate(),
-            aruna_server::database::enums::DbPermissionLevel::READ,
+            ObjectMapping::COLLECTION(aruna_server::database::enums::DbPermissionLevel::READ),
         )]
         .into_iter()
         .collect(),
@@ -319,15 +319,15 @@ async fn remove_user_permission_test() {
             permissions: [
                 (
                     perm1,
-                    aruna_server::database::enums::DbPermissionLevel::ADMIN,
+                    ObjectMapping::PROJECT(aruna_server::database::enums::DbPermissionLevel::ADMIN),
                 ),
                 (
                     perm2,
-                    aruna_server::database::enums::DbPermissionLevel::READ,
+                    ObjectMapping::COLLECTION(aruna_server::database::enums::DbPermissionLevel::READ),
                 ),
                 (
                     perm3,
-                    aruna_server::database::enums::DbPermissionLevel::WRITE,
+                    ObjectMapping::COLLECTION(aruna_server::database::enums::DbPermissionLevel::WRITE),
                 ),
             ]
             .into_iter()
@@ -426,8 +426,7 @@ async fn user_token_test() {
                         name: "test".to_string(),
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
-                        object_id: DieselUlid::generate(),
-                        object_type: aruna_server::database::enums::ObjectType::PROJECT,
+                        object_id: Some(ObjectMapping::PROJECT(DieselUlid::generate())),
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -438,8 +437,7 @@ async fn user_token_test() {
                         name: "test".to_string(),
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
-                        object_id: DieselUlid::generate(),
-                        object_type: aruna_server::database::enums::ObjectType::COLLECTION,
+                        object_id: Some(ObjectMapping::COLLECTION(DieselUlid::generate())),
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -450,8 +448,7 @@ async fn user_token_test() {
                         name: "test".to_string(),
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
-                        object_id: DieselUlid::generate(),
-                        object_type: aruna_server::database::enums::ObjectType::DATASET,
+                        object_id: Some(ObjectMapping::DATASET(DieselUlid::generate())),
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),

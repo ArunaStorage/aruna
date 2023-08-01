@@ -4,7 +4,7 @@ use aruna_server::database::{
         internal_relation_dsl::InternalRelation,
         object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
         user_dsl::{User, UserAttributes},
-    },
+    }, enums::{ObjectMapping, DbPermissionLevel},
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -27,7 +27,7 @@ async fn create_object() {
         tokens: HashMap::new(),
         permissions: HashMap::from([(
             obj_id,
-            aruna_server::database::enums::DbPermissionLevel::WRITE,
+            ObjectMapping::PROJECT(aruna_server::database::enums::DbPermissionLevel::WRITE),
         )]),
     });
 
@@ -84,23 +84,20 @@ async fn get_object_with_relations_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = [
-        dataset_id,
-        collection_one,
-        collection_two,
-        object_one,
-        object_two,
-    ];
+
+    let object_map: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>> = [
+        (dataset_id, ObjectMapping::DATASET(DbPermissionLevel::WRITE)),
+        (collection_one, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE)),
+        (collection_two, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE)),
+        (object_one, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
+        (object_two, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),].into_iter().collect();
 
     let attributes = Json(UserAttributes {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
         tokens: HashMap::new(),
-        permissions: object_vec
-            .iter()
-            .map(|o| (*o, aruna_server::database::enums::DbPermissionLevel::WRITE))
-            .collect(),
+        permissions: object_map
     });
 
     let user = User {
