@@ -37,7 +37,7 @@ impl DatabaseHandler {
                     origin_type: parent.get_type(),
                     is_persistent: false,
                     target_pid: object.id,
-                    target_type: object.object_type.clone(),
+                    target_type: object.object_type,
                     relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                 };
                 ir.create(transaction_client).await?;
@@ -47,7 +47,7 @@ impl DatabaseHandler {
 
         // Create DTO which combines the object and its internal relations
         let object_with_rel = ObjectWithRelations {
-            object: object,
+            object,
             inbound: Json(DashMap::new()),
             inbound_belongs_to: Json(internal_relation),
             outbound: Json(DashMap::new()),

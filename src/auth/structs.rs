@@ -85,7 +85,7 @@ impl User {
                     ));
                 };
 
-                Ok(vec![(object_id, token.user_rights.clone())])
+                Ok(vec![(object_id, token.user_rights)])
             } else {
                 bail!("Token not found")
             }

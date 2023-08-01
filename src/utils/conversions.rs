@@ -188,9 +188,9 @@ impl TryFrom<i32> for ObjectStatus {
         }
     }
 }
-impl Into<Status> for ObjectStatus {
-    fn into(self) -> Status {
-        match self {
+impl From<ObjectStatus> for Status {
+    fn from(val: ObjectStatus) -> Self {
+        match val {
             ObjectStatus::INITIALIZING => Status::Initializing,
             ObjectStatus::VALIDATING => Status::Validating,
             ObjectStatus::AVAILABLE => Status::Available,
@@ -396,11 +396,7 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
         expires_at: Some(db_token.expires_at.into()),
         permission: Some(Permission {
             permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
-            resource_id: if let Some(mapping) = db_token.object_id {
-                Some(ResourceId::from(mapping))
-            } else {
-                None
-            },
+            resource_id: db_token.object_id.map(ResourceId::from),
         }),
     }
 }

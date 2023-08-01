@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use aruna_server::database::{
     crud::CrudDb,
-    dsls::user_dsl::{APIToken, User, UserAttributes}, enums::ObjectMapping,
+    dsls::user_dsl::{APIToken, User, UserAttributes},
+    enums::ObjectMapping,
 };
 use diesel_ulid::DieselUlid;
 
@@ -323,11 +324,15 @@ async fn remove_user_permission_test() {
                 ),
                 (
                     perm2,
-                    ObjectMapping::COLLECTION(aruna_server::database::enums::DbPermissionLevel::READ),
+                    ObjectMapping::COLLECTION(
+                        aruna_server::database::enums::DbPermissionLevel::READ,
+                    ),
                 ),
                 (
                     perm3,
-                    ObjectMapping::COLLECTION(aruna_server::database::enums::DbPermissionLevel::WRITE),
+                    ObjectMapping::COLLECTION(
+                        aruna_server::database::enums::DbPermissionLevel::WRITE,
+                    ),
                 ),
             ]
             .into_iter()

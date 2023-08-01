@@ -4,7 +4,8 @@ use aruna_server::database::{
         internal_relation_dsl::InternalRelation,
         object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
         user_dsl::{User, UserAttributes},
-    }, enums::{ObjectMapping, DbPermissionLevel},
+    },
+    enums::{DbPermissionLevel, ObjectMapping},
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -87,17 +88,26 @@ async fn get_object_with_relations_test() {
 
     let object_map: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>> = [
         (dataset_id, ObjectMapping::DATASET(DbPermissionLevel::WRITE)),
-        (collection_one, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE)),
-        (collection_two, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE)),
+        (
+            collection_one,
+            ObjectMapping::COLLECTION(DbPermissionLevel::WRITE),
+        ),
+        (
+            collection_two,
+            ObjectMapping::COLLECTION(DbPermissionLevel::WRITE),
+        ),
         (object_one, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
-        (object_two, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),].into_iter().collect();
+        (object_two, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
+    ]
+    .into_iter()
+    .collect();
 
     let attributes = Json(UserAttributes {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
         tokens: HashMap::new(),
-        permissions: object_map
+        permissions: object_map,
     });
 
     let user = User {
@@ -273,17 +283,14 @@ async fn get_object_with_relations_test() {
         object: create_dataset,
         inbound: Json(DashMap::new()),
         inbound_belongs_to: Json(DashMap::from_iter([
-            (create_relation_one.origin_pid.clone(), create_relation_one),
-            (create_relation_two.origin_pid.clone(), create_relation_two),
+            (create_relation_one.origin_pid, create_relation_one),
+            (create_relation_two.origin_pid, create_relation_two),
         ])),
         outbound: Json(DashMap::new()),
         outbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_three.target_pid, create_relation_three),
             (
-                create_relation_three.target_pid.clone(),
-                create_relation_three,
-            ),
-            (
-                create_relation_four.target_pid.clone(),
+                create_relation_four.target_pid,
                 create_relation_four.clone(),
             ),
         ])),

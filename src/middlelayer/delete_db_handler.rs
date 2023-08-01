@@ -17,8 +17,7 @@ impl DatabaseHandler {
         let resources = match request {
             DeleteRequest::Object(req) => {
                 if req.with_revisions {
-                    let object =
-                        Object::get_object_with_relations(&id, &transaction_client).await?;
+                    let object = Object::get_object_with_relations(&id, transaction_client).await?;
                     let mut objects: Vec<DieselUlid> = object
                         .inbound
                         .0
@@ -30,16 +29,16 @@ impl DatabaseHandler {
                         .collect();
                     objects.push(id);
                     for id in objects.clone() {
-                        Object::set_deleted(&id, &transaction_client).await?
+                        Object::set_deleted(&id, transaction_client).await?
                     }
                     objects
                 } else {
-                    Object::set_deleted(&id, &transaction_client).await?;
+                    Object::set_deleted(&id, transaction_client).await?;
                     vec![id]
                 }
             }
             _ => {
-                Object::set_deleted(&id, &transaction_client).await?;
+                Object::set_deleted(&id, transaction_client).await?;
                 vec![id]
             }
         };

@@ -273,7 +273,7 @@ impl TryFrom<Object> for ObjectDocument {
             resource_status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
-            size: object.content_len,            
+            size: object.content_len,
             labels: convert_proto_to_key_value(object.key_values)?,
             dataclass: DataClass::try_from(object.data_class)?,
             created_at: object.created_at.unwrap_or_default().seconds,
