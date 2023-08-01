@@ -275,8 +275,7 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        // this only contains one entry with a dataset
-        let resources = tonic_internal!(
+        let (old_id, resources) = tonic_internal!(
             self.database_handler.snapshot(request).await,
             "Internal database error."
         );
@@ -284,10 +283,13 @@ impl ProjectService for ProjectServiceImpl {
             self.cache
                 .update_object(&resource.object.id, resource.clone());
         }
-        let project: generic_resource::Resource =
-            // First entry is always the archived project 
-            tonic_internal!(resources[0].clone().try_into(), "Project conversion error");
-
+        let project: generic_resource::Resource = tonic_internal!(
+            self.cache
+                .get_object(&old_id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?
+                .try_into(),
+            "Project conversion error"
+        );
         let response = ArchiveProjectResponse {
             project: Some(project.into_inner()?),
         };

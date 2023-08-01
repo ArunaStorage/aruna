@@ -320,17 +320,22 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        // this only contains one entry with a dataset
-        let dataset = tonic_internal!(
+        let (new_id, dataset) = tonic_internal!(
             self.database_handler.snapshot(request).await,
             "Internal database error."
-        )[0]
-        .clone();
-        self.cache
-            .update_object(&dataset.object.id, dataset.clone());
+        );
 
-        let dataset: generic_resource::Resource =
-            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+        // For datasets, this vector only contains one entry
+        self.cache
+            .update_object(&dataset[0].object.id, dataset[0].clone());
+
+        let dataset: generic_resource::Resource = tonic_internal!(
+            self.cache
+                .get_object(&new_id)
+                .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?
+                .try_into(),
+            "Dataset conversion error"
+        );
 
         let response = SnapshotDatasetResponse {
             dataset: Some(dataset.into_inner()?),

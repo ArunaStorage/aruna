@@ -319,8 +319,7 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        // this only contains one entry with a collection
-        let resources = tonic_internal!(
+        let (new_id, resources) = tonic_internal!(
             self.database_handler.snapshot(request).await,
             "Internal database error."
         );
@@ -328,9 +327,13 @@ impl CollectionService for CollectionServiceImpl {
             self.cache
                 .update_object(&resource.object.id, resource.clone());
         }
-        let collection: generic_resource::Resource =
-        // First entry is always the snapshot collection
-            tonic_internal!(resources[0].clone().try_into(), "Collection conversion error");
+        let collection: generic_resource::Resource = tonic_internal!(
+            self.cache
+                .get_object(&new_id)
+                .ok_or_else(|| tonic::Status::not_found("Collection not found"))?
+                .try_into(),
+            "Collection conversion error"
+        );
 
         let response = SnapshotCollectionResponse {
             collection: Some(collection.into_inner()?),
