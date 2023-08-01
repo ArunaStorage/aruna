@@ -267,7 +267,7 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = SnapshotRequest::Project(request.into_inner());
-        let project_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id.");
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
@@ -286,7 +286,7 @@ impl ProjectService for ProjectServiceImpl {
         }
         let project: generic_resource::Resource =
             // First entry is always the archived project 
-            tonic_internal!(resources[0].clone().try_into(), "Dataset conversion error");
+            tonic_internal!(resources[0].clone().try_into(), "Project conversion error");
 
         let response = ArchiveProjectResponse {
             project: Some(project.into_inner()?),
