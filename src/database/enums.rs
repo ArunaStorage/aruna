@@ -24,6 +24,14 @@ pub enum DataClass {
     CONFIDENTIAL,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
+pub enum ObjectMapping<T> {
+    PROJECT(T),
+    COLLECTION(T),
+    DATABASE(T),
+    OBJECT(T),
+}
+
 #[derive(
     Copy, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize,
 )]
@@ -48,7 +56,9 @@ impl TryFrom<i32> for ObjectType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Copy,
+)]
 pub enum DbPermissionLevel {
     DENY,
     NONE,

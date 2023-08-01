@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
@@ -26,8 +26,7 @@ pub struct APIToken {
     pub name: String,
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
-    pub object_id: DieselUlid,
-    pub object_type: ObjectType,
+    pub object_id: Option<ObjectMapping<DieselUlid>>,
     pub user_rights: DbPermissionLevel,
 }
 
@@ -37,7 +36,7 @@ pub struct UserAttributes {
     pub service_account: bool,
     pub tokens: HashMap<DieselUlid, APIToken>,
     pub custom_attributes: Vec<CustomAttributes>,
-    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
+    pub permissions: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]

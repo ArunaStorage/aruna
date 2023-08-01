@@ -1,4 +1,7 @@
-use crate::database::{dsls::user_dsl::User, enums::DbPermissionLevel};
+use crate::database::{
+    dsls::user_dsl::User,
+    enums::{DbPermissionLevel, ObjectMapping},
+};
 use anyhow::{bail, Result};
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
@@ -68,7 +71,21 @@ impl User {
     ) -> Result<Vec<(DieselUlid, DbPermissionLevel)>> {
         if let Some(token) = token {
             if let Some(token) = self.attributes.0.tokens.get(&token) {
-                Ok(vec![(token.object_id, token.user_rights.clone())])
+                // Check if token is mapped to an object
+                let object_id = if let Some(mapping) = token.object_id {
+                    match mapping {
+                        ObjectMapping::PROJECT(id)
+                        | ObjectMapping::COLLECTION(id)
+                        | ObjectMapping::DATABASE(id)
+                        | ObjectMapping::OBJECT(id) => id,
+                    }
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Personal token without resource permission"
+                    ));
+                };
+
+                Ok(vec![(object_id, token.user_rights.clone())])
             } else {
                 bail!("Token not found")
             }
@@ -78,7 +95,17 @@ impl User {
                 .0
                 .permissions
                 .iter()
-                .map(|(k, v)| (*k, v.clone()))
+                .map(|(resource_id, object_mapping)| {
+                    (
+                        *resource_id,
+                        match object_mapping {
+                            ObjectMapping::PROJECT(perm)
+                            | ObjectMapping::COLLECTION(perm)
+                            | ObjectMapping::DATABASE(perm)
+                            | ObjectMapping::OBJECT(perm) => *perm,
+                        },
+                    )
+                })
                 .collect())
         }
     }

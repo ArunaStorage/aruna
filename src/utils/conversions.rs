@@ -6,7 +6,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::user_dsl::{APIToken, User};
-use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
@@ -298,6 +298,17 @@ impl From<ObjectType> for ResourceVariant {
     }
 }
 
+impl From<ObjectMapping<DieselUlid>> for ResourceId {
+    fn from(value: ObjectMapping<DieselUlid>) -> Self {
+        match value {
+            ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+            ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+            ObjectMapping::DATABASE(id) => ResourceId::DatasetId(id.to_string()),
+            ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+        }
+    }
+}
+
 // Conversion from database model user token to proto user
 impl From<User> for ApiUser {
     fn from(db_user: User) -> Self {
@@ -307,7 +318,7 @@ impl From<User> for ApiUser {
             .0
             .tokens
             .into_iter()
-            .map(|(_, token)| token.into())
+            .map(|(token_id, token)| convert_token_to_proto(&token_id, token))
             .collect::<Vec<_>>();
 
         // Collect custom attributes
@@ -328,9 +339,8 @@ impl From<User> for ApiUser {
             .0
             .permissions
             .into_iter()
-            .map(|(resource_id, perm)| Permission {
-                permission_level: Into::<PermissionLevel>::into(perm) as i32,
-                resource_id: None, //ToDo: No info which object type is present
+            .map(|(resource_id, resource_mapping)| {
+                convert_permission_to_proto(resource_id, resource_mapping)
             })
             .collect::<Vec<_>>();
 
@@ -352,32 +362,46 @@ impl From<User> for ApiUser {
     }
 }
 
+// Conversion from database permission to proto permission
+pub fn convert_permission_to_proto(
+    resource_id: DieselUlid,
+    resource_mapping: ObjectMapping<DbPermissionLevel>,
+) -> Permission {
+    match resource_mapping {
+        ObjectMapping::PROJECT(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::ProjectId(resource_id.to_string())),
+        },
+        ObjectMapping::COLLECTION(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::CollectionId(resource_id.to_string())),
+        },
+        ObjectMapping::DATABASE(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::DatasetId(resource_id.to_string())),
+        },
+        ObjectMapping::OBJECT(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::ObjectId(resource_id.to_string())),
+        },
+    }
+}
+
 // Conversion from database model token to proto token
-impl From<APIToken> for Token {
-    fn from(db_token: APIToken) -> Self {
-        Token {
-            id: "deprecated".to_string(), // Maybe removed in the next API release
-            name: db_token.name,
-            created_at: Some(db_token.created_at.into()),
-            expires_at: Some(db_token.expires_at.into()),
-            permission: Some(Permission {
-                permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
-                resource_id: match db_token.object_type {
-                    ObjectType::PROJECT => {
-                        Some(ResourceId::ProjectId(db_token.object_id.to_string()))
-                    }
-                    ObjectType::COLLECTION => {
-                        Some(ResourceId::CollectionId(db_token.object_id.to_string()))
-                    }
-                    ObjectType::DATASET => {
-                        Some(ResourceId::DatasetId(db_token.object_id.to_string()))
-                    }
-                    ObjectType::OBJECT => {
-                        Some(ResourceId::ObjectId(db_token.object_id.to_string()))
-                    }
-                },
-            }),
-        }
+pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Token {
+    Token {
+        id: token_id.to_string(),
+        name: db_token.name,
+        created_at: Some(db_token.created_at.into()),
+        expires_at: Some(db_token.expires_at.into()),
+        permission: Some(Permission {
+            permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
+            resource_id: if let Some(mapping) = db_token.object_id {
+                Some(ResourceId::from(mapping))
+            } else {
+                None
+            },
+        }),
     }
 }
 
