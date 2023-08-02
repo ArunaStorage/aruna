@@ -1,10 +1,13 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
+use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
+use futures::pin_mut;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, ToSql};
+use postgres_types::{FromSql, ToSql, Type};
 use serde::{Deserialize, Serialize};
-use tokio_postgres::Client;
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::{Client, CopyInSink};
 
 use super::super::enums::ObjectType;
 
@@ -108,9 +111,35 @@ impl InternalRelation {
         Ok(())
     }
     pub async fn batch_create(relations: &Vec<InternalRelation>, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type) VALUES $1;";
-        let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&relations]).await?;
+        let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type)\
+        FROM STDIN BINARY;";
+        let sink: CopyInSink<_> = client.copy_in(query).await?;
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::UUID,
+                Type::UUID,
+                ObjectType::get_type(),
+                Type::VARCHAR,
+                Type::UUID,
+                ObjectType::get_type(),
+            ],
+        );
+        pin_mut!(writer);
+        for relation in relations {
+            writer
+                .as_mut()
+                .write(&[
+                    &relation.id,
+                    &relation.origin_pid,
+                    &relation.origin_type,
+                    &relation.relation_name,
+                    &relation.target_pid,
+                    &relation.target_type,
+                ])
+                .await?;
+        }
+        writer.finish().await?;
         Ok(())
     }
     // Checks if relation between two objects already exists
@@ -152,9 +181,15 @@ impl InternalRelation {
         }
     }
     pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
-        let query = "DELETE FROM internal_relations WHERE id IN $1";
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[ids]).await?;
+        let query_one = "DELETE FROM internal_relations WHERE id IN ";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two};");
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &inserts).await?;
         Ok(())
     }
 }

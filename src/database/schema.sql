@@ -7,7 +7,7 @@ BEGIN
             'INITIALIZING',
             'VALIDATING',
             'AVAILABLE',
-	    'UNAVAILABLE',
+	        'UNAVAILABLE',
             'ERROR',
             'DELETED'
         );

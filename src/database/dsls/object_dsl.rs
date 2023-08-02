@@ -3,17 +3,20 @@ use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
 };
+use crate::utils::database_utils::create_multi_query;
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use futures::pin_mut;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json, ToSql};
+use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use tokio_postgres::Client;
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::{Client, CopyInSink};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[allow(non_camel_case_types)]
@@ -260,21 +263,27 @@ impl Object {
     }
 
     pub async fn get_objects_with_relations(
-        id: &Vec<DieselUlid>,
+        ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<ObjectWithRelations>> {
-        let query = "SELECT o.*,
+        let query_one = "SELECT o.*,
         COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
         COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
         COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
         COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
         FROM objects o
         LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
-        WHERE o.id IN $1
-        GROUP BY o.id;";
-        let prepared = client.prepare(query).await?;
+        WHERE o.id IN ";
+        let query_three = " GROUP BY o.id;";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two}{query_three}");
+        let prepared = client.prepare(&query).await?;
         let objects = client
-            .query(&prepared, &[&id])
+            .query(&prepared, &inserts)
             .await?
             .iter()
             .map(ObjectWithRelations::from_row)
@@ -283,7 +292,7 @@ impl Object {
     }
     pub async fn update(&self, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
-        SET description = $2, key_values = $3, data_class = $4)
+        SET description = $2, key_values = $3, data_class = $4
         WHERE id = $1 ;";
 
         let prepared = client.prepare(query).await?;
@@ -337,10 +346,16 @@ impl Object {
         Ok(())
     }
     pub async fn set_deleted(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
-        let query = "UPDATE objects 
+        let query_one = "UPDATE objects 
             SET object_status = 'DELETED'
-            WHERE id IN $1";
-        let prepared = client.prepare(query).await?;
+            WHERE id IN ";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two};");
+        let prepared = client.prepare(&query).await?;
         client.execute(&prepared, &[ids]).await?;
         Ok(())
     }
@@ -366,10 +381,10 @@ impl Object {
         }
     }
     pub async fn archive(
-        id: &Vec<DieselUlid>,
+        ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<ObjectWithRelations>> {
-        let query = " WITH o AS 
+        let query_one = " WITH o AS 
             (UPDATE objects 
             SET dynamic=false 
             WHERE objects.id IN $id
@@ -381,11 +396,17 @@ impl Object {
             COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
             FROM objects o
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
-            WHERE o.id IN $id
-            GROUP BY o.id;";
-        let prepared = client.prepare(query).await?;
+            WHERE o.id IN ";
+        let query_two = " GROUP BY o.id;";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_insert = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_insert}{query_two}");
+        let prepared = client.prepare(&query).await?;
         let result: Vec<ObjectWithRelations> = client
-            .query(&prepared, &[id])
+            .query(&prepared, &inserts)
             .await?
             .iter()
             .map(ObjectWithRelations::from_row)
@@ -393,21 +414,73 @@ impl Object {
         Ok(result)
     }
     pub async fn get_objects(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
-        let query = "SELECT * FROM objects WHERE objects.id IN $1";
-        let prepared = client.prepare(query).await?;
+        let query_one = "SELECT * FROM objects WHERE objects.id IN ";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_insert = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_insert};");
+        let prepared = client.prepare(&query).await?;
         Ok(client
-            .query(&prepared, &[ids])
+            .query(&prepared, &inserts)
             .await?
             .iter()
             .map(Object::from_row)
             .collect())
     }
-    pub async fn batch_create(ids: &Vec<Object>, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects
-            (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints) 
-            VALUES $1;";
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[ids]).await?;
+    pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
+        //let query = "INSERT INTO objects
+        //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
+        //    VALUES $1;";
+        let query = "COPY objects \
+        (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
+        FROM STDIN BINARY";
+        let sink: CopyInSink<_> = client.copy_in(query).await?;
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::UUID,
+                Type::INT4,
+                Type::VARCHAR,
+                Type::VARCHAR,
+                Type::UUID,
+                Type::INT8,
+                Type::INT4,
+                Type::JSONB,
+                ObjectStatus::get_type(),
+                DataClass::get_type(),
+                ObjectType::get_type(),
+                Type::JSONB,
+                Type::JSONB,
+                Type::BOOL,
+                Type::JSONB,
+            ],
+        );
+        pin_mut!(writer);
+        for object in objects {
+            writer
+                .as_mut()
+                .write(&[
+                    &object.id,
+                    &object.revision_number,
+                    &object.name,
+                    &object.description,
+                    &object.created_by,
+                    &object.content_len,
+                    &object.count,
+                    &object.key_values,
+                    &object.object_status,
+                    &object.data_class,
+                    &object.object_type,
+                    &object.external_relations,
+                    &object.hashes,
+                    &object.dynamic,
+                    &object.endpoints,
+                ])
+                .await?;
+        }
+        writer.finish().await?;
         Ok(())
     }
 }
