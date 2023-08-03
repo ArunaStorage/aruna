@@ -6,12 +6,12 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(
-        database_host: &str,
-        database_port: u16,
-        database_name: &str,
-        database_user: &str,
-    ) -> Result<Self> {
+    pub fn new() -> Result<Self> {
+        let database_host = dotenvy::var("PERSISTENCE_DB_HOST")?;
+        let database_port = dotenvy::var("PERSISTENCE_DB_PORT")?.parse()?;
+        let database_name = dotenvy::var("PERSISTENCE_DB_NAME")?;
+        let database_user = dotenvy::var("PERSISTENCE_DB_USER")?;
+
         let mut cfg = Config::new();
         cfg.host = Some(database_host.to_string());
         cfg.port = Some(database_port);

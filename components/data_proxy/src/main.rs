@@ -21,8 +21,6 @@ async fn main() {
     let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
     // Internal backchannel Aruna -> Dproxy
     let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
-    // Optional Bundler URL
-    let external_bundler_url = dotenvy::var("BUNDLER_URL").ok();
 
     env_logger::Builder::new()
         .format(|buf, record| {

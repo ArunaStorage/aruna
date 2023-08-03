@@ -1,13 +1,25 @@
+use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use aruna_rust_api::api::storage::models::v2::{DataClass, KeyValue, Status};
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum DbPermissionLevel {
+    DENY,
+    NONE,
+    READ,
+    APPEND,
+    WRITE,
+    ADMIN,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
     pub id: DieselUlid,
+    pub token_id: Option<String>,
+    pub secret: String,
+    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,6 +55,7 @@ pub struct Object {
     dynamic: bool,
     endpoints: Vec<DieselUlid>,
     children: HashSet<DieselUlid>,
+    synced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
