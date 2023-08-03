@@ -4,7 +4,10 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
+use ahash::RandomState;
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::storage::models::v2::User as APIUser;
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;

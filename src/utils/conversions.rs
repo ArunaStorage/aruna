@@ -672,3 +672,13 @@ impl From<DbPermissionLevel> for i32 {
         }
     }
 }
+
+impl DBUser {
+    pub fn into_redacted(self) -> User {
+        let mut user: User = self.into();
+        user.email = "_____".to_string();
+        user.display_name = "_____".to_string();
+        user.external_id = "_____".to_string();
+        user
+    }
+}

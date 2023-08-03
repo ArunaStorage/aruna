@@ -4,7 +4,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::user_request_types::{
-    ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
+    ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
@@ -143,14 +143,68 @@ impl UserService for UserServiceImpl {
         &self,
         request: Request<GetUserRequest>,
     ) -> Result<Response<GetUserResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = GetUser::GetUser(request.into_inner());
+        let user_id = match tonic_invalid!(request.get_user(), "Invalid user id") {
+            (Some(id), ctx) => {
+                tonic_auth!(
+                    self.authorizer.check_permissions(&token, vec![ctx]).await,
+                    "Unauthorized"
+                );
+                id
+            }
+            (None, ctx) => tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            )
+            .ok_or_else(|| Status::internal("GetUser error"))?,
+        };
+        let user = self.cache.get_user(&user_id);
+        let response = GetUserResponse {
+            user: match user {
+                Some(user) => Some(user.into()),
+                None => None,
+            },
+        };
+        return_with_log!(response);
     }
 
     async fn get_user_redacted(
         &self,
         request: Request<GetUserRedactedRequest>,
     ) -> Result<Response<GetUserRedactedResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = GetUser::GetUserRedacted(request.into_inner());
+        let user_id = match tonic_invalid!(request.get_user(), "Invalid user id") {
+            (Some(id), ctx) => {
+                tonic_auth!(
+                    self.authorizer.check_permissions(&token, vec![ctx]).await,
+                    "Unauthorized"
+                );
+                id
+            }
+            (None, ctx) => tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            )
+            .ok_or_else(|| Status::internal("GetUser error"))?,
+        };
+        let user = self.cache.get_user(&user_id);
+        let response = GetUserRedactedResponse {
+            user: match user {
+                Some(user) => Some(user.into_redacted()),
+                None => None,
+            },
+        };
+        return_with_log!(response);
     }
 
     async fn update_user_display_name(
@@ -168,7 +222,7 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         )
-        .ok_or_else(|| tonic::Status::invalid_argument("No user id found"))?;
+        .ok_or_else(|| Status::invalid_argument("No user id found"))?;
         let user = tonic_internal!(
             self.database_handler
                 .update_display_name(request, user_id)
@@ -176,11 +230,12 @@ impl UserService for UserServiceImpl {
             "Internal deactivate user error"
         );
 
-        self.cache.update_user(&user_id, user);
+        self.cache.update_user(&user_id, user.clone());
 
-        return_with_log!(UpdateUserDisplayNameResponse {
-            user: Some(user.into())
-        });
+        let response = UpdateUserDisplayNameResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
     }
 
     async fn update_user_email(
@@ -199,31 +254,59 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         )
-        .ok_or_else(|| tonic::Status::invalid_argument("No user id found"))?;
+        .ok_or_else(|| Status::invalid_argument("No user id found"))?;
 
         let user = tonic_internal!(
             self.database_handler.update_email(request, user_id).await,
             "Internal deactivate user error"
         );
-        self.cache.update_user(&user_id, user);
+        self.cache.update_user(&user_id, user.clone());
 
-        return_with_log!(UpdateUserEmailResponse {
-            user: Some(user.into())
-        });
+        let response = UpdateUserEmailResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
     }
 
     async fn get_not_activated_users(
         &self,
         request: Request<GetNotActivatedUsersRequest>,
     ) -> Result<Response<GetNotActivatedUsersResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let ctx = Context::admin();
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let users = self.cache.get_all_deactivated().await;
+
+        let response = GetNotActivatedUsersResponse { users };
+        return_with_log!(response);
     }
 
     async fn get_all_users(
         &self,
         request: Request<GetAllUsersRequest>,
     ) -> Result<Response<GetAllUsersResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let ctx = Context::admin();
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let user = self.cache.get_all().await;
+
+        let response = GetAllUsersResponse { user };
+        return_with_log!(response);
     }
 
     async fn get_s3_credentials_user(
