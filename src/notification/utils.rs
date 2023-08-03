@@ -26,9 +26,9 @@ pub fn generate_resource_subject(
     };
 
     if include_sub_resources {
-        format!("{}_", base_subject)
-    } else {
         format!("{}>", base_subject)
+    } else {
+        format!("{}_", base_subject)
     }
 }
 
