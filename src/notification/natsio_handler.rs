@@ -210,6 +210,43 @@ impl EventHandler for NatsIoHandler {
 }
 
 impl NatsIoHandler {
+    /// Initialize a new Nats.io jetsream client
+    pub async fn new(
+        nats_client: async_nats::Client,
+        secret: String,
+        stream_name: Option<String>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // Create Nats.io Jetstream client
+        let jetstream_context = async_nats::jetstream::new(nats_client);
+
+        // Evaluate stream name
+        let stream_name = match stream_name {
+            Some(value) => value,
+            None => STREAM_NAME.to_string(),
+        };
+
+        // Create minimalistic stream config
+        let stream_config = async_nats::jetstream::stream::Config {
+            name: stream_name.clone(),
+            subjects: STREAM_SUBJECTS
+                .into_iter()
+                .map(|subject| subject.into())
+                .collect(),
+            ..Default::default()
+        };
+
+        // Create stream to publish messages
+        let stream = jetstream_context
+            .get_or_create_stream(stream_config)
+            .await?;
+
+        Ok(NatsIoHandler {
+            jetstream_context,
+            stream,
+            reply_secret: secret,
+        })
+    }
+
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
     pub async fn register_resource_event(
         &self,
