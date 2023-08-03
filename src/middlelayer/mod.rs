@@ -10,3 +10,5 @@ pub mod snapshot_db_handler;
 pub mod snapshot_request_types;
 pub mod update_db_handler;
 pub mod update_request_types;
+pub mod user_db_handler;
+pub mod user_request_types;
