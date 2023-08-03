@@ -104,14 +104,14 @@ impl User {
                 .0
                 .permissions
                 .iter()
-                .map(|(resource_id, object_mapping)| {
+                .map(|item| {
                     (
-                        *resource_id,
-                        match object_mapping {
+                        *item.key(),
+                        match *item.value() {
                             ObjectMapping::PROJECT(perm)
                             | ObjectMapping::COLLECTION(perm)
                             | ObjectMapping::DATASET(perm)
-                            | ObjectMapping::OBJECT(perm) => *perm,
+                            | ObjectMapping::OBJECT(perm) => perm,
                         },
                     )
                 })

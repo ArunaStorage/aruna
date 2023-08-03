@@ -24,7 +24,7 @@ async fn create_object() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![obj_id]);
+    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
     let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
@@ -46,15 +46,25 @@ async fn get_object_with_relations_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = vec![
-        dataset_id,
-        collection_one,
-        collection_two,
-        object_one,
-        object_two,
+    let object_id_map = vec![
+        ObjectMapping::DATASET(dataset_id),
+        ObjectMapping::COLLECTION(collection_one),
+        ObjectMapping::COLLECTION(collection_two),
+        ObjectMapping::OBJECT(object_one),
+        ObjectMapping::OBJECT(object_two),
     ];
+    let object_vec = object_id_map
+        .iter()
+        .map(|mapping| match mapping {
+            ObjectMapping::PROJECT(id)
+            | ObjectMapping::COLLECTION(id)
+            | ObjectMapping::DATASET(id)
+            | ObjectMapping::OBJECT(id) => *id,
+        })
+        .collect::<Vec<_>>();
+
     let archive = object_vec.clone();
-    let user = new_user(object_vec.clone());
+    let user = new_user(object_id_map);
     user.create(client).await.unwrap();
 
     let create_dataset = new_object(user.id, dataset_id, ObjectType::DATASET);
@@ -90,12 +100,15 @@ async fn get_object_with_relations_test() {
         object: create_dataset,
         inbound: Json(DashMap::default()),
         inbound_belongs_to: Json(DashMap::from_iter([
-            (create_relation_one.origin_pid, create_relation_one),
-            (create_relation_two.origin_pid, create_relation_two),
+            (create_relation_one.origin_pid, create_relation_one.clone()),
+            (create_relation_two.origin_pid, create_relation_two.clone()),
         ])),
         outbound: Json(DashMap::default()),
         outbound_belongs_to: Json(DashMap::from_iter([
-            (create_relation_three.target_pid, create_relation_three),
+            (
+                create_relation_three.target_pid,
+                create_relation_three.clone(),
+            ),
             (
                 create_relation_four.target_pid,
                 create_relation_four.clone(),
@@ -177,7 +190,7 @@ async fn test_keyvals() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![obj_id]);
+    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
     let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
@@ -245,7 +258,7 @@ async fn test_external_relations() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![obj_id]);
+    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
     let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
@@ -318,7 +331,7 @@ async fn test_updates() {
     let col_id = DieselUlid::generate();
     let proj_id = DieselUlid::generate();
 
-    let user = new_user(vec![obj_id]);
+    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
     let mut create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
@@ -382,7 +395,12 @@ async fn test_delete() {
     for _ in 1..5 {
         obj_ids.push(DieselUlid::generate());
     }
-    let user = new_user(obj_ids.clone());
+    let user = new_user(
+        obj_ids
+            .iter()
+            .map(|id| ObjectMapping::OBJECT(*id))
+            .collect::<Vec<_>>(),
+    );
     user.create(client).await.unwrap();
 
     let mut objects = Vec::new();
@@ -402,18 +420,21 @@ async fn test_delete() {
     }
 }
 
-fn new_user(object_ids: Vec<DieselUlid>) -> User {
+fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
     let attributes = Json(UserAttributes {
         global_admin: false,
         service_account: false,
         custom_attributes: Vec::new(),
         tokens: DashMap::default(),
         trusted_endpoints: DashMap::default(),
-        permissions: DashMap::from_iter(
-            object_ids
-                .iter()
-                .map(|o| (*o, aruna_server::database::enums::DbPermissionLevel::WRITE)),
-        ),
+        permissions: DashMap::from_iter(object_ids.iter().map(|o| match o {
+            ObjectMapping::PROJECT(id) => (*id, ObjectMapping::PROJECT(DbPermissionLevel::WRITE)),
+            ObjectMapping::COLLECTION(id) => {
+                (*id, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE))
+            }
+            ObjectMapping::DATASET(id) => (*id, ObjectMapping::DATASET(DbPermissionLevel::WRITE)),
+            ObjectMapping::OBJECT(id) => (*id, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
+        })),
     });
     User {
         id: DieselUlid::generate(),

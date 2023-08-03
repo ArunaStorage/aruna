@@ -3,7 +3,9 @@ use postgres_types::{FromSql, Kind, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+#[derive(
+    Debug, Default, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize,
+)]
 pub enum ObjectStatus {
     #[default]
     INITIALIZING,
@@ -63,7 +65,7 @@ pub enum ObjectMapping<T> {
 }
 
 #[derive(
-    Copy, 
+    Copy,
     Debug,
     ToSql,
     FromSql,

@@ -38,7 +38,8 @@ impl SearchService for SearchServiceImpl {
 
         let _ = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::default()]),
+                .check_permissions(&token, vec![Context::default()])
+                .await,
             "Permission denied"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;

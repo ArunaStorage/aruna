@@ -10,7 +10,7 @@ use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
-        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
+        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
         ObjectWithRelations,
     },
     enums::{DataClass, ObjectStatus, ObjectType},
