@@ -10,12 +10,13 @@ use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
-        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
+        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
         ObjectWithRelations,
     },
     enums::{DataClass, ObjectStatus, ObjectType},
 };
 use crate::middlelayer::create_request_types::Parent;
+use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::{
@@ -30,6 +31,7 @@ use aruna_rust_api::api::storage::models::v2::{
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tonic::metadata::MetadataMap;
@@ -38,6 +40,9 @@ pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
+//noinspection ALL
+//noinspection ALL
+//noinspection ALL
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")
@@ -112,11 +117,12 @@ impl TryFrom<i32> for KeyValueVariant {
 
 impl TryFrom<&Vec<ExternalRelation>> for ExternalRelations {
     type Error = anyhow::Error;
+    //noinspection ALL
     fn try_from(ex_rels: &Vec<ExternalRelation>) -> Result<Self> {
-        let mut relations: Vec<DBExternalRelation> = Vec::new();
+        let relations: DashMap<String, DBExternalRelation, RandomState> = DashMap::default();
         for r in ex_rels {
-            let rs = r.try_into()?;
-            relations.push(rs);
+            let rs: DBExternalRelation = r.try_into()?;
+            relations.insert(r.identifier.clone(), rs);
         }
         Ok(ExternalRelations(relations))
     }
@@ -202,6 +208,7 @@ impl From<ObjectStatus> for Status {
 }
 
 impl From<KeyValues> for Vec<KeyValue> {
+    //noinspection ALL
     fn from(keyval: KeyValues) -> Self {
         keyval
             .0
@@ -450,7 +457,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
              .0
             .into_iter()
             .map(|r| Relation {
-                relation: Some(RelationEnum::External(r.into())),
+                relation: Some(RelationEnum::External(r.1.into())),
             })
             .collect();
         relations.append(&mut inbound);
@@ -571,7 +578,7 @@ pub fn from_db_object(
          .0
         .into_iter()
         .map(|r| Relation {
-            relation: Some(RelationEnum::External(r.into())),
+            relation: Some(RelationEnum::External(r.1.into())),
         })
         .collect();
     if let Some(i) = internal {
@@ -702,7 +709,6 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
                     origin_type,
                     target_pid,
                     target_type,
-                    is_persistent: false,
                     relation_name,
                 })
             }
@@ -718,7 +724,6 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
                     relation_name,
                     target_pid,
                     target_type,
-                    is_persistent: false,
                 })
             }
             _ => Err(anyhow!("Relation type not found")),

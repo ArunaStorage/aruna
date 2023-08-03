@@ -28,25 +28,19 @@ impl DatabaseHandler {
                         })
                         .collect();
                     objects.push(id);
-                    for id in objects.clone() {
-                        Object::set_deleted(&id, transaction_client).await?
-                    }
+                    Object::set_deleted(&objects, transaction_client).await?;
                     objects
                 } else {
-                    Object::set_deleted(&id, transaction_client).await?;
+                    Object::set_deleted(&vec![id], transaction_client).await?;
                     vec![id]
                 }
             }
             _ => {
-                Object::set_deleted(&id, transaction_client).await?;
+                Object::set_deleted(&vec![id], transaction_client).await?;
                 vec![id]
             }
         };
-        let mut result = Vec::new();
-        for id in resources {
-            let object = Object::get_object_with_relations(&id, transaction_client).await?;
-            result.push(object);
-        }
+        let result = Object::get_objects_with_relations(&resources, transaction_client).await?;
         transaction.commit().await?;
         Ok(result)
     }

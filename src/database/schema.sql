@@ -7,7 +7,7 @@ BEGIN
             'INITIALIZING',
             'VALIDATING',
             'AVAILABLE',
-	    'UNAVAILABLE',
+	        'UNAVAILABLE',
             'ERROR',
             'DELETED'
         );
@@ -137,7 +137,6 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     relation_name VARCHAR(511) NOT NULL,
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_type "ObjectType" NOT NULL,
-    is_persistent BOOL NOT NULL DEFAULT FALSE,
     FOREIGN KEY (origin_pid, origin_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
     FOREIGN KEY (target_pid, target_type) REFERENCES objects(id, object_type) ON DELETE CASCADE
 );
@@ -149,7 +148,8 @@ CREATE INDEX IF NOT EXISTS target_pid_idx ON internal_relations (target_pid);
 CREATE TABLE IF NOT EXISTS pub_keys (
     id SMALLSERIAL PRIMARY KEY, -- This is a serial to make jwt tokens smaller
     proxy UUID REFERENCES endpoints(id) ON DELETE CASCADE,
-    pubkey TEXT NOT NULL
+    pubkey TEXT NOT NULL,
+    UNIQUE(pubkey)
 );
 
 /* ----- Notification Service -------------------------------------- */

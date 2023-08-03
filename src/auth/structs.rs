@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 pub enum ContextVariant {
     Activated,
     ResourceContext((DieselUlid, DbPermissionLevel)),
-    User(DieselUlid),
+    User((DieselUlid, DbPermissionLevel)),
+    GlobalProxy,
     GlobalAdmin,
 }
 
@@ -29,9 +30,9 @@ impl Context {
         }
     }
 
-    pub fn user_ctx(id: DieselUlid) -> Self {
+    pub fn user_ctx(id: DieselUlid, level: DbPermissionLevel) -> Self {
         Self {
-            variant: ContextVariant::User(id),
+            variant: ContextVariant::User((id, level)),
             allow_service_account: false,
             is_self: false,
         }
@@ -47,9 +48,17 @@ impl Context {
 
     pub fn self_ctx() -> Self {
         Self {
-            variant: ContextVariant::User(DieselUlid::default()),
+            variant: ContextVariant::User((DieselUlid::default(), DbPermissionLevel::ADMIN)),
             allow_service_account: false,
             is_self: true,
+        }
+    }
+
+    pub fn proxy() -> Self {
+        Self {
+            variant: ContextVariant::GlobalProxy,
+            allow_service_account: false,
+            is_self: false,
         }
     }
 }

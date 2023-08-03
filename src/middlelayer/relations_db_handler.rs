@@ -1,4 +1,5 @@
 use crate::database::crud::CrudDb;
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -17,18 +18,31 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        Object::add_external_relations(&resource.id, transaction_client, labels_to_add.external)
+        if !labels_to_add.external.is_empty() {
+            Object::add_external_relations(
+                &resource.id,
+                transaction_client,
+                labels_to_add.external,
+            )
             .await?;
-        for internal_to_add in labels_to_add.internal {
-            internal_to_add.create(transaction_client).await?;
         }
-        for external_to_remove in labels_to_remove.external {
-            resource
-                .remove_external_relation(transaction_client, external_to_remove)
-                .await?;
+        if !labels_to_add.internal.is_empty() {
+            InternalRelation::batch_create(&labels_to_add.internal, transaction_client).await?;
         }
-        for internal_to_remove in labels_to_remove.internal {
-            internal_to_remove.delete(transaction_client).await?;
+        if !labels_to_remove.external.is_empty() {
+            Object::remove_external_relation(
+                &resource.id,
+                transaction_client,
+                labels_to_remove.external,
+            )
+            .await?;
+        }
+        if !labels_to_remove.internal.is_empty() {
+            InternalRelation::batch_delete(
+                &labels_to_remove.internal.iter().map(|r| r.id).collect(),
+                transaction_client,
+            )
+            .await?;
         }
         let object = Object::get_object_with_relations(&resource.id, transaction_client).await?;
         transaction.commit().await?;

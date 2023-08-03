@@ -6,5 +6,7 @@ pub mod delete_request_types;
 pub mod query_handler;
 pub mod relations_db_handler;
 pub mod relations_request_types;
+pub mod snapshot_db_handler;
+pub mod snapshot_request_types;
 pub mod update_db_handler;
 pub mod update_request_types;

@@ -4,6 +4,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -47,7 +48,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::default();
 
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         )
         .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
@@ -104,7 +105,7 @@ impl ProjectService for ProjectServiceImpl {
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::READ, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -147,11 +148,11 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = NameUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -162,11 +163,11 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
-
-        Ok(Response::new(UpdateProjectNameResponse {
+            tonic_internal!(project.try_into(), "Project conversion error");
+        let response = UpdateProjectNameResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_description(
         &self,
@@ -180,11 +181,11 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = DescriptionUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -195,11 +196,12 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
 
-        Ok(Response::new(UpdateProjectDescriptionResponse {
+        let response = UpdateProjectDescriptionResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_key_values(
         &self,
@@ -213,11 +215,11 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = KeyValueUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -228,11 +230,12 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
+            tonic_internal!(project.try_into(), "Project conversion error");
 
-        Ok(Response::new(UpdateProjectKeyValuesResponse {
+        let response = UpdateProjectKeyValuesResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn update_project_data_class(
         &self,
@@ -246,11 +249,11 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         let request = DataClassUpdate::Project(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]),
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -261,16 +264,50 @@ impl ProjectService for ProjectServiceImpl {
         self.cache
             .update_object(&project.object.id, project.clone());
         let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Collection conversion error");
-
-        Ok(Response::new(UpdateProjectDataClassResponse {
+            tonic_internal!(project.try_into(), "Project conversion error");
+        let response = UpdateProjectDataClassResponse {
             project: Some(project.into_inner()?),
-        }))
+        };
+        return_with_log!(response);
     }
     async fn archive_project(
         &self,
-        _request: Request<ArchiveProjectRequest>,
+        request: Request<ArchiveProjectRequest>,
     ) -> Result<Response<ArchiveProjectResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = SnapshotRequest::Project(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id.");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let (old_id, resources) = tonic_internal!(
+            self.database_handler.snapshot(request).await,
+            "Internal database error."
+        );
+        for resource in &resources {
+            self.cache
+                .update_object(&resource.object.id, resource.clone());
+        }
+        let project: generic_resource::Resource = tonic_internal!(
+            self.cache
+                .get_object(&old_id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?
+                .try_into(),
+            "Project conversion error"
+        );
+        let response = ArchiveProjectResponse {
+            project: Some(project.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }

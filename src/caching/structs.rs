@@ -13,7 +13,7 @@ impl ObjectWithRelations {
         self.outbound_belongs_to
             .0
             .iter()
-            .map(|x| x.target_pid)
+            .map(|x| *x.key())
             .collect::<Vec<_>>()
     }
 
@@ -21,7 +21,7 @@ impl ObjectWithRelations {
         self.inbound_belongs_to
             .0
             .iter()
-            .map(|x| x.origin_pid)
+            .map(|x| *x.key())
             .collect::<Vec<_>>()
     }
 }
