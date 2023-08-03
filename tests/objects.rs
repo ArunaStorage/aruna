@@ -1,7 +1,7 @@
 use aruna_server::database::dsls::object_dsl::{
     DefinedVariant, ExternalRelation, KeyValue, KeyValueVariant,
 };
-use aruna_server::database::enums::{DataClass, ObjectType};
+use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::{
@@ -52,6 +52,7 @@ async fn get_object_with_relations_test() {
         object_one,
         object_two,
     ];
+    let archive = object_vec.clone();
     let user = new_user(object_vec.clone());
     user.create(client).await.unwrap();
 
@@ -111,7 +112,7 @@ async fn get_object_with_relations_test() {
     let objects_with_relations = Object::get_objects_with_relations(&object_vec, client)
         .await
         .unwrap();
-    transaction.commit().await.unwrap();
+
     assert!(!objects_with_relations.is_empty());
     let compare_collection_one = ObjectWithRelations {
         object: create_collection_one,
@@ -162,7 +163,14 @@ async fn get_object_with_relations_test() {
     ];
     assert!(objects_with_relations
         .iter()
-        .all(|o| compare_owrs.contains(o)))
+        .all(|o| compare_owrs.contains(o)));
+
+    // Test archive
+    let archived_objects = Object::archive(&archive, client).await.unwrap();
+    transaction.commit().await.unwrap();
+    for o in archived_objects {
+        assert!(!o.object.dynamic);
+    }
 }
 #[tokio::test]
 async fn test_keyvals() {
@@ -360,8 +368,40 @@ async fn test_updates() {
         .await
         .unwrap();
     let updated_project = Object::get(proj_id, client).await.unwrap().unwrap();
+    transaction.commit().await.unwrap();
     create_project.data_class = new_dataclass;
     assert_eq!(updated_project, create_project);
+}
+#[tokio::test]
+async fn test_delete() {
+    let db = init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
+
+    let mut obj_ids = Vec::new();
+    for _ in 1..5 {
+        obj_ids.push(DieselUlid::generate());
+    }
+    let user = new_user(obj_ids.clone());
+    user.create(client).await.unwrap();
+
+    let mut objects = Vec::new();
+    for id in &obj_ids {
+        objects.push(new_object(user.id, *id, ObjectType::OBJECT));
+    }
+    Object::batch_create(&objects, client).await.unwrap();
+    let objects = Object::get_objects(&obj_ids, client).await.unwrap();
+    for o in objects {
+        assert_eq!(o.object_status, ObjectStatus::AVAILABLE);
+    }
+    Object::set_deleted(&obj_ids, client).await.unwrap();
+    let deleted = Object::get_objects(&obj_ids, client).await.unwrap();
+    transaction.commit().await.unwrap();
+    for o in deleted {
+        assert_eq!(o.object_status, ObjectStatus::DELETED);
+    }
 }
 
 fn new_user(object_ids: Vec<DieselUlid>) -> User {

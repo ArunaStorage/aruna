@@ -356,7 +356,7 @@ impl Object {
         let query_two = create_multi_query(&inserts);
         let query = format!("{query_one}{query_two};");
         let prepared = client.prepare(&query).await?;
-        client.execute(&prepared, &[ids]).await?;
+        client.execute(&prepared, &inserts).await?;
         Ok(())
     }
     pub fn get_cloned_persistent(&self, new_id: DieselUlid) -> Self {
@@ -387,8 +387,9 @@ impl Object {
         let query_one = " WITH o AS 
             (UPDATE objects 
             SET dynamic=false 
-            WHERE objects.id IN $id
-            RETURNING *)
+            WHERE objects.id IN ";
+        //$id
+        let query_three =  " RETURNING *)
         SELECT o.*,
             COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
             COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
@@ -397,13 +398,13 @@ impl Object {
             FROM objects o
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.id IN ";
-        let query_two = " GROUP BY o.id;";
+        let query_five = " GROUP BY o.id;";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in ids {
             inserts.push(id);
         }
         let query_insert = create_multi_query(&inserts);
-        let query = format!("{query_one}{query_insert}{query_two}");
+        let query = format!("{query_one}{query_insert}{query_three}{query_insert}{query_five}");
         let prepared = client.prepare(&query).await?;
         let result: Vec<ObjectWithRelations> = client
             .query(&prepared, &inserts)
