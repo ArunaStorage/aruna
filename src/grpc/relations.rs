@@ -1,6 +1,8 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::relations_request_types::ModifyRelations;
+use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
@@ -11,19 +13,56 @@ use tonic::Result;
 
 crate::impl_grpc_server!(RelationsServiceImpl);
 
+//noinspection SpellCheckingInspection
+//noinspection ALL
 #[tonic::async_trait]
 impl RelationsService for RelationsServiceImpl {
     /// ModifyRelation
     ///
     /// Status: BETA
     ///
-    /// Modifys all relations to / from a resource
+    /// Modifies all relations to / from a resource
     async fn modify_relations(
         &self,
-        _request: tonic::Request<ModifyRelationsRequest>,
+        request: tonic::Request<ModifyRelationsRequest>,
     ) -> Result<tonic::Response<ModifyRelationsResponse>, tonic::Status> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = ModifyRelations(request.into_inner());
+
+        let (resource, labels_info) = tonic_invalid!(
+            self.database_handler.get_resource(request).await,
+            "Request not valid"
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, labels_info.resources_to_check)
+                .await,
+            "Unauthorized"
+        )
+        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+
+        let object = tonic_internal!(
+            self.database_handler
+                .modify_relations(
+                    resource,
+                    labels_info.labels_to_add,
+                    labels_info.labels_to_remove
+                )
+                .await,
+            "Database error"
+        );
+
+        self.cache.update_object(&object.object.id, object.clone());
+
+        return_with_log!(ModifyRelationsResponse {});
     }
+
     /// GetHierarchy
     ///
     /// Status: BETA
@@ -61,11 +100,11 @@ impl RelationsService for RelationsServiceImpl {
     //         );
 
     //         let mut client =
-    //             tonic_internal!(self.database.get_client().await, "Database not avaliable.");
+    //             tonic_internal!(self.database.get_client().await, "Database not available.");
 
     //         let transaction = client.transaction().await.map_err(|e| {
     //             log::error!("{}", e);
-    //             tonic::Status::unavailable("Database not avaliable.")
+    //             tonic::Status::unavailable("Database not available.")
     //         })?;
 
     //         let client = transaction.client();
@@ -371,11 +410,11 @@ impl RelationsService for RelationsServiceImpl {
     //         }
     //         Ok(tonic::Response::new(ModifyRelationsResponse {}))
     //     }
-    //     async fn get_hierachy(
+    //     async fn get_hierarchy(
     //         &self,
-    //         request: Request<GetHierachyRequest>,
-    //     ) -> Result<Response<GetHierachyResponse>> {
-    //         log::info!("Recieved GetHierarchyRequest.");
+    //         request: Request<GetHierarchyRequest>,
+    //     ) -> Result<Response<GetHierarchyResponse>> {
+    //         log::info!("Received GetHierarchyRequest.");
     //         log::debug!("{:?}", &request);
     //         let token = get_token_from_md(request.metadata()).map_err(|e| {
     //             log::debug!("{}", e);
@@ -401,12 +440,12 @@ impl RelationsService for RelationsServiceImpl {
 
     //         let mut client = self.database.get_client().await.map_err(|e| {
     //             log::error!("{}", e);
-    //             tonic::Status::unavailable("Database not avaliable.")
+    //             tonic::Status::unavailable("Database not available.")
     //         })?;
 
     //         let transaction = client.transaction().await.map_err(|e| {
     //             log::error!("{}", e);
-    //             tonic::Status::unavailable("Database not avaliable.")
+    //             tonic::Status::unavailable("Database not available.")
     //         })?;
 
     //         let client = transaction.client();

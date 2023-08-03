@@ -1,9 +1,12 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::delete_request_types::DeleteRequest;
+use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -116,6 +119,48 @@ impl DatasetService for DatasetServiceImpl {
         return_with_log!(response);
     }
 
+    async fn get_datasets(
+        &self,
+        _request: Request<GetDatasetsRequest>,
+    ) -> Result<Response<GetDatasetsResponse>> {
+        todo!()
+    }
+
+    async fn delete_dataset(
+        &self,
+        request: Request<DeleteDatasetRequest>,
+    ) -> Result<Response<DeleteDatasetResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = DeleteRequest::Dataset(request.into_inner());
+        let id = tonic_invalid!(request.get_id(), "Invalid dataset id");
+
+        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized."
+        );
+
+        let updates: Vec<ObjectWithRelations> = tonic_internal!(
+            self.database_handler.delete_resource(request).await,
+            "Internal database error"
+        );
+
+        for o in updates {
+            self.cache.update_object(&o.object.id, o.clone());
+        }
+
+        let response = DeleteDatasetResponse {};
+
+        return_with_log!(response);
+    }
+
     async fn update_dataset_name(
         &self,
         request: Request<UpdateDatasetNameRequest>,
@@ -137,15 +182,19 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = match tonic_internal!(
+        let dataset = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&dataset.object.id, dataset.clone());
+        let dataset: generic_resource::Resource =
+            tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetNameResponse { dataset }))
+        let response = UpdateDatasetNameResponse {
+            dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
     }
 
     async fn update_dataset_description(
@@ -168,17 +217,53 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = match tonic_internal!(
+        let dataset = tonic_internal!(
             self.database_handler.update_description(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&dataset.object.id, dataset.clone());
+        let dataset: generic_resource::Resource =
+            tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetDescriptionResponse {
-            dataset,
-        }))
+        let response = UpdateDatasetDescriptionResponse {
+            dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
+    }
+    async fn update_dataset_key_values(
+        &self,
+        request: Request<UpdateDatasetKeyValuesRequest>,
+    ) -> Result<Response<UpdateDatasetKeyValuesResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = KeyValueUpdate::Dataset(request.into_inner());
+        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
+        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let dataset = tonic_internal!(
+            self.database_handler.update_keyvals(request).await,
+            "Internal database error."
+        );
+        self.cache
+            .update_object(&dataset.object.id, dataset.clone());
+        let dataset: generic_resource::Resource =
+            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+
+        let response = UpdateDatasetKeyValuesResponse {
+            dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
     }
 
     async fn update_dataset_data_class(
@@ -201,22 +286,24 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = match tonic_internal!(
+        let dataset = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
-        };
+        );
+        self.cache
+            .update_object(&dataset.object.id, dataset.clone());
+        let dataset: generic_resource::Resource =
+            tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
-        Ok(tonic::Response::new(UpdateDatasetDataClassResponse {
-            dataset,
-        }))
+        let response = UpdateDatasetDataClassResponse {
+            dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
     }
-    async fn update_dataset_key_values(
+    async fn snapshot_dataset(
         &self,
-        request: Request<UpdateDatasetKeyValuesRequest>,
-    ) -> Result<Response<UpdateDatasetKeyValuesResponse>> {
+        request: Request<SnapshotDatasetRequest>,
+    ) -> Result<Response<SnapshotDatasetResponse>> {
         log_received!(&request);
 
         let token = tonic_auth!(
@@ -224,44 +311,35 @@ impl DatasetService for DatasetServiceImpl {
             "Token authentication error."
         );
 
-        let request = KeyValueUpdate::Dataset(request.into_inner());
+        let request = SnapshotRequest::Dataset(request.into_inner());
         let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
+        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        let dataset = match tonic_internal!(
-            self.database_handler.update_keyvals(request).await,
+        let (new_id, dataset) = tonic_internal!(
+            self.database_handler.snapshot(request).await,
             "Internal database error."
-        ) {
-            generic_resource::Resource::Dataset(d) => Some(d),
-            _ => return Err(tonic::Status::unknown("This should not happen.")),
+        );
+
+        // For datasets, this vector only contains one entry
+        self.cache
+            .update_object(&dataset[0].object.id, dataset[0].clone());
+
+        let dataset: generic_resource::Resource = tonic_internal!(
+            self.cache
+                .get_object(&new_id)
+                .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?
+                .try_into(),
+            "Dataset conversion error"
+        );
+
+        let response = SnapshotDatasetResponse {
+            dataset: Some(dataset.into_inner()?),
         };
-
-        Ok(tonic::Response::new(UpdateDatasetKeyValuesResponse {
-            dataset,
-        }))
-    }
-
-    async fn delete_dataset(
-        &self,
-        _request: Request<DeleteDatasetRequest>,
-    ) -> Result<Response<DeleteDatasetResponse>> {
-        todo!()
-    }
-    async fn get_datasets(
-        &self,
-        _request: Request<GetDatasetsRequest>,
-    ) -> Result<Response<GetDatasetsResponse>> {
-        todo!()
-    }
-    async fn snapshot_dataset(
-        &self,
-        _request: Request<SnapshotDatasetRequest>,
-    ) -> Result<Response<SnapshotDatasetResponse>> {
-        todo!()
+        return_with_log!(response);
     }
 }

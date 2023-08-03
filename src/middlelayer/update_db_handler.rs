@@ -1,23 +1,17 @@
-use std::collections::HashMap;
-
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::Object;
+use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
 impl DatabaseHandler {
-    pub async fn update_dataclass(
-        &self,
-        request: DataClassUpdate,
-    ) -> Result<generic_resource::Resource> {
+    pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -36,9 +30,9 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        object_with_relations.try_into()
+        Ok(object_with_relations)
     }
-    pub async fn update_name(&self, request: NameUpdate) -> Result<generic_resource::Resource> {
+    pub async fn update_name(&self, request: NameUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -49,12 +43,12 @@ impl DatabaseHandler {
             Object::get_object_with_relations(&id, transaction_client).await?;
 
         transaction.commit().await?;
-        object_with_relations.try_into()
+        Ok(object_with_relations)
     }
     pub async fn update_description(
         &self,
         request: DescriptionUpdate,
-    ) -> Result<generic_resource::Resource> {
+    ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -64,12 +58,9 @@ impl DatabaseHandler {
         let object_with_relations =
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-        object_with_relations.try_into()
+        Ok(object_with_relations)
     }
-    pub async fn update_keyvals(
-        &self,
-        request: KeyValueUpdate,
-    ) -> Result<generic_resource::Resource> {
+    pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -95,14 +86,16 @@ impl DatabaseHandler {
         let object_with_relations =
             Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-
-        object_with_relations.try_into()
+        Ok(object_with_relations)
     }
     pub async fn update_grpc_object(
         &self,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
-    ) -> Result<(generic_resource::Resource, bool)> {
+    ) -> Result<(
+        ObjectWithRelations,
+        bool, // Creates revision
+    )> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -128,11 +121,11 @@ impl DatabaseHandler {
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
                 key_values: Json(req.get_all_kvs(old.clone())?),
-                hashes: Json(req.get_hashes(old)?),
+                hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
-                endpoints: Json(HashMap::new()),
+                endpoints: Json(req.get_endpoints(old)?),
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -154,11 +147,11 @@ impl DatabaseHandler {
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
                 key_values: Json(req.get_add_keyvals(old.clone())?),
-                hashes: old.hashes,
+                hashes: old.clone().hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: crate::database::enums::ObjectStatus::AVAILABLE,
                 dynamic: false,
-                endpoints: Json(HashMap::new()),
+                endpoints: Json(req.get_endpoints(old)?),
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -167,9 +160,9 @@ impl DatabaseHandler {
             }
             false
         };
-        let grpc_object = Object::get_object_with_relations(&id, transaction_client).await?;
+        let object_with_relations =
+            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
-
-        Ok((grpc_object.try_into()?, flag))
+        Ok((object_with_relations, flag))
     }
 }

@@ -4,16 +4,16 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
-use crate::database::dsls::object_dsl::Object;
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
-        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
+        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
         ObjectWithRelations,
     },
     enums::{DataClass, ObjectStatus, ObjectType},
 };
 use crate::middlelayer::create_request_types::Parent;
+use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::{
@@ -24,12 +24,18 @@ use aruna_rust_api::api::storage::models::v2::{
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
+use dashmap::DashMap;
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use tonic::metadata::MetadataMap;
 
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
+//noinspection ALL
+//noinspection ALL
+//noinspection ALL
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")
@@ -43,7 +49,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
             splitted.len()
         );
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[0] != "Bearer" {
@@ -52,7 +58,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[0]
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     if splitted[1].is_empty() {
@@ -61,7 +67,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
             splitted[1].len()
         );
 
-        return Err(anyhow!("Auhtorization flow error"));
+        return Err(anyhow!("Authorization flow error"));
     }
 
     Ok(splitted[1].to_string())
@@ -104,11 +110,12 @@ impl TryFrom<i32> for KeyValueVariant {
 
 impl TryFrom<&Vec<ExternalRelation>> for ExternalRelations {
     type Error = anyhow::Error;
+    //noinspection ALL
     fn try_from(ex_rels: &Vec<ExternalRelation>) -> Result<Self> {
-        let mut relations: Vec<DBExternalRelation> = Vec::new();
+        let relations: DashMap<String, DBExternalRelation, RandomState> = DashMap::default();
         for r in ex_rels {
-            let rs = r.try_into()?;
-            relations.push(rs);
+            let rs: DBExternalRelation = r.try_into()?;
+            relations.insert(r.identifier.clone(), rs);
         }
         Ok(ExternalRelations(relations))
     }
@@ -166,6 +173,7 @@ impl From<ObjectStatus> for i32 {
     }
 }
 impl From<KeyValues> for Vec<KeyValue> {
+    //noinspection ALL
     fn from(keyval: KeyValues) -> Self {
         keyval
             .0
@@ -287,7 +295,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
              .0
             .into_iter()
             .map(|r| Relation {
-                relation: Some(RelationEnum::External(r.into())),
+                relation: Some(RelationEnum::External(r.1.into())),
             })
             .collect();
         relations.append(&mut inbound);
@@ -307,7 +315,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -320,7 +328,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -333,7 +341,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 stats,
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false, //TODO
+                dynamic: object_with_relations.object.dynamic,
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
@@ -346,7 +354,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 created_at: object_with_relations.object.created_at.map(|t| t.into()),
                 created_by: object_with_relations.object.created_by.to_string(),
                 data_class: object_with_relations.object.data_class.into(),
-                dynamic: false,
+                dynamic: object_with_relations.object.dynamic,
                 hashes: object_with_relations.object.hashes.0.into(),
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
@@ -410,7 +418,7 @@ pub fn from_db_object(
          .0
         .into_iter()
         .map(|r| Relation {
-            relation: Some(RelationEnum::External(r.into())),
+            relation: Some(RelationEnum::External(r.1.into())),
         })
         .collect();
     if let Some(i) = internal {
@@ -497,6 +505,68 @@ impl From<create_object_request::Parent> for Parent {
             create_object_request::Parent::ProjectId(pid) => Parent::Project(pid),
             create_object_request::Parent::CollectionId(cid) => Parent::Collection(cid),
             create_object_request::Parent::DatasetId(did) => Parent::Dataset(did),
+        }
+    }
+}
+// This looks stupid, but actually is really helpful when converting relations
+impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelation {
+    type Error = anyhow::Error;
+    fn try_from(
+        internal: (&APIInternalRelation, (DieselUlid, ObjectType)),
+    ) -> Result<InternalRelation> {
+        let (internal, (object_id, object_type)) = internal;
+        let (origin_pid, origin_type, target_pid, target_type) = match internal.direction {
+            0 => return Err(anyhow!("Undefined direction")),
+            1 => (
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+                object_id,
+                object_type,
+            ),
+            2 => (
+                object_id,
+                object_type,
+                DieselUlid::from_str(&internal.resource_id)?,
+                internal.resource_variant.try_into()?,
+            ),
+
+            _ => return Err(anyhow!("Internal relation direction conversion error")),
+        };
+        match internal.defined_variant {
+            0 => Err(anyhow!("Undefined internal relation variant")),
+            i if i > 0 && i < 6 => {
+                let relation_name = match i {
+                    1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
+                    3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                    4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
+                    5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
+                    _ => return Err(anyhow!("Undefined internal relation variant")),
+                };
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    target_pid,
+                    target_type,
+                    relation_name,
+                })
+            }
+            6 => {
+                let relation_name = internal
+                    .clone()
+                    .custom_variant
+                    .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
+                Ok(InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid,
+                    origin_type,
+                    relation_name,
+                    target_pid,
+                    target_type,
+                })
+            }
+            _ => Err(anyhow!("Relation type not found")),
         }
     }
 }

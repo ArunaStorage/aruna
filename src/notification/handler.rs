@@ -20,14 +20,14 @@ pub enum EventType {
     All,
 }
 
-// An Event handler is the main connection of the underlaying event message system like Nats.io
+// An Event handler is the main connection of the underlying event message system like Nats.io
 #[async_trait]
 pub trait EventHandler {
-    // Registers/Publishs an event into the event message system
+    // Registers/Publishes an event into the event message system
     async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()>;
 
     // Creates an event consumer.
-    // An event consumer is a entity of the underlaying event streaming system can be used
+    // An event consumer is a entity of the underlying event streaming system can be used
     // to load balance a set of incoming messages based on an individual query across multiple
     // clients.
     // This corresponds to a consumer in Nats.io Jetstream https://docs.nats.io/nats-concepts/jetstream
@@ -47,7 +47,7 @@ pub trait EventHandler {
     // Acknowledge messages as read so the will not be redelivered by consecutive message fetches.
     async fn acknowledge_from_reply(&self, replies: Vec<Reply>) -> anyhow::Result<()>;
 
-    // Creates an event stream handler depending on the underlaying system
+    // Creates an event stream handler depending on the underlying system
     // The handler is connected to a stream group to load-balance messages... !?
     async fn create_event_stream_handler(
         &self,
@@ -61,7 +61,7 @@ pub trait EventHandler {
 // An EventStreamHandler handles the message stream based on StreamGroups/Consumers
 #[async_trait]
 pub trait EventStreamHandler {
-    // Gets a batch of messages from the underlaying event system
+    // Gets a batch of messages from the underlying event system
     // This call expected to return after a certain timeout even if no messages are available
     // This is currently specific to nats.io and needs to be generalized
     // TODO: Generalize

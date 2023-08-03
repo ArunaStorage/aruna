@@ -9,9 +9,9 @@ use aruna_rust_api::api::storage::{
         CreateCollectionRequest, CreateDatasetRequest, CreateObjectRequest, CreateProjectRequest,
     },
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use std::collections::HashMap;
 use std::str::FromStr;
 
 pub enum CreateRequest {
@@ -116,10 +116,7 @@ impl CreateRequest {
     }
 
     pub fn is_dynamic(&self) -> bool {
-        match self {
-            CreateRequest::Object(_) => false,
-            _ => true,
-        }
+        !matches!(self, CreateRequest::Object(_))
     }
 
     pub fn get_status(&self) -> ObjectStatus {
@@ -167,7 +164,7 @@ impl CreateRequest {
             external_relations: Json(external_relations),
             hashes: Json(hashes),
             dynamic: self.is_dynamic(),
-            endpoints: Json(HashMap::new()),
+            endpoints: Json(DashMap::default()),
         })
     }
 }

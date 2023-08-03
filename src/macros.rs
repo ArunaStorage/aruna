@@ -118,7 +118,7 @@ macro_rules! tonic_auth {
 macro_rules! log_received {
     ($request:expr) => {
         log::info!(
-            "Recieved {}",
+            "Received {}",
             $crate::utils::grpc_utils::type_name_of($request)
         );
         log::debug!("{:?}", $request);

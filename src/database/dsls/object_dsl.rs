@@ -3,17 +3,20 @@ use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
 };
+use crate::utils::database_utils::create_multi_query;
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use futures::pin_mut;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json};
+use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use tokio_postgres::Client;
+use std::collections::HashSet;
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::{Client, CopyInSink};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[allow(non_camel_case_types)]
@@ -33,22 +36,21 @@ pub struct KeyValue {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct KeyValues(pub Vec<KeyValue>);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq, PartialOrd)]
 pub enum DefinedVariant {
     URL,
     IDENTIFIER,
     CUSTOM,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Serialize, Deserialize, Hash, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct ExternalRelation {
     pub identifier: String,
     pub defined_variant: DefinedVariant,
     pub custom_variant: Option<String>,
 }
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq)]
-pub struct ExternalRelations(pub Vec<ExternalRelation>);
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExternalRelations(pub DashMap<String, ExternalRelation, RandomState>);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Hashes(pub Vec<Hash>);
@@ -65,7 +67,7 @@ pub enum Algorithm {
     SHA256,
 }
 
-#[derive(FromRow, FromSql, Debug, Clone)]
+#[derive(FromRow, FromSql, Debug, Clone, ToSql)]
 pub struct Object {
     pub id: DieselUlid,
     pub revision_number: i32,
@@ -82,7 +84,7 @@ pub struct Object {
     pub external_relations: Json<ExternalRelations>,
     pub hashes: Json<Hashes>,
     pub dynamic: bool,
-    pub endpoints: Json<HashMap<DieselUlid, bool>>,
+    pub endpoints: Json<DashMap<DieselUlid, bool, RandomState>>,
 }
 
 #[derive(FromRow, Debug, FromSql, Clone)]
@@ -187,36 +189,28 @@ impl Object {
     pub async fn add_external_relations(
         id: &DieselUlid,
         client: &Client,
-        rel: ExternalRelation,
+        rel: Vec<ExternalRelation>,
     ) -> Result<()> {
-        let query = "UPDATE objects
-        SET external_relations = external_relations || $1::jsonb
-        WHERE id = $2;";
-
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&Json(rel), id]).await?;
+        let query_one =
+            "UPDATE objects SET external_relations = external_relations || $1::jsonb WHERE id = $2";
+        let dash_map: DashMap<String, ExternalRelation, RandomState> =
+            DashMap::from_iter(rel.into_iter().map(|r| (r.identifier.clone(), r)));
+        let query_two = Json(ExternalRelations(dash_map));
+        let prepared = client.prepare(query_one).await?;
+        client.execute(&prepared, &[&query_two, &id]).await?;
         Ok(())
     }
 
     pub async fn remove_external_relation(
-        &self,
+        id: &DieselUlid,
         client: &Client,
-        rel: ExternalRelation,
+        rel: Vec<ExternalRelation>,
     ) -> Result<()> {
-        let element: i32 = self
-            .external_relations
-            .0
-             .0
-            .iter()
-            .position(|e| *e == rel)
-            .ok_or_else(|| anyhow!("Unable to find key_value"))? as i32;
-
-        let query = "UPDATE objects
-        SET external_relations = external_relations - $1::INTEGER
-        WHERE id = $2;";
-
+        let keys: Vec<String> = rel.into_iter().map(|e| e.identifier).collect();
+        let query =
+            "UPDATE objects SET external_relations = external_relations - $1::text[] WHERE id = $2;";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&element, &self.id]).await?;
+        client.execute(&prepared, &[&keys, id]).await?;
         Ok(())
     }
 
@@ -268,9 +262,37 @@ impl Object {
         Ok(ObjectWithRelations::from_row(&row))
     }
 
+    pub async fn get_objects_with_relations(
+        ids: &Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<Vec<ObjectWithRelations>> {
+        let query_one = "SELECT o.*,
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+        FROM objects o
+        LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+        WHERE o.id IN ";
+        let query_three = " GROUP BY o.id;";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two}{query_three}");
+        let prepared = client.prepare(&query).await?;
+        let objects = client
+            .query(&prepared, &inserts)
+            .await?
+            .iter()
+            .map(ObjectWithRelations::from_row)
+            .collect();
+        Ok(objects)
+    }
     pub async fn update(&self, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
-        SET description = $2, key_values = $3, data_class = $4)
+        SET description = $2, key_values = $3, data_class = $4
         WHERE id = $1 ;";
 
         let prepared = client.prepare(query).await?;
@@ -323,10 +345,163 @@ impl Object {
         client.query(&prepared, &[&id, &dataclass]).await?;
         Ok(())
     }
+    pub async fn set_deleted(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
+        let query_one = "UPDATE objects 
+            SET object_status = 'DELETED'
+            WHERE id IN ";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two};");
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &inserts).await?;
+        Ok(())
+    }
+    pub fn get_cloned_persistent(&self, new_id: DieselUlid) -> Self {
+        let object = self.clone();
+        Object {
+            id: new_id,
+            revision_number: object.revision_number,
+            name: object.name,
+            description: object.description,
+            created_at: object.created_at,
+            created_by: object.created_by,
+            content_len: object.content_len,
+            count: object.count,
+            key_values: object.key_values,
+            object_status: object.object_status,
+            data_class: object.data_class,
+            object_type: object.object_type,
+            external_relations: object.external_relations,
+            hashes: object.hashes,
+            dynamic: false,
+            endpoints: object.endpoints,
+        }
+    }
+    pub async fn archive(
+        ids: &Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<Vec<ObjectWithRelations>> {
+        let query_one = " WITH o AS 
+            (UPDATE objects 
+            SET dynamic=false 
+            WHERE objects.id IN ";
+        //$id
+        let query_three =  " RETURNING *)
+        SELECT o.*,
+            COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+            COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+            COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+            COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+            FROM objects o
+            LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+            WHERE o.id IN ";
+        let query_five = " GROUP BY o.id;";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_insert = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_insert}{query_three}{query_insert}{query_five}");
+        let prepared = client.prepare(&query).await?;
+        let result: Vec<ObjectWithRelations> = client
+            .query(&prepared, &inserts)
+            .await?
+            .iter()
+            .map(ObjectWithRelations::from_row)
+            .collect();
+        Ok(result)
+    }
+    pub async fn get_objects(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
+        let query_one = "SELECT * FROM objects WHERE objects.id IN ";
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+        let query_insert = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_insert};");
+        let prepared = client.prepare(&query).await?;
+        Ok(client
+            .query(&prepared, &inserts)
+            .await?
+            .iter()
+            .map(Object::from_row)
+            .collect())
+    }
+    pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
+        //let query = "INSERT INTO objects
+        //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
+        //    VALUES $1;";
+        let query = "COPY objects \
+        (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
+        FROM STDIN BINARY";
+        let sink: CopyInSink<_> = client.copy_in(query).await?;
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::UUID,
+                Type::INT4,
+                Type::VARCHAR,
+                Type::VARCHAR,
+                Type::UUID,
+                Type::INT8,
+                Type::INT4,
+                Type::JSONB,
+                ObjectStatus::get_type(),
+                DataClass::get_type(),
+                ObjectType::get_type(),
+                Type::JSONB,
+                Type::JSONB,
+                Type::BOOL,
+                Type::JSONB,
+            ],
+        );
+        pin_mut!(writer);
+        for object in objects {
+            writer
+                .as_mut()
+                .write(&[
+                    &object.id,
+                    &object.revision_number,
+                    &object.name,
+                    &object.description,
+                    &object.created_by,
+                    &object.content_len,
+                    &object.count,
+                    &object.key_values,
+                    &object.object_status,
+                    &object.data_class,
+                    &object.object_type,
+                    &object.external_relations,
+                    &object.hashes,
+                    &object.dynamic,
+                    &object.endpoints,
+                ])
+                .await?;
+        }
+        writer.finish().await?;
+        Ok(())
+    }
 }
 
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
+        let self_external_relation: HashSet<_> = self
+            .external_relations
+            .0
+             .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
+        let other_external_relation: HashSet<_> = other
+            .external_relations
+            .0
+             .0
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
         match (&self.created_at, other.created_at) {
             (Some(_), None) | (None, Some(_)) | (None, None) => {
                 self.id == other.id
@@ -337,7 +512,9 @@ impl PartialEq for Object {
                     && self.object_status == other.object_status
                     && self.data_class == other.data_class
                     && self.object_type == other.object_type
-                    && self.external_relations == other.external_relations
+                    && self_external_relation
+                        .iter()
+                        .all(|i| other_external_relation.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
             }
@@ -351,7 +528,9 @@ impl PartialEq for Object {
                     && self.object_status == other.object_status
                     && self.data_class == other.data_class
                     && self.object_type == other.object_type
-                    && self.external_relations == other.external_relations
+                    && self_external_relation
+                        .iter()
+                        .all(|i| other_external_relation.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
             }
@@ -415,7 +594,7 @@ impl ObjectWithRelations {
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
         Self {
             object: Object {
-                id: id.clone(),
+                id: *id,
                 created_at: None,
                 revision_number: 0,
                 created_by: DieselUlid::generate(),
@@ -424,21 +603,18 @@ impl ObjectWithRelations {
                 object_status: ObjectStatus::AVAILABLE,
                 data_class: DataClass::PUBLIC,
                 object_type: ObjectType::OBJECT,
-                external_relations: Json(ExternalRelations(vec![])),
+                external_relations: Json(ExternalRelations(DashMap::default())),
                 hashes: Json(Hashes(vec![])),
                 dynamic: false,
-                name: "aname".to_string(),
-                description: "aname".to_string(),
+                name: "a_name".to_string(),
+                description: "a_name".to_string(),
                 count: 0,
-                endpoints: Json(HashMap::default()),
+                endpoints: Json(DashMap::default()),
             },
             inbound: Json(DashMap::default()),
             inbound_belongs_to: Json(DashMap::default()),
             outbound: Json(DashMap::default()),
-            outbound_belongs_to: Json(DashMap::from_iter([(
-                to.clone(),
-                InternalRelation::default(),
-            )])),
+            outbound_belongs_to: Json(DashMap::from_iter([(*to, InternalRelation::default())])),
         }
     }
 }

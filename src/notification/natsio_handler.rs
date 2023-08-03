@@ -208,7 +208,7 @@ impl EventStreamHandler for NatsIOEventStreamHandler {
     async fn get_event_consumer_messages(
         &self,
         max_batch_size: u32,
-    ) -> anyhow::Result<Vec<async_nats::jetstream::Message>> {
+    ) -> anyhow::Result<Vec<Message>> {
         // Fetch messages from Nats.io
         let mut batch = self
             .consumer
