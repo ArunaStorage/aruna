@@ -4,6 +4,11 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::user_dsl::{
+    APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
+    UserAttributes as DBUserAttributes,
+};
+use crate::database::enums::DbPermissionLevel;
 use crate::database::{
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
@@ -15,17 +20,18 @@ use crate::database::{
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::{
-    relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
-    ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
-    Object as GRPCObject, Project as GRPCProject, Relation, Stats,
+    generic_resource, permission::ResourceId, relation::Relation as RelationEnum,
+    Collection as GRPCCollection, CustomAttributes, Dataset as GRPCDataset, ExternalRelation, Hash,
+    InternalRelation as APIInternalRelation, KeyValue, Object as GRPCObject, Permission,
+    Project as GRPCProject, Relation, Stats, Token, User, UserAttributes,
 };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use futures::StreamExt;
 use std::str::FromStr;
 use tonic::metadata::MetadataMap;
 
@@ -567,6 +573,102 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
                 })
             }
             _ => Err(anyhow!("Relation type not found")),
+        }
+    }
+}
+
+impl From<DBUser> for User {
+    fn from(user: DBUser) -> Self {
+        User {
+            id: user.id.to_string(),
+            external_id: match user.external_id {
+                Some(id) => id,
+                None => String::new(),
+            },
+            display_name: user.display_name,
+            active: user.active,
+            email: user.email,
+            attributes: Some(user.attributes.0.into()),
+        }
+    }
+}
+
+impl From<DBUserAttributes> for UserAttributes {
+    fn from(attr: DBUserAttributes) -> Self {
+        let (tokens, personal_permissions): (Vec<Token>, Vec<Permission>) = attr
+            .tokens
+            .into_iter()
+            .map(|t| {
+                (
+                    Token {
+                        id: t.0.to_string(),
+                        name: t.1.name,
+                        created_at: Some(t.1.created_at.into()),
+                        expires_at: Some(t.1.expires_at.into()),
+                        permission: Some(Permission {
+                            permission_level: t.1.user_rights.into(),
+                            resource_id: Some(match t.1.object_type {
+                                ObjectType::PROJECT => {
+                                    ResourceId::ProjectId(t.1.object_id.to_string())
+                                }
+                                ObjectType::COLLECTION => {
+                                    ResourceId::CollectionId(t.1.object_id.to_string())
+                                }
+                                ObjectType::DATASET => {
+                                    ResourceId::DatasetId(t.1.object_id.to_string())
+                                }
+                                ObjectType::OBJECT => {
+                                    ResourceId::ObjectId(t.1.object_id.to_string())
+                                }
+                            }),
+                        }),
+                    },
+                    Permission {
+                        permission_level: t.1.user_rights.into(),
+                        resource_id: Some(match t.1.object_type {
+                            ObjectType::PROJECT => ResourceId::ProjectId(t.1.object_id.to_string()),
+                            ObjectType::COLLECTION => {
+                                ResourceId::CollectionId(t.1.object_id.to_string())
+                            }
+                            ObjectType::DATASET => ResourceId::DatasetId(t.1.object_id.to_string()),
+                            ObjectType::OBJECT => ResourceId::ObjectId(t.1.object_id.to_string()),
+                        }),
+                    },
+                )
+            })
+            .unzip();
+        UserAttributes {
+            global_admin: attr.global_admin,
+            service_account: attr.service_account,
+            tokens,
+            custom_attributes: attr
+                .custom_attributes
+                .into_iter()
+                .map(|c| c.into())
+                .collect(),
+            personal_permissions,
+        }
+    }
+}
+
+impl From<DBCustomAttributes> for CustomAttributes {
+    fn from(attr: DBCustomAttributes) -> Self {
+        CustomAttributes {
+            attribute_name: attr.attribute_name,
+            attribute_value: attr.attribute_value,
+        }
+    }
+}
+
+impl From<DbPermissionLevel> for i32 {
+    fn from(lvl: DbPermissionLevel) -> Self {
+        match lvl {
+            DbPermissionLevel::DENY => 1, //TODO: Currently reserved and not used
+            DbPermissionLevel::NONE => 2,
+            DbPermissionLevel::READ => 3,
+            DbPermissionLevel::APPEND => 4,
+            DbPermissionLevel::WRITE => 5,
+            DbPermissionLevel::ADMIN => 6,
         }
     }
 }

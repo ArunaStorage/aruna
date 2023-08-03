@@ -42,6 +42,12 @@ impl Cache {
         }
     }
 
+    pub fn update_user(&self, id: &DieselUlid, user: User) {
+        if let Some(mut x) = self.user_cache.get_mut(id) {
+            *x.value_mut() = user;
+        }
+    }
+
     pub fn add_object(&self, rel: ObjectWithRelations) {
         self.object_cache.insert(rel.object.id, rel);
     }
