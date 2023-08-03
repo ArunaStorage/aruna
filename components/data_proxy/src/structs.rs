@@ -6,6 +6,11 @@ use std::collections::{HashMap, HashSet};
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    pub id: DieselUlid,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
     PROJECT,
     COLLECTION,
@@ -63,7 +68,7 @@ impl TryFrom<GenericBytes<i32>> for PubKey {
 impl TryInto<GenericBytes<i32>> for PubKey {
     type Error = anyhow::Error;
     fn try_into(self) -> Result<GenericBytes<i32>, Self::Error> {
-        let data = bincode::serialize(&self.key)?;
+        let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
             data: data.into(),
@@ -75,5 +80,80 @@ impl TryInto<GenericBytes<i32>> for PubKey {
 impl WithGenericBytes<i32> for PubKey {
     fn get_table() -> Table {
         Table::PubKeys
+    }
+}
+
+impl TryFrom<GenericBytes<DieselUlid>> for Object {
+    type Error = anyhow::Error;
+    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
+        Ok(bincode::deserialize(&value.data)?)
+    }
+}
+
+impl TryInto<GenericBytes<DieselUlid>> for Object {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
+        let data = bincode::serialize(&self)?;
+        Ok(GenericBytes {
+            id: self.id,
+            data: data.into(),
+            table: Self::get_table(),
+        })
+    }
+}
+
+impl WithGenericBytes<DieselUlid> for Object {
+    fn get_table() -> Table {
+        Table::Objects
+    }
+}
+
+impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
+    type Error = anyhow::Error;
+    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
+        Ok(bincode::deserialize(&value.data)?)
+    }
+}
+
+impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
+        let data = bincode::serialize(&self)?;
+        Ok(GenericBytes {
+            id: self.id,
+            data: data.into(),
+            table: Self::get_table(),
+        })
+    }
+}
+
+impl WithGenericBytes<DieselUlid> for ObjectLocation {
+    fn get_table() -> Table {
+        Table::ObjectLocations
+    }
+}
+
+impl TryFrom<GenericBytes<DieselUlid>> for User {
+    type Error = anyhow::Error;
+    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
+        Ok(bincode::deserialize(&value.data)?)
+    }
+}
+
+impl TryInto<GenericBytes<DieselUlid>> for User {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
+        let data = bincode::serialize(&self)?;
+        Ok(GenericBytes {
+            id: self.id,
+            data: data.into(),
+            table: Self::get_table(),
+        })
+    }
+}
+
+impl WithGenericBytes<DieselUlid> for User {
+    fn get_table() -> Table {
+        Table::Users
     }
 }

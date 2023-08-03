@@ -1,3 +1,5 @@
+use std::io::Write;
+
 // mod bundler;
 mod caching;
 mod data_backends;
@@ -8,36 +10,35 @@ mod database;
 mod structs;
 
 #[tokio::main]
-async fn main() {}
-//     dotenvy::from_filename(".env").ok();
+async fn main() {
+    dotenvy::from_filename(".env").ok();
+    let hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
+    // External S3 server
+    let proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
+    // ULID of the endpoint
+    let endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
+    // Aruna Backend
+    let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
+    // Internal backchannel Aruna -> Dproxy
+    let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
+    // Optional Bundler URL
+    let external_bundler_url = dotenvy::var("BUNDLER_URL").ok();
 
-//     let hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
-//     // External S3 server
-//     let proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
-//     // ULID of the endpoint
-//     let endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
-//     // Aruna Backend
-//     let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
-//     // Internal backchannel Aruna -> Dproxy
-//     let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
-//     // Optional Bundler URL
-//     let external_bundler_url = dotenvy::var("BUNDLER_URL").ok();
-
-//     env_logger::Builder::new()
-//         .format(|buf, record| {
-//             writeln!(
-//                 buf,
-//                 "{}:{} {} [{}] - {}",
-//                 record.file().unwrap_or("unknown"),
-//                 record.line().unwrap_or(0),
-//                 chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-//                 record.level(),
-//                 record.args()
-//             )
-//         })
-//         .filter_level(log::LevelFilter::Debug)
-//         .init();
-
+    env_logger::Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{}:{} {} [{}] - {}",
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter_level(log::LevelFilter::Debug)
+        .init();
+}
 //     let s3_client = match S3Backend::new().await {
 //         Ok(value) => value,
 //         Err(err) => {
