@@ -1,5 +1,7 @@
-use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
-use aruna_server::database::enums::ObjectType;
+use aruna_server::database::dsls::object_dsl::{
+    DefinedVariant, ExternalRelation, KeyValue, KeyValueVariant,
+};
+use aruna_server::database::enums::{DataClass, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::{
@@ -34,14 +36,7 @@ async fn create_object() {
 async fn get_object_with_relations_test() {
     let db = init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
-    let transaction = client
-        .transaction()
-        .await
-        .map_err(|e| {
-            log::error!("{}", e);
-            tonic::Status::unavailable("Database not available.")
-        })
-        .unwrap();
+    let transaction = client.transaction().await.unwrap();
 
     let client = transaction.client();
 
@@ -233,6 +228,140 @@ async fn test_keyvals() {
         endpoints: test_object.endpoints,
     };
     assert_eq!(object, comp_obj);
+}
+#[tokio::test]
+async fn test_external_relations() {
+    let db = init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
+
+    let obj_id = DieselUlid::generate();
+
+    let user = new_user(vec![obj_id]);
+    user.create(client).await.unwrap();
+
+    let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
+    create_object.create(client).await.unwrap();
+    let url = ExternalRelation {
+        identifier: "test.test/abc".to_string(),
+        defined_variant: DefinedVariant::URL,
+        custom_variant: None,
+    };
+    let id = ExternalRelation {
+        identifier: "a.b/c".to_string(),
+        defined_variant: DefinedVariant::IDENTIFIER,
+        custom_variant: None,
+    };
+    let custom = ExternalRelation {
+        identifier: "ThIs Is A cUsToM fLaG".to_string(),
+        defined_variant: DefinedVariant::CUSTOM,
+        custom_variant: Some("This is not a URL or an identifier".to_string()),
+    };
+    let rels = vec![url.clone(), id.clone(), custom.clone()];
+    Object::add_external_relations(&obj_id, client, rels.clone())
+        .await
+        .unwrap();
+    let mut compare_obj = Object {
+        id: obj_id,
+        revision_number: create_object.revision_number,
+        name: create_object.name,
+        description: create_object.description,
+        created_at: create_object.created_at,
+        created_by: create_object.created_by,
+        content_len: create_object.content_len,
+        count: create_object.count,
+        key_values: create_object.key_values,
+        object_status: create_object.object_status,
+        data_class: create_object.data_class,
+        object_type: create_object.object_type,
+        external_relations: Json(ExternalRelations(DashMap::from_iter(
+            rels.clone().into_iter().map(|r| (r.identifier.clone(), r)),
+        ))),
+        hashes: create_object.hashes,
+        dynamic: create_object.dynamic,
+        endpoints: create_object.endpoints,
+    };
+    let obj = Object::get(obj_id, client).await.unwrap().unwrap();
+    //dbg!(&obj);
+    assert_eq!(compare_obj, obj);
+    let rm_rels = vec![custom, id];
+    let remain_rels = vec![url];
+    Object::remove_external_relation(&obj_id, client, rm_rels)
+        .await
+        .unwrap();
+    let rm = Object::get(obj_id, client).await.unwrap().unwrap();
+    transaction.commit().await.unwrap();
+    compare_obj.external_relations = Json(ExternalRelations(DashMap::from_iter(
+        remain_rels.into_iter().map(|e| (e.identifier.clone(), e)),
+    )));
+    assert_eq!(compare_obj, rm);
+}
+
+#[tokio::test]
+async fn test_updates() {
+    let db = init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
+
+    let obj_id = DieselUlid::generate();
+    let dat_id = DieselUlid::generate();
+    let col_id = DieselUlid::generate();
+    let proj_id = DieselUlid::generate();
+
+    let user = new_user(vec![obj_id]);
+    user.create(client).await.unwrap();
+
+    let mut create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_dataset = new_object(user.id, dat_id, ObjectType::DATASET);
+    let mut create_collection = new_object(user.id, col_id, ObjectType::COLLECTION);
+    let mut create_project = new_object(user.id, proj_id, ObjectType::PROJECT);
+    create_object.create(client).await.unwrap();
+    create_dataset.create(client).await.unwrap();
+    create_collection.create(client).await.unwrap();
+    create_project.create(client).await.unwrap();
+
+    // Update Object
+    create_object.description = "This is a new description.".to_string();
+    create_object.data_class = DataClass::PUBLIC;
+    create_object.key_values = Json(KeyValues(vec![KeyValue {
+        key: "NewKey".to_string(),
+        value: "NewValue".to_string(),
+        variant: KeyValueVariant::LABEL,
+    }]));
+    create_object.update(client).await.unwrap();
+    let updated_object = Object::get(obj_id, client).await.unwrap().unwrap();
+    assert_eq!(updated_object, create_object);
+
+    // Update Dataset name
+    let new_name = "new_dataset_name.xyz".to_string();
+    Object::update_name(dat_id, new_name.clone(), client)
+        .await
+        .unwrap();
+    let updated_dataset = Object::get(dat_id, client).await.unwrap().unwrap();
+    create_dataset.name = new_name;
+    assert_eq!(updated_dataset, create_dataset);
+
+    // Update Collection description
+    let new_description = "New description".to_string();
+    Object::update_description(col_id, new_description.clone(), client)
+        .await
+        .unwrap();
+    let updated_collection = Object::get(col_id, client).await.unwrap().unwrap();
+    create_collection.description = new_description;
+    assert_eq!(updated_collection, create_collection);
+
+    // Update Project dataclass
+    let new_dataclass = DataClass::PUBLIC;
+    Object::update_dataclass(proj_id, new_dataclass.clone(), client)
+        .await
+        .unwrap();
+    let updated_project = Object::get(proj_id, client).await.unwrap().unwrap();
+    create_project.data_class = new_dataclass;
+    assert_eq!(updated_project, create_project);
 }
 
 fn new_user(object_ids: Vec<DieselUlid>) -> User {

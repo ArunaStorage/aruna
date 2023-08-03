@@ -33,7 +33,7 @@ impl DatabaseHandler {
             Object::remove_external_relation(
                 &resource.id,
                 transaction_client,
-                &labels_to_remove.external,
+                labels_to_remove.external,
             )
             .await?;
         }

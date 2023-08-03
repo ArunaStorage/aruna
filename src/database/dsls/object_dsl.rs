@@ -191,26 +191,26 @@ impl Object {
         client: &Client,
         rel: Vec<ExternalRelation>,
     ) -> Result<()> {
-        let query = "UPDATE objects
-        SET external_relations = external_relations || $1::jsonb
-        WHERE id = $2;";
-
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&Json(rel), id]).await?;
+        let query_one =
+            "UPDATE objects SET external_relations = external_relations || $1::jsonb WHERE id = $2";
+        let dash_map: DashMap<String, ExternalRelation, RandomState> =
+            DashMap::from_iter(rel.into_iter().map(|r| (r.identifier.clone(), r)));
+        let query_two = Json(ExternalRelations(dash_map));
+        let prepared = client.prepare(query_one).await?;
+        client.execute(&prepared, &[&query_two, &id]).await?;
         Ok(())
     }
 
     pub async fn remove_external_relation(
         id: &DieselUlid,
         client: &Client,
-        rel: &[ExternalRelation],
+        rel: Vec<ExternalRelation>,
     ) -> Result<()> {
-        let keys: Vec<String> = rel.iter().map(|e| e.identifier.clone()).collect();
+        let keys: Vec<String> = rel.into_iter().map(|e| e.identifier).collect();
         let query =
-            "UPDATE objects SET external_relations = external_relations - $1::TEXT WHERE id = $2;";
-
+            "UPDATE objects SET external_relations = external_relations - $1::text[] WHERE id = $2;";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&keys, &id]).await?;
+        client.execute(&prepared, &[&keys, id]).await?;
         Ok(())
     }
 
