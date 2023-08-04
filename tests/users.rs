@@ -4,6 +4,7 @@ use aruna_server::database::{
     dsls::user_dsl::{APIToken, User, UserAttributes},
 };
 use dashmap::DashMap;
+//use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
 
 mod init_db;
@@ -531,4 +532,38 @@ async fn user_token_test() {
             .len(),
         0
     );
+}
+
+#[tokio::test]
+async fn user_status_test() {
+    let db = init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+    let client = transaction.client();
+
+    let id = DieselUlid::generate();
+
+    let user = User {
+        id,
+        display_name: "aha".to_string(),
+        external_id: None,
+        email: "aja".to_string(),
+        attributes: postgres_types::Json(UserAttributes {
+            global_admin: false,
+            service_account: true,
+            permissions: DashMap::default(),
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            custom_attributes: Vec::new(),
+        }),
+        active: false,
+    };
+    user.create(client).await.unwrap();
+
+    User::activate_user(client, &id).await.unwrap();
+    assert!(User::get(id, client).await.unwrap().unwrap().active);
+
+    User::deactivate_user(client, &id).await.unwrap();
+    assert!(!User::get(id, client).await.unwrap().unwrap().active);
+    transaction.commit().await.unwrap();
 }
