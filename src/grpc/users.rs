@@ -108,7 +108,7 @@ impl UserService for UserServiceImpl {
 
     async fn create_api_token(
         &self,
-        request: Request<CreateApiTokenRequest>,
+        _request: Request<CreateApiTokenRequest>,
     ) -> Result<Response<CreateApiTokenResponse>, Status> {
         todo!()
     }
@@ -147,7 +147,7 @@ impl UserService for UserServiceImpl {
 
     async fn get_api_tokens(
         &self,
-        request: Request<GetApiTokensRequest>,
+        _request: Request<GetApiTokensRequest>,
     ) -> Result<Response<GetApiTokensResponse>, Status> {
         todo!()
     }
@@ -178,7 +178,7 @@ impl UserService for UserServiceImpl {
 
     async fn delete_api_tokens(
         &self,
-        request: Request<DeleteApiTokensRequest>,
+        _request: Request<DeleteApiTokensRequest>,
     ) -> Result<Response<DeleteApiTokensResponse>, Status> {
         todo!()
     }
@@ -209,10 +209,7 @@ impl UserService for UserServiceImpl {
         };
         let user = self.cache.get_user(&user_id);
         let response = GetUserResponse {
-            user: match user {
-                Some(user) => Some(user.into()),
-                None => None,
-            },
+            user: user.map(|user| user.into()),
         };
         return_with_log!(response);
     }
@@ -243,10 +240,7 @@ impl UserService for UserServiceImpl {
         };
         let user = self.cache.get_user(&user_id);
         let response = GetUserRedactedResponse {
-            user: match user {
-                Some(user) => Some(user.into_redacted()),
-                None => None,
-            },
+            user: user.map(|user| user.into_redacted()),
         };
         return_with_log!(response);
     }
@@ -355,14 +349,14 @@ impl UserService for UserServiceImpl {
 
     async fn get_s3_credentials_user(
         &self,
-        request: Request<GetS3CredentialsUserRequest>,
+        _request: Request<GetS3CredentialsUserRequest>,
     ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
         todo!()
     }
 
     async fn get_dataproxy_token_user(
         &self,
-        request: Request<GetDataproxyTokenUserRequest>,
+        _request: Request<GetDataproxyTokenUserRequest>,
     ) -> Result<Response<GetDataproxyTokenUserResponse>, Status> {
         todo!()
     }
