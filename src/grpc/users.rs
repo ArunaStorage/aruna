@@ -3,10 +3,12 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::token_request_types::{DeleteToken, GetToken};
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{get_token_from_md, into_api_token};
+use anyhow::anyhow;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
@@ -115,7 +117,32 @@ impl UserService for UserServiceImpl {
         &self,
         request: Request<GetApiTokenRequest>,
     ) -> Result<Response<GetApiTokenResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = GetToken(request.into_inner());
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        )
+        .ok_or_else(|| Status::internal("User id not returned"))?;
+        let user = tonic_invalid!(
+            self.cache
+                .get_user(&user_id)
+                .ok_or_else(|| anyhow!("Not found")),
+            "User not found"
+        );
+        let token_id = tonic_invalid!(request.get_token_id(), "Invalid token_id");
+        let token = match user.attributes.0.tokens.get(&token_id) {
+            Some(token) => Some(into_api_token(token_id, token.clone())),
+            None => return Err(Status::not_found("Token not found")),
+        };
+        let response = GetApiTokenResponse { token };
+
+        return_with_log!(response);
     }
 
     async fn get_api_tokens(
@@ -129,7 +156,24 @@ impl UserService for UserServiceImpl {
         &self,
         request: Request<DeleteApiTokenRequest>,
     ) -> Result<Response<DeleteApiTokenResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = DeleteToken(request.into_inner());
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        )
+        .ok_or_else(|| Status::internal("User id not returned"))?;
+        let user = tonic_internal!(
+            self.database_handler.delete_token(user_id, request).await,
+            "Internal database request error"
+        );
+        self.cache.update_user(&user_id, user);
+        return_with_log!(DeleteApiTokenResponse {});
     }
 
     async fn delete_api_tokens(

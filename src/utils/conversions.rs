@@ -676,9 +676,27 @@ impl From<DbPermissionLevel> for i32 {
 impl DBUser {
     pub fn into_redacted(self) -> User {
         let mut user: User = self.into();
-        user.email = "_____".to_string();
-        user.display_name = "_____".to_string();
-        user.external_id = "_____".to_string();
+        user.email = String::new();
+        user.display_name = String::new();
+        user.external_id = String::new();
         user
+    }
+}
+
+pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
+    Token {
+        id: id.to_string(),
+        name: token.name,
+        created_at: Some(token.created_at.into()),
+        expires_at: Some(token.expires_at.into()),
+        permission: Some(Permission {
+            permission_level: token.user_rights.into(),
+            resource_id: Some(match token.object_type {
+                ObjectType::PROJECT => ResourceId::ProjectId(token.object_id.to_string()),
+                ObjectType::COLLECTION => ResourceId::CollectionId(token.object_id.to_string()),
+                ObjectType::DATASET => ResourceId::DatasetId(token.object_id.to_string()),
+                ObjectType::OBJECT => ResourceId::ObjectId(token.object_id.to_string()),
+            }),
+        }),
     }
 }
