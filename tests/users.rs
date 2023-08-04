@@ -1,3 +1,4 @@
+use aruna_server::database::enums::ObjectType;
 use aruna_server::database::{
     crud::CrudDb,
     dsls::user_dsl::{APIToken, User, UserAttributes},
@@ -433,6 +434,7 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: DieselUlid::generate(),
+                        object_type: ObjectType::COLLECTION,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -444,6 +446,7 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: DieselUlid::generate(),
+                        object_type: ObjectType::OBJECT,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -455,6 +458,7 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: DieselUlid::generate(),
+                        object_type: ObjectType::DATASET,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),

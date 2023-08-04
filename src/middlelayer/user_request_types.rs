@@ -1,5 +1,4 @@
 use crate::auth::structs::Context;
-use crate::database::enums::DbPermissionLevel;
 use anyhow::Result;
 use aruna_rust_api::api::storage::services::v2::{
     ActivateUserRequest, DeactivateUserRequest, GetUserRedactedRequest, GetUserRequest,

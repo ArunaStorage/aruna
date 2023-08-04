@@ -31,7 +31,6 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use futures::StreamExt;
 use std::str::FromStr;
 use tonic::metadata::MetadataMap;
 
@@ -606,7 +605,7 @@ impl From<DBUserAttributes> for UserAttributes {
                         created_at: Some(t.1.created_at.into()),
                         expires_at: Some(t.1.expires_at.into()),
                         permission: Some(Permission {
-                            permission_level: t.1.user_rights.into(),
+                            permission_level: t.1.user_rights.clone().into(),
                             resource_id: Some(match t.1.object_type {
                                 ObjectType::PROJECT => {
                                     ResourceId::ProjectId(t.1.object_id.to_string())
