@@ -11,6 +11,7 @@ pub trait PrimaryKey: ToSql + Send + Sync {
 
 impl PrimaryKey for DieselUlid {}
 impl PrimaryKey for i32 {}
+impl PrimaryKey for i16 {}
 
 #[async_trait::async_trait]
 pub trait CrudDb: Sized {
