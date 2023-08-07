@@ -8,23 +8,25 @@ use crate::database::dsls::user_dsl::{
     APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
     UserAttributes as DBUserAttributes,
 };
-use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::{DbPermissionLevel, EndpointVariant};
 use crate::database::{
+    dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
         Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
         ObjectWithRelations,
     },
-    enums::{DataClass, ObjectStatus, ObjectType},
+    enums::{DataClass, DataProxyFeature, EndpointStatus, ObjectStatus, ObjectType},
 };
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, permission::ResourceId, relation::Relation as RelationEnum,
-    Collection as GRPCCollection, CustomAttributes, Dataset as GRPCDataset, ExternalRelation, Hash,
-    InternalRelation as APIInternalRelation, KeyValue, Object as GRPCObject, Permission,
-    Project as GRPCProject, Relation, Stats, Token, User, UserAttributes,
+    Collection as GRPCCollection, CustomAttributes, Dataset as GRPCDataset, Endpoint,
+    EndpointHostConfig, ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
+    Object as GRPCObject, Permission, Project as GRPCProject, Relation, Stats, Token, User,
+    UserAttributes,
 };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
@@ -38,44 +40,41 @@ pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
-//noinspection ALL
-//noinspection ALL
-//noinspection ALL
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")
         .ok_or(anyhow!("Metadata token not found"))?
         .to_str()?;
 
-    let splitted = token_string.split(' ').collect::<Vec<_>>();
+    let split = token_string.split(' ').collect::<Vec<_>>();
 
-    if splitted.len() != 2 {
+    if split.len() != 2 {
         log::debug!(
             "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
-            splitted.len()
+            split.len()
         );
         return Err(anyhow!("Authorization flow error"));
     }
 
-    if splitted[0] != "Bearer" {
+    if split[0] != "Bearer" {
         log::debug!(
-            "Could not get token from metadata: Invalid Tokentype, expected: Bearer, got: {:?}",
-            splitted[0]
+            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
+            split[0]
         );
 
         return Err(anyhow!("Authorization flow error"));
     }
 
-    if splitted[1].is_empty() {
+    if split[1].is_empty() {
         log::debug!(
-            "Could not get token from metadata: Invalid Tokenlength, expected: >0, got: {:?}",
-            splitted[1].len()
+            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
+            split[1].len()
         );
 
         return Err(anyhow!("Authorization flow error"));
     }
 
-    Ok(splitted[1].to_string())
+    Ok(split[1].to_string())
 }
 
 impl TryFrom<&Vec<KeyValue>> for KeyValues {
@@ -697,5 +696,121 @@ pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
                 ObjectType::OBJECT => ResourceId::ObjectId(token.object_id.to_string()),
             }),
         }),
+    }
+}
+
+impl TryFrom<i32> for EndpointStatus {
+    type Error = anyhow::Error;
+    fn try_from(value: i32) -> Result<Self> {
+        let res = match value {
+            1 => EndpointStatus::INITIALIZING,
+            2 => EndpointStatus::AVAILABLE,
+            3 => EndpointStatus::DEGRADED,
+            4 => EndpointStatus::UNAVAILABLE,
+            5 => EndpointStatus::MAINTENANCE,
+            _ => return Err(anyhow!("Undefined component status")),
+        };
+        Ok(res)
+    }
+}
+
+impl TryFrom<Vec<EndpointHostConfig>> for HostConfigs {
+    type Error = anyhow::Error;
+    fn try_from(config: Vec<EndpointHostConfig>) -> Result<Self> {
+        let res: Result<Vec<HostConfig>> = config
+            .into_iter()
+            .map(|c| -> Result<HostConfig> {
+                Ok(HostConfig {
+                    url: c.url,
+                    is_primary: c.is_primary,
+                    ssl: c.ssl,
+                    public: c.public,
+                    feature: c.host_variant.try_into()?,
+                })
+            })
+            .collect();
+        Ok(HostConfigs(res?))
+    }
+}
+
+impl TryFrom<i32> for DataProxyFeature {
+    type Error = anyhow::Error;
+    fn try_from(var: i32) -> Result<DataProxyFeature> {
+        let res = match var {
+            1 => DataProxyFeature::PROXY,
+            2 => DataProxyFeature::BUNDLER,
+            _ => return Err(anyhow!("Undefined dataproxy feature")),
+        };
+        Ok(res)
+    }
+}
+
+impl From<DBEndpoint> for Endpoint {
+    fn from(ep: DBEndpoint) -> Self {
+        Endpoint {
+            id: ep.id.to_string(),
+            ep_variant: ep.endpoint_variant.into(),
+            name: ep.name,
+            is_public: ep.is_public,
+            status: ep.status.into(),
+            host_configs: ep.host_config.0.into(),
+        }
+    }
+}
+
+impl From<EndpointVariant> for i32 {
+    fn from(var: EndpointVariant) -> Self {
+        match var {
+            EndpointVariant::PERSISTENT => 1,
+            EndpointVariant::VOLATILE => 2,
+        }
+    }
+}
+
+impl From<EndpointStatus> for i32 {
+    fn from(status: EndpointStatus) -> Self {
+        match status {
+            EndpointStatus::INITIALIZING => 1,
+            EndpointStatus::AVAILABLE => 2,
+            EndpointStatus::DEGRADED => 3,
+            EndpointStatus::UNAVAILABLE => 4,
+            EndpointStatus::MAINTENANCE => 5,
+        }
+    }
+}
+
+impl From<HostConfigs> for Vec<EndpointHostConfig> {
+    fn from(config: HostConfigs) -> Self {
+        config
+            .0
+            .into_iter()
+            .map(|c| EndpointHostConfig {
+                url: c.url,
+                is_primary: c.is_primary,
+                ssl: c.ssl,
+                public: c.public,
+                host_variant: c.feature.into(),
+            })
+            .collect()
+    }
+}
+
+impl From<DataProxyFeature> for i32 {
+    fn from(feat: DataProxyFeature) -> Self {
+        match feat {
+            DataProxyFeature::PROXY => 1,
+            DataProxyFeature::BUNDLER => 2,
+        }
+    }
+}
+
+impl TryFrom<i32> for EndpointVariant {
+    type Error = anyhow::Error;
+    fn try_from(value: i32) -> Result<Self> {
+        Ok(match value {
+            1 => EndpointVariant::PERSISTENT,
+            2 => EndpointVariant::VOLATILE,
+            _ => return Err(anyhow!("Undefined endpoint variant")),
+        })
     }
 }
