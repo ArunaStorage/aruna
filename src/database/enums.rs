@@ -114,7 +114,9 @@ pub enum DbPermissionLevel {
     ADMIN,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, ToSql, FromSql, Clone, PartialEq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Debug, Default, Hash, ToSql, FromSql, Clone, PartialEq, Eq, PartialOrd,
+)]
 pub enum DataProxyFeature {
     #[default]
     PROXY,

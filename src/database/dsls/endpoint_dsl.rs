@@ -2,12 +2,14 @@ use crate::database::crud::{CrudDb, PrimaryKey};
 use crate::database::enums::{DataProxyFeature, EndpointStatus, EndpointVariant};
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_from_row::FromRow;
 use postgres_types::Json;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, Clone)]
 pub struct Endpoint {
     pub id: DieselUlid,
     pub name: String,
@@ -19,10 +21,10 @@ pub struct Endpoint {
     pub status: EndpointStatus,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Hash, Eq)]
 pub struct HostConfigs(pub Vec<HostConfig>);
 
-#[derive(Serialize, Deserialize, FromRow, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, FromRow, Debug, Clone, PartialEq, PartialOrd, Hash, Eq)]
 pub struct HostConfig {
     pub url: String,
     pub is_primary: bool,
@@ -35,7 +37,7 @@ pub struct HostConfig {
 impl CrudDb for Endpoint {
     async fn create(&self, client: &Client) -> Result<()> {
         let query = "INSERT INTO endpoints (id, name, host_config, endpoint_variant, documentation_object, is_public, is_default, status) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+            $1, $2, $3, $4, $5, $6, $7, $8
         );";
 
         let prepared = client.prepare(query).await?;
@@ -103,5 +105,20 @@ impl Endpoint {
             .query_opt(&prepared, &[])
             .await?
             .map(|e| Endpoint::from_row(&e)))
+    }
+}
+impl Eq for Endpoint {}
+impl PartialEq for Endpoint {
+    fn eq(&self, other: &Self) -> bool {
+        let self_config: HashSet<_> = self.host_config.0 .0.iter().cloned().collect();
+        let other_config: HashSet<_> = other.host_config.0 .0.iter().cloned().collect();
+        self.id == other.id
+            && self.name == other.name
+            && self.is_default == other.is_default
+            && self.is_public == other.is_public
+            && self.endpoint_variant == other.endpoint_variant
+            && self.documentation_object == other.documentation_object
+            && self.status == other.status
+            && self_config.iter().all(|c| other_config.iter().contains(c))
     }
 }

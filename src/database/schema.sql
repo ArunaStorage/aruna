@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
     name TEXT NOT NULL,
     host_config JSONB NOT NULL,
     endpoint_variant "EndpointVariant" NOT NULL DEFAULT 'PERSISTENT',
+    documentation_object UUID REFERENCES objects(id) ON DELETE CASCADE,
     is_public BOOL NOT NULL DEFAULT TRUE,
     is_default BOOL NOT NULL DEFAULT FALSE,
     status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING'
