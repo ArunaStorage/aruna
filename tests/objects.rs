@@ -1,5 +1,6 @@
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
+use aruna_server::database::dsls::relation_type_dsl::RelationType;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,

@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     id UUID PRIMARY KEY NOT NULL,
     origin_pid UUID NOT NULL,
     origin_type "ObjectType" NOT NULL,
-    relation_name VARCHAR(511) NOT NULL,
+    relation_name VARCHAR(511) REFERENCES relation_types(relation_name),
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_type "ObjectType" NOT NULL,
     FOREIGN KEY (origin_pid, origin_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
