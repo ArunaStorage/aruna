@@ -379,4 +379,209 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
     }
+
+    #[test]
+    fn test_upstream_dfs_001() {
+        // Init new cache
+        let cache = Cache::new();
+
+        // Create dummy hierarchies
+        let id1 = DieselUlid::generate(); // Project
+        let id2 = DieselUlid::generate(); // Collection: from id1 and to id4
+        let id3 = DieselUlid::generate(); // Collection: from id1 and to id4
+        let id4 = DieselUlid::generate(); // Dataset: from [id2, id3] to id5
+        let id5 = DieselUlid::generate(); // Object: from id4
+        let id6 = DieselUlid::generate(); // Object: from id1
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id1,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id2],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id2,
+            ObjectType::COLLECTION,
+            vec![&id1],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id3,
+            ObjectType::COLLECTION,
+            vec![&id1],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id4,
+            ObjectType::DATASET,
+            vec![&id2, &id3],
+            vec![&id5],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id5,
+            ObjectType::OBJECT,
+            vec![&id4],
+            vec![],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id6,
+            ObjectType::OBJECT,
+            vec![&id1],
+            vec![],
+        ));
+
+        // Extract paths of id5 object and evaluate result
+        let iterative_result = cache.upstream_dfs_iterative(&id5).unwrap();
+
+        let mut current_path = Vec::new();
+        let mut recursive_result = Vec::new();
+        cache
+            .upstream_dfs_recursive(&id5, &mut current_path, &mut recursive_result)
+            .unwrap();
+
+        assert_eq!(recursive_result.len(), 2);
+        assert_eq!(iterative_result.len(), 2);
+
+        for path in vec![
+            vec![
+                ObjectMapping::OBJECT(id5),
+                ObjectMapping::DATASET(id4),
+                ObjectMapping::COLLECTION(id3),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id5),
+                ObjectMapping::DATASET(id4),
+                ObjectMapping::COLLECTION(id2),
+                ObjectMapping::PROJECT(id1),
+            ],
+        ] {
+            assert!(recursive_result.contains(&path));
+            assert!(iterative_result.contains(&path));
+        }
+
+        // Extract paths of id6 object and evaluate result
+        let iterative_result = cache.upstream_dfs_iterative(&id6).unwrap();
+
+        let mut current_path = Vec::new();
+        let mut recursive_result = Vec::new();
+        cache
+            .upstream_dfs_recursive(&id6, &mut current_path, &mut recursive_result)
+            .unwrap();
+
+        assert_eq!(recursive_result.len(), 1);
+        assert_eq!(iterative_result.len(), 1);
+        assert!(recursive_result.contains(&vec![
+            ObjectMapping::OBJECT(id6),
+            ObjectMapping::PROJECT(id1)
+        ]));
+        assert!(iterative_result.contains(&vec![
+            ObjectMapping::OBJECT(id6),
+            ObjectMapping::PROJECT(id1)
+        ]));
+    }
+
+    #[tokio::test]
+    async fn test_upstream_dfs_002() {
+        // Init new cache
+        let cache = Cache::new();
+
+        // Create dummy hierarchies
+        let id1 = DieselUlid::generate(); // Project from [] to [id4]
+        let id2 = DieselUlid::generate(); // Project from [] to [id4]
+        let id3 = DieselUlid::generate(); // Project from [] to [id6]
+        let id4 = DieselUlid::generate(); // Collection: from [id1,id2] and to [id5,id6]
+        let id5 = DieselUlid::generate(); // Dataset: from [id4] to [id7]
+        let id6 = DieselUlid::generate(); // Dataset: from [id3,id4] to [id7]
+        let id7 = DieselUlid::generate(); // Object: from [id5,id6] to []
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id1,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id2,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id3,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id4,
+            ObjectType::COLLECTION,
+            vec![&id1, &id2],
+            vec![&id5, &id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id5,
+            ObjectType::DATASET,
+            vec![&id4],
+            vec![&id7],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id6,
+            ObjectType::DATASET,
+            vec![&id3, &id4],
+            vec![&id7],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id7,
+            ObjectType::OBJECT,
+            vec![&id5, &id6],
+            vec![],
+        ));
+
+        // Extract paths including "Performance measurement"
+        use std::time::Instant;
+        let now = Instant::now();
+        let iterative_result = cache.upstream_dfs_iterative(&id7).unwrap();
+        let elapsed = now.elapsed();
+        log::debug!("Cache iterative traversal: {:.2?}", elapsed);
+
+        // Evaluate result
+        assert_eq!(iterative_result.len(), 5);
+        for path in vec![
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::PROJECT(id3),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id2),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id5),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id5),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id2),
+            ],
+        ] {
+            assert!(iterative_result.contains(&path));
+        }
+    }
 }

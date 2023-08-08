@@ -642,6 +642,47 @@ impl ObjectWithRelations {
         }
     }
 
+    pub fn random_object_v2(
+        id: &DieselUlid,
+        object_type: ObjectType,
+        from: Vec<&DieselUlid>,
+        to: Vec<&DieselUlid>,
+    ) -> Self {
+        Self {
+            object: Object {
+                id: *id,
+                revision_number: 0,
+                name: "object_name.whatev".to_string(),
+                description: "".to_string(),
+                created_at: None,
+                created_by: DieselUlid::generate(),
+                content_len: 0,
+                count: 0,
+                key_values: Json(KeyValues(vec![])),
+                object_status: ObjectStatus::AVAILABLE,
+                data_class: DataClass::PUBLIC,
+                object_type: object_type,
+                external_relations: Json(ExternalRelations(DashMap::default())),
+                hashes: Json(Hashes(vec![])),
+                dynamic: false,
+                endpoints: Json(DashMap::default()),
+            },
+            inbound: Json(DashMap::default()),
+            inbound_belongs_to: Json(DashMap::from_iter(
+                from.into_iter()
+                    .map(|item| (*item, InternalRelation::default()))
+                    .collect::<Vec<_>>(),
+            )),
+            outbound: Json(DashMap::default()),
+            outbound_belongs_to: Json(DashMap::from_iter(
+                to.into_iter()
+                    .map(|item| (*item, InternalRelation::default()))
+                    .collect::<Vec<_>>(),
+            )),
+        }
+    }
+}
+
 /* ----- Object path traversal ----- */
 #[derive(Debug, Default)]
 pub struct Hierarchy {
