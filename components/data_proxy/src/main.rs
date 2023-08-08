@@ -12,15 +12,15 @@ mod structs;
 #[tokio::main]
 async fn main() {
     dotenvy::from_filename(".env").ok();
-    let hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
+    let _hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
     // External S3 server
-    let proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
+    let _proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
     // ULID of the endpoint
-    let endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
+    let _endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
     // Aruna Backend
-    let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
+    let _backend_host = dotenvy::var("BACKEND_HOST").unwrap();
     // Internal backchannel Aruna -> Dproxy
-    let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
+    let _internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
 
     env_logger::Builder::new()
         .format(|buf, record| {

@@ -157,7 +157,7 @@ impl StorageBackend for S3Backend {
             .await?;
 
         return Ok(PartETag {
-            part_number: part_number,
+            part_number,
             etag: upload.e_tag.ok_or_else(|| anyhow!("Missing etag"))?,
         });
     }

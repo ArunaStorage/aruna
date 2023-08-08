@@ -67,7 +67,7 @@ impl Cache {
         ))
     }
 
-    pub fn set_pubkeys(&self, pks: Vec<Pubkey>) -> Result<()> {
+    pub fn set_pubkeys(&self, _pks: Vec<Pubkey>) -> Result<()> {
         Ok(())
     }
 
@@ -77,7 +77,7 @@ impl Cache {
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
             let user_access = User {
                 access_key: key.clone(),
-                user_id: user_id,
+                user_id,
                 secret: self
                     .get_secret(&key)
                     .map(|k| k.expose().to_string())
@@ -85,7 +85,7 @@ impl Cache {
                 permissions: perm,
             };
             if let Some(persistence) = &self.persistence {
-                user_access.upsert(&persistence.get_client().await?).await;
+                user_access.upsert(&persistence.get_client().await?).await?;
             }
             self.users.insert(key.clone(), user_access);
             access_ids.push(key);
@@ -105,7 +105,8 @@ impl Cache {
             let user = self.users.remove(&key);
             if let Some(persistence) = &self.persistence {
                 if let Some((_, user)) = user {
-                    User::delete(&user.user_id.to_string(), &persistence.get_client().await?).await;
+                    User::delete(&user.user_id.to_string(), &persistence.get_client().await?)
+                        .await?;
                 }
             }
         }

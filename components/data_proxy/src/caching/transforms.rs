@@ -66,8 +66,7 @@ impl ExtractAccessKeyPermissions for User {
                         DbPermissionLevel::from(p.permission_level()),
                     ))
                 })
-                .collect::<Result<Vec<(DieselUlid, DbPermissionLevel)>>>()?
-                .into_iter(),
+                .collect::<Result<Vec<(DieselUlid, DbPermissionLevel)>>>()?,
         );
 
         let mut a_key_perm = vec![(self.id.clone(), personal_permissions.clone())];
