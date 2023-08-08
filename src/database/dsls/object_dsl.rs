@@ -684,7 +684,7 @@ impl ObjectWithRelations {
 }
 
 /* ----- Object path traversal ----- */
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Hierarchy {
     pub project_id: String,
     pub collection_id: Option<String>,

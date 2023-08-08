@@ -1,5 +1,5 @@
 use aruna_server::database::dsls::object_dsl::{
-    DefinedVariant, ExternalRelation, KeyValue, KeyValueVariant,
+    DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
 };
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::database::{
@@ -14,7 +14,119 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
-mod init_db;
+mod common;
+
+#[tokio::test]
+async fn fetch_object_paths() {
+    let db = common::init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    // Create random user
+    let user = common::test_utils::new_user(vec![]);
+    let random_user_id = user.id.clone();
+    user.create(&client).await.unwrap();
+
+    // Create dummy hierarchy
+    let project_001 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_002 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_003 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let collection = common::test_utils::new_object(
+        random_user_id,
+        DieselUlid::generate(),
+        ObjectType::COLLECTION,
+    );
+    let dataset_001 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let dataset_002 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let object =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::OBJECT);
+
+    let proj_coll_001 = common::test_utils::new_internal_relation(&project_001, &collection);
+    let proj_coll_002 = common::test_utils::new_internal_relation(&project_002, &collection);
+    let proj_data = common::test_utils::new_internal_relation(&project_003, &dataset_002);
+    let coll_data_001 = common::test_utils::new_internal_relation(&collection, &dataset_001);
+    let coll_data_002 = common::test_utils::new_internal_relation(&collection, &dataset_002);
+    let data_obj_001 = common::test_utils::new_internal_relation(&dataset_001, &object);
+    let data_obj_002 = common::test_utils::new_internal_relation(&dataset_002, &object);
+
+    Object::batch_create(
+        &vec![
+            project_001.clone(),
+            project_002.clone(),
+            project_003.clone(),
+            collection.clone(),
+            dataset_001.clone(),
+            dataset_002.clone(),
+            object.clone(),
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    InternalRelation::batch_create(
+        &vec![
+            proj_coll_001,
+            proj_coll_002,
+            proj_data,
+            coll_data_001,
+            coll_data_002,
+            data_obj_001,
+            data_obj_002,
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    // Fetch object hierarchies including "Performance measurement" recursive
+    use std::time::Instant;
+    let now = Instant::now();
+    let result = object.fetch_object_hierarchies(&client).await.unwrap();
+    let elapsed = now.elapsed();
+    log::debug!("Hierarchy traversal elapsed: {:.2?}", elapsed);
+
+    assert_eq!(result.len(), 5);
+
+    for hierarchy in vec![
+        Hierarchy {
+            project_id: project_001.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_001.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_001.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_002.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_001.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_002.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_003.id.to_string(),
+            collection_id: None,
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+    ] {
+        assert!(result.contains(&hierarchy))
+    }
+}
 
 #[tokio::test]
 async fn create_object() {
