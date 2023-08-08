@@ -1,6 +1,9 @@
-use super::grpc_query_handler::GrpcQueryHandler;
+use super::{grpc_query_handler::GrpcQueryHandler, transforms::ExtractAccessKeyPermissions};
 use crate::{
-    database::database::Database,
+    database::{
+        database::Database,
+        persistence::{GenericBytes, WithGenericBytes},
+    },
     structs::{Object, ObjectLocation, User},
 };
 use ahash::RandomState;
@@ -11,7 +14,10 @@ use aruna_rust_api::api::storage::services::v2::Pubkey;
 use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
 use s3s::auth::SecretKey;
-use std::sync::{Arc, RwLock};
+use std::{
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
@@ -19,7 +25,7 @@ pub struct Cache {
     // HashMap that contains user_id <-> Vec<access_key> pairs
     pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
-    pub objects: DashMap<DieselUlid, (Object, ObjectLocation), RandomState>,
+    pub resources: DashMap<DieselUlid, (Object, ObjectLocation), RandomState>,
     // Maps with path as key and set of ObjectIds as value
     pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
     // Persistence layer
@@ -40,7 +46,7 @@ impl Cache {
         let cache = Arc::new(RwLock::new(Cache {
             users: DashMap::default(),
             user_access_keys: DashMap::default(),
-            objects: DashMap::default(),
+            resources: DashMap::default(),
             paths: DashMap::default(),
             persistence,
             notifications: None,
@@ -69,11 +75,28 @@ impl Cache {
     }
 
     pub fn upsert_user(&self, user: GrpcUser) -> Result<()> {
-        //self.users.insert(user.id.to_string(), user);
+        let user_id = DieselUlid::from_str(&user.id)?;
+        let mut access_ids = Vec::new();
+        for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
+            self.users.insert(
+                key,
+                User {
+                    access_key: key,
+                    user_id: user_id,
+                    secret: self
+                        .get_secret(&key)
+                        .map(|k| k.expose().to_string())
+                        .unwrap_or_default(),
+                    permissions: perm,
+                },
+            );
+            access_ids.push(key);
+        }
+        self.user_access_keys.insert(user_id, access_ids);
         Ok(())
     }
 
-    pub fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
+    pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         let keys = self
             .user_access_keys
             .remove(&user_id)
@@ -81,8 +104,21 @@ impl Cache {
             .1;
 
         for key in keys {
-            self.users.remove(&key);
+            let user = self.users.remove(&key);
+            if let Some(persistence) = &self.persistence {
+                if let Some((_, user)) = user {
+                    User::delete(user.user_id.to_string(), &persistence.get_client().await?).await;
+                }
+            }
         }
         Ok(())
+    }
+
+    pub fn is_user(&self, user_id: DieselUlid) -> bool {
+        self.user_access_keys.get(&user_id).is_some()
+    }
+
+    pub fn is_resource(&self, resource_id: DieselUlid) -> bool {
+        self.resources.get(&resource_id).is_some()
     }
 }

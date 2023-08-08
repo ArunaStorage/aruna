@@ -234,10 +234,12 @@ impl GrpcQueryHandler {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
-                let user_info = self.get_user(uid, message.checksum.clone()).await?;
                 match self.cache.read() {
                     Ok(data) => {
-                        data.upsert_user(user_info.clone());
+                        if data.is_user(uid) {
+                            let user_info = self.get_user(uid, message.checksum.clone()).await?;
+                            data.upsert_user(user_info.clone());
+                        }
                     }
                     _ => bail!("Poisoned lock"),
                 };
@@ -245,7 +247,11 @@ impl GrpcQueryHandler {
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
                 match self.cache.read() {
-                    Ok(data) => data.remove_user(uid),
+                    Ok(data) => {
+                        if data.is_user(uid) {
+                            data.remove_user(uid);
+                        }
+                    }
                     _ => bail!("Poisoned lock"),
                 };
             }

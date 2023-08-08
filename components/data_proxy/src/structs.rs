@@ -1,7 +1,5 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use aruna_rust_api::api::storage::models::v2::{
-    DataClass, KeyValue, Permission, PermissionLevel, Status, User as GrpcUser,
-};
+use aruna_rust_api::api::storage::models::v2::{DataClass, KeyValue, PermissionLevel, Status};
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -149,14 +147,14 @@ impl WithGenericBytes<DieselUlid> for ObjectLocation {
 }
 
 impl TryFrom<GenericBytes<String>> for User {
-    type Error = anyhow::Error;
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
 }
 
 impl TryInto<GenericBytes<String>> for User {
-    type Error = anyhow::Error;
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
