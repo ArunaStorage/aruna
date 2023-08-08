@@ -183,6 +183,7 @@ pub fn validate_reply_msg(reply: Reply, secret: String) -> anyhow::Result<bool> 
     Ok(base64_hmac == reply.hmac)
 }
 
+#[cfg(test)]
 mod tests {
     use crate::{
         database::enums::ObjectType,
