@@ -6,7 +6,7 @@ use tokio_postgres::Client;
 
 #[derive(FromRow, Debug)]
 pub struct PubKey {
-    pub id: i32,
+    pub id: i16,
     pub proxy: Option<DieselUlid>,
     pub pubkey: String,
 }

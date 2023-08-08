@@ -10,6 +10,7 @@ use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
@@ -39,6 +40,12 @@ impl Cache {
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
+        }
+    }
+
+    pub fn update_user(&self, id: &DieselUlid, user: User) {
+        if let Some(mut x) = self.user_cache.get_mut(id) {
+            *x.value_mut() = user;
         }
     }
 
@@ -74,6 +81,19 @@ impl Cache {
             .ok_or_else(|| anyhow!("User not found"))
     }
 
+    pub async fn get_all(&self) -> Vec<APIUser> {
+        Vec::from_iter(self.user_cache.iter().map(|u| u.clone().into()))
+    }
+
+    pub async fn get_all_deactivated(&self) -> Vec<APIUser> {
+        Vec::from_iter(self.user_cache.iter().filter_map(|u| {
+            if u.active {
+                Some(u.clone().into())
+            } else {
+                None
+            }
+        }))
+    }
     // pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
     //     let init = self
     //         .object_cache

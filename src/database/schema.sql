@@ -77,6 +77,17 @@ BEGIN
 END
 $$;
 
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EndpointVariant') THEN
+            CREATE TYPE "EndpointVariant" AS ENUM (
+                'PERSISTENT',
+                'VOLATILE'
+                );
+        END IF;
+    END
+$$;
+
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
@@ -118,7 +129,10 @@ CREATE TABLE IF NOT EXISTS endpoints (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     host_config JSONB NOT NULL,
+    endpoint_variant "EndpointVariant" NOT NULL DEFAULT 'PERSISTENT',
+    documentation_object UUID REFERENCES objects(id) ON DELETE CASCADE,
     is_public BOOL NOT NULL DEFAULT TRUE,
+    is_default BOOL NOT NULL DEFAULT FALSE,
     status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING'
 );
 
@@ -134,7 +148,7 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     id UUID PRIMARY KEY NOT NULL,
     origin_pid UUID NOT NULL,
     origin_type "ObjectType" NOT NULL,
-    relation_name VARCHAR(511) NOT NULL,
+    relation_name VARCHAR(511) REFERENCES relation_types(relation_name),
     target_pid UUID REFERENCES objects(id) ON DELETE CASCADE,
     target_type "ObjectType" NOT NULL,
     FOREIGN KEY (origin_pid, origin_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
