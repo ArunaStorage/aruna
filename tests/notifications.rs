@@ -1,13 +1,28 @@
-use aruna_server::database::{crud::CrudDb, dsls::notification_dsl::StreamConsumer};
-use async_nats::jetstream::consumer::Config;
+use aruna_rust_api::api::notification::services::v2::EventVariant;
+use aruna_server::{
+    database::{
+        crud::CrudDb,
+        dsls::{
+            internal_relation_dsl::InternalRelation,
+            notification_dsl::StreamConsumer,
+            object_dsl::Object,
+        },
+        enums::ObjectType,
+    },
+    notification::{
+        handler::{EventHandler, EventType},
+        natsio_handler::NatsIoHandler,
+    },
+};
+use async_nats::jetstream::consumer::{Config, DeliverPolicy};
 use diesel_ulid::DieselUlid;
 
-mod init_db;
+mod common;
 
 #[tokio::test]
 async fn create_stream_consumer() {
     // Init database connection
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -41,7 +56,7 @@ async fn create_stream_consumer() {
 #[tokio::test]
 async fn get_stream_consumer() {
     // Init database connection
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -73,7 +88,7 @@ async fn get_stream_consumer() {
 #[tokio::test]
 async fn delete_stream_consumer() {
     // Init database connection
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer

@@ -6,10 +6,9 @@ use aruna_server::database::{
     crud::CrudDb,
     dsls::{
         internal_relation_dsl::InternalRelation,
-        object_dsl::{ExternalRelations, Hashes, KeyValues, Object, ObjectWithRelations},
-        user_dsl::{User, UserAttributes},
+        object_dsl::{ExternalRelations, KeyValues, Object, ObjectWithRelations},
     },
-    enums::{DbPermissionLevel, ObjectMapping},
+    enums::ObjectMapping,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -19,15 +18,15 @@ mod init_db;
 
 #[tokio::test]
 async fn create_object() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
@@ -35,7 +34,7 @@ async fn create_object() {
 }
 #[tokio::test]
 async fn get_object_with_relations_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -64,19 +63,25 @@ async fn get_object_with_relations_test() {
         .collect::<Vec<_>>();
 
     let archive = object_vec.clone();
-    let user = new_user(object_id_map);
+    let user = common::test_utils::new_user(object_id_map);
     user.create(client).await.unwrap();
 
-    let create_dataset = new_object(user.id, dataset_id, ObjectType::DATASET);
-    let create_collection_one = new_object(user.id, collection_one, ObjectType::COLLECTION);
-    let create_collection_two = new_object(user.id, collection_two, ObjectType::COLLECTION);
-    let create_object_one = new_object(user.id, object_one, ObjectType::OBJECT);
-    let create_object_two = new_object(user.id, object_two, ObjectType::OBJECT);
+    let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let create_collection_one =
+        common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two =
+        common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_object_one = common::test_utils::new_object(user.id, object_one, ObjectType::OBJECT);
+    let create_object_two = common::test_utils::new_object(user.id, object_two, ObjectType::OBJECT);
 
-    let create_relation_one = new_relation(&create_collection_one, &create_dataset);
-    let create_relation_two = new_relation(&create_collection_two, &create_dataset);
-    let create_relation_three = new_relation(&create_dataset, &create_object_one);
-    let create_relation_four = new_relation(&create_dataset, &create_object_two);
+    let create_relation_one =
+        common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
+    let create_relation_two =
+        common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
+    let create_relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
+    let create_relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
 
     let creates = vec![
         create_dataset.clone(),
@@ -185,15 +190,15 @@ async fn get_object_with_relations_test() {
 }
 #[tokio::test]
 async fn test_keyvals() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let kv = KeyValue {
@@ -250,7 +255,7 @@ async fn test_keyvals() {
 }
 #[tokio::test]
 async fn test_external_relations() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -258,10 +263,10 @@ async fn test_external_relations() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(client).await.unwrap();
     let url = ExternalRelation {
         identifier: "test.test/abc".to_string(),
@@ -320,7 +325,7 @@ async fn test_external_relations() {
 
 #[tokio::test]
 async fn test_updates() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -331,13 +336,14 @@ async fn test_updates() {
     let col_id = DieselUlid::generate();
     let proj_id = DieselUlid::generate();
 
-    let user = new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let mut create_object = new_object(user.id, obj_id, ObjectType::OBJECT);
-    let mut create_dataset = new_object(user.id, dat_id, ObjectType::DATASET);
-    let mut create_collection = new_object(user.id, col_id, ObjectType::COLLECTION);
-    let mut create_project = new_object(user.id, proj_id, ObjectType::PROJECT);
+    let mut create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_dataset = common::test_utils::new_object(user.id, dat_id, ObjectType::DATASET);
+    let mut create_collection =
+        common::test_utils::new_object(user.id, col_id, ObjectType::COLLECTION);
+    let mut create_project = common::test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
     create_object.create(client).await.unwrap();
     create_dataset.create(client).await.unwrap();
     create_collection.create(client).await.unwrap();
@@ -385,7 +391,7 @@ async fn test_updates() {
 }
 #[tokio::test]
 async fn test_delete() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -395,7 +401,7 @@ async fn test_delete() {
     for _ in 1..5 {
         obj_ids.push(DieselUlid::generate());
     }
-    let user = new_user(
+    let user = common::test_utils::new_user(
         obj_ids
             .iter()
             .map(|id| ObjectMapping::OBJECT(*id))
@@ -405,7 +411,11 @@ async fn test_delete() {
 
     let mut objects = Vec::new();
     for id in &obj_ids {
-        objects.push(new_object(user.id, *id, ObjectType::OBJECT));
+        objects.push(common::test_utils::new_object(
+            user.id,
+            *id,
+            ObjectType::OBJECT,
+        ));
     }
     Object::batch_create(&objects, client).await.unwrap();
     let objects = Object::get_objects(&obj_ids, client).await.unwrap();
@@ -417,61 +427,5 @@ async fn test_delete() {
     transaction.commit().await.unwrap();
     for o in deleted {
         assert_eq!(o.object_status, ObjectStatus::DELETED);
-    }
-}
-
-fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
-    let attributes = Json(UserAttributes {
-        global_admin: false,
-        service_account: false,
-        custom_attributes: Vec::new(),
-        tokens: DashMap::default(),
-        trusted_endpoints: DashMap::default(),
-        permissions: DashMap::from_iter(object_ids.iter().map(|o| match o {
-            ObjectMapping::PROJECT(id) => (*id, ObjectMapping::PROJECT(DbPermissionLevel::WRITE)),
-            ObjectMapping::COLLECTION(id) => {
-                (*id, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE))
-            }
-            ObjectMapping::DATASET(id) => (*id, ObjectMapping::DATASET(DbPermissionLevel::WRITE)),
-            ObjectMapping::OBJECT(id) => (*id, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
-        })),
-    });
-    User {
-        id: DieselUlid::generate(),
-        display_name: "test1".to_string(),
-        external_id: None,
-        email: "test2@test3".to_string(),
-        attributes,
-        active: true,
-    }
-}
-fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: ObjectType) -> Object {
-    Object {
-        id: object_id,
-        revision_number: 0,
-        name: "a".to_string(),
-        description: "b".to_string(),
-        count: 1,
-        created_at: None,
-        content_len: 1337,
-        created_by: user_id,
-        key_values: Json(KeyValues(vec![])),
-        object_status: ObjectStatus::AVAILABLE,
-        data_class: DataClass::CONFIDENTIAL,
-        object_type,
-        external_relations: Json(ExternalRelations(DashMap::default())),
-        hashes: Json(Hashes(Vec::new())),
-        dynamic: false,
-        endpoints: Json(DashMap::default()),
-    }
-}
-fn new_relation(origin: &Object, target: &Object) -> InternalRelation {
-    InternalRelation {
-        id: DieselUlid::generate(),
-        origin_pid: origin.id,
-        origin_type: origin.object_type.clone(),
-        target_pid: target.id,
-        target_type: target.object_type.clone(),
-        relation_name: "BELONGS_TO".to_string(),
     }
 }
