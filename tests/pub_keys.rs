@@ -1,20 +1,19 @@
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
+use tokio_postgres::GenericClient;
 
 mod init_db;
 
 #[tokio::test]
 async fn test_crud() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let key_one = PubKey {
         id: 1,
         proxy: None,
-        pubkey: "abcdefg".to_string(),
+        pubkey: "key_one".to_string(),
     };
 
     key_one.create(client).await.unwrap();
@@ -24,12 +23,12 @@ async fn test_crud() {
     let key_two = PubKey {
         id: 2,
         proxy: None,
-        pubkey: "asdflkjas".to_string(),
+        pubkey: "key_two".to_string(),
     };
     let key_three = PubKey {
         id: 3,
         proxy: None,
-        pubkey: "bksjdgoqoiwqhto".to_string(),
+        pubkey: "key_three".to_string(),
     };
     key_two.create(client).await.unwrap();
     key_three.create(client).await.unwrap();
@@ -44,6 +43,5 @@ async fn test_crud() {
 
     let empty = PubKey::all(client).await.unwrap();
 
-    transaction.commit().await.unwrap();
     assert!(empty.is_empty())
 }

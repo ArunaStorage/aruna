@@ -11,6 +11,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
+use tokio_postgres::GenericClient;
 
 mod init_db;
 mod utils;
@@ -18,10 +19,9 @@ mod utils;
 #[tokio::test]
 async fn test_external_relations() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
+    let client = db.get_client().await.unwrap();
 
-    let client = transaction.client();
+    let client = client.client();
 
     let obj_id = DieselUlid::generate();
 
@@ -70,7 +70,7 @@ async fn test_external_relations() {
         endpoints: create_object.endpoints,
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
-    //dbg!(&obj);
+
     assert_eq!(compare_obj, obj);
     let rm_rels = vec![custom, id];
     let remain_rels = vec![url];
@@ -78,7 +78,6 @@ async fn test_external_relations() {
         .await
         .unwrap();
     let rm = Object::get(obj_id, client).await.unwrap().unwrap();
-    transaction.commit().await.unwrap();
     compare_obj.external_relations = Json(ExternalRelations(DashMap::from_iter(
         remain_rels.into_iter().map(|e| (e.identifier.clone(), e)),
     )));
@@ -88,10 +87,9 @@ async fn test_external_relations() {
 #[tokio::test]
 async fn get_object_with_relations_test() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
+    let client = db.get_client().await.unwrap();
 
-    let client = transaction.client();
+    let client = client.client();
 
     let dataset_id = DieselUlid::generate();
     let collection_one = DieselUlid::generate();
@@ -136,11 +134,7 @@ async fn get_object_with_relations_test() {
         create_relation_four.clone(),
     ];
     InternalRelation::batch_create(&rels, client).await.unwrap();
-    transaction.commit().await.unwrap();
 
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-    let client = transaction.client();
     let compare_owr = ObjectWithRelations {
         object: create_dataset,
         inbound: Json(DashMap::default()),
@@ -168,8 +162,6 @@ async fn get_object_with_relations_test() {
     let objects_with_relations = Object::get_objects_with_relations(&object_vec, client)
         .await
         .unwrap();
-
-    transaction.commit().await.unwrap();
 
     assert!(!objects_with_relations.is_empty());
     let compare_collection_one = ObjectWithRelations {
@@ -227,10 +219,9 @@ async fn get_object_with_relations_test() {
 #[tokio::test]
 async fn delete_relations() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
+    let client = db.get_client().await.unwrap();
 
-    let client = transaction.client();
+    let client = client.client();
 
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
@@ -272,12 +263,6 @@ async fn delete_relations() {
         .await
         .unwrap();
 
-    transaction.commit().await.unwrap();
-
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
     let object_with_relations = Object::get_object_with_relations(&object_id, client)
         .await
         .unwrap();
@@ -297,7 +282,6 @@ async fn delete_relations() {
     let dataset_without_relations = Object::get_object_with_relations(&dataset_id, client)
         .await
         .unwrap();
-    transaction.commit().await.unwrap();
 
     assert!(object_without_relations.inbound_belongs_to.0.is_empty());
     assert!(object_without_relations.inbound.0.is_empty());
@@ -308,10 +292,9 @@ async fn delete_relations() {
 #[tokio::test]
 async fn get_by() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
+    let client = db.get_client().await.unwrap();
 
-    let client = transaction.client();
+    let client = client.client();
 
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
@@ -338,16 +321,9 @@ async fn get_by() {
         .await
         .unwrap();
 
-    transaction.commit().await.unwrap();
-
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
     let all = InternalRelation::get_all_by_id(&dataset_id, client)
         .await
         .unwrap();
-    transaction.commit().await.unwrap();
 
     assert!(all.iter().all(|r| rel_vec.iter().contains(r)))
 }

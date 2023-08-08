@@ -1,6 +1,5 @@
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
-use aruna_server::database::dsls::relation_type_dsl::RelationType;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,
@@ -8,6 +7,7 @@ use aruna_server::database::{
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use tokio_postgres::GenericClient;
 
 mod init_db;
 mod utils;
@@ -163,10 +163,8 @@ async fn test_updates() {
 #[tokio::test]
 async fn test_delete() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let mut obj_ids = Vec::new();
     for _ in 1..5 {
@@ -186,7 +184,6 @@ async fn test_delete() {
     }
     Object::set_deleted(&obj_ids, client).await.unwrap();
     let deleted = Object::get_objects(&obj_ids, client).await.unwrap();
-    transaction.commit().await.unwrap();
     for o in deleted {
         assert_eq!(o.object_status, ObjectStatus::DELETED);
     }
@@ -194,10 +191,8 @@ async fn test_delete() {
 #[tokio::test]
 async fn archive_test() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let dataset_id = DieselUlid::generate();
     let collection_one = DieselUlid::generate();
@@ -246,7 +241,6 @@ async fn archive_test() {
 
     // Test archive
     let archived_objects = Object::archive(&archive, client).await.unwrap();
-    transaction.commit().await.unwrap();
     for o in archived_objects {
         assert!(!o.object.dynamic);
     }

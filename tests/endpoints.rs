@@ -3,6 +3,7 @@ use aruna_server::database::dsls::endpoint_dsl::{Endpoint, HostConfigs};
 use aruna_server::database::enums::{EndpointStatus, EndpointVariant, ObjectType};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use tokio_postgres::GenericClient;
 
 mod init_db;
 mod utils;
@@ -10,10 +11,8 @@ mod utils;
 #[tokio::test]
 async fn create_test() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
@@ -35,17 +34,15 @@ async fn create_test() {
     endpoint.create(client).await.unwrap();
 
     let new = Endpoint::get(ep_id, client).await.unwrap().unwrap();
-    transaction.commit().await.unwrap();
     assert_eq!(endpoint, new);
 }
 
 #[tokio::test]
 async fn delete_test() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
+    let client = db.get_client().await.unwrap();
 
-    let client = transaction.client();
+    let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
@@ -69,15 +66,12 @@ async fn delete_test() {
     Endpoint::delete_by_id(&ep_id, client).await.unwrap();
 
     assert!(Endpoint::get(ep_id, client).await.unwrap().is_none());
-    transaction.commit().await.unwrap();
 }
 #[tokio::test]
 async fn get_by_tests() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
@@ -107,6 +101,5 @@ async fn get_by_tests() {
 
     let default = Endpoint::get_default(client).await.unwrap().unwrap();
 
-    transaction.commit().await.unwrap();
     assert_eq!(endpoint, default);
 }

@@ -18,6 +18,7 @@ do
     sleep 1
     echo "db initializing..."
 done
+sleep 5;
 
 # Create database
 psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test' 
