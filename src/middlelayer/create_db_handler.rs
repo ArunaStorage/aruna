@@ -25,6 +25,9 @@ impl DatabaseHandler {
         let object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
+        // Fetch all object paths
+        let object_hierarchies = object.fetch_object_hierarchies(transaction_client).await?;
+
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => DashMap::default(),
@@ -57,7 +60,7 @@ impl DatabaseHandler {
         // Try to emit object created notification
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_with_rel, EventVariant::Created)
+            .register_resource_event(&object_with_rel, object_hierarchies, EventVariant::Created)
             .await
         {
             // Log error, rollback transaction and return

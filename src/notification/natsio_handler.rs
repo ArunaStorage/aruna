@@ -16,14 +16,13 @@ use futures::future::try_join_all;
 use futures::StreamExt;
 use prost::bytes::Bytes;
 
-use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
-use crate::database::enums::ObjectType;
 use crate::utils::grpc_utils::{checksum_resource, checksum_user};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
-    generate_announcement_subject, generate_resource_message_subject, generate_resource_subject,
+    generate_announcement_subject, generate_resource_message_subjects, generate_resource_subject,
     generate_user_message_subject, generate_user_subject, validate_reply_msg,
 };
 
@@ -32,7 +31,6 @@ pub const STREAM_NAME: &str = "AOS_STREAM";
 pub const STREAM_SUBJECTS: [&str; 3] = ["AOS.RESOURCE.>", "AOS.USER.>", "AOS.ANNOUNCEMENT.>"];
 // ----------------------------------------------------------- //
 
-#[derive(Debug, Clone)]
 pub struct NatsIoHandler {
     jetstream_context: Context,
     stream: Stream,
@@ -47,20 +45,11 @@ pub struct NatsIOEventStreamHandler {
 #[async_trait::async_trait]
 impl EventHandler for NatsIoHandler {
     ///ToDo: Rust Doc
-    async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()> {
-        // Generate subject
-        let subject = match &message_variant {
-            MessageVariant::ResourceEvent(event) => match &event.resource {
-                Some(resource) => generate_resource_message_subject(
-                    &resource.resource_id,
-                    ObjectType::try_from(resource.resource_variant)?,
-                ),
-                None => return Err(anyhow::anyhow!("No event resource provided")),
-            },
-            MessageVariant::UserEvent(event) => generate_user_message_subject(&event.user_id),
-            MessageVariant::AnnouncementEvent(_event) => todo!(), //generate_announcement_message_subject(event),
-        };
-
+    async fn register_event(
+        &self,
+        message_variant: MessageVariant,
+        subject: String,
+    ) -> anyhow::Result<()> {
         // Encode message
         let json_message = serde_json::to_string_pretty(&message_variant)?;
         let message_bytes = Bytes::from(json_message);
@@ -251,6 +240,7 @@ impl NatsIoHandler {
     pub async fn register_resource_event(
         &self,
         object: &ObjectWithRelations,
+        object_hierarchies: Vec<Hierarchy>,
         event_variant: EventVariant,
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
@@ -262,8 +252,10 @@ impl NatsIoHandler {
             "Checksum calculation failed"
         );
 
-        // Emit resource event message
-        self.register_event(MessageVariant::ResourceEvent(ResourceEvent {
+        // Evaluate number of notifications and the corresponding subjects
+        let subjects = generate_resource_message_subjects(object_hierarchies);
+
+        let message_variant = MessageVariant::ResourceEvent(ResourceEvent {
             resource: Some(Resource {
                 resource_id: object.object.id.to_string(),
                 associated_id: "deprecated".to_string(), //ToDo: Will be removed with the next API version release
@@ -273,8 +265,15 @@ impl NatsIoHandler {
             }),
             event_variant: event_variant as i32,
             reply: None, // Will be filled on message fetch
-        }))
-        .await
+        });
+
+        // Emit resource event messages
+        for subject in subjects {
+            self.register_event(message_variant.clone(), subject)
+                .await?
+        }
+
+        Ok(())
     }
 
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
@@ -286,12 +285,18 @@ impl NatsIoHandler {
         // Calculate user checksum
         let user_checksum = tonic_internal!(checksum_user(&ApiUser::from(user.clone())), "");
 
-        self.register_event(MessageVariant::UserEvent(UserEvent {
-            user_id: user.id.to_string(),
-            event_variant: event_variant as i32,
-            checksum: user_checksum,
-            reply: None,
-        }))
+        // Generate message subject
+        let subject = generate_user_message_subject(&user.id.to_string());
+
+        self.register_event(
+            MessageVariant::UserEvent(UserEvent {
+                user_id: user.id.to_string(),
+                event_variant: event_variant as i32,
+                checksum: user_checksum,
+                reply: None,
+            }),
+            subject,
+        )
         .await
     }
 }

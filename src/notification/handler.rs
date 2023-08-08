@@ -24,7 +24,11 @@ pub enum EventType {
 #[async_trait]
 pub trait EventHandler {
     // Registers/Publishes an event into the event message system
-    async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()>;
+    async fn register_event(
+        &self,
+        message_variant: MessageVariant,
+        subject: String,
+    ) -> anyhow::Result<()>;
 
     // Creates an event consumer.
     // An event consumer is a entity of the underlying event streaming system can be used

@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::Sha256;
 
-use crate::database::enums::ObjectType;
+use crate::database::{dsls::object_dsl::Hierarchy, enums::ObjectType};
 
 use super::handler::EventType;
 
@@ -44,6 +44,31 @@ pub fn generate_resource_message_subject(
         ObjectType::DATASET => format!("AOS.RESOURCE._.*._.*._.{}._", resource_id),
         ObjectType::OBJECT => format!("AOS.RESOURCE._.*._.*._.*._.{}._", resource_id),
     }
+}
+
+///ToDo: Rust Doc
+pub fn generate_resource_message_subjects(hierarchies: Vec<Hierarchy>) -> Vec<String> {
+    let mut subjects = vec![];
+    for hierarchy in hierarchies {
+        subjects.push(format!(
+            "AOS.RESOURCE._.{}._.{}._.{}._.{}._",
+            hierarchy.project_id,
+            match hierarchy.collection_id {
+                Some(id) => id,
+                None => "*".to_string(),
+            },
+            match hierarchy.dataset_id {
+                Some(id) => id,
+                None => "*".to_string(),
+            },
+            match hierarchy.object_id {
+                Some(id) => id,
+                None => "*".to_string(),
+            },
+        ))
+    }
+
+    subjects
 }
 
 ///ToDo: Rust Doc
