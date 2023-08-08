@@ -64,9 +64,9 @@ pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelati
     InternalRelation {
         id: DieselUlid::generate(),
         origin_pid: origin.id,
-        origin_type: origin.object_type.clone(),
+        origin_type: origin.object_type,
         target_pid: target.id,
-        target_type: target.object_type.clone(),
+        target_type: target.object_type,
         relation_name: "BELONGS_TO".to_string(),
     }
 }

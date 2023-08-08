@@ -3,8 +3,7 @@ use aruna_server::{
     database::{
         crud::CrudDb,
         dsls::{
-            internal_relation_dsl::InternalRelation,
-            notification_dsl::StreamConsumer,
+            internal_relation_dsl::InternalRelation, notification_dsl::StreamConsumer,
             object_dsl::Object,
         },
         enums::ObjectType,
@@ -140,7 +139,7 @@ async fn notification_test() {
 
     // Create random user
     let user = common::test_utils::new_user(vec![]);
-    let random_user_id = user.id.clone();
+    let random_user_id = user.id;
     user.create(&client).await.unwrap();
 
     // Create dummy hierarchy

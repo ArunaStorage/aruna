@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::collections::VecDeque;
 
 use super::structs::PubKey;
@@ -178,7 +177,7 @@ impl Cache {
                     return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
                 }
                 crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
-                    resources.insert(*id, perm.clone());
+                    resources.insert(*id, *perm);
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {
                     return if uid == user_id {
@@ -208,7 +207,7 @@ impl Cache {
                     }
                 }
             }
-            match self.traverse_down(id, got_perm.clone(), &mut resources) {
+            match self.traverse_down(id, *got_perm, &mut resources) {
                 Ok(true) => return true,
                 Ok(false) => continue,
                 Err(_) => return false,
@@ -274,7 +273,7 @@ impl Cache {
             });
 
             // Check if current object is a project
-            if current_object.borrow().object.object_type == ObjectType::PROJECT {
+            if current_object.object.object_type == ObjectType::PROJECT {
                 // Save finished hierarchy
                 finished_hierarchies.push(current_hierarchy.clone());
 
@@ -312,7 +311,7 @@ impl Cache {
         finished_hierarchies: &mut Vec<Vec<ObjectMapping<DieselUlid>>>,
     ) -> anyhow::Result<()> {
         // Fetch current object with relations
-        if let Some(current_object) = self.get_object(&current_object_id) {
+        if let Some(current_object) = self.get_object(current_object_id) {
             // End current hierarchy if node is project
             if current_object.object.object_type == ObjectType::PROJECT {
                 current_path.push(ObjectMapping::PROJECT(current_object.object.id));
@@ -442,7 +441,7 @@ mod tests {
         assert_eq!(recursive_result.len(), 2);
         assert_eq!(iterative_result.len(), 2);
 
-        for path in vec![
+        for path in [
             vec![
                 ObjectMapping::OBJECT(id5),
                 ObjectMapping::DATASET(id4),
@@ -550,7 +549,7 @@ mod tests {
 
         // Evaluate result
         assert_eq!(iterative_result.len(), 5);
-        for path in vec![
+        for path in [
             vec![
                 ObjectMapping::OBJECT(id7),
                 ObjectMapping::DATASET(id6),

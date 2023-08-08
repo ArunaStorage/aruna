@@ -23,7 +23,7 @@ async fn fetch_object_paths() {
 
     // Create random user
     let user = common::test_utils::new_user(vec![]);
-    let random_user_id = user.id.clone();
+    let random_user_id = user.id;
     user.create(&client).await.unwrap();
 
     // Create dummy hierarchy

@@ -261,11 +261,11 @@ impl Object {
             .query(&prepared, &[&self.id])
             .await?
             .iter()
-            .map(|row| InternalRelation::from_row(row))
+            .map(InternalRelation::from_row)
             .collect::<Vec<_>>();
 
         // Extract paths from list of internal relations
-        Ok(extract_paths_from_graph(&self.id, relations)?)
+        extract_paths_from_graph(&self.id, relations)
     }
 
     pub async fn get_object_with_relations(
@@ -661,7 +661,7 @@ impl ObjectWithRelations {
                 key_values: Json(KeyValues(vec![])),
                 object_status: ObjectStatus::AVAILABLE,
                 data_class: DataClass::PUBLIC,
-                object_type: object_type,
+                object_type,
                 external_relations: Json(ExternalRelations(DashMap::default())),
                 hashes: Json(Hashes(vec![])),
                 dynamic: false,
@@ -739,7 +739,7 @@ pub fn extract_paths_from_graph(
     let mut nodes: HashMap<DieselUlid, Node> = HashMap::new();
     for edge in &edge_list {
         // Create origin if not exists
-        if let None = nodes.get(&edge.origin_pid) {
+        if nodes.get(&edge.origin_pid).is_none() {
             nodes.insert(
                 edge.origin_pid,
                 Node {

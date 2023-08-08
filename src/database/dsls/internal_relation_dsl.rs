@@ -174,10 +174,10 @@ impl InternalRelation {
         InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: replace,
-            origin_type: self.origin_type.clone(),
+            origin_type: self.origin_type,
             relation_name: self.relation_name.clone(),
             target_pid: self.target_pid,
-            target_type: self.target_type.clone(),
+            target_type: self.target_type,
         }
     }
     pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
