@@ -1,8 +1,5 @@
-use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::RwLock;
-
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
@@ -18,7 +15,7 @@ use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
-use aruna_rust_api::api::storage::models::v2::User;
+use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
@@ -41,6 +38,9 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::RwLock;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
@@ -99,7 +99,7 @@ impl GrpcQueryHandler {
 }
 
 impl GrpcQueryHandler {
-    async fn get_user(&self, id: DieselUlid, checksum: String) -> Result<User> {
+    async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let user = self
             .user_service
             .clone()
@@ -110,13 +110,6 @@ impl GrpcQueryHandler {
             .into_inner()
             .user
             .ok_or(anyhow!("Unknown user"))?;
-
-        //let actual_checksum = checksum_user(&user)?;
-
-        // if actual_checksum == checksum {
-        //     bail!("Invalid checksum")
-        // }
-
         Ok(user)
     }
     async fn get_pubkeys(&self) -> Result<Vec<Pubkey>> {
@@ -128,7 +121,7 @@ impl GrpcQueryHandler {
             .into_inner()
             .pubkeys)
     }
-    async fn get_project(&self, id: &DieselUlid, checksum: String) -> Result<Project> {
+    async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
         self.project_service
             .clone()
             .get_project(Request::new(GetProjectRequest {
@@ -140,7 +133,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown project"))
     }
 
-    async fn get_collection(&self, id: &DieselUlid, checksum: String) -> Result<Collection> {
+    async fn get_collection(&self, id: &DieselUlid, _checksum: String) -> Result<Collection> {
         self.collection_service
             .clone()
             .get_collection(Request::new(GetCollectionRequest {
@@ -152,7 +145,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown collection"))
     }
 
-    async fn get_dataset(&self, id: &DieselUlid, checksum: String) -> Result<Dataset> {
+    async fn get_dataset(&self, id: &DieselUlid, _checksum: String) -> Result<Dataset> {
         self.dataset_service
             .clone()
             .get_dataset(Request::new(GetDatasetRequest {
@@ -164,7 +157,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown dataset"))
     }
 
-    async fn get_object(&self, id: &DieselUlid, checksum: String) -> Result<Object> {
+    async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
         self.object_service
             .clone()
             .get_object(Request::new(GetObjectRequest {
@@ -191,7 +184,7 @@ impl GrpcQueryHandler {
         while let Some(m) = inner_stream.message().await? {
             let mut acks = Vec::new();
             for message in m.messages {
-                if let Some(r) = self.process_message(message).await {
+                if let Ok(Some(r)) = self.process_message(message).await {
                     acks.push(r)
                 }
             }
@@ -205,7 +198,7 @@ impl GrpcQueryHandler {
         Err(anyhow!("Stream was closed by sender"))
     }
 
-    async fn process_message(&self, message: EventMessage) -> Option<Reply> {
+    async fn process_message(&self, message: EventMessage) -> Result<Option<Reply>> {
         match message.message_variant.unwrap() {
             MessageVariant::ResourceEvent(r_event) => self.process_resource_event(r_event).await,
             MessageVariant::UserEvent(u_event) => self.process_user_event(u_event).await,
@@ -215,57 +208,53 @@ impl GrpcQueryHandler {
         }
     }
 
-    async fn process_announcements_event(&self, message: AnouncementEvent) -> Option<Reply> {
-        match message.event_variant? {
+    async fn process_announcements_event(
+        &self,
+        message: AnouncementEvent,
+    ) -> Result<Option<Reply>> {
+        match message
+            .event_variant
+            .ok_or_else(|| anyhow!("No event variant"))?
+        {
             anouncement_event::EventVariant::NewPubkey(_)
             | anouncement_event::EventVariant::RemovePubkey(_)
             | anouncement_event::EventVariant::NewDataProxyId(_)
             | anouncement_event::EventVariant::RemoveDataProxyId(_)
-            | anouncement_event::EventVariant::UpdateDataProxyId(_) => {
-                self.cache
-                    .read()
-                    .ok()?
-                    .set_pubkeys(self.get_pubkeys().await.ok()?);
-            }
+            | anouncement_event::EventVariant::UpdateDataProxyId(_) => match self.cache.read() {
+                Ok(data) => data.set_pubkeys(self.get_pubkeys().await?)?,
+                _ => bail!("Poisoned lock"),
+            },
             anouncement_event::EventVariant::Downtime(_) => (),
             anouncement_event::EventVariant::Version(_) => (),
         }
-        message.reply
+        Ok(message.reply)
     }
 
-    async fn process_user_event(&self, message: UserEvent) -> Option<Reply> {
+    async fn process_user_event(&self, message: UserEvent) -> Result<Option<Reply>> {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
-                let uid = DieselUlid::from_str(&message.user_id).ok()?;
-                let mut retry_counter = 0;
-                let user_info = loop {
-                    match self.query.get_user(uid, message.checksum.clone()).await {
-                        Ok(u) => break Some(u),
-                        Err(_) => {
-                            tokio::time::sleep(Duration::from_millis(100 * retry_counter)).await;
-                            retry_counter += 1;
-
-                            if retry_counter > 10 {
-                                self.cache
-                                    .process_full_sync(self.query.full_sync().await.ok()?)
-                                    .ok()?;
-                                break None;
-                            }
-                        }
+                let uid = DieselUlid::from_str(&message.user_id)?;
+                let user_info = self.get_user(uid, message.checksum.clone()).await?;
+                match self.cache.read() {
+                    Ok(data) => {
+                        data.upsert_user(user_info.clone());
                     }
-                }?;
-                self.cache.add_or_update_user(user_info).ok()?;
+                    _ => bail!("Poisoned lock"),
+                };
             }
             EventVariant::Deleted => {
-                let uid = DieselUlid::from_str(&message.user_id).ok()?;
-                self.cache.remove_user(&uid);
+                let uid = DieselUlid::from_str(&message.user_id)?;
+                match self.cache.read() {
+                    Ok(data) => data.remove_user(uid),
+                    _ => bail!("Poisoned lock"),
+                };
             }
             _ => (),
         }
-        message.reply
+        Ok(message.reply)
     }
 
-    async fn process_resource_event(&self, event: ResourceEvent) -> Option<Reply> {
+    async fn process_resource_event(&self, event: ResourceEvent) -> Result<Option<Reply>> {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
                 if let Some(r) = event.resource {

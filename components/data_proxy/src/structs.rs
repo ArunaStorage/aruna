@@ -1,5 +1,7 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use aruna_rust_api::api::storage::models::v2::{DataClass, KeyValue, Status};
+use aruna_rust_api::api::storage::models::v2::{
+    DataClass, KeyValue, Permission, PermissionLevel, Status, User as GrpcUser,
+};
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -16,8 +18,8 @@ pub enum DbPermissionLevel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    pub id: DieselUlid,
-    pub token_id: Option<String>,
+    pub access_key: String,
+    pub user_id: DieselUlid,
     pub secret: String,
     pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
@@ -146,27 +148,39 @@ impl WithGenericBytes<DieselUlid> for ObjectLocation {
     }
 }
 
-impl TryFrom<GenericBytes<DieselUlid>> for User {
+impl TryFrom<GenericBytes<String>> for User {
     type Error = anyhow::Error;
-    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
+    fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
 }
 
-impl TryInto<GenericBytes<DieselUlid>> for User {
+impl TryInto<GenericBytes<String>> for User {
     type Error = anyhow::Error;
-    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
+    fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
-            id: self.id,
+            id: self.access_key,
             data: data.into(),
             table: Self::get_table(),
         })
     }
 }
 
-impl WithGenericBytes<DieselUlid> for User {
+impl WithGenericBytes<String> for User {
     fn get_table() -> Table {
         Table::Users
+    }
+}
+
+impl From<PermissionLevel> for DbPermissionLevel {
+    fn from(level: PermissionLevel) -> Self {
+        match level {
+            PermissionLevel::Read => DbPermissionLevel::READ,
+            PermissionLevel::Append => DbPermissionLevel::APPEND,
+            PermissionLevel::Write => DbPermissionLevel::WRITE,
+            PermissionLevel::Admin => DbPermissionLevel::ADMIN,
+            _ => DbPermissionLevel::NONE,
+        }
     }
 }

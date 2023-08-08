@@ -6,22 +6,24 @@ use crate::{
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
 use s3s::auth::SecretKey;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 pub struct Cache {
-    // Map with SecretKey as key and User as value
+    // Map with AccessKey as key and User as value
     pub users: DashMap<String, User, RandomState>,
+    // HashMap that contains user_id <-> Vec<access_key> pairs
+    pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
     pub objects: DashMap<DieselUlid, (Object, ObjectLocation), RandomState>,
     // Maps with path as key and set of ObjectIds as value
     pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
     // Persistence layer
     pub persistence: Option<Arc<Database>>,
-
     pub notifications: Option<GrpcQueryHandler>,
 }
 
@@ -37,6 +39,7 @@ impl Cache {
         };
         let cache = Arc::new(RwLock::new(Cache {
             users: DashMap::default(),
+            user_access_keys: DashMap::default(),
             objects: DashMap::default(),
             paths: DashMap::default(),
             persistence,
@@ -62,6 +65,24 @@ impl Cache {
     }
 
     pub fn set_pubkeys(&self, pks: Vec<Pubkey>) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn upsert_user(&self, user: GrpcUser) -> Result<()> {
+        //self.users.insert(user.id.to_string(), user);
+        Ok(())
+    }
+
+    pub fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
+        let keys = self
+            .user_access_keys
+            .remove(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?
+            .1;
+
+        for key in keys {
+            self.users.remove(&key);
+        }
         Ok(())
     }
 }
