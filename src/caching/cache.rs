@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::VecDeque;
 
 use super::structs::PubKey;
@@ -5,6 +6,8 @@ use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::ObjectMapping;
+use crate::database::enums::ObjectType;
 use ahash::HashMap;
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -243,6 +246,96 @@ impl Cache {
             }
         }
         Ok(false)
+    }
+
+    ///ToDo: Rust Doc
+    pub fn upstream_dfs_iterative(
+        &self,
+        root: &DieselUlid,
+    ) -> Result<Vec<Vec<ObjectMapping<DieselUlid>>>> {
+        let mut split_indexes = Vec::new(); // Used to store history where path splits
+        let mut current_hierarchy = Vec::with_capacity(4); // Maximum length of hierarchy is 4
+        let mut finished_hierarchies = vec![];
+
+        // Fetch root object and push int queue
+        let mut queue = VecDeque::new();
+        queue.push_back(
+            self.get_object(root)
+                .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?,
+        );
+
+        while let Some(current_object) = queue.pop_front() {
+            // Add current object to back of hierarchy
+            current_hierarchy.push(match current_object.object.object_type {
+                ObjectType::PROJECT => ObjectMapping::PROJECT(current_object.object.id),
+                ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_object.object.id),
+                ObjectType::DATASET => ObjectMapping::DATASET(current_object.object.id),
+                ObjectType::OBJECT => ObjectMapping::OBJECT(current_object.object.id),
+            });
+
+            // Check if current object is a project
+            if current_object.borrow().object.object_type == ObjectType::PROJECT {
+                // Save finished hierarchy
+                finished_hierarchies.push(current_hierarchy.clone());
+
+                // Truncate current hierarchy back to last path split
+                if let Some(index) = split_indexes.pop() {
+                    current_hierarchy.truncate(index) //
+                }
+            } else {
+                // Add parents to the front of the queue for DFS
+                for parent_id in current_object.get_parents() {
+                    let parent = self
+                        .get_object(&parent_id)
+                        .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
+
+                    queue.push_front(parent);
+                }
+
+                // Save index n times for hierarchy cleanup if more than 1 parent
+                if current_object.get_parents().len() > 1 {
+                    for _ in 0..(current_object.get_parents().len() - 1) {
+                        split_indexes.push(current_hierarchy.len())
+                    }
+                }
+            }
+        }
+
+        Ok(finished_hierarchies)
+    }
+
+    ///ToDo: Rust Doc
+    pub fn upstream_dfs_recursive(
+        &self,
+        current_object_id: &DieselUlid,
+        current_path: &mut Vec<ObjectMapping<DieselUlid>>,
+        finished_hierarchies: &mut Vec<Vec<ObjectMapping<DieselUlid>>>,
+    ) -> anyhow::Result<()> {
+        // Fetch current object with relations
+        if let Some(current_object) = self.get_object(&current_object_id) {
+            // End current hierarchy if node is project
+            if current_object.object.object_type == ObjectType::PROJECT {
+                current_path.push(ObjectMapping::PROJECT(current_object.object.id));
+                finished_hierarchies.push(current_path.clone());
+                current_path.pop();
+            } else {
+                // Add current object to path
+                current_path.push(match current_object.object.object_type {
+                    ObjectType::PROJECT => ObjectMapping::PROJECT(current_object.object.id),
+                    ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_object.object.id),
+                    ObjectType::DATASET => ObjectMapping::DATASET(current_object.object.id),
+                    ObjectType::OBJECT => ObjectMapping::OBJECT(current_object.object.id),
+                });
+                for parent_id in current_object.get_parents() {
+                    self.upstream_dfs_recursive(&parent_id, current_path, finished_hierarchies)?
+                }
+                current_path.pop();
+            }
+        } else {
+            return Err(anyhow::anyhow!("Parent does not exist"));
+        }
+
+        Ok(())
     }
 }
 
