@@ -9,6 +9,7 @@ use diesel_ulid::DieselUlid;
 use crate::database::enums::ObjectType;
 
 // Internal enum which provides info for consumer creation
+#[derive(Debug, PartialEq)]
 pub enum EventType {
     // Contains resource_id, resource_variant and if it includes sub resources
     Resource((String, ObjectType, bool)),
