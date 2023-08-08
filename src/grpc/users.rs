@@ -99,7 +99,7 @@ impl UserService for UserServiceImpl {
         );
         let (user_id, user) = tonic_internal!(
             self.database_handler.activate_user(request).await,
-            "Internal deactivate user error"
+            "Internal activate user error"
         );
         self.cache.update_user(&user_id, user);
 
