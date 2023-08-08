@@ -30,9 +30,12 @@ do
     sleep 1
     echo "db initializing..."
 done
+sleep 5;
 
 # Create database
 psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test' 
 
 # Import schema (script has to be called from project root)
 psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/src/database/schema.sql
+# Add relation types for testing
+psql "postgres://yugabyte@localhost:5433/test" -c "INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY') "

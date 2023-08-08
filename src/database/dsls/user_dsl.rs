@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectMapping};
+use crate::database::enums::{DbPermissionLevel, ObjectType, ObjectMapping};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -32,6 +32,7 @@ pub struct APIToken {
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
     pub object_id: Option<ObjectMapping<DieselUlid>>,
+    pub object_type: ObjectType,
     pub user_rights: DbPermissionLevel,
 }
 
@@ -253,6 +254,20 @@ impl User {
         client
             .execute(&prepared, &[&token_id.to_string(), user_id])
             .await?;
+        Ok(())
+    }
+
+    pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
+        let query = "UPDATE users SET active = false WHERE id = $1";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[user_id]).await?;
+        Ok(())
+    }
+
+    pub async fn activate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
+        let query = "UPDATE users SET active = true WHERE id = $1";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[user_id]).await?;
         Ok(())
     }
 }

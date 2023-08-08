@@ -1,3 +1,4 @@
+use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::object_dsl::{
     DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
 };
@@ -10,9 +11,9 @@ use aruna_server::database::{
     },
     enums::ObjectMapping,
 };
-use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use tokio_postgres::GenericClient;
 
 mod common;
 
@@ -293,13 +294,6 @@ async fn get_object_with_relations_test() {
         .iter()
         .all(|o| compare_owrs.contains(o)));
 
-    // Test archive
-    let archived_objects = Object::archive(&archive, client).await.unwrap();
-    transaction.commit().await.unwrap();
-    for o in archived_objects {
-        assert!(!o.object.dynamic);
-    }
-}
 #[tokio::test]
 async fn test_keyvals() {
     let db = common::init_db::init_db().await;
@@ -536,8 +530,64 @@ async fn test_delete() {
     }
     Object::set_deleted(&obj_ids, client).await.unwrap();
     let deleted = Object::get_objects(&obj_ids, client).await.unwrap();
-    transaction.commit().await.unwrap();
     for o in deleted {
         assert_eq!(o.object_status, ObjectStatus::DELETED);
+    }
+}
+#[tokio::test]
+async fn archive_test() {
+    let db = init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    let dataset_id = DieselUlid::generate();
+    let collection_one = DieselUlid::generate();
+    let collection_two = DieselUlid::generate();
+    let object_one = DieselUlid::generate();
+    let object_two = DieselUlid::generate();
+    let object_vec = vec![
+        dataset_id,
+        collection_one,
+        collection_two,
+        object_one,
+        object_two,
+    ];
+    let archive = object_vec.clone();
+    let user = utils::new_user(object_vec.clone());
+    user.create(client).await.unwrap();
+
+    let create_dataset = utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let create_collection_one = utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two = utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_object_one = utils::new_object(user.id, object_one, ObjectType::OBJECT);
+    let create_object_two = utils::new_object(user.id, object_two, ObjectType::OBJECT);
+
+    let create_relation_one = utils::new_relation(&create_collection_one, &create_dataset);
+    let create_relation_two = utils::new_relation(&create_collection_two, &create_dataset);
+    let create_relation_three = utils::new_relation(&create_dataset, &create_object_one);
+    let create_relation_four = utils::new_relation(&create_dataset, &create_object_two);
+
+    let creates = vec![
+        create_dataset.clone(),
+        create_object_one.clone(),
+        create_object_two.clone(),
+        create_collection_one.clone(),
+        create_collection_two.clone(),
+    ];
+
+    Object::batch_create(&creates, client).await.unwrap();
+
+    let rels = vec![
+        create_relation_one.clone(),
+        create_relation_two.clone(),
+        create_relation_three.clone(),
+        create_relation_four.clone(),
+    ];
+    InternalRelation::batch_create(&rels, client).await.unwrap();
+
+    // Test archive
+    let archived_objects = Object::archive(&archive, client).await.unwrap();
+    for o in archived_objects {
+        assert!(!o.object.dynamic);
     }
 }

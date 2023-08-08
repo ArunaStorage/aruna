@@ -128,15 +128,22 @@ pub enum DbPermissionLevel {
     ADMIN,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Debug, Default, Hash, ToSql, FromSql, Clone, PartialEq, Eq, PartialOrd,
+)]
 pub enum DataProxyFeature {
     #[default]
     PROXY,
-    INTERNAL,
     BUNDLER,
 }
+#[derive(Serialize, Deserialize, Debug, Default, ToSql, FromSql, Clone, PartialEq, PartialOrd)]
+pub enum EndpointVariant {
+    #[default]
+    PERSISTENT,
+    VOLATILE,
+}
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, FromSql)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, ToSql, Eq, PartialOrd, FromSql)]
 pub enum EndpointStatus {
     INITIALIZING,
     AVAILABLE,

@@ -5,29 +5,33 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_VERSION,
 };
 use crate::database::dsls::object_dsl::Object;
-use crate::database::dsls::user_dsl::{APIToken, User};
-use crate::database::enums::{DbPermissionLevel, ObjectMapping};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping, EndpointVariant};
+use crate::database::dsls::user_dsl::{
+    APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
+    UserAttributes as DBUserAttributes,
+};
 use crate::database::{
+    dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
         Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
         ObjectWithRelations,
     },
-    enums::{DataClass, ObjectStatus, ObjectType},
+    enums::{DataClass, DataProxyFeature, EndpointStatus, ObjectStatus, ObjectType},
 };
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
     Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
-    relation::Relation as RelationEnum, Collection as GRPCCollection, Dataset as GRPCDataset,
-    ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
-    Object as GRPCObject, Project as GRPCProject, Relation, Stats,
-};
+    permission::ResourceId, relation::Relation as RelationEnum,
+    Collection as GRPCCollection, Dataset as GRPCDataset, Endpoint,
+    EndpointHostConfig, ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
+    Object as GRPCObject, Project as GRPCProject, Relation, Stats, User,
+    };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
@@ -40,9 +44,6 @@ pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
-//noinspection ALL
-//noinspection ALL
-//noinspection ALL
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")
@@ -61,7 +62,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
 
     if splitted[0] != "Bearer" {
         log::debug!(
-            "Could not get token from metadata: Invalid Tokentype, expected: Bearer, got: {:?}",
+            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
             splitted[0]
         );
 
@@ -70,7 +71,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
 
     if splitted[1].is_empty() {
         log::debug!(
-            "Could not get token from metadata: Invalid Tokenlength, expected: >0, got: {:?}",
+            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
             splitted[1].len()
         );
 
@@ -317,7 +318,7 @@ impl From<ObjectMapping<DieselUlid>> for ResourceId {
 }
 
 // Conversion from database model user token to proto user
-impl From<User> for ApiUser {
+impl From<DBUser> for ApiUser {
     fn from(db_user: User) -> Self {
         // Convert and collect tokens
         let api_tokens = db_user
@@ -728,5 +729,245 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
             }
             _ => Err(anyhow!("Relation type not found")),
         }
+    }
+}
+
+impl From<DBUser> for DBUser {
+    fn from(user: DBUser) -> Self {
+        ApiUser {
+            id: user.id.to_string(),
+            external_id: match user.external_id {
+                Some(id) => id,
+                None => String::new(),
+            },
+            display_name: user.display_name,
+            active: user.active,
+            email: user.email,
+            attributes: Some(user.attributes.0.into()),
+        }
+    }
+}
+
+impl From<DBUserAttributes> for UserAttributes {
+    fn from(attr: DBUserAttributes) -> Self {
+        let (tokens, personal_permissions): (Vec<Token>, Vec<Permission>) = attr
+            .tokens
+            .into_iter()
+            .map(|t| {
+                (
+                    Token {
+                        id: t.0.to_string(),
+                        name: t.1.name,
+                        created_at: Some(t.1.created_at.into()),
+                        expires_at: Some(t.1.expires_at.into()),
+                        permission: Some(Permission {
+                            permission_level: t.1.user_rights.clone().into(),
+                            resource_id: Some(match t.1.object_type {
+                                ObjectType::PROJECT => {
+                                    ResourceId::ProjectId(t.1.object_id.to_string())
+                                }
+                                ObjectType::COLLECTION => {
+                                    ResourceId::CollectionId(t.1.object_id.to_string())
+                                }
+                                ObjectType::DATASET => {
+                                    ResourceId::DatasetId(t.1.object_id.to_string())
+                                }
+                                ObjectType::OBJECT => {
+                                    ResourceId::ObjectId(t.1.object_id.to_string())
+                                }
+                            }),
+                        }),
+                    },
+                    Permission {
+                        permission_level: t.1.user_rights.into(),
+                        resource_id: Some(match t.1.object_type {
+                            ObjectType::PROJECT => ResourceId::ProjectId(t.1.object_id.to_string()),
+                            ObjectType::COLLECTION => {
+                                ResourceId::CollectionId(t.1.object_id.to_string())
+                            }
+                            ObjectType::DATASET => ResourceId::DatasetId(t.1.object_id.to_string()),
+                            ObjectType::OBJECT => ResourceId::ObjectId(t.1.object_id.to_string()),
+                        }),
+                    },
+                )
+            })
+            .unzip();
+        UserAttributes {
+            global_admin: attr.global_admin,
+            service_account: attr.service_account,
+            tokens,
+            custom_attributes: attr
+                .custom_attributes
+                .into_iter()
+                .map(|c| c.into())
+                .collect(),
+            personal_permissions,
+        }
+    }
+}
+
+impl From<DBCustomAttributes> for CustomAttributes {
+    fn from(attr: DBCustomAttributes) -> Self {
+        CustomAttributes {
+            attribute_name: attr.attribute_name,
+            attribute_value: attr.attribute_value,
+        }
+    }
+}
+
+impl From<DbPermissionLevel> for i32 {
+    fn from(lvl: DbPermissionLevel) -> Self {
+        match lvl {
+            DbPermissionLevel::DENY => 1, //TODO: Currently reserved and not used
+            DbPermissionLevel::NONE => 2,
+            DbPermissionLevel::READ => 3,
+            DbPermissionLevel::APPEND => 4,
+            DbPermissionLevel::WRITE => 5,
+            DbPermissionLevel::ADMIN => 6,
+        }
+    }
+}
+
+impl DBUser {
+    pub fn into_redacted(self) -> User {
+        let mut user: User = self.into();
+        user.email = String::new();
+        user.display_name = String::new();
+        user.external_id = String::new();
+        user
+    }
+}
+
+pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
+    Token {
+        id: id.to_string(),
+        name: token.name,
+        created_at: Some(token.created_at.into()),
+        expires_at: Some(token.expires_at.into()),
+        permission: Some(Permission {
+            permission_level: token.user_rights.into(),
+            resource_id: Some(match token.object_type {
+                ObjectType::PROJECT => ResourceId::ProjectId(token.object_id.to_string()),
+                ObjectType::COLLECTION => ResourceId::CollectionId(token.object_id.to_string()),
+                ObjectType::DATASET => ResourceId::DatasetId(token.object_id.to_string()),
+                ObjectType::OBJECT => ResourceId::ObjectId(token.object_id.to_string()),
+            }),
+        }),
+    }
+}
+
+impl TryFrom<i32> for EndpointStatus {
+    type Error = anyhow::Error;
+    fn try_from(value: i32) -> Result<Self> {
+        let res = match value {
+            1 => EndpointStatus::INITIALIZING,
+            2 => EndpointStatus::AVAILABLE,
+            3 => EndpointStatus::DEGRADED,
+            4 => EndpointStatus::UNAVAILABLE,
+            5 => EndpointStatus::MAINTENANCE,
+            _ => return Err(anyhow!("Undefined component status")),
+        };
+        Ok(res)
+    }
+}
+
+impl TryFrom<Vec<EndpointHostConfig>> for HostConfigs {
+    type Error = anyhow::Error;
+    fn try_from(config: Vec<EndpointHostConfig>) -> Result<Self> {
+        let res: Result<Vec<HostConfig>> = config
+            .into_iter()
+            .map(|c| -> Result<HostConfig> {
+                Ok(HostConfig {
+                    url: c.url,
+                    is_primary: c.is_primary,
+                    ssl: c.ssl,
+                    public: c.public,
+                    feature: c.host_variant.try_into()?,
+                })
+            })
+            .collect();
+        Ok(HostConfigs(res?))
+    }
+}
+
+impl TryFrom<i32> for DataProxyFeature {
+    type Error = anyhow::Error;
+    fn try_from(var: i32) -> Result<DataProxyFeature> {
+        let res = match var {
+            1 => DataProxyFeature::PROXY,
+            2 => DataProxyFeature::BUNDLER,
+            _ => return Err(anyhow!("Undefined dataproxy feature")),
+        };
+        Ok(res)
+    }
+}
+
+impl From<DBEndpoint> for Endpoint {
+    fn from(ep: DBEndpoint) -> Self {
+        Endpoint {
+            id: ep.id.to_string(),
+            ep_variant: ep.endpoint_variant.into(),
+            name: ep.name,
+            is_public: ep.is_public,
+            status: ep.status.into(),
+            host_configs: ep.host_config.0.into(),
+        }
+    }
+}
+
+impl From<EndpointVariant> for i32 {
+    fn from(var: EndpointVariant) -> Self {
+        match var {
+            EndpointVariant::PERSISTENT => 1,
+            EndpointVariant::VOLATILE => 2,
+        }
+    }
+}
+
+impl From<EndpointStatus> for i32 {
+    fn from(status: EndpointStatus) -> Self {
+        match status {
+            EndpointStatus::INITIALIZING => 1,
+            EndpointStatus::AVAILABLE => 2,
+            EndpointStatus::DEGRADED => 3,
+            EndpointStatus::UNAVAILABLE => 4,
+            EndpointStatus::MAINTENANCE => 5,
+        }
+    }
+}
+
+impl From<HostConfigs> for Vec<EndpointHostConfig> {
+    fn from(config: HostConfigs) -> Self {
+        config
+            .0
+            .into_iter()
+            .map(|c| EndpointHostConfig {
+                url: c.url,
+                is_primary: c.is_primary,
+                ssl: c.ssl,
+                public: c.public,
+                host_variant: c.feature.into(),
+            })
+            .collect()
+    }
+}
+
+impl From<DataProxyFeature> for i32 {
+    fn from(feat: DataProxyFeature) -> Self {
+        match feat {
+            DataProxyFeature::PROXY => 1,
+            DataProxyFeature::BUNDLER => 2,
+        }
+    }
+}
+
+impl TryFrom<i32> for EndpointVariant {
+    type Error = anyhow::Error;
+    fn try_from(value: i32) -> Result<Self> {
+        Ok(match value {
+            1 => EndpointVariant::PERSISTENT,
+            2 => EndpointVariant::VOLATILE,
+            _ => return Err(anyhow!("Undefined endpoint variant")),
+        })
     }
 }

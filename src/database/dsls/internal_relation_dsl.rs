@@ -142,27 +142,15 @@ impl InternalRelation {
         writer.finish().await?;
         Ok(())
     }
-    // Checks if relation between two objects already exists
-    pub async fn get_by_pids(&self, client: &Client) -> Result<Option<InternalRelation>> {
-        let origin = self.origin_pid;
-        let target = self.target_pid;
-        let relation_name = &self.relation_name;
-        let query = "SELECT * FROM internal_relations WHERE origin_pid = $1 AND target_pid = $2 AND relation_name = $3";
-        let prepared = client.prepare(query).await?;
-        let opt = client
-            .query_opt(&prepared, &[&origin, &target, &relation_name])
-            .await?
-            .map(|e| InternalRelation::from_row(&e));
-        Ok(opt)
-    }
+
     // Gets all outbound relations for pid
-    pub async fn get_all_by_id(id: DieselUlid, client: &Client) -> Result<Vec<InternalRelation>> {
+    pub async fn get_all_by_id(id: &DieselUlid, client: &Client) -> Result<Vec<InternalRelation>> {
         let query = "SELECT * FROM internal_relations 
-            WHERE origin_pid = $1 OR target_pid = $2;";
+            WHERE origin_pid = $1 OR target_pid = $1;";
 
         let prepared = client.prepare(query).await?;
         let relations = client
-            .query_opt(&prepared, &[&id])
+            .query(&prepared, &[id])
             .await?
             .iter()
             .map(InternalRelation::from_row)
@@ -170,7 +158,7 @@ impl InternalRelation {
         Ok(relations)
     }
 
-    pub fn clone_relation(&self, replace: DieselUlid) -> Self {
+    pub fn clone_relation(&self, replace: &DieselUlid) -> Self {
         InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: replace,
