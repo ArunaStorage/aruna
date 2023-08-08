@@ -157,3 +157,60 @@ pub fn validate_reply_msg(reply: Reply, secret: String) -> anyhow::Result<bool> 
     // Check if hmacs are equal
     Ok(base64_hmac == reply.hmac)
 }
+
+mod tests {
+    use diesel_ulid::DieselUlid;
+    use crate::{notification::handler::EventType, database::enums::ObjectType};
+    use super::parse_event_consumer_subject;
+
+    #[test]
+    fn test_consumer_subject_parser() {
+        /* ----- Resources ----- */
+        let project_ulid = DieselUlid::generate();
+        let project_subject = format!("AOS.RESOURCE._.{}._", project_ulid);
+
+        let event_type = parse_event_consumer_subject(&project_subject).unwrap();
+        assert_eq!(event_type, EventType::Resource((project_ulid.to_string(), ObjectType::PROJECT, false)));
+
+        let collection_ulid = DieselUlid::generate();
+        let collection_subject = format!("AOS.RESOURCE._.*._.{}._", collection_ulid);
+
+        let event_type = parse_event_consumer_subject(&collection_subject).unwrap();
+        assert_eq!(event_type, EventType::Resource((collection_ulid.to_string(), ObjectType::COLLECTION, false)));
+
+        let dataset_ulid = DieselUlid::generate();
+        let dataset_subject = format!("AOS.RESOURCE._.*._.*._.{}._", dataset_ulid);
+
+        let event_type = parse_event_consumer_subject(&dataset_subject).unwrap();
+        assert_eq!(event_type, EventType::Resource((dataset_ulid.to_string(), ObjectType::DATASET, false)));
+
+        let object_ulid = DieselUlid::generate();
+        let object_subject = format!("AOS.RESOURCE._.*._.*._.*._.{}._", object_ulid);
+
+        let event_type = parse_event_consumer_subject(&object_subject).unwrap();
+        assert_eq!(event_type, EventType::Resource((object_ulid.to_string(), ObjectType::OBJECT, false)));
+
+        /* ----- User ----- */
+        let user_ulid = DieselUlid::generate();
+        let user_subject = format!("AOS.USER.{}.>", user_ulid);
+
+        let event_type = parse_event_consumer_subject(&user_subject).unwrap();
+        assert_eq!(event_type, EventType::User(user_ulid.to_string()));
+
+        /* ----- Announcement ----- */
+        let announcement_subjects = vec![
+            "AOS.ANNOUNCEMENT.DATAPROXY.NEW",
+            "AOS.ANNOUNCEMENT.DATAPROXY.DELETE",
+            "AOS.ANNOUNCEMENT.DATAPROXY.UPDATE",
+            "AOS.ANNOUNCEMENT.PUBKEY.NEW",
+            "AOS.ANNOUNCEMENT.PUBKEY.DELETE",
+            "AOS.ANNOUNCEMENT.DOWNTIME",
+            "AOS.ANNOUNCEMENT.VERSION",
+        ];
+
+        for subject in announcement_subjects {
+            let event_type = parse_event_consumer_subject(subject).unwrap();
+            assert_eq!(event_type, EventType::Announcement(None));    
+        }
+    }
+}
