@@ -1,9 +1,6 @@
 use super::{grpc_query_handler::GrpcQueryHandler, transforms::ExtractAccessKeyPermissions};
 use crate::{
-    database::{
-        database::Database,
-        persistence::{GenericBytes, WithGenericBytes},
-    },
+    database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, User},
 };
 use ahash::RandomState;
@@ -74,22 +71,23 @@ impl Cache {
         Ok(())
     }
 
-    pub fn upsert_user(&self, user: GrpcUser) -> Result<()> {
+    pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
         let mut access_ids = Vec::new();
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
-            self.users.insert(
-                key,
-                User {
-                    access_key: key,
-                    user_id: user_id,
-                    secret: self
-                        .get_secret(&key)
-                        .map(|k| k.expose().to_string())
-                        .unwrap_or_default(),
-                    permissions: perm,
-                },
-            );
+            let user_access = User {
+                access_key: key.clone(),
+                user_id: user_id,
+                secret: self
+                    .get_secret(&key)
+                    .map(|k| k.expose().to_string())
+                    .unwrap_or_default(),
+                permissions: perm,
+            };
+            if let Some(persistence) = &self.persistence {
+                user_access.upsert(&persistence.get_client().await?).await;
+            }
+            self.users.insert(key.clone(), user_access);
             access_ids.push(key);
         }
         self.user_access_keys.insert(user_id, access_ids);
@@ -107,7 +105,7 @@ impl Cache {
             let user = self.users.remove(&key);
             if let Some(persistence) = &self.persistence {
                 if let Some((_, user)) = user {
-                    User::delete(user.user_id.to_string(), &persistence.get_client().await?).await;
+                    User::delete(&user.user_id.to_string(), &persistence.get_client().await?).await;
                 }
             }
         }

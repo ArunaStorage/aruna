@@ -2,7 +2,6 @@ use crate::structs::DbPermissionLevel;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
-use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Permission;
 use aruna_rust_api::api::storage::models::v2::User;
 use diesel_ulid::DieselUlid;
@@ -39,6 +38,7 @@ impl IntoHashMap for Permission {
         let mut map = HashMap::new();
         map.insert(
             self.resource_id
+                .clone()
                 .ok_or_else(|| anyhow!("Unknown resource"))?
                 .get_id()?,
             DbPermissionLevel::from(self.permission_level()),
@@ -53,12 +53,14 @@ impl ExtractAccessKeyPermissions for User {
     ) -> Result<Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>> {
         let personal_permissions = HashMap::from_iter(
             self.attributes
+                .clone()
                 .ok_or_else(|| anyhow!("Unknown attributes"))?
                 .personal_permissions
                 .iter()
                 .map(|p| {
                     Ok((
                         p.resource_id
+                            .clone()
                             .ok_or_else(|| anyhow!("Unknown resource"))?
                             .get_id()?,
                         DbPermissionLevel::from(p.permission_level()),
@@ -72,6 +74,7 @@ impl ExtractAccessKeyPermissions for User {
 
         for t in self
             .attributes
+            .clone()
             .ok_or_else(|| anyhow!("Unknown attributes"))?
             .tokens
         {

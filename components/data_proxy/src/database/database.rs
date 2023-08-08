@@ -1,5 +1,5 @@
 use anyhow::Result;
-use deadpool_postgres::{Client, Config, ManagerConfig, Object, Pool, RecyclingMethod, Runtime};
+use deadpool_postgres::{Client, Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 pub struct Database {
     connection_pool: Pool,
