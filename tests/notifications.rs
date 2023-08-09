@@ -172,7 +172,7 @@ async fn notification_test() {
     Object::batch_create(
         &vec![
             project_001.clone(),
-            project_002,
+            project_002.clone(),
             project_003.clone(),
             collection,
             dataset_001,
@@ -199,8 +199,22 @@ async fn notification_test() {
     .await
     .unwrap();
 
-    // Create stream consumer in Nats.io for one of the projects
-    let (stream_consumer_id, _) = nats_handler
+    // Create stream consumer in Nats.io for all of the projects
+    let (proj_001_consumer_id, _) = nats_handler
+        .create_event_consumer(
+            EventType::Resource((project_001.id.to_string(), ObjectType::PROJECT, true)),
+            DeliverPolicy::All,
+        )
+        .await
+        .unwrap();
+    let (proj_002_consumer_id, _) = nats_handler
+        .create_event_consumer(
+            EventType::Resource((project_002.id.to_string(), ObjectType::PROJECT, true)),
+            DeliverPolicy::All,
+        )
+        .await
+        .unwrap();
+    let (proj_003_consumer_id, _) = nats_handler
         .create_event_consumer(
             EventType::Resource((project_003.id.to_string(), ObjectType::PROJECT, true)),
             DeliverPolicy::All,
@@ -232,10 +246,23 @@ async fn notification_test() {
     println!("Notification emit: {:.2?}", elapsed);
 
     // Evaluate number of messages received
-    let nats_messages = nats_handler
-        .get_event_consumer_messages(stream_consumer_id.to_string(), 10)
+    let proj_001_messages = nats_handler
+        .get_event_consumer_messages(proj_001_consumer_id.to_string(), 10)
+        .await
+        .unwrap();
+    assert_eq!(proj_001_messages.len(), 2);
+
+    let proj_002_messages = nats_handler
+        .get_event_consumer_messages(proj_002_consumer_id.to_string(), 10)
         .await
         .unwrap();
 
-    assert_eq!(nats_messages.len(), 2);
+    assert_eq!(proj_002_messages.len(), 2);
+
+    let proj_003_messages = nats_handler
+        .get_event_consumer_messages(proj_003_consumer_id.to_string(), 10)
+        .await
+        .unwrap();
+
+    assert_eq!(proj_003_messages.len(), 1);
 }

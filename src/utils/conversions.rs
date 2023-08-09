@@ -319,7 +319,7 @@ impl From<ObjectMapping<DieselUlid>> for ResourceId {
 
 // Conversion from database model user token to proto user
 impl From<DBUser> for ApiUser {
-    fn from(db_user: User) -> Self {
+    fn from(db_user: DBUser) -> Self {
         // Convert and collect tokens
         let api_tokens = db_user
             .attributes
@@ -732,6 +732,7 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
     }
 }
 
+/*
 impl From<DBUser> for DBUser {
     fn from(user: DBUser) -> Self {
         ApiUser {
@@ -747,6 +748,7 @@ impl From<DBUser> for DBUser {
         }
     }
 }
+*/
 
 impl From<DBUserAttributes> for UserAttributes {
     fn from(attr: DBUserAttributes) -> Self {
@@ -762,32 +764,28 @@ impl From<DBUserAttributes> for UserAttributes {
                         expires_at: Some(t.1.expires_at.into()),
                         permission: Some(Permission {
                             permission_level: t.1.user_rights.clone().into(),
-                            resource_id: Some(match t.1.object_type {
-                                ObjectType::PROJECT => {
-                                    ResourceId::ProjectId(t.1.object_id.to_string())
-                                }
-                                ObjectType::COLLECTION => {
-                                    ResourceId::CollectionId(t.1.object_id.to_string())
-                                }
-                                ObjectType::DATASET => {
-                                    ResourceId::DatasetId(t.1.object_id.to_string())
-                                }
-                                ObjectType::OBJECT => {
-                                    ResourceId::ObjectId(t.1.object_id.to_string())
-                                }
-                            }),
+                            resource_id: match t.1.object_id {
+                                Some(resource) => Some(match resource {
+                                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                                }),
+                                None => None,
+                            }
                         }),
                     },
                     Permission {
                         permission_level: t.1.user_rights.into(),
-                        resource_id: Some(match t.1.object_type {
-                            ObjectType::PROJECT => ResourceId::ProjectId(t.1.object_id.to_string()),
-                            ObjectType::COLLECTION => {
-                                ResourceId::CollectionId(t.1.object_id.to_string())
-                            }
-                            ObjectType::DATASET => ResourceId::DatasetId(t.1.object_id.to_string()),
-                            ObjectType::OBJECT => ResourceId::ObjectId(t.1.object_id.to_string()),
-                        }),
+                        resource_id: match t.1.object_id {
+                            Some(resource) => Some(match resource {
+                                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                                ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                            }),
+                            None => None,
+                        },
                     },
                 )
             })
@@ -846,12 +844,15 @@ pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
         expires_at: Some(token.expires_at.into()),
         permission: Some(Permission {
             permission_level: token.user_rights.into(),
-            resource_id: Some(match token.object_type {
-                ObjectType::PROJECT => ResourceId::ProjectId(token.object_id.to_string()),
-                ObjectType::COLLECTION => ResourceId::CollectionId(token.object_id.to_string()),
-                ObjectType::DATASET => ResourceId::DatasetId(token.object_id.to_string()),
-                ObjectType::OBJECT => ResourceId::ObjectId(token.object_id.to_string()),
-            }),
+            resource_id: match token.object_id {
+                Some(resource) => Some(match resource {
+                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                }),
+                None => None,
+            }
         }),
     }
 }

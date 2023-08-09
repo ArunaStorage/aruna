@@ -2,11 +2,11 @@ use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
 use tokio_postgres::GenericClient;
 
-mod init_db;
+mod common;
 
 #[tokio::test]
 async fn test_crud() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

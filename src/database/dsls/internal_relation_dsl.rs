@@ -161,7 +161,7 @@ impl InternalRelation {
     pub fn clone_relation(&self, replace: &DieselUlid) -> Self {
         InternalRelation {
             id: DieselUlid::generate(),
-            origin_pid: replace,
+            origin_pid: *replace,
             origin_type: self.origin_type,
             relation_name: self.relation_name.clone(),
             target_pid: self.target_pid,

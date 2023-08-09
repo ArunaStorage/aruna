@@ -542,7 +542,7 @@ async fn user_token_test() {
 
 #[tokio::test]
 async fn user_status_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
