@@ -40,4 +40,12 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("User not found"))?;
         Ok(user)
     }
+    pub async fn delete_all_tokens(&self, user_id: DieselUlid) -> Result<User> {
+        let client = self.database.get_client().await?;
+        User::remove_all_tokens(&client, &user_id).await?;
+        let user = User::get(user_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("User not found"))?;
+        Ok(user)
+    }
 }

@@ -256,7 +256,13 @@ impl User {
             .await?;
         Ok(())
     }
-
+    pub async fn remove_all_tokens(client: &Client, user_id: &DieselUlid) -> Result<()> {
+        let query =
+            "UPDATE users SET attributes = jsonb_set(attributes, '{tokens}', '{}') WHERE id = $1;";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[user_id]).await?;
+        Ok(())
+    }
     pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
         let query = "UPDATE users SET active = false WHERE id = $1";
         let prepared = client.prepare(query).await?;
