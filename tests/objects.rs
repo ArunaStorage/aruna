@@ -1,45 +1,308 @@
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
-use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
+use aruna_server::database::dsls::object_dsl::{
+    DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
+};
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,
-    dsls::object_dsl::{KeyValues, Object},
+    dsls::object_dsl::{ExternalRelations, KeyValues, Object, ObjectWithRelations},
+    enums::ObjectMapping,
 };
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-mod init_db;
-mod utils;
+mod common;
+
+#[tokio::test]
+async fn fetch_object_paths() {
+    let db = common::init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    // Create random user
+    let user = common::test_utils::new_user(vec![]);
+    let random_user_id = user.id;
+    user.create(&client).await.unwrap();
+
+    // Create dummy hierarchy
+    let project_001 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_002 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_003 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let collection = common::test_utils::new_object(
+        random_user_id,
+        DieselUlid::generate(),
+        ObjectType::COLLECTION,
+    );
+    let dataset_001 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let dataset_002 =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let object =
+        common::test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::OBJECT);
+
+    let proj_coll_001 = common::test_utils::new_internal_relation(&project_001, &collection);
+    let proj_coll_002 = common::test_utils::new_internal_relation(&project_002, &collection);
+    let proj_data = common::test_utils::new_internal_relation(&project_003, &dataset_002);
+    let coll_data_001 = common::test_utils::new_internal_relation(&collection, &dataset_001);
+    let coll_data_002 = common::test_utils::new_internal_relation(&collection, &dataset_002);
+    let data_obj_001 = common::test_utils::new_internal_relation(&dataset_001, &object);
+    let data_obj_002 = common::test_utils::new_internal_relation(&dataset_002, &object);
+
+    Object::batch_create(
+        &vec![
+            project_001.clone(),
+            project_002.clone(),
+            project_003.clone(),
+            collection.clone(),
+            dataset_001.clone(),
+            dataset_002.clone(),
+            object.clone(),
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    InternalRelation::batch_create(
+        &vec![
+            proj_coll_001,
+            proj_coll_002,
+            proj_data,
+            coll_data_001,
+            coll_data_002,
+            data_obj_001,
+            data_obj_002,
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    // Fetch object hierarchies including "Performance measurement" recursive
+    use std::time::Instant;
+    let now = Instant::now();
+    let result = object.fetch_object_hierarchies(&client).await.unwrap();
+    let elapsed = now.elapsed();
+    log::debug!("Hierarchy traversal elapsed: {:.2?}", elapsed);
+
+    assert_eq!(result.len(), 5);
+
+    for hierarchy in vec![
+        Hierarchy {
+            project_id: project_001.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_001.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_001.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_002.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_001.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_002.id.to_string(),
+            collection_id: Some(collection.id.to_string()),
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+        Hierarchy {
+            project_id: project_003.id.to_string(),
+            collection_id: None,
+            dataset_id: Some(dataset_002.id.to_string()),
+            object_id: Some(object.id.to_string()),
+        },
+    ] {
+        assert!(result.contains(&hierarchy))
+    }
+}
 
 #[tokio::test]
 async fn create_object() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![obj_id]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
     assert_eq!(get_obj, create_object);
 }
+#[tokio::test]
+async fn get_object_with_relations_test() {
+    let db = common::init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
+
+    let dataset_id = DieselUlid::generate();
+    let collection_one = DieselUlid::generate();
+    let collection_two = DieselUlid::generate();
+    let object_one = DieselUlid::generate();
+    let object_two = DieselUlid::generate();
+    let object_id_map = vec![
+        ObjectMapping::DATASET(dataset_id),
+        ObjectMapping::COLLECTION(collection_one),
+        ObjectMapping::COLLECTION(collection_two),
+        ObjectMapping::OBJECT(object_one),
+        ObjectMapping::OBJECT(object_two),
+    ];
+    let object_vec = object_id_map
+        .iter()
+        .map(|mapping| match mapping {
+            ObjectMapping::PROJECT(id)
+            | ObjectMapping::COLLECTION(id)
+            | ObjectMapping::DATASET(id)
+            | ObjectMapping::OBJECT(id) => *id,
+        })
+        .collect::<Vec<_>>();
+
+    let user = common::test_utils::new_user(object_id_map);
+    user.create(client).await.unwrap();
+
+    let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let create_collection_one =
+        common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two =
+        common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_object_one = common::test_utils::new_object(user.id, object_one, ObjectType::OBJECT);
+    let create_object_two = common::test_utils::new_object(user.id, object_two, ObjectType::OBJECT);
+
+    let create_relation_one =
+        common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
+    let create_relation_two =
+        common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
+    let create_relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
+    let create_relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
+
+    let creates = vec![
+        create_dataset.clone(),
+        create_object_one.clone(),
+        create_object_two.clone(),
+        create_collection_one.clone(),
+        create_collection_two.clone(),
+    ];
+
+    Object::batch_create(&creates, client).await.unwrap();
+
+    let rels = vec![
+        create_relation_one.clone(),
+        create_relation_two.clone(),
+        create_relation_three.clone(),
+        create_relation_four.clone(),
+    ];
+    InternalRelation::batch_create(&rels, client).await.unwrap();
+
+    let compare_owr = ObjectWithRelations {
+        object: create_dataset,
+        inbound: Json(DashMap::default()),
+        inbound_belongs_to: Json(DashMap::from_iter([
+            (create_relation_one.origin_pid, create_relation_one.clone()),
+            (create_relation_two.origin_pid, create_relation_two.clone()),
+        ])),
+        outbound: Json(DashMap::default()),
+        outbound_belongs_to: Json(DashMap::from_iter([
+            (
+                create_relation_three.target_pid,
+                create_relation_three.clone(),
+            ),
+            (
+                create_relation_four.target_pid,
+                create_relation_four.clone(),
+            ),
+        ])),
+    };
+    let object_with_relations = Object::get_object_with_relations(&dataset_id, client)
+        .await
+        .unwrap();
+    assert_eq!(object_with_relations, compare_owr);
+
+    let objects_with_relations = Object::get_objects_with_relations(&object_vec, client)
+        .await
+        .unwrap();
+
+    assert!(!objects_with_relations.is_empty());
+    let compare_collection_one = ObjectWithRelations {
+        object: create_collection_one,
+        inbound: Json(DashMap::default()),
+        inbound_belongs_to: Json(DashMap::default()),
+        outbound: Json(DashMap::default()),
+        outbound_belongs_to: Json(DashMap::from_iter([(
+            create_relation_one.target_pid,
+            create_relation_one,
+        )])),
+    };
+    let compare_collection_two = ObjectWithRelations {
+        object: create_collection_two,
+        inbound: Json(DashMap::default()),
+        inbound_belongs_to: Json(DashMap::default()),
+        outbound: Json(DashMap::default()),
+        outbound_belongs_to: Json(DashMap::from_iter([(
+            create_relation_two.target_pid,
+            create_relation_two,
+        )])),
+    };
+    let compare_object_one = ObjectWithRelations {
+        object: create_object_one,
+        inbound: Json(DashMap::default()),
+        inbound_belongs_to: Json(DashMap::from_iter([(
+            create_relation_three.origin_pid,
+            create_relation_three,
+        )])),
+        outbound: Json(DashMap::default()),
+        outbound_belongs_to: Json(DashMap::default()),
+    };
+    let compare_object_two = ObjectWithRelations {
+        object: create_object_two,
+        inbound: Json(DashMap::default()),
+        inbound_belongs_to: Json(DashMap::from_iter([(
+            create_relation_four.origin_pid,
+            create_relation_four,
+        )])),
+        outbound: Json(DashMap::default()),
+        outbound_belongs_to: Json(DashMap::default()),
+    };
+    let compare_owrs = vec![
+        compare_collection_one,
+        compare_collection_two,
+        compare_owr,
+        compare_object_one,
+        compare_object_two,
+    ];
+    assert!(objects_with_relations
+        .iter()
+        .all(|o| compare_owrs.contains(o)));
+}
 
 #[tokio::test]
 async fn test_keyvals() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![obj_id]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let kv = KeyValue {
@@ -94,10 +357,79 @@ async fn test_keyvals() {
     };
     assert_eq!(object, comp_obj);
 }
+#[tokio::test]
+async fn test_external_relations() {
+    let db = common::init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
+
+    let obj_id = DieselUlid::generate();
+
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    user.create(client).await.unwrap();
+
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    create_object.create(client).await.unwrap();
+    let url = ExternalRelation {
+        identifier: "test.test/abc".to_string(),
+        defined_variant: DefinedVariant::URL,
+        custom_variant: None,
+    };
+    let id = ExternalRelation {
+        identifier: "a.b/c".to_string(),
+        defined_variant: DefinedVariant::IDENTIFIER,
+        custom_variant: None,
+    };
+    let custom = ExternalRelation {
+        identifier: "ThIs Is A cUsToM fLaG".to_string(),
+        defined_variant: DefinedVariant::CUSTOM,
+        custom_variant: Some("This is not a URL or an identifier".to_string()),
+    };
+    let rels = vec![url.clone(), id.clone(), custom.clone()];
+    Object::add_external_relations(&obj_id, client, rels.clone())
+        .await
+        .unwrap();
+    let mut compare_obj = Object {
+        id: obj_id,
+        revision_number: create_object.revision_number,
+        name: create_object.name,
+        description: create_object.description,
+        created_at: create_object.created_at,
+        created_by: create_object.created_by,
+        content_len: create_object.content_len,
+        count: create_object.count,
+        key_values: create_object.key_values,
+        object_status: create_object.object_status,
+        data_class: create_object.data_class,
+        object_type: create_object.object_type,
+        external_relations: Json(ExternalRelations(DashMap::from_iter(
+            rels.clone().into_iter().map(|r| (r.identifier.clone(), r)),
+        ))),
+        hashes: create_object.hashes,
+        dynamic: create_object.dynamic,
+        endpoints: create_object.endpoints,
+    };
+    let obj = Object::get(obj_id, client).await.unwrap().unwrap();
+    //dbg!(&obj);
+    assert_eq!(compare_obj, obj);
+    let rm_rels = vec![custom, id];
+    let remain_rels = vec![url];
+    Object::remove_external_relation(&obj_id, client, rm_rels)
+        .await
+        .unwrap();
+    let rm = Object::get(obj_id, client).await.unwrap().unwrap();
+    transaction.commit().await.unwrap();
+    compare_obj.external_relations = Json(ExternalRelations(DashMap::from_iter(
+        remain_rels.into_iter().map(|e| (e.identifier.clone(), e)),
+    )));
+    assert_eq!(compare_obj, rm);
+}
 
 #[tokio::test]
 async fn test_updates() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -108,13 +440,14 @@ async fn test_updates() {
     let col_id = DieselUlid::generate();
     let proj_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![obj_id]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let mut create_object = utils::new_object(user.id, obj_id, ObjectType::OBJECT);
-    let mut create_dataset = utils::new_object(user.id, dat_id, ObjectType::DATASET);
-    let mut create_collection = utils::new_object(user.id, col_id, ObjectType::COLLECTION);
-    let mut create_project = utils::new_object(user.id, proj_id, ObjectType::PROJECT);
+    let mut create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_dataset = common::test_utils::new_object(user.id, dat_id, ObjectType::DATASET);
+    let mut create_collection =
+        common::test_utils::new_object(user.id, col_id, ObjectType::COLLECTION);
+    let mut create_project = common::test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
     create_object.create(client).await.unwrap();
     create_dataset.create(client).await.unwrap();
     create_collection.create(client).await.unwrap();
@@ -162,20 +495,31 @@ async fn test_updates() {
 }
 #[tokio::test]
 async fn test_delete() {
-    let db = init_db::init_db().await;
-    let client = db.get_client().await.unwrap();
-    let client = client.client();
+    let db = common::init_db::init_db().await;
+    let mut client = db.get_client().await.unwrap();
+    let transaction = client.transaction().await.unwrap();
+
+    let client = transaction.client();
 
     let mut obj_ids = Vec::new();
     for _ in 1..5 {
         obj_ids.push(DieselUlid::generate());
     }
-    let user = utils::new_user(obj_ids.clone());
+    let user = common::test_utils::new_user(
+        obj_ids
+            .iter()
+            .map(|id| ObjectMapping::OBJECT(*id))
+            .collect::<Vec<_>>(),
+    );
     user.create(client).await.unwrap();
 
     let mut objects = Vec::new();
     for id in &obj_ids {
-        objects.push(utils::new_object(user.id, *id, ObjectType::OBJECT));
+        objects.push(common::test_utils::new_object(
+            user.id,
+            *id,
+            ObjectType::OBJECT,
+        ));
     }
     Object::batch_create(&objects, client).await.unwrap();
     let objects = Object::get_objects(&obj_ids, client).await.unwrap();
@@ -190,7 +534,7 @@ async fn test_delete() {
 }
 #[tokio::test]
 async fn archive_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
@@ -199,27 +543,42 @@ async fn archive_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = vec![
-        dataset_id,
-        collection_one,
-        collection_two,
-        object_one,
-        object_two,
+    let object_mapping = vec![
+        ObjectMapping::DATASET(dataset_id),
+        ObjectMapping::COLLECTION(collection_one),
+        ObjectMapping::COLLECTION(collection_two),
+        ObjectMapping::OBJECT(object_one),
+        ObjectMapping::OBJECT(object_two),
     ];
+    let object_vec = object_mapping
+        .iter()
+        .map(|om| match om {
+            ObjectMapping::PROJECT(id)
+            | ObjectMapping::COLLECTION(id)
+            | ObjectMapping::DATASET(id)
+            | ObjectMapping::OBJECT(id) => *id,
+        })
+        .collect::<Vec<_>>();
     let archive = object_vec.clone();
-    let user = utils::new_user(object_vec.clone());
+    let user = common::test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
-    let create_dataset = utils::new_object(user.id, dataset_id, ObjectType::DATASET);
-    let create_collection_one = utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
-    let create_collection_two = utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
-    let create_object_one = utils::new_object(user.id, object_one, ObjectType::OBJECT);
-    let create_object_two = utils::new_object(user.id, object_two, ObjectType::OBJECT);
+    let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let create_collection_one =
+        common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two =
+        common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_object_one = common::test_utils::new_object(user.id, object_one, ObjectType::OBJECT);
+    let create_object_two = common::test_utils::new_object(user.id, object_two, ObjectType::OBJECT);
 
-    let create_relation_one = utils::new_relation(&create_collection_one, &create_dataset);
-    let create_relation_two = utils::new_relation(&create_collection_two, &create_dataset);
-    let create_relation_three = utils::new_relation(&create_dataset, &create_object_one);
-    let create_relation_four = utils::new_relation(&create_dataset, &create_object_two);
+    let create_relation_one =
+        common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
+    let create_relation_two =
+        common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
+    let create_relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
+    let create_relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
 
     let creates = vec![
         create_dataset.clone(),

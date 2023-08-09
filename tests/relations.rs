@@ -1,5 +1,5 @@
 use aruna_server::database::dsls::object_dsl::{DefinedVariant, ExternalRelation};
-use aruna_server::database::enums::ObjectType;
+use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::{
@@ -13,22 +13,21 @@ use itertools::Itertools;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-mod init_db;
-mod utils;
+mod common;
 
 #[tokio::test]
 async fn test_external_relations() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
 
     let obj_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![obj_id]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let create_object = utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(client).await.unwrap();
     let url = ExternalRelation {
         identifier: "test.test/abc".to_string(),
@@ -86,7 +85,7 @@ async fn test_external_relations() {
 
 #[tokio::test]
 async fn get_object_with_relations_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -96,26 +95,41 @@ async fn get_object_with_relations_test() {
     let collection_two = DieselUlid::generate();
     let object_one = DieselUlid::generate();
     let object_two = DieselUlid::generate();
-    let object_vec = vec![
-        dataset_id,
-        collection_one,
-        collection_two,
-        object_one,
-        object_two,
+    let object_mapping = vec![
+        ObjectMapping::DATASET(dataset_id),
+        ObjectMapping::COLLECTION(collection_one),
+        ObjectMapping::COLLECTION(collection_two),
+        ObjectMapping::OBJECT(object_one),
+        ObjectMapping::OBJECT(object_two),
     ];
-    let user = utils::new_user(object_vec.clone());
+    let object_vec = object_mapping
+        .iter()
+        .map(|om| match om {
+            ObjectMapping::PROJECT(id)
+            | ObjectMapping::COLLECTION(id)
+            | ObjectMapping::DATASET(id)
+            | ObjectMapping::OBJECT(id) => *id,
+        })
+        .collect::<Vec<_>>();
+    let user = common::test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
-    let create_dataset = utils::new_object(user.id, dataset_id, ObjectType::DATASET);
-    let create_collection_one = utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
-    let create_collection_two = utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
-    let create_object_one = utils::new_object(user.id, object_one, ObjectType::OBJECT);
-    let create_object_two = utils::new_object(user.id, object_two, ObjectType::OBJECT);
+    let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let create_collection_one =
+        common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two =
+        common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_object_one = common::test_utils::new_object(user.id, object_one, ObjectType::OBJECT);
+    let create_object_two = common::test_utils::new_object(user.id, object_two, ObjectType::OBJECT);
 
-    let create_relation_one = utils::new_relation(&create_collection_one, &create_dataset);
-    let create_relation_two = utils::new_relation(&create_collection_two, &create_dataset);
-    let create_relation_three = utils::new_relation(&create_dataset, &create_object_one);
-    let create_relation_four = utils::new_relation(&create_dataset, &create_object_two);
+    let create_relation_one =
+        common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
+    let create_relation_two =
+        common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
+    let create_relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
+    let create_relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
 
     let creates = vec![
         create_dataset.clone(),
@@ -218,7 +232,7 @@ async fn get_object_with_relations_test() {
 
 #[tokio::test]
 async fn delete_relations() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -226,20 +240,27 @@ async fn delete_relations() {
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![object_id, dataset_id]);
+    let user = common::test_utils::new_user(vec![
+        ObjectMapping::OBJECT(object_id),
+        ObjectMapping::DATASET(dataset_id),
+    ]);
     user.create(client).await.unwrap();
 
-    let create_object = utils::new_object(user.id, object_id, ObjectType::OBJECT);
-    let create_dataset = utils::new_object(user.id, dataset_id, ObjectType::OBJECT);
+    let create_object = common::test_utils::new_object(user.id, object_id, ObjectType::OBJECT);
+    let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::OBJECT);
 
-    let relation_one = utils::new_relation(&create_dataset, &create_object);
-    let mut relation_two = utils::new_relation(&create_dataset, &create_object);
+    let relation_one = common::test_utils::new_internal_relation(&create_dataset, &create_object);
+    let mut relation_two =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object);
     relation_two.relation_name = "ORIGIN".to_string();
-    let mut relation_three = utils::new_relation(&create_dataset, &create_object);
+    let mut relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object);
     relation_three.relation_name = "VERSION".to_string();
-    let mut relation_four = utils::new_relation(&create_dataset, &create_object);
+    let mut relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object);
     relation_four.relation_name = "METADATA".to_string();
-    let mut relation_five = utils::new_relation(&create_dataset, &create_object);
+    let mut relation_five =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object);
     relation_five.relation_name = "POLICY".to_string();
     let rel_ids = vec![
         relation_one.id,
@@ -291,7 +312,7 @@ async fn delete_relations() {
 
 #[tokio::test]
 async fn get_by() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -299,15 +320,22 @@ async fn get_by() {
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
 
-    let user = utils::new_user(vec![object_id, dataset_id]);
+    let user = common::test_utils::new_user(vec![
+        ObjectMapping::OBJECT(object_id),
+        ObjectMapping::DATASET(dataset_id),
+    ]);
     user.create(client).await.unwrap();
 
-    let create_project = utils::new_object(user.id, object_id, ObjectType::PROJECT);
-    let create_collection = utils::new_object(user.id, dataset_id, ObjectType::COLLECTION);
+    let create_project = common::test_utils::new_object(user.id, object_id, ObjectType::PROJECT);
+    let create_collection =
+        common::test_utils::new_object(user.id, dataset_id, ObjectType::COLLECTION);
 
-    let relation_one = utils::new_relation(&create_project, &create_collection);
-    let relation_two = utils::new_relation(&create_project, &create_collection);
-    let relation_three = utils::new_relation(&create_project, &create_collection);
+    let relation_one =
+        common::test_utils::new_internal_relation(&create_project, &create_collection);
+    let relation_two =
+        common::test_utils::new_internal_relation(&create_project, &create_collection);
+    let relation_three =
+        common::test_utils::new_internal_relation(&create_project, &create_collection);
 
     let rel_vec = vec![
         relation_one.clone(),

@@ -5,6 +5,8 @@ use crate::auth::structs::Context;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::ObjectMapping;
+use crate::database::enums::ObjectType;
 use ahash::HashMap;
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -195,7 +197,7 @@ impl Cache {
                     return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
                 }
                 crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
-                    resources.insert(*id, perm.clone());
+                    resources.insert(*id, *perm);
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {
                     return if uid == user_id {
@@ -225,7 +227,7 @@ impl Cache {
                     }
                 }
             }
-            match self.traverse_down(id, got_perm.clone(), &mut resources) {
+            match self.traverse_down(id, *got_perm, &mut resources) {
                 Ok(true) => return true,
                 Ok(false) => continue,
                 Err(_) => return false,
@@ -263,6 +265,96 @@ impl Cache {
             }
         }
         Ok(false)
+    }
+
+    ///ToDo: Rust Doc
+    pub fn upstream_dfs_iterative(
+        &self,
+        root: &DieselUlid,
+    ) -> Result<Vec<Vec<ObjectMapping<DieselUlid>>>> {
+        let mut split_indexes = Vec::new(); // Used to store history where path splits
+        let mut current_hierarchy = Vec::with_capacity(4); // Maximum length of hierarchy is 4
+        let mut finished_hierarchies = vec![];
+
+        // Fetch root object and push int queue
+        let mut queue = VecDeque::new();
+        queue.push_back(
+            self.get_object(root)
+                .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?,
+        );
+
+        while let Some(current_object) = queue.pop_front() {
+            // Add current object to back of hierarchy
+            current_hierarchy.push(match current_object.object.object_type {
+                ObjectType::PROJECT => ObjectMapping::PROJECT(current_object.object.id),
+                ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_object.object.id),
+                ObjectType::DATASET => ObjectMapping::DATASET(current_object.object.id),
+                ObjectType::OBJECT => ObjectMapping::OBJECT(current_object.object.id),
+            });
+
+            // Check if current object is a project
+            if current_object.object.object_type == ObjectType::PROJECT {
+                // Save finished hierarchy
+                finished_hierarchies.push(current_hierarchy.clone());
+
+                // Truncate current hierarchy back to last path split
+                if let Some(index) = split_indexes.pop() {
+                    current_hierarchy.truncate(index) //
+                }
+            } else {
+                // Add parents to the front of the queue for DFS
+                for parent_id in current_object.get_parents() {
+                    let parent = self
+                        .get_object(&parent_id)
+                        .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
+
+                    queue.push_front(parent);
+                }
+
+                // Save index n times for hierarchy cleanup if more than 1 parent
+                if current_object.get_parents().len() > 1 {
+                    for _ in 0..(current_object.get_parents().len() - 1) {
+                        split_indexes.push(current_hierarchy.len())
+                    }
+                }
+            }
+        }
+
+        Ok(finished_hierarchies)
+    }
+
+    ///ToDo: Rust Doc
+    pub fn upstream_dfs_recursive(
+        &self,
+        current_object_id: &DieselUlid,
+        current_path: &mut Vec<ObjectMapping<DieselUlid>>,
+        finished_hierarchies: &mut Vec<Vec<ObjectMapping<DieselUlid>>>,
+    ) -> anyhow::Result<()> {
+        // Fetch current object with relations
+        if let Some(current_object) = self.get_object(current_object_id) {
+            // End current hierarchy if node is project
+            if current_object.object.object_type == ObjectType::PROJECT {
+                current_path.push(ObjectMapping::PROJECT(current_object.object.id));
+                finished_hierarchies.push(current_path.clone());
+                current_path.pop();
+            } else {
+                // Add current object to path
+                current_path.push(match current_object.object.object_type {
+                    ObjectType::PROJECT => ObjectMapping::PROJECT(current_object.object.id),
+                    ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_object.object.id),
+                    ObjectType::DATASET => ObjectMapping::DATASET(current_object.object.id),
+                    ObjectType::OBJECT => ObjectMapping::OBJECT(current_object.object.id),
+                });
+                for parent_id in current_object.get_parents() {
+                    self.upstream_dfs_recursive(&parent_id, current_path, finished_hierarchies)?
+                }
+                current_path.pop();
+            }
+        } else {
+            return Err(anyhow::anyhow!("Parent does not exist"));
+        }
+
+        Ok(())
     }
 }
 
@@ -305,5 +397,210 @@ mod tests {
         let result = cache.traverse_down(&id1, DbPermissionLevel::NONE, &mut ctxs3);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
+    }
+
+    #[test]
+    fn test_upstream_dfs_001() {
+        // Init new cache
+        let cache = Cache::new();
+
+        // Create dummy hierarchies
+        let id1 = DieselUlid::generate(); // Project
+        let id2 = DieselUlid::generate(); // Collection: from id1 and to id4
+        let id3 = DieselUlid::generate(); // Collection: from id1 and to id4
+        let id4 = DieselUlid::generate(); // Dataset: from [id2, id3] to id5
+        let id5 = DieselUlid::generate(); // Object: from id4
+        let id6 = DieselUlid::generate(); // Object: from id1
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id1,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id2],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id2,
+            ObjectType::COLLECTION,
+            vec![&id1],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id3,
+            ObjectType::COLLECTION,
+            vec![&id1],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id4,
+            ObjectType::DATASET,
+            vec![&id2, &id3],
+            vec![&id5],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id5,
+            ObjectType::OBJECT,
+            vec![&id4],
+            vec![],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id6,
+            ObjectType::OBJECT,
+            vec![&id1],
+            vec![],
+        ));
+
+        // Extract paths of id5 object and evaluate result
+        let iterative_result = cache.upstream_dfs_iterative(&id5).unwrap();
+
+        let mut current_path = Vec::new();
+        let mut recursive_result = Vec::new();
+        cache
+            .upstream_dfs_recursive(&id5, &mut current_path, &mut recursive_result)
+            .unwrap();
+
+        assert_eq!(recursive_result.len(), 2);
+        assert_eq!(iterative_result.len(), 2);
+
+        for path in [
+            vec![
+                ObjectMapping::OBJECT(id5),
+                ObjectMapping::DATASET(id4),
+                ObjectMapping::COLLECTION(id3),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id5),
+                ObjectMapping::DATASET(id4),
+                ObjectMapping::COLLECTION(id2),
+                ObjectMapping::PROJECT(id1),
+            ],
+        ] {
+            assert!(recursive_result.contains(&path));
+            assert!(iterative_result.contains(&path));
+        }
+
+        // Extract paths of id6 object and evaluate result
+        let iterative_result = cache.upstream_dfs_iterative(&id6).unwrap();
+
+        let mut current_path = Vec::new();
+        let mut recursive_result = Vec::new();
+        cache
+            .upstream_dfs_recursive(&id6, &mut current_path, &mut recursive_result)
+            .unwrap();
+
+        assert_eq!(recursive_result.len(), 1);
+        assert_eq!(iterative_result.len(), 1);
+        assert!(recursive_result.contains(&vec![
+            ObjectMapping::OBJECT(id6),
+            ObjectMapping::PROJECT(id1)
+        ]));
+        assert!(iterative_result.contains(&vec![
+            ObjectMapping::OBJECT(id6),
+            ObjectMapping::PROJECT(id1)
+        ]));
+    }
+
+    #[tokio::test]
+    async fn test_upstream_dfs_002() {
+        // Init new cache
+        let cache = Cache::new();
+
+        // Create dummy hierarchies
+        let id1 = DieselUlid::generate(); // Project from [] to [id4]
+        let id2 = DieselUlid::generate(); // Project from [] to [id4]
+        let id3 = DieselUlid::generate(); // Project from [] to [id6]
+        let id4 = DieselUlid::generate(); // Collection: from [id1,id2] and to [id5,id6]
+        let id5 = DieselUlid::generate(); // Dataset: from [id4] to [id7]
+        let id6 = DieselUlid::generate(); // Dataset: from [id3,id4] to [id7]
+        let id7 = DieselUlid::generate(); // Object: from [id5,id6] to []
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id1,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id2,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id3,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id4,
+            ObjectType::COLLECTION,
+            vec![&id1, &id2],
+            vec![&id5, &id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id5,
+            ObjectType::DATASET,
+            vec![&id4],
+            vec![&id7],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id6,
+            ObjectType::DATASET,
+            vec![&id3, &id4],
+            vec![&id7],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id7,
+            ObjectType::OBJECT,
+            vec![&id5, &id6],
+            vec![],
+        ));
+
+        // Extract paths including "Performance measurement"
+        use std::time::Instant;
+        let now = Instant::now();
+        let iterative_result = cache.upstream_dfs_iterative(&id7).unwrap();
+        let elapsed = now.elapsed();
+        log::debug!("Cache iterative traversal: {:.2?}", elapsed);
+
+        // Evaluate result
+        assert_eq!(iterative_result.len(), 5);
+        for path in [
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::PROJECT(id3),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id6),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id2),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id5),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id1),
+            ],
+            vec![
+                ObjectMapping::OBJECT(id7),
+                ObjectMapping::DATASET(id5),
+                ObjectMapping::COLLECTION(id4),
+                ObjectMapping::PROJECT(id2),
+            ],
+        ] {
+            assert!(iterative_result.contains(&path));
+        }
     }
 }

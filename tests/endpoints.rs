@@ -1,24 +1,25 @@
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::endpoint_dsl::{Endpoint, HostConfigs};
-use aruna_server::database::enums::{EndpointStatus, EndpointVariant, ObjectType};
+use aruna_server::database::enums::{EndpointStatus, EndpointVariant, ObjectMapping, ObjectType};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-mod init_db;
-mod utils;
+mod common;
 
 #[tokio::test]
 async fn create_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = utils::new_user(vec![doc_obj]);
+
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+
+    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
     let endpoint = Endpoint {
@@ -39,16 +40,16 @@ async fn create_test() {
 
 #[tokio::test]
 async fn delete_test() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = utils::new_user(vec![doc_obj]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
     let endpoint = Endpoint {
@@ -69,15 +70,15 @@ async fn delete_test() {
 }
 #[tokio::test]
 async fn get_by_tests() {
-    let db = init_db::init_db().await;
+    let db = common::init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = utils::new_user(vec![doc_obj]);
+    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
     let endpoint = Endpoint {

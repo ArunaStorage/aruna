@@ -3,8 +3,11 @@ use postgres_types::{FromSql, Kind, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-#[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+#[derive(
+    Debug, Default, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize,
+)]
 pub enum ObjectStatus {
+    #[default]
     INITIALIZING,
     VALIDATING,
     AVAILABLE,
@@ -53,7 +56,16 @@ impl DataClass {
         )
     }
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
+pub enum ObjectMapping<T> {
+    PROJECT(T),
+    COLLECTION(T),
+    DATASET(T),
+    OBJECT(T),
+}
+
 #[derive(
+    Copy,
     Debug,
     ToSql,
     FromSql,
@@ -104,7 +116,9 @@ impl TryFrom<i32> for ObjectType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Copy,
+)]
 pub enum DbPermissionLevel {
     DENY,
     NONE,

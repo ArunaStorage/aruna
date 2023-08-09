@@ -38,6 +38,10 @@ feature = "BUNDLER"
 nats_host = "localhost:4222"
 reply_secret = 'ThisIsASecretToken'
 
+[meilisearch]
+meilisearch_host = "http://localhost:7700"
+meilisearch_api_key = "MASTER_KEY"
+
 [loc_version]
 location        = 'FOO'
 components = [

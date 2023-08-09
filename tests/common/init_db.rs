@@ -1,5 +1,6 @@
 use aruna_server::database::connection::Database;
 
+#[allow(dead_code)]
 pub async fn init_db() -> Database {
     let database_host = "localhost";
     let database_name = "test";

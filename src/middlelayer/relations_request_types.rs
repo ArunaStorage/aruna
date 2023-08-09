@@ -38,11 +38,7 @@ impl ModifyRelations {
             true,
         )];
         let (external_add_relations, internal_add_relations, mut added_to_check) =
-            ModifyRelations::convert_labels(
-                &self.0.add_relations,
-                resource_id,
-                resource_variant.clone(),
-            )?;
+            ModifyRelations::convert_labels(&self.0.add_relations, resource_id, resource_variant)?;
         let (external_rm_relations, internal_rm_relations, mut removed_to_check) =
             ModifyRelations::convert_labels(&self.0.add_relations, resource_id, resource_variant)?;
         ulids_to_check.append(&mut added_to_check);
@@ -81,7 +77,7 @@ impl ModifyRelations {
                             true,
                         ));
                         internal_relations
-                            .push((internal, (resource_id, resource_variant.clone())).try_into()?);
+                            .push((internal, (resource_id, resource_variant)).try_into()?);
                     }
                 }
             }
