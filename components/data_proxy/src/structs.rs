@@ -1,8 +1,18 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use aruna_rust_api::api::storage::models::v2::{DataClass, KeyValue, PermissionLevel, Status};
+use anyhow::bail;
+use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::Collection;
+use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::{
+    relation::Relation, DataClass, InternalRelationVariant, KeyValue, PermissionLevel, Project,
+    RelationDirection, Status,
+};
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DbPermissionLevel {
@@ -41,21 +51,19 @@ pub struct ObjectLocation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Object {
-    id: DieselUlid,
-    revision_number: i64,
-    name: String,
-    raw_content_len: i64,
-    disk_content_len: i64,
-    count: i64,
-    key_values: Vec<KeyValue>,
-    object_status: Status,
-    data_class: DataClass,
-    object_type: ObjectType,
-    hashes: HashMap<String, String>,
-    dynamic: bool,
-    endpoints: Vec<DieselUlid>,
-    children: HashSet<DieselUlid>,
-    synced: bool,
+    pub id: DieselUlid,
+    pub name: String,
+    pub raw_content_len: i64,
+    pub disk_content_len: i64,
+    pub count: i64,
+    pub key_values: Vec<KeyValue>,
+    pub object_status: Status,
+    pub data_class: DataClass,
+    pub object_type: ObjectType,
+    pub hashes: HashMap<String, String>,
+    pub dynamic: bool,
+    pub children: HashSet<DieselUlid>,
+    pub synced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -180,5 +188,152 @@ impl From<PermissionLevel> for DbPermissionLevel {
             PermissionLevel::Admin => DbPermissionLevel::ADMIN,
             _ => DbPermissionLevel::NONE,
         }
+    }
+}
+
+impl TryFrom<Project> for Object {
+    type Error = anyhow::Error;
+    fn try_from(value: Project) -> Result<Self, Self::Error> {
+        let filtered_relations = value
+            .relations
+            .iter()
+            .filter(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => {
+                            var.defined_variant() == InternalRelationVariant::BelongsTo
+                                && var.direction() == RelationDirection::Outbound
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            })
+            .map(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
+                        _ => bail!("No relation found"),
+                    }
+                } else {
+                    bail!("No relation found")
+                }
+            })
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+
+        Ok(Object {
+            id: DieselUlid::from_str(&value.id)?,
+            name: value.name.to_string(),
+            raw_content_len: 0,
+            disk_content_len: 0,
+            count: 0,
+            key_values: value.key_values.clone(),
+            object_status: value.status(),
+            data_class: value.data_class(),
+            object_type: ObjectType::PROJECT,
+            hashes: HashMap::default(),
+            dynamic: value.dynamic,
+            children: filtered_relations,
+            synced: false,
+        })
+    }
+}
+
+impl TryFrom<Collection> for Object {
+    type Error = anyhow::Error;
+    fn try_from(value: Collection) -> Result<Self, Self::Error> {
+        let filtered_relations = value
+            .relations
+            .iter()
+            .filter(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => {
+                            var.defined_variant() == InternalRelationVariant::BelongsTo
+                                && var.direction() == RelationDirection::Outbound
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            })
+            .map(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
+                        _ => bail!("No relation found"),
+                    }
+                } else {
+                    bail!("No relation found")
+                }
+            })
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+
+        Ok(Object {
+            id: DieselUlid::from_str(&value.id)?,
+            name: value.name.to_string(),
+            raw_content_len: 0,
+            disk_content_len: 0,
+            count: 0,
+            key_values: value.key_values.clone(),
+            object_status: value.status(),
+            data_class: value.data_class(),
+            object_type: ObjectType::COLLECTION,
+            hashes: HashMap::default(),
+            dynamic: value.dynamic,
+            children: filtered_relations,
+            synced: false,
+        })
+    }
+}
+
+impl TryFrom<Dataset> for Object {
+    type Error = anyhow::Error;
+    fn try_from(value: Dataset) -> Result<Self, Self::Error> {
+        let filtered_relations = value
+            .relations
+            .iter()
+            .filter(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => {
+                            var.defined_variant() == InternalRelationVariant::BelongsTo
+                                && var.direction() == RelationDirection::Outbound
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            })
+            .map(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
+                        _ => bail!("No relation found"),
+                    }
+                } else {
+                    bail!("No relation found")
+                }
+            })
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+
+        Ok(Object {
+            id: DieselUlid::from_str(&value.id)?,
+            name: value.name.to_string(),
+            raw_content_len: 0,
+            disk_content_len: 0,
+            count: 0,
+            key_values: value.key_values.clone(),
+            object_status: value.status(),
+            data_class: value.data_class(),
+            object_type: ObjectType::DATASET,
+            hashes: HashMap::default(),
+            dynamic: value.dynamic,
+            children: filtered_relations,
+            synced: false,
+        })
     }
 }

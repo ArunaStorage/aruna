@@ -264,6 +264,13 @@ impl GrpcQueryHandler {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
                 if let Some(r) = event.resource {
+                    if let Ok(cache) = self.cache.read() {
+                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
+                            return Ok(event.reply);
+                        }
+                    } else {
+                        bail!("Poisoned lock")
+                    };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             todo!()
@@ -283,9 +290,24 @@ impl GrpcQueryHandler {
             }
             EventVariant::Deleted => {
                 if let Some(r) = event.resource {
+                    if let Ok(cache) = self.cache.read() {
+                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
+                            return Ok(event.reply);
+                        }
+                    } else {
+                        bail!("Poisoned lock")
+                    };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                            todo!()
+                            if let Ok(cache) = self.cache.read() {
+                                self.get_project(
+                                    &DieselUlid::from_str(&r.resource_id)?,
+                                    r.checksum,
+                                )
+                                .await?;
+                            } else {
+                                bail!("Poisoned lock")
+                            };
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
                             todo!()

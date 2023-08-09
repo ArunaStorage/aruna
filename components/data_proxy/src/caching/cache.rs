@@ -113,6 +113,18 @@ impl Cache {
         Ok(())
     }
 
+    pub async fn upsert_object(&self, object: Object, location: ObjectLocation) -> Result<()> {
+        if let Some(persistence) = &self.persistence {
+            object.upsert(&persistence.get_client().await?).await?;
+        }
+        self.paths.insert(
+            object.name.to_string(),
+            DashSet::from_iter(object.clone().children.into_iter()),
+        );
+        self.resources.insert(object.id, (object, location));
+        Ok(())
+    }
+
     pub fn is_user(&self, user_id: DieselUlid) -> bool {
         self.user_access_keys.get(&user_id).is_some()
     }
