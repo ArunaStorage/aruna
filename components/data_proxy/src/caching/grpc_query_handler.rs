@@ -261,46 +261,47 @@ impl GrpcQueryHandler {
     }
 
     async fn process_resource_event(&self, event: ResourceEvent) -> Result<Option<Reply>> {
-        // match event.event_variant() {
-        //     EventVariant::Created | EventVariant::Updated => {
-        //         if let Some(r) = event.resource {
-        //             let (shared_id, persistent_res) = r.get_ref()?;
-
-        //             let mut retry_counter = 0;
-        //             let info = loop {
-        //                 match self
-        //                     .query
-        //                     .get_resource(&persistent_res, r.checksum.clone())
-        //                     .await
-        //                 {
-        //                     Ok(r) => break Some(r),
-        //                     Err(_) => {
-        //                         tokio::time::sleep(Duration::from_millis(100 * retry_counter))
-        //                             .await;
-        //                         retry_counter += 1;
-
-        //                         if retry_counter > 10 {
-        //                             self.cache
-        //                                 .process_full_sync(self.query.full_sync().await.ok()?)
-        //                                 .ok()?;
-        //                             break None;
-        //                         }
-        //                     }
-        //                 };
-        //             }?;
-        //             self.cache
-        //                 .process_api_resource_update(info, shared_id, persistent_res)
-        //                 .ok()?
-        //         }
-        //     }
-        //     EventVariant::Deleted => {
-        //         if let Some(r) = event.resource {
-        //             let (associated_id, res) = r.get_ref()?;
-        //             self.cache.remove_resource(res, associated_id);
-        //         }
-        //     }
-        //     _ => (),
-        // }
+        match event.event_variant() {
+            EventVariant::Created | EventVariant::Updated => {
+                if let Some(r) = event.resource {
+                    match r.resource_variant() {
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
+                            todo!()
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            EventVariant::Deleted => {
+                if let Some(r) = event.resource {
+                    match r.resource_variant() {
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
+                            todo!()
+                        }
+                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
+                            todo!()
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            _ => (),
+        }
         Ok(event.reply)
     }
 }
