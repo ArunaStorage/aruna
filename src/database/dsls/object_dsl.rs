@@ -1,4 +1,5 @@
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::enums::ObjectMapping;
 use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
@@ -14,7 +15,7 @@ use futures::pin_mut;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
 
@@ -242,6 +243,30 @@ impl Object {
             }
         };
         Ok(())
+    }
+
+    pub async fn fetch_object_hierarchies(&self, client: &Client) -> Result<Vec<Hierarchy>> {
+        let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+        WITH RECURSIVE paths AS (
+            SELECT ir.*
+              FROM internal_relations ir WHERE ir.target_pid = $1 
+            UNION 
+            SELECT ir2.*
+              FROM paths, internal_relations ir2 WHERE ir2.target_pid = paths.origin_pid 
+        ) SELECT * FROM paths;";
+
+        // Execute query and convert rows to InternalRelations
+        let prepared = client.prepare(query).await?;
+        let relations = client
+            .query(&prepared, &[&self.id])
+            .await?
+            .iter()
+            .map(InternalRelation::from_row)
+            .collect::<Vec<_>>();
+
+        dbg!(&relations);
+        // Extract paths from list of internal relations
+        extract_paths_from_graph(&self.id, relations)
     }
 
     pub async fn get_object_with_relations(
@@ -617,4 +642,178 @@ impl ObjectWithRelations {
             outbound_belongs_to: Json(DashMap::from_iter([(*to, InternalRelation::default())])),
         }
     }
+
+    pub fn random_object_v2(
+        id: &DieselUlid,
+        object_type: ObjectType,
+        from: Vec<&DieselUlid>,
+        to: Vec<&DieselUlid>,
+    ) -> Self {
+        Self {
+            object: Object {
+                id: *id,
+                revision_number: 0,
+                name: "object_name.whatev".to_string(),
+                description: "".to_string(),
+                created_at: None,
+                created_by: DieselUlid::generate(),
+                content_len: 0,
+                count: 0,
+                key_values: Json(KeyValues(vec![])),
+                object_status: ObjectStatus::AVAILABLE,
+                data_class: DataClass::PUBLIC,
+                object_type,
+                external_relations: Json(ExternalRelations(DashMap::default())),
+                hashes: Json(Hashes(vec![])),
+                dynamic: false,
+                endpoints: Json(DashMap::default()),
+            },
+            inbound: Json(DashMap::default()),
+            inbound_belongs_to: Json(DashMap::from_iter(
+                from.into_iter()
+                    .map(|item| (*item, InternalRelation::default()))
+                    .collect::<Vec<_>>(),
+            )),
+            outbound: Json(DashMap::default()),
+            outbound_belongs_to: Json(DashMap::from_iter(
+                to.into_iter()
+                    .map(|item| (*item, InternalRelation::default()))
+                    .collect::<Vec<_>>(),
+            )),
+        }
+    }
+}
+
+/* ----- Object path traversal ----- */
+#[derive(Debug, Default, PartialEq)]
+pub struct Hierarchy {
+    pub project_id: String,
+    pub collection_id: Option<String>,
+    pub dataset_id: Option<String>,
+    pub object_id: Option<String>,
+}
+
+///ToDo: Rust Doc
+pub fn convert_paths_to_hierarchies(
+    collected: Vec<Vec<ObjectMapping<DieselUlid>>>,
+) -> Vec<Hierarchy> {
+    // Init vec to collect converted hierarchies
+    let mut hierarchies = Vec::new();
+
+    // Convert hierarchies
+    for path in collected {
+        let mut hierarchy = Hierarchy::default();
+
+        for node in path {
+            match node {
+                ObjectMapping::PROJECT(id) => hierarchy.project_id = id.to_string(),
+                ObjectMapping::COLLECTION(id) => hierarchy.collection_id = Some(id.to_string()),
+                ObjectMapping::DATASET(id) => hierarchy.dataset_id = Some(id.to_string()),
+                ObjectMapping::OBJECT(id) => hierarchy.object_id = Some(id.to_string()),
+            }
+        }
+
+        hierarchies.push(hierarchy)
+    }
+
+    hierarchies
+}
+
+pub fn extract_paths_from_graph(
+    root_id: &DieselUlid,
+    edge_list: Vec<InternalRelation>,
+) -> anyhow::Result<Vec<Hierarchy>> {
+    // Helper struct for minimalistic graph creation
+    #[derive(Debug)]
+    struct Node {
+        pub object_id: DieselUlid,
+        pub object_type: ObjectType,
+        pub parents: Vec<DieselUlid>,
+    }
+    impl Node {
+        fn add_to_parent(&mut self, id: DieselUlid) {
+            self.parents.push(id)
+        }
+    }
+
+    // Create/update graph nodes from list of edges
+    let mut nodes: HashMap<DieselUlid, Node> = HashMap::new();
+    for edge in &edge_list {
+        // Create origin if not exists
+        if nodes.get(&edge.origin_pid).is_none() {
+            nodes.insert(
+                edge.origin_pid,
+                Node {
+                    object_id: edge.origin_pid,
+                    object_type: edge.origin_type,
+                    parents: vec![],
+                },
+            );
+        }
+
+        // Create target node if not exists; update parents else
+        if let Some(node) = nodes.get_mut(&edge.target_pid) {
+            node.add_to_parent(edge.origin_pid)
+        } else {
+            nodes.insert(
+                edge.target_pid,
+                Node {
+                    object_id: edge.target_pid,
+                    object_type: edge.target_type,
+                    parents: vec![edge.origin_pid],
+                },
+            );
+        }
+    }
+
+    // Fetch root node for traversal start point
+    let root_node = nodes
+        .get(root_id)
+        .ok_or_else(|| anyhow::anyhow!("Root doesn't exist"))?;
+
+    // Traverse nodes and collect paths
+    let mut complete_paths = Vec::new();
+    let mut current_path = Vec::new();
+    let mut split_indexes = Vec::new();
+    let mut queue = VecDeque::new();
+    queue.push_front(root_node);
+
+    while let Some(current_node) = queue.pop_front() {
+        // Add current object to back of hierarchy
+        current_path.push(match current_node.object_type {
+            ObjectType::PROJECT => ObjectMapping::PROJECT(current_node.object_id),
+            ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_node.object_id),
+            ObjectType::DATASET => ObjectMapping::DATASET(current_node.object_id),
+            ObjectType::OBJECT => ObjectMapping::OBJECT(current_node.object_id),
+        });
+
+        // Check if current object is a project
+        if current_node.object_type == ObjectType::PROJECT {
+            // Save finished hierarchy
+            complete_paths.push(current_path.clone());
+
+            // Truncate current hierarchy back to last path split
+            if let Some(index) = split_indexes.pop() {
+                current_path.truncate(index) //
+            }
+        } else {
+            // Add parents to the front of the queue for DFS
+            for parent_id in &current_node.parents {
+                let parent = nodes
+                    .get(parent_id)
+                    .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
+
+                queue.push_front(parent);
+            }
+
+            // Save index n times for hierarchy cleanup if more than 1 parent
+            if current_node.parents.len() > 1 {
+                for _ in 0..(current_node.parents.len() - 1) {
+                    split_indexes.push(current_path.len())
+                }
+            }
+        }
+    }
+
+    Ok(convert_paths_to_hierarchies(complete_paths))
 }

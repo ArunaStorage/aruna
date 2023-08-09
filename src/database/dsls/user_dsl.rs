@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -31,8 +31,7 @@ pub struct APIToken {
     pub name: String,
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
-    pub object_id: DieselUlid,
-    pub object_type: ObjectType,
+    pub object_id: Option<ObjectMapping<DieselUlid>>,
     pub user_rights: DbPermissionLevel,
 }
 
@@ -43,7 +42,7 @@ pub struct UserAttributes {
     pub tokens: DashMap<DieselUlid, APIToken, RandomState>,
     pub trusted_endpoints: DashMap<DieselUlid, Empty, RandomState>,
     pub custom_attributes: Vec<CustomAttributes>,
-    pub permissions: DashMap<DieselUlid, DbPermissionLevel, RandomState>,
+    pub permissions: DashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -198,7 +197,7 @@ impl User {
     pub async fn add_user_permission(
         client: &Client,
         user_id: &DieselUlid,
-        user_perm: HashMap<DieselUlid, DbPermissionLevel>,
+        user_perm: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>>,
     ) -> Result<()> {
         let query = "UPDATE users
         SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 

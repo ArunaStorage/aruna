@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::services::v2::{
@@ -24,20 +24,27 @@ impl GetToken {
 }
 
 impl CreateToken {
-    pub fn get_resource(&self) -> Result<(DieselUlid, ObjectType)> {
+    pub fn get_resource(&self) -> Result<Option<ObjectMapping<DieselUlid>>> {
         Ok(match &self.0.permission {
             Some(perm) => match &perm.resource_id {
                 Some(res) => match res {
-                    ResourceId::ProjectId(id) => (DieselUlid::from_str(id)?, ObjectType::PROJECT),
-                    ResourceId::CollectionId(id) => {
-                        (DieselUlid::from_str(id)?, ObjectType::COLLECTION)
+                    ResourceId::ProjectId(id) => {
+                        Some(ObjectMapping::PROJECT(DieselUlid::from_str(id)?))
                     }
-                    ResourceId::DatasetId(id) => (DieselUlid::from_str(id)?, ObjectType::DATASET),
-                    ResourceId::ObjectId(id) => (DieselUlid::from_str(id)?, ObjectType::OBJECT),
+                    ResourceId::CollectionId(id) => {
+                        Some(ObjectMapping::COLLECTION(DieselUlid::from_str(id)?))
+                    }
+                    ResourceId::DatasetId(id) => {
+                        Some(ObjectMapping::DATASET(DieselUlid::from_str(id)?))
+                    }
+
+                    ResourceId::ObjectId(id) => {
+                        Some(ObjectMapping::OBJECT(DieselUlid::from_str(id)?))
+                    }
                 },
-                None => return Err(anyhow!("Not resource id provided")),
+                None => None,
             },
-            None => return Err(anyhow!("Not resource id provided")),
+            None => return Err(anyhow!("No permissions provided")),
         })
     }
 

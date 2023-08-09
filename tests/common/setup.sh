@@ -4,6 +4,18 @@
 
 Runtime="${ARUNA_RUNTIME:-docker}"
 
+Network="bridge"
+if [ "$Runtime" == "podman" ] ;
+then
+    Network="podman"
+fi
+
+# Start Nats.io container (No cluster port)
+$Runtime run -d --name nats-js-server --rm -p 4222:4222 -p 8222:8222 nats:latest --http_port 8222 --js
+
+# Start Meilisearch container
+$Runtime run -d --rm -p 7700:7700 -e MEILI_MASTER_KEY='MASTER_KEY' getmeili/meilisearch:latest
+
 # Start yugabyte container
 $Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:latest bin/yugabyted start --daemon=false
 

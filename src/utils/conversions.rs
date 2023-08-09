@@ -4,16 +4,17 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::user_dsl::{
     APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
     UserAttributes as DBUserAttributes,
 };
-use crate::database::enums::{DbPermissionLevel, EndpointVariant};
+use crate::database::enums::{DbPermissionLevel, EndpointVariant, ObjectMapping};
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
     dsls::object_dsl::{
         Algorithm, DefinedVariant, ExternalRelation as DBExternalRelation, ExternalRelations,
-        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
+        Hash as DBHash, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues,
         ObjectWithRelations,
     },
     enums::{DataClass, DataProxyFeature, EndpointStatus, ObjectStatus, ObjectType},
@@ -22,11 +23,14 @@ use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, permission::ResourceId, relation::Relation as RelationEnum,
-    Collection as GRPCCollection, CustomAttributes, Dataset as GRPCDataset, Endpoint,
-    EndpointHostConfig, ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
-    Object as GRPCObject, Permission, Project as GRPCProject, Relation, Stats, Token, User,
-    UserAttributes,
+    generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
+    Token, User as ApiUser, UserAttributes,
+};
+use aruna_rust_api::api::storage::models::v2::{
+    permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
+    Dataset as GRPCDataset, Endpoint, EndpointHostConfig, ExternalRelation, Hash,
+    InternalRelation as APIInternalRelation, KeyValue, Object as GRPCObject,
+    Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
@@ -176,6 +180,34 @@ impl From<ObjectStatus> for i32 {
         }
     }
 }
+impl TryFrom<i32> for ObjectStatus {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            1 => Ok(ObjectStatus::INITIALIZING),
+            2 => Ok(ObjectStatus::VALIDATING),
+            3 => Ok(ObjectStatus::AVAILABLE),
+            4 => Ok(ObjectStatus::UNAVAILABLE),
+            5 => Ok(ObjectStatus::ERROR),
+            6 => Ok(ObjectStatus::DELETED),
+            _ => Err(anyhow!("Object status not defined")),
+        }
+    }
+}
+impl From<ObjectStatus> for Status {
+    fn from(val: ObjectStatus) -> Self {
+        match val {
+            ObjectStatus::INITIALIZING => Status::Initializing,
+            ObjectStatus::VALIDATING => Status::Validating,
+            ObjectStatus::AVAILABLE => Status::Available,
+            ObjectStatus::UNAVAILABLE => Status::Unavailable,
+            ObjectStatus::ERROR => Status::Error,
+            ObjectStatus::DELETED => Status::Error,
+        }
+    }
+}
+
 impl From<KeyValues> for Vec<KeyValue> {
     //noinspection ALL
     fn from(keyval: KeyValues) -> Self {
@@ -263,9 +295,136 @@ impl From<ObjectType> for i32 {
     }
 }
 
-impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
-    type Error = anyhow::Error;
-    fn try_from(object_with_relations: ObjectWithRelations) -> Result<generic_resource::Resource> {
+impl From<ObjectType> for ResourceVariant {
+    fn from(object_type: ObjectType) -> Self {
+        match object_type {
+            ObjectType::PROJECT => ResourceVariant::Project,
+            ObjectType::COLLECTION => ResourceVariant::Collection,
+            ObjectType::DATASET => ResourceVariant::Dataset,
+            ObjectType::OBJECT => ResourceVariant::Object,
+        }
+    }
+}
+
+impl From<ObjectMapping<DieselUlid>> for ResourceId {
+    fn from(value: ObjectMapping<DieselUlid>) -> Self {
+        match value {
+            ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+            ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+            ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+            ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+        }
+    }
+}
+
+// Conversion from database model user token to proto user
+impl From<DBUser> for ApiUser {
+    fn from(db_user: DBUser) -> Self {
+        // Convert and collect tokens
+        let api_tokens = db_user
+            .attributes
+            .0
+            .tokens
+            .into_iter()
+            .map(|(token_id, token)| convert_token_to_proto(&token_id, token))
+            .collect::<Vec<_>>();
+
+        // Collect custom attributes
+        let api_custom_attributes = db_user
+            .attributes
+            .0
+            .custom_attributes
+            .into_iter()
+            .map(|ca| CustomAttributes {
+                attribute_name: ca.attribute_name,
+                attribute_value: ca.attribute_value,
+            })
+            .collect::<Vec<_>>();
+
+        // Collect personal permissions
+        let api_permissions = db_user
+            .attributes
+            .0
+            .permissions
+            .into_iter()
+            .map(|(resource_id, resource_mapping)| {
+                convert_permission_to_proto(resource_id, resource_mapping)
+            })
+            .collect::<Vec<_>>();
+
+        // Return proto user
+        ApiUser {
+            id: db_user.id.to_string(),
+            external_id: db_user.external_id.unwrap_or_default(),
+            display_name: db_user.display_name,
+            active: db_user.active,
+            email: db_user.email,
+            attributes: Some(UserAttributes {
+                global_admin: db_user.attributes.0.global_admin,
+                service_account: db_user.attributes.0.service_account,
+                tokens: api_tokens,
+                custom_attributes: api_custom_attributes,
+                personal_permissions: api_permissions,
+            }),
+        }
+    }
+}
+
+// Conversion from database permission to proto permission
+pub fn convert_permission_to_proto(
+    resource_id: DieselUlid,
+    resource_mapping: ObjectMapping<DbPermissionLevel>,
+) -> Permission {
+    match resource_mapping {
+        ObjectMapping::PROJECT(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::ProjectId(resource_id.to_string())),
+        },
+        ObjectMapping::COLLECTION(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::CollectionId(resource_id.to_string())),
+        },
+        ObjectMapping::DATASET(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::DatasetId(resource_id.to_string())),
+        },
+        ObjectMapping::OBJECT(perm) => Permission {
+            permission_level: PermissionLevel::from(perm) as i32,
+            resource_id: Some(ResourceId::ObjectId(resource_id.to_string())),
+        },
+    }
+}
+
+// Conversion from database model token to proto token
+pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Token {
+    Token {
+        id: token_id.to_string(),
+        name: db_token.name,
+        created_at: Some(db_token.created_at.into()),
+        expires_at: Some(db_token.expires_at.into()),
+        permission: Some(Permission {
+            permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
+            resource_id: db_token.object_id.map(ResourceId::from),
+        }),
+    }
+}
+
+// Conversion from database model permission level to proto permission level
+impl From<DbPermissionLevel> for PermissionLevel {
+    fn from(db_perm: DbPermissionLevel) -> Self {
+        match db_perm {
+            DbPermissionLevel::DENY => PermissionLevel::Unspecified, // Should not exist on db side
+            DbPermissionLevel::NONE => PermissionLevel::None,
+            DbPermissionLevel::READ => PermissionLevel::Read,
+            DbPermissionLevel::APPEND => PermissionLevel::Append,
+            DbPermissionLevel::WRITE => PermissionLevel::Write,
+            DbPermissionLevel::ADMIN => PermissionLevel::Admin,
+        }
+    }
+}
+
+impl From<ObjectWithRelations> for generic_resource::Resource {
+    fn from(object_with_relations: ObjectWithRelations) -> generic_resource::Resource {
         let (inbound, outbound) = (
             object_with_relations
                 .inbound
@@ -286,12 +445,12 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
         let mut inbound = inbound
             .into_iter()
             .map(|r| from_db_internal_relation(r, true))
-            .collect::<Result<Vec<Relation>>>()?;
+            .collect::<Vec<_>>();
 
         let mut outbound = outbound
             .into_iter()
             .map(|r| from_db_internal_relation(r, false))
-            .collect::<Result<Vec<Relation>>>()?;
+            .collect::<Vec<_>>();
         let mut relations: Vec<Relation> = object_with_relations
             .object
             .external_relations
@@ -310,7 +469,7 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
             last_updated: object_with_relations.object.created_at.map(|t| t.into()),
         });
 
-        let obj = match object_with_relations.object.object_type {
+        match object_with_relations.object.object_type {
             ObjectType::PROJECT => generic_resource::Resource::Project(GRPCProject {
                 id: object_with_relations.object.id.to_string(),
                 name: object_with_relations.object.name,
@@ -364,13 +523,11 @@ impl TryFrom<ObjectWithRelations> for generic_resource::Resource {
                 status: object_with_relations.object.object_status.into(),
                 relations,
             }),
-        };
-
-        Ok(obj)
+        }
     }
 }
 
-pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Result<Relation> {
+pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Relation {
     let (direction, resource_variant) = if inbound {
         (
             1,
@@ -401,7 +558,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
         _ => (6, Some(internal.relation_name)),
     };
 
-    Ok(Relation {
+    Relation {
         relation: Some(RelationEnum::Internal(APIInternalRelation {
             resource_id: internal.origin_pid.to_string(),
             resource_variant,
@@ -409,7 +566,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
             defined_variant,
             custom_variant,
         })),
-    })
+    }
 }
 
 pub fn from_db_object(
@@ -426,7 +583,7 @@ pub fn from_db_object(
         })
         .collect();
     if let Some(i) = internal {
-        relations.push(from_db_internal_relation(i.clone(), false)?)
+        relations.push(from_db_internal_relation(i.clone(), false))
     };
 
     match object.object_type {
@@ -575,9 +732,10 @@ impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelat
     }
 }
 
-impl From<DBUser> for User {
+/*
+impl From<DBUser> for DBUser {
     fn from(user: DBUser) -> Self {
-        User {
+        ApiUser {
             id: user.id.to_string(),
             external_id: match user.external_id {
                 Some(id) => id,
@@ -590,6 +748,7 @@ impl From<DBUser> for User {
         }
     }
 }
+*/
 
 impl From<DBUserAttributes> for UserAttributes {
     fn from(attr: DBUserAttributes) -> Self {
@@ -604,32 +763,26 @@ impl From<DBUserAttributes> for UserAttributes {
                         created_at: Some(t.1.created_at.into()),
                         expires_at: Some(t.1.expires_at.into()),
                         permission: Some(Permission {
-                            permission_level: t.1.user_rights.clone().into(),
-                            resource_id: Some(match t.1.object_type {
-                                ObjectType::PROJECT => {
-                                    ResourceId::ProjectId(t.1.object_id.to_string())
+                            permission_level: t.1.user_rights.into(),
+                            resource_id: t.1.object_id.map(|resource| match resource {
+                                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                                ObjectMapping::COLLECTION(id) => {
+                                    ResourceId::CollectionId(id.to_string())
                                 }
-                                ObjectType::COLLECTION => {
-                                    ResourceId::CollectionId(t.1.object_id.to_string())
-                                }
-                                ObjectType::DATASET => {
-                                    ResourceId::DatasetId(t.1.object_id.to_string())
-                                }
-                                ObjectType::OBJECT => {
-                                    ResourceId::ObjectId(t.1.object_id.to_string())
-                                }
+                                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
                             }),
                         }),
                     },
                     Permission {
                         permission_level: t.1.user_rights.into(),
-                        resource_id: Some(match t.1.object_type {
-                            ObjectType::PROJECT => ResourceId::ProjectId(t.1.object_id.to_string()),
-                            ObjectType::COLLECTION => {
-                                ResourceId::CollectionId(t.1.object_id.to_string())
+                        resource_id: t.1.object_id.map(|resource| match resource {
+                            ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                            ObjectMapping::COLLECTION(id) => {
+                                ResourceId::CollectionId(id.to_string())
                             }
-                            ObjectType::DATASET => ResourceId::DatasetId(t.1.object_id.to_string()),
-                            ObjectType::OBJECT => ResourceId::ObjectId(t.1.object_id.to_string()),
+                            ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                            ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
                         }),
                     },
                 )
@@ -689,11 +842,11 @@ pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
         expires_at: Some(token.expires_at.into()),
         permission: Some(Permission {
             permission_level: token.user_rights.into(),
-            resource_id: Some(match token.object_type {
-                ObjectType::PROJECT => ResourceId::ProjectId(token.object_id.to_string()),
-                ObjectType::COLLECTION => ResourceId::CollectionId(token.object_id.to_string()),
-                ObjectType::DATASET => ResourceId::DatasetId(token.object_id.to_string()),
-                ObjectType::OBJECT => ResourceId::ObjectId(token.object_id.to_string()),
+            resource_id: token.object_id.map(|resource| match resource {
+                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
             }),
         }),
     }

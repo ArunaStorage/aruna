@@ -10,7 +10,7 @@ use diesel_ulid::DieselUlid;
 impl DatabaseHandler {
     pub async fn create_token(&self, user_id: DieselUlid, request: CreateToken) -> Result<User> {
         let client = self.database.get_client().await?;
-        let (object_id, object_type) = request.get_resource()?;
+        let object_id = request.get_resource()?;
         let user_rights = request.get_rights()?;
         let expires_at = request.get_expiry()?;
         let token_id = DieselUlid::generate();
@@ -20,7 +20,6 @@ impl DatabaseHandler {
             created_at: Utc::now().naive_local(),
             expires_at,
             object_id,
-            object_type,
             user_rights,
         };
         let mut map = HashMap::new();

@@ -9,6 +9,7 @@ use diesel_ulid::DieselUlid;
 use crate::database::enums::ObjectType;
 
 // Internal enum which provides info for consumer creation
+#[derive(Debug, PartialEq)]
 pub enum EventType {
     // Contains resource_id, resource_variant and if it includes sub resources
     Resource((String, ObjectType, bool)),
@@ -24,7 +25,11 @@ pub enum EventType {
 #[async_trait]
 pub trait EventHandler {
     // Registers/Publishes an event into the event message system
-    async fn register_event(&self, message_variant: MessageVariant) -> anyhow::Result<()>;
+    async fn register_event(
+        &self,
+        message_variant: MessageVariant,
+        subject: String,
+    ) -> anyhow::Result<()>;
 
     // Creates an event consumer.
     // An event consumer is a entity of the underlying event streaming system can be used

@@ -1,4 +1,4 @@
-use crate::common::{init_db, utils};
+use crate::common::{init_db, test_utils};
 use aruna_rust_api::api::storage::services::v2::create_collection_request::Parent as CollectionParent;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent as DatasetParent;
 use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as ObjectParent;
@@ -9,16 +9,29 @@ use aruna_server::database::crud::CrudDb;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
+use aruna_server::notification::natsio_handler::NatsIoHandler;
 use std::sync::Arc;
 
 #[tokio::test]
 async fn create_project() {
+    // init
+    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
+    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
+        .await
+        .unwrap();
     let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler { database };
-    let user = utils::new_user(vec![]);
+    let db_handler = DatabaseHandler {
+        database,
+        natsio_handler: Arc::new(nats_handler),
+    };
+
+    // create user
+    let user = test_utils::new_user(vec![]);
     user.create(&db_handler.database.get_client().await.unwrap())
         .await
         .unwrap();
+
+    // test requests
     let request = CreateRequest::Project(CreateProjectRequest {
         name: "project".to_string(),
         description: "test".to_string(),
@@ -48,11 +61,23 @@ async fn create_project() {
 }
 #[tokio::test]
 async fn create_collection() {
+    // init
+    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
+    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
+        .await
+        .unwrap();
     let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler { database };
+    let db_handler = DatabaseHandler {
+        database,
+        natsio_handler: Arc::new(nats_handler),
+    };
     let client = &db_handler.database.get_client().await.unwrap();
-    let user = utils::new_user(vec![]);
+
+    // create user
+    let user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+
+    // create parent
     let parent = CreateRequest::Project(CreateProjectRequest {
         name: "project".to_string(),
         description: "test".to_string(),
@@ -61,6 +86,8 @@ async fn create_collection() {
         data_class: 1,
     });
     let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+
+    // test requests
     let request = CreateRequest::Collection(CreateCollectionRequest {
         name: "collection".to_string(),
         description: "test".to_string(),
@@ -91,11 +118,22 @@ async fn create_collection() {
 }
 #[tokio::test]
 async fn create_dataset() {
+    // init
+    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
+    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
+        .await
+        .unwrap();
     let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler { database };
+    let db_handler = DatabaseHandler {
+        database,
+        natsio_handler: Arc::new(nats_handler),
+    };
     let client = &db_handler.database.get_client().await.unwrap();
-    let user = utils::new_user(vec![]);
+
+    // create user
+    let user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+    // create parent
     let parent = CreateRequest::Project(CreateProjectRequest {
         name: "project".to_string(),
         description: "test".to_string(),
@@ -104,6 +142,8 @@ async fn create_dataset() {
         data_class: 1,
     });
     let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+
+    // test requests
     let request = CreateRequest::Dataset(CreateDatasetRequest {
         name: "dataset".to_string(),
         description: "test".to_string(),
@@ -134,11 +174,22 @@ async fn create_dataset() {
 }
 #[tokio::test]
 async fn create_object() {
+    // init
+    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
+    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
+        .await
+        .unwrap();
     let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler { database };
+    let db_handler = DatabaseHandler {
+        database,
+        natsio_handler: Arc::new(nats_handler),
+    };
     let client = &db_handler.database.get_client().await.unwrap();
-    let user = utils::new_user(vec![]);
+
+    // create user
+    let user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+    // create parent
     let parent = CreateRequest::Project(CreateProjectRequest {
         name: "project".to_string(),
         description: "test".to_string(),
@@ -147,6 +198,8 @@ async fn create_object() {
         data_class: 1,
     });
     let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+
+    // test requests
     let request = CreateRequest::Object(CreateObjectRequest {
         name: "object".to_string(),
         description: "test".to_string(),
