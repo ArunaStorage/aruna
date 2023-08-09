@@ -44,6 +44,7 @@ impl DatabaseHandler {
                 }
             };
 
+        transaction.commit().await?;
         Ok(ObjectWithRelations {
             object,
             inbound: Json(DashMap::default()),

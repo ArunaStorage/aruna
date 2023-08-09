@@ -5,8 +5,7 @@ use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-mod init_db;
-mod utils;
+use crate::common::{init_db, utils};
 
 #[tokio::test]
 async fn create_test() {
@@ -79,10 +78,10 @@ async fn get_by_tests() {
     user.create(client).await.unwrap();
     let create_doc = utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
-
+    let unique_name = DieselUlid::generate().to_string(); // Endpoint names need to be unique
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test_123_unique".to_string(),
+        name: unique_name.clone(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: doc_obj,
@@ -92,7 +91,7 @@ async fn get_by_tests() {
     };
     endpoint.create(client).await.unwrap();
 
-    let new = Endpoint::get_by_name("test_123_unique".to_string(), client)
+    let new = Endpoint::get_by_name(unique_name, client)
         .await
         .unwrap()
         .unwrap();

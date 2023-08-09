@@ -1,8 +1,7 @@
+use crate::common::init_db;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
 use tokio_postgres::GenericClient;
-
-mod init_db;
 
 #[tokio::test]
 async fn test_crud() {

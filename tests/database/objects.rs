@@ -1,3 +1,4 @@
+use crate::common::{init_db, utils};
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
@@ -8,9 +9,6 @@ use aruna_server::database::{
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
-
-mod init_db;
-mod utils;
 
 #[tokio::test]
 async fn create_object() {

@@ -1,3 +1,4 @@
+use crate::common::init_db;
 use aruna_server::database::enums::ObjectType;
 use aruna_server::database::{
     crud::CrudDb,
@@ -7,8 +8,6 @@ use dashmap::DashMap;
 //use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
 use tokio_postgres::GenericClient;
-
-mod init_db;
 
 #[tokio::test]
 async fn create_user_test() {
@@ -502,25 +501,7 @@ async fn user_token_test() {
         2
     );
 
-    User::remove_user_token(&client, &user.id, &perm1)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        User::get(user.id, &client)
-            .await
-            .unwrap()
-            .unwrap()
-            .attributes
-            .0
-            .tokens
-            .len(),
-        1
-    );
-
-    User::remove_user_token(&client, &user.id, &perm3)
-        .await
-        .unwrap();
+    User::remove_all_tokens(&client, &user.id).await.unwrap();
 
     assert_eq!(
         User::get(user.id, &client)

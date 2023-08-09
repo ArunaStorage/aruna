@@ -2,7 +2,8 @@ use aruna_server::database::{crud::CrudDb, dsls::notification_dsl::StreamConsume
 use async_nats::jetstream::consumer::Config;
 use diesel_ulid::DieselUlid;
 
-mod init_db;
+mod common;
+use common::init_db;
 
 #[tokio::test]
 async fn create_stream_consumer() {
