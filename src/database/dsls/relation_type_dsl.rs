@@ -11,13 +11,13 @@ pub struct RelationType {
 #[async_trait::async_trait]
 impl CrudDb for RelationType {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO relation_types (id, relation_name) VALUES ($1, $2);";
+        let query = "INSERT INTO relation_types (relation_name) VALUES ($1);";
         let prepared = client.prepare(query).await?;
         client.query(&prepared, &[&self.relation_name]).await?;
         Ok(())
     }
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
-        let query = "SELECT * FROM relation_types WHERE id = $1";
+        let query = "SELECT * FROM relation_types WHERE relation_name = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
             .query_opt(&prepared, &[&id])

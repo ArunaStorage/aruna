@@ -6,6 +6,7 @@ use aruna_server::database::{
 use dashmap::DashMap;
 //use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
+use tokio_postgres::GenericClient;
 
 mod init_db;
 
@@ -537,9 +538,8 @@ async fn user_token_test() {
 #[tokio::test]
 async fn user_status_test() {
     let db = init_db::init_db().await;
-    let mut client = db.get_client().await.unwrap();
-    let transaction = client.transaction().await.unwrap();
-    let client = transaction.client();
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
 
     let id = DieselUlid::generate();
 
@@ -565,5 +565,4 @@ async fn user_status_test() {
 
     User::deactivate_user(client, &id).await.unwrap();
     assert!(!User::get(id, client).await.unwrap().unwrap().active);
-    transaction.commit().await.unwrap();
 }

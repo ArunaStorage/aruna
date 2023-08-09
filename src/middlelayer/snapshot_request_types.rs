@@ -115,7 +115,7 @@ impl SnapshotRequest {
             .outbound_belongs_to
             .0
             .into_iter()
-            .map(|r| r.1.clone_relation(new_id))
+            .map(|r| r.1.clone_relation(&new_id))
             .collect();
         relations.append(&mut belongs_to);
         Ok(SnapshotDataset {
@@ -191,7 +191,7 @@ impl SnapshotRequest {
     ) -> Result<Vec<InternalRelation>> {
         Ok(relations
             .into_iter()
-            .map(|r| r.1.clone_relation(new_id))
+            .map(|r| r.1.clone_relation(&new_id))
             .collect())
     }
 }
