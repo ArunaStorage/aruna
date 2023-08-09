@@ -3,7 +3,7 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::token_request_types::{DeleteToken, GetToken};
+use crate::middlelayer::token_request_types::{DeleteToken, GetS3, GetToken};
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
@@ -369,8 +369,20 @@ impl UserService for UserServiceImpl {
 
     async fn get_s3_credentials_user(
         &self,
-        _request: Request<GetS3CredentialsUserRequest>,
+        request: Request<GetS3CredentialsUserRequest>,
     ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = GetS3(request.into_inner());
+        let user_id = tonic_invalid!(request.get_user_id(), "Invalid user id");
+        let ctx = Context::user_ctx(user_id, DbPermissionLevel::WRITE);
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
         todo!()
     }
 

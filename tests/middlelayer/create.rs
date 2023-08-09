@@ -8,22 +8,11 @@ use aruna_rust_api::api::storage::services::v2::{
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
-use aruna_server::middlelayer::db_handler::DatabaseHandler;
-use aruna_server::notification::natsio_handler::NatsIoHandler;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn create_project() {
     // init
-    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
-    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
-        .await
-        .unwrap();
-    let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler {
-        database,
-        natsio_handler: Arc::new(nats_handler),
-    };
+    let db_handler = init_db::init_handler().await;
 
     // create user
     let user = test_utils::new_user(vec![]);
@@ -62,15 +51,7 @@ async fn create_project() {
 #[tokio::test]
 async fn create_collection() {
     // init
-    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
-    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
-        .await
-        .unwrap();
-    let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler {
-        database,
-        natsio_handler: Arc::new(nats_handler),
-    };
+    let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user
@@ -119,15 +100,7 @@ async fn create_collection() {
 #[tokio::test]
 async fn create_dataset() {
     // init
-    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
-    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
-        .await
-        .unwrap();
-    let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler {
-        database,
-        natsio_handler: Arc::new(nats_handler),
-    };
+    let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user
@@ -175,15 +148,7 @@ async fn create_dataset() {
 #[tokio::test]
 async fn create_object() {
     // init
-    let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
-    let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
-        .await
-        .unwrap();
-    let database = Arc::new(init_db::init_db().await);
-    let db_handler = DatabaseHandler {
-        database,
-        natsio_handler: Arc::new(nats_handler),
-    };
+    let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user

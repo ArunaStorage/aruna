@@ -1,7 +1,9 @@
 use crate::database::crud::CrudDb;
+use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::user_dsl::{APIToken, User};
+use crate::database::enums::DataProxyFeature;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::token_request_types::{CreateToken, DeleteToken};
+use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetS3};
 use ahash::{HashMap, HashMapExt};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -46,5 +48,24 @@ impl DatabaseHandler {
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
         Ok(user)
+    }
+
+    pub async fn get_s3_creds(&self, request: GetS3) -> Result<String> {
+        // 1. Create short-lived dataproxy token
+        let client = self.database.get_client().await?;
+        let endpoint_id = request.get_endpoint_id()?;
+        let ep = Endpoint::get(endpoint_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("No endpoint found"))?;
+        let config = ep
+            .host_config
+            .0
+             .0
+            .iter()
+            .find(|c| c.feature == DataProxyFeature::PROXY)
+            .ok_or_else(|| anyhow!("No s3 config found"))?;
+        let url = &config.url;
+        // 2. Request s3-creds with short-lived dataproxy token
+        todo!()
     }
 }
