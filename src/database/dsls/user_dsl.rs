@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectType, ObjectMapping};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;

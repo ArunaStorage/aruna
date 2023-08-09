@@ -5,11 +5,11 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_VERSION,
 };
 use crate::database::dsls::object_dsl::Object;
-use crate::database::enums::{DbPermissionLevel, ObjectMapping, EndpointVariant};
 use crate::database::dsls::user_dsl::{
     APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
     UserAttributes as DBUserAttributes,
 };
+use crate::database::enums::{DbPermissionLevel, EndpointVariant, ObjectMapping};
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
     dsls::object_dsl::{
@@ -27,11 +27,11 @@ use aruna_rust_api::api::storage::models::v2::{
     Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
-    permission::ResourceId, relation::Relation as RelationEnum,
-    Collection as GRPCCollection, Dataset as GRPCDataset, Endpoint,
-    EndpointHostConfig, ExternalRelation, Hash, InternalRelation as APIInternalRelation, KeyValue,
-    Object as GRPCObject, Project as GRPCProject, Relation, Stats, User,
-    };
+    permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
+    Dataset as GRPCDataset, Endpoint, EndpointHostConfig, ExternalRelation, Hash,
+    InternalRelation as APIInternalRelation, KeyValue, Object as GRPCObject,
+    Project as GRPCProject, Relation, Stats, User,
+};
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request,
 };
@@ -763,29 +763,27 @@ impl From<DBUserAttributes> for UserAttributes {
                         created_at: Some(t.1.created_at.into()),
                         expires_at: Some(t.1.expires_at.into()),
                         permission: Some(Permission {
-                            permission_level: t.1.user_rights.clone().into(),
-                            resource_id: match t.1.object_id {
-                                Some(resource) => Some(match resource {
-                                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
-                                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
-                                }),
-                                None => None,
-                            }
+                            permission_level: t.1.user_rights.into(),
+                            resource_id: t.1.object_id.map(|resource| match resource {
+                                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                                ObjectMapping::COLLECTION(id) => {
+                                    ResourceId::CollectionId(id.to_string())
+                                }
+                                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                            }),
                         }),
                     },
                     Permission {
                         permission_level: t.1.user_rights.into(),
-                        resource_id: match t.1.object_id {
-                            Some(resource) => Some(match resource {
-                                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                                ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
-                                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
-                            }),
-                            None => None,
-                        },
+                        resource_id: t.1.object_id.map(|resource| match resource {
+                            ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                            ObjectMapping::COLLECTION(id) => {
+                                ResourceId::CollectionId(id.to_string())
+                            }
+                            ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                            ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                        }),
                     },
                 )
             })
@@ -844,15 +842,12 @@ pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
         expires_at: Some(token.expires_at.into()),
         permission: Some(Permission {
             permission_level: token.user_rights.into(),
-            resource_id: match token.object_id {
-                Some(resource) => Some(match resource {
-                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
-                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
-                }),
-                None => None,
-            }
+            resource_id: token.object_id.map(|resource| match resource {
+                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+            }),
         }),
     }
 }

@@ -550,26 +550,35 @@ async fn archive_test() {
         ObjectMapping::OBJECT(object_one),
         ObjectMapping::OBJECT(object_two),
     ];
-    let object_vec = object_mapping.iter().map(|om| match om {
-    ObjectMapping::PROJECT(id) |
-    ObjectMapping::COLLECTION(id) |
-    ObjectMapping::DATASET(id) |
-    ObjectMapping::OBJECT(id) => *id,
-}).collect::<Vec<_>>();
+    let object_vec = object_mapping
+        .iter()
+        .map(|om| match om {
+            ObjectMapping::PROJECT(id)
+            | ObjectMapping::COLLECTION(id)
+            | ObjectMapping::DATASET(id)
+            | ObjectMapping::OBJECT(id) => *id,
+        })
+        .collect::<Vec<_>>();
     let archive = object_vec.clone();
     let user = common::test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
     let create_dataset = common::test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
-    let create_collection_one = common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
-    let create_collection_two = common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
+    let create_collection_one =
+        common::test_utils::new_object(user.id, collection_one, ObjectType::COLLECTION);
+    let create_collection_two =
+        common::test_utils::new_object(user.id, collection_two, ObjectType::COLLECTION);
     let create_object_one = common::test_utils::new_object(user.id, object_one, ObjectType::OBJECT);
     let create_object_two = common::test_utils::new_object(user.id, object_two, ObjectType::OBJECT);
 
-    let create_relation_one = common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
-    let create_relation_two = common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
-    let create_relation_three = common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
-    let create_relation_four = common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
+    let create_relation_one =
+        common::test_utils::new_internal_relation(&create_collection_one, &create_dataset);
+    let create_relation_two =
+        common::test_utils::new_internal_relation(&create_collection_two, &create_dataset);
+    let create_relation_three =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_one);
+    let create_relation_four =
+        common::test_utils::new_internal_relation(&create_dataset, &create_object_two);
 
     let creates = vec![
         create_dataset.clone(),
