@@ -37,7 +37,7 @@ impl Display for MeilisearchIndexes {
 // Struct for generalized object data used for the search index
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObjectDocument {
-    pub id: diesel_ulid::DieselUlid,
+    pub id: DieselUlid,
     pub resource_type: ObjectType,
     pub resource_status: ObjectStatus,
     pub name: String,
@@ -49,7 +49,7 @@ pub struct ObjectDocument {
     pub created_by: DieselUlid, // Should be the user name or something like that
 }
 
-// Coversion from database model Object into ObjectDocument
+// Conversion from database model Object into ObjectDocument
 impl From<DbObject> for ObjectDocument {
     fn from(db_object: DbObject) -> Self {
         // Remove internal/unimportant labels

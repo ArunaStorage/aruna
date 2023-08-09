@@ -163,7 +163,7 @@ impl TryFrom<i32> for DbPermissionLevel {
             4 => Ok(DbPermissionLevel::APPEND),
             5 => Ok(DbPermissionLevel::WRITE),
             6 => Ok(DbPermissionLevel::ADMIN),
-            _ => Err(anyhow!("Unknown permission level").into()),
+            _ => Err(anyhow!("Unknown permission level")),
         }
     }
 }

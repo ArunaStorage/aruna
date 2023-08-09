@@ -199,7 +199,7 @@ impl EventHandler for NatsIoHandler {
 }
 
 impl NatsIoHandler {
-    /// Initialize a new Nats.io jetsream client
+    /// Initialize a new Nats.io jetstream client
     pub async fn new(
         nats_client: async_nats::Client,
         secret: String,

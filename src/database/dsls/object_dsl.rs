@@ -721,7 +721,7 @@ pub fn convert_paths_to_hierarchies(
 pub fn extract_paths_from_graph(
     root_id: &DieselUlid,
     edge_list: Vec<InternalRelation>,
-) -> anyhow::Result<Vec<Hierarchy>> {
+) -> Result<Vec<Hierarchy>> {
     // Helper struct for minimalistic graph creation
     #[derive(Debug)]
     struct Node {

@@ -329,7 +329,7 @@ impl Cache {
         current_object_id: &DieselUlid,
         current_path: &mut Vec<ObjectMapping<DieselUlid>>,
         finished_hierarchies: &mut Vec<Vec<ObjectMapping<DieselUlid>>>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         // Fetch current object with relations
         if let Some(current_object) = self.get_object(current_object_id) {
             // End current hierarchy if node is project

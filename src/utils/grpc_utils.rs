@@ -17,7 +17,7 @@ pub trait IntoGenericInner<T> {
 }
 
 impl IntoGenericInner<Project> for generic_resource::Resource {
-    fn into_inner(self) -> Result<Project, tonic::Status> {
+    fn into_inner(self) -> Result<Project, Status> {
         match self {
             generic_resource::Resource::Project(project) => Ok(project),
             _ => Err(Status::invalid_argument("Invalid conversion")),

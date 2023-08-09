@@ -50,35 +50,35 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
         .ok_or(anyhow!("Metadata token not found"))?
         .to_str()?;
 
-    let splitted = token_string.split(' ').collect::<Vec<_>>();
+    let split = token_string.split(' ').collect::<Vec<_>>();
 
-    if splitted.len() != 2 {
+    if split.len() != 2 {
         log::debug!(
             "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
-            splitted.len()
+            split.len()
         );
         return Err(anyhow!("Authorization flow error"));
     }
 
-    if splitted[0] != "Bearer" {
+    if split[0] != "Bearer" {
         log::debug!(
             "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
-            splitted[0]
+            split[0]
         );
 
         return Err(anyhow!("Authorization flow error"));
     }
 
-    if splitted[1].is_empty() {
+    if split[1].is_empty() {
         log::debug!(
             "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
-            splitted[1].len()
+            split[1].len()
         );
 
         return Err(anyhow!("Authorization flow error"));
     }
 
-    Ok(splitted[1].to_string())
+    Ok(split[1].to_string())
 }
 
 impl TryFrom<&Vec<KeyValue>> for KeyValues {
