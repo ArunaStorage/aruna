@@ -264,7 +264,6 @@ impl Object {
             .map(InternalRelation::from_row)
             .collect::<Vec<_>>();
 
-        dbg!(&relations);
         // Extract paths from list of internal relations
         extract_paths_from_graph(&self.id, relations)
     }
