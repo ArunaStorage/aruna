@@ -50,7 +50,7 @@ impl PubKey {
     /// Queries the pub_keys table for a specific pubkey.
     /// As the pubkeys are unique on the database level it returns an Option which includes the
     /// pubkey if it exists.
-    pub async fn get_by_key(&self, pubkey: &str, client: &Client) -> Result<Option<PubKey>> {
+    pub async fn get_by_key(pubkey: &str, client: &Client) -> Result<Option<PubKey>> {
         let query = "SELECT * FROM pub_keys WHERE pubkey = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
