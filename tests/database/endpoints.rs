@@ -23,7 +23,7 @@ async fn create_test() {
 
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test".to_string(),
+        name: "create_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: doc_obj,
@@ -35,6 +35,7 @@ async fn create_test() {
 
     let new = Endpoint::get(ep_id, client).await.unwrap().unwrap();
     assert_eq!(endpoint, new);
+    Endpoint::delete_by_id(&ep_id, client).await.unwrap(); // Needed because of unique constraints
 }
 
 #[tokio::test]
@@ -53,7 +54,7 @@ async fn delete_test() {
 
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test".to_string(),
+        name: "delete_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: doc_obj,
@@ -102,4 +103,5 @@ async fn get_by_tests() {
     let default = Endpoint::get_default(client).await.unwrap().unwrap();
 
     assert_eq!(endpoint, default);
+    Endpoint::delete_by_id(&ep_id, client).await.unwrap(); // Needed because of unique constraints
 }
