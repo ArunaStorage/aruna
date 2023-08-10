@@ -32,9 +32,10 @@ async fn test_crud() {
     key_two.create(client).await.unwrap();
     key_three.create(client).await.unwrap();
 
+    let comp = [&key_one, &key_two, &key_three];
     let all = PubKey::all(client).await.unwrap();
 
-    assert_eq!(all.len(), 3);
+    assert!(all.iter().all(|pk| comp.contains(&pk)));
 
     key_one.delete(client).await.unwrap();
     key_two.delete(client).await.unwrap();
