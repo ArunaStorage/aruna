@@ -8,10 +8,11 @@ use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_METADATA,
 };
-use aruna_server::database::dsls::object_dsl::Object;
+use aruna_server::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::middlelayer::relations_request_types::ModifyRelations;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 
 #[tokio::test]
 async fn test_modify() {
@@ -42,11 +43,11 @@ async fn test_modify() {
     InternalRelation::batch_create(&vec![belongs_to, other], &client)
         .await
         .unwrap();
-    let owr_before = Object::get_object_with_relations(&origin, &client)
-        .await
-        .unwrap();
+    //let owr_before = Object::get_object_with_relations(&origin, &client)
+    //    .await
+    //    .unwrap();
+    //dbg!(&owr_before);
 
-    dbg!(&owr_before);
     // test
     let rel_mod_one = Relation {
         relation: Some(RelationEnum::External(APIExternalRelation {
@@ -83,7 +84,20 @@ async fn test_modify() {
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
         .unwrap();
-    dbg!(&owr);
     assert!(owr.inbound.0.is_empty());
     assert!(owr.inbound_belongs_to.0.is_empty());
+    assert_eq!(owr.outbound.0.len(), 2);
+    assert!(owr.outbound_belongs_to.0.is_empty());
+    assert!(owr
+        .object
+        .external_relations
+        .0
+         .0
+        .into_iter()
+        .map(|i| i.1)
+        .contains(&ExternalRelation {
+            identifier: "test.test".to_string(),
+            defined_variant: DefinedVariant::URL,
+            custom_variant: None,
+        }))
 }
