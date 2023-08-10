@@ -300,23 +300,46 @@ impl GrpcQueryHandler {
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             if let Ok(cache) = self.cache.read() {
-                                self.get_project(
-                                    &DieselUlid::from_str(&r.resource_id)?,
-                                    r.checksum,
-                                )
-                                .await?;
+                                let object = self
+                                    .get_project(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                    .await?;
+                                cache.upsert_object(object.try_into()?, None).await?;
                             } else {
                                 bail!("Poisoned lock")
                             };
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                            todo!()
+                            if let Ok(cache) = self.cache.read() {
+                                let object = self
+                                    .get_collection(
+                                        &DieselUlid::from_str(&r.resource_id)?,
+                                        r.checksum,
+                                    )
+                                    .await?;
+                                cache.upsert_object(object.try_into()?, None).await?;
+                            } else {
+                                bail!("Poisoned lock")
+                            };
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                            todo!()
+                            if let Ok(cache) = self.cache.read() {
+                                let object = self
+                                    .get_dataset(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                    .await?;
+                                cache.upsert_object(object.try_into()?, None).await?;
+                            } else {
+                                bail!("Poisoned lock")
+                            };
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                            todo!()
+                            if let Ok(cache) = self.cache.read() {
+                                let object = self
+                                    .get_object(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                    .await?;
+                                cache.upsert_object(object.try_into()?, None).await?;
+                            } else {
+                                bail!("Poisoned lock")
+                            };
                         }
                         _ => (),
                     }

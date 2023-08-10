@@ -4,8 +4,8 @@ use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::{
-    relation::Relation, DataClass, InternalRelationVariant, KeyValue, PermissionLevel, Project,
-    RelationDirection, Status,
+    relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
+    PermissionLevel, Project, RelationDirection, Status,
 };
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
@@ -47,15 +47,14 @@ pub struct ObjectLocation {
     pub key: String,
     pub encryption_key: Option<String>,
     pub compressed: bool,
+    pub raw_content_len: i64,
+    pub disk_content_len: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Object {
     pub id: DieselUlid,
     pub name: String,
-    pub raw_content_len: i64,
-    pub disk_content_len: i64,
-    pub count: i64,
     pub key_values: Vec<KeyValue>,
     pub object_status: Status,
     pub data_class: DataClass,
@@ -225,9 +224,6 @@ impl TryFrom<Project> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
-            raw_content_len: 0,
-            disk_content_len: 0,
-            count: 0,
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -274,9 +270,6 @@ impl TryFrom<Collection> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
-            raw_content_len: 0,
-            disk_content_len: 0,
-            count: 0,
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -323,13 +316,56 @@ impl TryFrom<Dataset> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
-            raw_content_len: 0,
-            disk_content_len: 0,
-            count: 0,
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
             object_type: ObjectType::DATASET,
+            hashes: HashMap::default(),
+            dynamic: value.dynamic,
+            children: filtered_relations,
+            synced: false,
+        })
+    }
+}
+
+impl TryFrom<GrpcObject> for Object {
+    type Error = anyhow::Error;
+    fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
+        let filtered_relations = value
+            .relations
+            .iter()
+            .filter(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => {
+                            var.defined_variant() == InternalRelationVariant::BelongsTo
+                                && var.direction() == RelationDirection::Outbound
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            })
+            .map(|x| {
+                if let Some(rel) = &x.relation {
+                    match rel {
+                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
+                        _ => bail!("No relation found"),
+                    }
+                } else {
+                    bail!("No relation found")
+                }
+            })
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+
+        Ok(Object {
+            id: DieselUlid::from_str(&value.id)?,
+            name: value.name.to_string(),
+            key_values: value.key_values.clone(),
+            object_status: value.status(),
+            data_class: value.data_class(),
+            object_type: ObjectType::OBJECT,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
             children: filtered_relations,

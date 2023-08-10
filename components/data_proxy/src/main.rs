@@ -8,6 +8,8 @@ mod database;
 // mod helpers;
 // mod service_server;
 mod structs;
+#[macro_use]
+mod macros;
 
 #[tokio::main]
 async fn main() {

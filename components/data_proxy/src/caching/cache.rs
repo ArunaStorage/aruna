@@ -22,7 +22,7 @@ pub struct Cache {
     // HashMap that contains user_id <-> Vec<access_key> pairs
     pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
-    pub resources: DashMap<DieselUlid, (Object, ObjectLocation), RandomState>,
+    pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
     // Maps with path as key and set of ObjectIds as value
     pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
     // Persistence layer
@@ -113,9 +113,16 @@ impl Cache {
         Ok(())
     }
 
-    pub async fn upsert_object(&self, object: Object, location: ObjectLocation) -> Result<()> {
+    pub async fn upsert_object(
+        &self,
+        object: Object,
+        location: Option<ObjectLocation>,
+    ) -> Result<()> {
         if let Some(persistence) = &self.persistence {
             object.upsert(&persistence.get_client().await?).await?;
+            if let Some(l) = &location {
+                l.upsert(&persistence.get_client().await?).await?;
+            }
         }
         self.paths.insert(
             object.name.to_string(),
