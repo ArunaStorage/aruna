@@ -51,8 +51,8 @@ impl RelationsService for RelationsServiceImpl {
             self.database_handler
                 .modify_relations(
                     resource,
-                    labels_info.labels_to_add,
-                    labels_info.labels_to_remove
+                    labels_info.relations_to_add,
+                    labels_info.relations_to_remove
                 )
                 .await,
             "Database error"

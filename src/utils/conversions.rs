@@ -669,7 +669,7 @@ impl From<create_object_request::Parent> for Parent {
         }
     }
 }
-// This looks stupid, but actually is really helpful when converting relations
+// This looks stupid, but is actually really helpful when converting relations
 impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelation {
     type Error = anyhow::Error;
     fn try_from(

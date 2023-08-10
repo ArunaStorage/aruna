@@ -1,15 +1,14 @@
-use crate::common::{init_db::init_handler, test_utils};
+use crate::common::init_db::init_handler;
 use aruna_rust_api::api::storage::services::v2::{
     CreateEndpointRequest, DeleteEndpointRequest, GetEndpointRequest,
 };
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::endpoint_dsl::{Endpoint, HostConfigs};
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
-use aruna_server::database::enums::{EndpointStatus, EndpointVariant, ObjectMapping, ObjectType};
+use aruna_server::database::enums::{EndpointStatus, EndpointVariant};
 use aruna_server::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use std::io::SeekFrom::End;
 
 #[tokio::test]
 async fn test_create_ep() {

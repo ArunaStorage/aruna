@@ -64,7 +64,7 @@ impl DatabaseHandler {
             .iter()
             .find(|c| c.feature == DataProxyFeature::PROXY)
             .ok_or_else(|| anyhow!("No s3 config found"))?;
-        let url = &config.url;
+        let _url = &config.url;
         // 2. Request s3-creds with short-lived dataproxy token
         todo!()
     }
