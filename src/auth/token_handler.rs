@@ -32,20 +32,25 @@ struct KeyCloakResponse {
 }
 
 /// This contains claims for ArunaTokens
-/// containing two fields
+/// containing 3 mandatory and 2 optional fields.
 ///
+/// - iss: Toen issuer which is currently 'aruna' everytime
+/// - sub: User_ID or Endpoint_ID
 /// - tid: UUID from the specific token
 /// - exp: When this token expires (by default very large number)
-///
+/// - intent: Combination of specific endpoint and action.
+///           Strongly restricts the usability of the token.
 #[derive(Debug, Serialize, Deserialize)]
 struct ArunaTokenClaims {
-    iss: String,
-    // User_id / Proxy ID
-    sub: String,
-    // Associated token_id or User_id (if proxy)
+    iss: String, // Currently always 'aruna'
+    sub: String, // User_ID / DataProxy_ID
+    exp: usize,  // Expiration timestamp
+    // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
-    uid: Option<String>,
-    exp: usize,
+    tid: Option<String>,
+    // Intent: <endpoint-ulid>_<action>
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intent: Option<String>,
 }
 
 pub struct TokenHandler {
@@ -125,6 +130,7 @@ impl TokenHandler {
         }
     }
 
+    ///ToDo: Rust Doc
     async fn validate_aruna(
         &self,
         token: &str,
@@ -152,7 +158,7 @@ impl TokenHandler {
 
                 let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
 
-                let (option_user, perms) = match claims.claims.uid {
+                let (option_user, perms) = match claims.claims.tid {
                     Some(uid) => {
                         let uid = DieselUlid::from_str(&uid)?;
                         (
@@ -176,7 +182,7 @@ impl TokenHandler {
 
         let user = self.cache.get_user(&uid);
 
-        let token = match claims.claims.uid {
+        let token = match claims.claims.tid {
             Some(uid) => Some(DieselUlid::from_str(&uid)?),
             None => None,
         };
@@ -224,6 +230,7 @@ impl TokenHandler {
             .await?
             .json::<KeyCloakResponse>()
             .await?;
+
         let dec_key = DecodingKey::from_rsa_pem(
             format!(
                 "{}\n{}\n{}",
@@ -231,9 +238,11 @@ impl TokenHandler {
             )
             .as_bytes(),
         )?;
+
         let pks = self.oidc_pubkey.clone();
         let mut lck = pks.write().unwrap();
         *lck = Some(dec_key.clone());
+
         Ok(dec_key)
     }
 }
