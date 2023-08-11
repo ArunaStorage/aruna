@@ -10,6 +10,7 @@ use jsonwebtoken::Algorithm;
 use jsonwebtoken::EncodingKey;
 use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -53,7 +54,67 @@ struct ArunaTokenClaims {
     tid: Option<String>,
     // Intent: <endpoint-ulid>_<action>
     #[serde(skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    it: Option<Intent>,
+}
+
+#[repr(u8)]
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub enum Action {
+    All = 0,
+    Notifications = 1,
+    CreateSecrets = 2,
+}
+
+impl From<u8> for Action {
+    fn from(input: u8) -> Self {
+        match input {
+            0 => Action::All,
+            1 => Action::Notifications,
+            2 => Action::CreateSecrets,
+            _ => panic!("Invalid action"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Intent {
+    target: DieselUlid,
+    action: Action,
+}
+
+impl Serialize for Intent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(
+            format!(
+                "{}_{:?}",
+                self.target.to_string(),
+                self.action.clone() as u8
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for Intent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let temp = String::deserialize(deserializer)?;
+        let split = temp.split('_').collect::<Vec<&str>>();
+
+        Ok(Intent {
+            target: DieselUlid::from_str(split[0])
+                .map_err(|_| serde::de::Error::custom("Invalid UUID"))?,
+            action: u8::from_str(split[1])
+                .map_err(|_| serde::de::Error::custom("Invalid Action"))?
+                .into(),
+        })
+    }
 }
 
 pub struct TokenHandler {
@@ -140,7 +201,7 @@ impl TokenHandler {
                 expires_at.unwrap().seconds as usize
             },
             tid: Some(token_id.to_string()),
-            intent: None,
+            it: None,
         };
 
         let header = Header {
@@ -160,7 +221,7 @@ impl TokenHandler {
         user_id: &DieselUlid,     // User id of original
         endpoint_id: &DieselUlid, // Endpoint the token is signed for
         token_id: Option<String>, // None if original request came with OIDC
-        action: Option<String>,   // Some Dataproxy action to restrict token usage scope
+        intent: Option<Intent>,   // Some Dataproxy action to restrict token usage scope
     ) -> Result<String> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
@@ -171,11 +232,7 @@ impl TokenHandler {
             sub: user_id.to_string(),
             exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
             tid: token_id,
-            intent: if let Some(definite_action) = action {
-                Some(format!("{}_{}", endpoint_id, definite_action))
-            } else {
-                Some(endpoint_id.to_string())
-            },
+            it: intent,
         };
 
         let header = Header {
@@ -203,7 +260,10 @@ impl TokenHandler {
             sub: endpoint_id.to_string(),
             exp: (Utc::now().timestamp() as usize) + 315360000, // 10 years for now.
             tid: None,
-            intent: Some(format!("{}_{}", endpoint_id, "notification")),
+            it: Some(Intent {
+                target: *endpoint_id,
+                action: Action::Notifications,
+            }),
         };
 
         let header = Header {
