@@ -112,6 +112,14 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
+    pub fn get_current_pubkey_serial(&self) -> i64 {
+        // Gets the signing key info -> if this returns a poison error this should also panic
+        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+        let signing_key = self.signing_info.read().unwrap();
+        signing_key.0
+    }
+
+    ///ToDo: Rust Doc
     pub fn sign_user_token(
         &self,
         user_id: &DieselUlid,
