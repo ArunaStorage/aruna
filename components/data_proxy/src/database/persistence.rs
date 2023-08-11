@@ -99,4 +99,11 @@ where
         client.execute(&prepared, &[&id]).await?;
         Ok(())
     }
+
+    async fn delete_all(client: &Client) -> Result<()> {
+        let query = format!("DELETE FROM {};", Self::get_table());
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &[]).await?;
+        Ok(())
+    }
 }

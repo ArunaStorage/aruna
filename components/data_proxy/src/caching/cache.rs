@@ -1,7 +1,7 @@
 use super::{grpc_query_handler::GrpcQueryHandler, transforms::ExtractAccessKeyPermissions};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, User},
+    structs::{Object, ObjectLocation, PubKey, User},
 };
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -67,7 +67,14 @@ impl Cache {
         ))
     }
 
-    pub fn set_pubkeys(&self, _pks: Vec<Pubkey>) -> Result<()> {
+    pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
+        if let Some(persistence) = &self.persistence {
+            PubKey::delete_all(&persistence.get_client().await?).await?;
+            for pk in pks {
+                pk.upsert(&persistence.get_client().await?).await?;
+            }
+        }
+
         Ok(())
     }
 

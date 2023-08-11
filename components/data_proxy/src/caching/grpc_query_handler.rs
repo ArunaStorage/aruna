@@ -44,6 +44,8 @@ use std::sync::RwLock;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
+use crate::structs::PubKey;
+
 use super::cache::Cache;
 
 pub struct GrpcQueryHandler {
@@ -221,7 +223,15 @@ impl GrpcQueryHandler {
             | anouncement_event::EventVariant::NewDataProxyId(_)
             | anouncement_event::EventVariant::RemoveDataProxyId(_)
             | anouncement_event::EventVariant::UpdateDataProxyId(_) => match self.cache.read() {
-                Ok(data) => data.set_pubkeys(self.get_pubkeys().await?)?,
+                Ok(data) => {
+                    let pks = self
+                        .get_pubkeys()
+                        .await?
+                        .into_iter()
+                        .map(PubKey::from)
+                        .collect();
+                    data.set_pubkeys(pks).await?
+                }
                 _ => bail!("Poisoned lock"),
             },
             anouncement_event::EventVariant::Downtime(_) => (),

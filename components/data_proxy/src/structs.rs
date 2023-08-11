@@ -7,6 +7,7 @@ use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
 };
+use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -76,6 +77,16 @@ pub struct PubKey {
     pub id: i32,
     pub key: String,
     pub is_proxy: bool,
+}
+
+impl From<Pubkey> for PubKey {
+    fn from(value: Pubkey) -> Self {
+        Self {
+            id: value.id,
+            key: value.key,
+            is_proxy: value.location.contains("proxy"),
+        }
+    }
 }
 
 impl TryFrom<GenericBytes<i32>> for PubKey {
