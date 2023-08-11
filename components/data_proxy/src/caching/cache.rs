@@ -1,4 +1,7 @@
-use super::{grpc_query_handler::GrpcQueryHandler, transforms::ExtractAccessKeyPermissions};
+use super::{
+    auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
+    transforms::ExtractAccessKeyPermissions,
+};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey, User},
@@ -31,12 +34,14 @@ pub struct Cache {
     // Persistence layer
     pub persistence: Option<Arc<Database>>,
     pub notifications: Option<GrpcQueryHandler>,
+    pub auth: Option<AuthHandler>,
 }
 
 impl Cache {
     pub async fn new(
         notifications_url: Option<impl Into<String>>,
         with_persistence: bool,
+        self_id: DieselUlid,
     ) -> Result<Arc<RwLock<Self>>> {
         let persistence = if with_persistence {
             None
@@ -51,12 +56,16 @@ impl Cache {
             pubkeys: DashMap::default(),
             persistence,
             notifications: None,
+            auth: None,
         }));
         let notifications = match notifications_url {
             Some(s) => Some(GrpcQueryHandler::new(s, cache.clone()).await?),
             None => None,
         };
+
+        let auth_handler = AuthHandler::new(cache.clone(), self_id);
         cache.write().unwrap().notifications = notifications;
+        cache.write().unwrap().auth = Some(auth_handler);
         Ok(cache)
     }
 
@@ -92,13 +101,11 @@ impl Cache {
         Ok(())
     }
 
-    pub fn get_pubkey(&self, kid: i32) -> Result<DecodingKey> {
+    pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
         Ok(self
             .pubkeys
             .get(&kid)
             .ok_or_else(|| anyhow!("Pubkey not found"))?
-            .1
-             .1
             .clone())
     }
 

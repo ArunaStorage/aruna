@@ -3,11 +3,14 @@ use anyhow::anyhow;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-pub(crate) struct AuthHandler {
+pub struct AuthHandler {
     pub cache: Arc<RwLock<Cache>>,
+    pub self_id: DieselUlid,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,38 +23,92 @@ struct ArunaTokenClaims {
     tid: Option<String>,
     // Intent: <endpoint-ulid>_<action>
     #[serde(skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    it: Option<Intent>,
 }
 
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Action {
-    Notifications = 0,
-    CreateSecrets = 1,
+    All = 0,
+    Notifications = 1,
+    CreateSecrets = 2,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl From<u8> for Action {
+    fn from(input: u8) -> Self {
+        match input {
+            0 => Action::All,
+            1 => Action::Notifications,
+            2 => Action::CreateSecrets,
+            _ => panic!("Invalid action"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Intent {
     target: DieselUlid,
-    #[serde(flatten)]
     action: Action,
 }
 
+impl Serialize for Intent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(
+            format!(
+                "{}_{:?}",
+                self.target.to_string(),
+                self.action.clone() as u8
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for Intent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let temp = String::deserialize(deserializer)?;
+        let split = temp.split('_').collect::<Vec<&str>>();
+
+        Ok(Intent {
+            target: DieselUlid::from_str(split[0])
+                .map_err(|_| serde::de::Error::custom("Invalid UUID"))?,
+            action: u8::from_str(split[1])
+                .map_err(|_| serde::de::Error::custom("Invalid Action"))?
+                .into(),
+        })
+    }
+}
+
 impl AuthHandler {
-    pub fn new(cache: Arc<RwLock<Cache>>) -> Self {
-        Self { cache }
+    pub fn new(cache: Arc<RwLock<Cache>>, self_id: DieselUlid) -> Self {
+        Self { cache, self_id }
     }
 
-    pub fn check_permissions(&self, token: &str) -> Result<bool> {
+    pub fn check_permissions(&self, token: &str) -> Result<Option<DieselUlid>> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
         match self.cache.read() {
             Ok(cache) => {
-                let (pk, dec_key) = cache.get_pubkey(kid);
+                let (pk, dec_key) = cache.get_pubkey(i32::from_str(&kid)?)?;
+                let claims = self.extract_claims(token, &dec_key)?;
+
+                if let Some(it) = claims.it {
+                    if it.action == Action::CreateSecrets && it.target == self.self_id {
+                        return Ok(Some(DieselUlid::from_str(&claims.sub)?));
+                    }
+                }
+
+                Ok(None)
             }
-            Err(_) => Ok(false),
+            Err(_) => Ok(None),
         }
     }
 
@@ -62,97 +119,5 @@ impl AuthHandler {
             &Validation::new(jsonwebtoken::Algorithm::EdDSA),
         )?;
         Ok(token.claims)
-    }
-
-    // /// Signing function to create a token for a specific endpoint to fetch all notifications
-    // /// of its consumer.
-    // pub fn sign_proxy_notifications_token(
-    //     &self,
-    //     endpoint_id: &DieselUlid,
-    //     token_id: &DieselUlid,
-    // ) -> Result<String> {
-    //     // Gets the signing key -> if this returns a poison error this should also panic
-    //     // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-    //     let signing_key = self.signing_info.read().unwrap();
-
-    //     let claims = ArunaTokenClaims {
-    //         iss: "aruna".to_string(),
-    //         sub: endpoint_id.to_string(),
-    //         exp: (Utc::now().timestamp() as usize) + 315360000, // 10 years for now.
-    //         tid: None,
-    //         intent: Some(format!("{}_{}", endpoint_id, "notification")),
-    //     };
-
-    //     let header = Header {
-    //         kid: Some(format!("{}", signing_key.0)),
-    //         alg: Algorithm::EdDSA,
-    //         ..Default::default()
-    //     };
-
-    //     Ok(encode(&header, &claims, &signing_key.1)?)
-    // }
-
-    ///ToDo: Rust Doc
-    async fn validate_aruna(
-        &self,
-        token: &str,
-    ) -> Result<(
-        DieselUlid,
-        Option<DieselUlid>,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
-    )> {
-        let kid = decode_header(token)?
-            .kid
-            .ok_or_else(|| anyhow!("Unspecified kid"))?;
-
-        let key = self
-            .cache
-            .pubkeys
-            .get(&kid.parse::<i32>()?)
-            .ok_or_else(|| anyhow!("Unspecified kid"))?
-            .clone();
-
-        let (_, dec_key) = match key {
-            PubKey::DataProxy((_, key)) => {
-                let claims =
-                    decode::<ArunaTokenClaims>(token, &key, &Validation::new(Algorithm::EdDSA))?;
-
-                let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
-
-                let (option_user, perms) = match claims.claims.tid {
-                    Some(uid) => {
-                        let uid = DieselUlid::from_str(&uid)?;
-                        (
-                            Some(uid),
-                            self.cache
-                                .get_user(&uid)
-                                .ok_or_else(|| anyhow!("Invalid user"))?
-                                .get_permissions(None)?,
-                        )
-                    }
-                    None => (None, vec![]),
-                };
-                return Ok((sub_id, option_user, perms, true));
-            }
-            PubKey::Server(k) => k,
-        };
-        let claims =
-            decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
-
-        let uid = DieselUlid::from_str(&claims.claims.sub)?;
-
-        let user = self.cache.get_user(&uid);
-
-        let token = match claims.claims.tid {
-            Some(uid) => Some(DieselUlid::from_str(&uid)?),
-            None => None,
-        };
-
-        if let Some(user) = user {
-            let perms = user.get_permissions(token)?;
-            return Ok((user.id, token, perms, false));
-        }
-        bail!("Invalid user")
     }
 }
