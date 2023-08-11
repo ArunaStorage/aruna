@@ -4,7 +4,6 @@ use crate::database::enums::ObjectType;
 use aruna_rust_api::api::storage::services::v2::{
     CollectionRelations, DatasetRelations, ProjectRelations,
 };
-use std::sync::Arc;
 
 pub fn get_object_children(input: &ObjectWithRelations) -> Vec<String> {
     Vec::from_iter(

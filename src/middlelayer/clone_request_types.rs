@@ -28,7 +28,7 @@ impl CloneObject {
                 }
             })
         } else {
-            return Err(anyhow!("No parent specified"));
+            Err(anyhow!("No parent specified"))
         }
     }
 }

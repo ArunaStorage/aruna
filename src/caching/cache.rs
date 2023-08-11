@@ -7,7 +7,6 @@ use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
 use crate::database::enums::ObjectType;
-use crate::utils::cache_utils;
 use crate::utils::cache_utils::{
     get_collection_children, get_dataset_relations, get_project_children,
 };
@@ -18,9 +17,7 @@ use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
-use aruna_rust_api::api::storage::services::v2::{
-    CollectionRelations, DatasetRelations, ProjectRelations,
-};
+
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
