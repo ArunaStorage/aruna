@@ -6,7 +6,7 @@ mod data_backends;
 // mod data_server;
 mod database;
 // mod helpers;
-// mod service_server;
+mod grpc_api;
 mod structs;
 #[macro_use]
 mod macros;
