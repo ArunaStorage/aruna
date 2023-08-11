@@ -132,6 +132,18 @@ impl Cache {
         Ok(())
     }
 
+    pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
+        if let Some(persistence) = &self.persistence {
+            Object::delete(&id, &persistence.get_client().await?).await?;
+            ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
+        }
+        let old = self.resources.remove(&id);
+        if let Some((_, (obj, _))) = old {
+            self.paths.remove(&obj.name);
+        };
+        Ok(())
+    }
+
     pub fn is_user(&self, user_id: DieselUlid) -> bool {
         self.user_access_keys.get(&user_id).is_some()
     }

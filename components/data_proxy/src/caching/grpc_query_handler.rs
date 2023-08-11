@@ -273,32 +273,6 @@ impl GrpcQueryHandler {
                     };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                            todo!()
-                        }
-                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                            todo!()
-                        }
-                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                            todo!()
-                        }
-                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                            todo!()
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            EventVariant::Deleted => {
-                if let Some(r) = event.resource {
-                    if let Ok(cache) = self.cache.read() {
-                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
-                            return Ok(event.reply);
-                        }
-                    } else {
-                        bail!("Poisoned lock")
-                    };
-                    match r.resource_variant() {
-                        aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             if let Ok(cache) = self.cache.read() {
                                 let object = self
                                     .get_project(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
@@ -343,6 +317,24 @@ impl GrpcQueryHandler {
                         }
                         _ => (),
                     }
+                }
+            }
+            EventVariant::Deleted => {
+                if let Some(r) = event.resource {
+                    if let Ok(cache) = self.cache.read() {
+                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
+                            return Ok(event.reply);
+                        }
+                    } else {
+                        bail!("Poisoned lock")
+                    };
+                    if let Ok(cache) = self.cache.read() {
+                        cache
+                            .delete_object(DieselUlid::from_str(&r.resource_id)?)
+                            .await?;
+                    } else {
+                        bail!("Poisoned lock")
+                    };
                 }
             }
             _ => (),
