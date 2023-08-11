@@ -12,7 +12,7 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateCollectionResponse, DeleteCollectionRequest,
@@ -24,6 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionNameRequest, UpdateCollectionNameResponse,
 };
 use diesel_ulid::DieselUlid;
+use rusty_ulid::DecodingError;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
@@ -122,9 +123,55 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn get_collections(
         &self,
-        _request: Request<GetCollectionsRequest>,
+        request: Request<GetCollectionsRequest>,
     ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+
+        let zipped: Vec<(DieselUlid, Context)> = tonic_invalid!(
+            request
+                .collection_ids
+                .iter()
+                .map(
+                    |id| -> std::result::Result<(DieselUlid, Context), DecodingError> {
+                        let id = DieselUlid::from_str(&id)?;
+                        let ctx = Context::res_ctx(id, DbPermissionLevel::READ, true);
+                        Ok((id, ctx))
+                    }
+                )
+                .collect::<std::result::Result<Vec<(DieselUlid, Context)>, DecodingError>>(),
+            "Invalid collection ids"
+        );
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = zipped.into_iter().unzip();
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, ctxs).await,
+            "Unauthorized"
+        );
+
+        let res: Result<Vec<Collection>> = ids
+            .iter()
+            .map(|id| -> Result<Collection> {
+                let owr = self
+                    .cache
+                    .get_object(id)
+                    .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
+                let coll: generic_resource::Resource = owr
+                    .try_into()
+                    .map_err(|_| tonic::Status::internal("Collection conversion error"))?;
+                coll.into_inner()
+            })
+            .collect();
+
+        let response = GetCollectionsResponse { collections: res? };
+
+        return_with_log!(response);
     }
 
     async fn delete_collection(
