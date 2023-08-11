@@ -115,10 +115,10 @@ impl TokenHandler {
     pub fn sign_user_token(
         &self,
         user_id: &DieselUlid,
-        token_id: Option<String>, // None if OIDC token
+        token_id: &DieselUlid,
         expires_at: Option<prost_wkt_types::Timestamp>,
     ) -> Result<String> {
-        // Gets the signing key / mutex -> if this returns a poison error this should also panic
+        // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
         let signing_key = self.signing_info.read().unwrap();
 
@@ -131,8 +131,43 @@ impl TokenHandler {
             } else {
                 expires_at.unwrap().seconds as usize
             },
-            tid: token_id,
+            tid: Some(token_id.to_string()),
             intent: None,
+        };
+
+        let header = Header {
+            kid: Some(format!("{}", signing_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        Ok(encode(&header, &claims, &signing_key.1)?)
+    }
+
+    /// Signing function to create a token that on lives only for a short period
+    /// and is only applicable for a specific Endpoint. If an intent is provided
+    /// the token is additionally restricted to the specific action.
+    pub fn sign_dataproxy_slt(
+        &self,
+        user_id: &DieselUlid,     // User id of original
+        endpoint_id: &DieselUlid, // Endpoint the token is signed for
+        token_id: Option<String>, // None if original request came with OIDC
+        action: Option<String>,   // Some Dataproxy action to restrict token usage scope
+    ) -> Result<String> {
+        // Gets the signing key -> if this returns a poison error this should also panic
+        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+        let signing_key = self.signing_info.read().unwrap();
+
+        let claims = ArunaTokenClaims {
+            iss: "aruna".to_string(),
+            sub: user_id.to_string(),
+            exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
+            tid: token_id,
+            intent: if let Some(definite_action) = action {
+                Some(format!("{}_{}", endpoint_id, definite_action))
+            } else {
+                Some(endpoint_id.to_string())
+            },
         };
 
         let header = Header {
