@@ -179,6 +179,32 @@ impl TokenHandler {
         Ok(encode(&header, &claims, &signing_key.1)?)
     }
 
+    /// Signing function to create a token for a specific endpoint to fetch all notifications
+    /// of its consumer.
+    pub fn sign_proxy_notifications_token(
+        &self,
+        endpoint_id: &DieselUlid,
+        token_id: &DieselUlid,
+    ) -> Result<String> {
+        // Gets the signing key -> if this returns a poison error this should also panic
+        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+        let signing_key = self.signing_info.read().unwrap();
+
+        let claims = ArunaTokenClaims {
+            iss: "aruna".to_string(),
+            sub: endpoint_id.to_string(),
+            exp: (Utc::now().timestamp() as usize) + 315360000, // 10 years for now.
+            tid: None,
+            intent: Some(format!("{}_{}", endpoint_id, "notification")),
+        };
+
+        let header = Header {
+            kid: Some(format!("{}", signing_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        Ok(encode(&header, &claims, &signing_key.1)?)
     }
 
     pub async fn process_token(
