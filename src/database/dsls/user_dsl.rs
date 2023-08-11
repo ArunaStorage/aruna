@@ -32,7 +32,6 @@ pub struct APIToken {
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
     pub object_id: Option<ObjectMapping<DieselUlid>>,
-    pub object_type: ObjectType,
     pub user_rights: DbPermissionLevel,
 }
 
