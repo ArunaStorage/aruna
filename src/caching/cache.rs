@@ -7,12 +7,20 @@ use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
 use crate::database::enums::ObjectType;
+use crate::utils::cache_utils;
+use crate::utils::cache_utils::{
+    get_collection_children, get_dataset_relations, get_project_children,
+};
 use ahash::HashMap;
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
+use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
+use aruna_rust_api::api::storage::services::v2::{
+    CollectionRelations, DatasetRelations, ProjectRelations,
+};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 
@@ -96,63 +104,21 @@ impl Cache {
             }
         }))
     }
-    // pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
-    //     let init = self
-    //         .object_cache
-    //         .get(&id)
-    //         .map(|x| x.value().clone())
-    //         .unwrap()
-    //         .resource;
+    pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
+        let init = self
+            .object_cache
+            .get(id)
+            .map(|x| x.value().clone())
+            .ok_or_else(|| anyhow!("No resource found"))?;
+        let resource = match init.object.object_type {
+            ObjectType::PROJECT => Graph::Project(get_project_children(&init, self)),
+            ObjectType::COLLECTION => Graph::Collection(get_collection_children(&init, self)),
+            ObjectType::DATASET => Graph::Dataset(get_dataset_relations(&init)),
+            ObjectType::OBJECT => return Err(anyhow!("Objects do not have a hierarchy")),
+        };
 
-    //     let mut graph = Graph::default();
-
-    //     let get_objects = |x| {
-    //         if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
-    //             && x.target_type == ObjectType::OBJECT
-    //         {
-    //             Some(x.to_string())
-    //         } else {
-    //             None
-    //         }
-    //     };
-
-    //     let get_datasetcs = |x| {
-    //         if x.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO
-    //             && x.target_type == ObjectType::DATASET
-    //         {
-    //             Some(DatasetRelations {
-    //                 origin: x.target_id,
-    //                 object_children: self
-    //                     .get_object(x.target_id)?
-    //                     .resource
-    //                     .outbound
-    //                     .0
-    //                      .0
-    //                     .iter()
-    //                     .filter_map(get_objects)
-    //                     .collect(),
-    //             })
-    //         } else {
-    //             None
-    //         }
-    //     };
-
-    //     match init.object.object_type {
-    //         crate::database::enums::ObjectType::PROJECT => todo!(),
-    //         crate::database::enums::ObjectType::COLLECTION => {
-    //             Ok(Graph::Collection(CollectionRelations {
-    //                 origin: id.to_string(),
-    //                 dataset_children: init.outbound.0 .0.iter().filter_map(),
-    //                 object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
-    //             }))
-    //         }
-    //         crate::database::enums::ObjectType::DATASET => Ok(Graph::Dataset(DatasetRelations {
-    //             origin: id.to_string(),
-    //             object_children: init.outbound.0 .0.iter().filter_map(get_objects).collect(),
-    //         })),
-    //         crate::database::enums::ObjectType::OBJECT => bail!("Objects have no hierarchy"),
-    //     }
-    // }
+        Ok(resource)
+    }
 
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
         ctxs.iter().all(|x| match &x.variant {

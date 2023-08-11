@@ -89,8 +89,8 @@ impl RelationsService for RelationsServiceImpl {
             "Unauthorized"
         );
 
-        // TODO: Implementation of get_hierarchy for cache
-
-        todo!()
+        let graph = tonic_invalid!(self.cache.get_hierarchy(&id), "Invalid id");
+        let result = GetHierarchyResponse { graph: Some(graph) };
+        return_with_log!(result);
     }
 }
