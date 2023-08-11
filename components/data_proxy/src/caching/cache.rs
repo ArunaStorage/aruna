@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
+use jsonwebtoken::DecodingKey;
 use s3s::auth::SecretKey;
 use std::{
     str::FromStr,
@@ -26,7 +27,7 @@ pub struct Cache {
     // Maps with path as key and set of ObjectIds as value
     pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
     // Pubkeys
-    pub pubkeys: DashMap<i32, PubKey, RandomState>,
+    pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     pub persistence: Option<Arc<Database>>,
     pub notifications: Option<GrpcQueryHandler>,
@@ -79,9 +80,26 @@ impl Cache {
         }
         self.pubkeys.clear();
         for pk in pks.into_iter() {
-            self.pubkeys.insert(pk.id, pk.clone());
+            let dec_key = DecodingKey::from_ed_pem(
+                format!(
+                    "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+                    pk.key
+                )
+                .as_bytes(),
+            )?;
+            self.pubkeys.insert(pk.id, (pk.clone(), dec_key));
         }
         Ok(())
+    }
+
+    pub fn get_pubkey(&self, kid: i32) -> Result<DecodingKey> {
+        Ok(self
+            .pubkeys
+            .get(&kid)
+            .ok_or_else(|| anyhow!("Pubkey not found"))?
+            .1
+             .1
+            .clone())
     }
 
     pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
