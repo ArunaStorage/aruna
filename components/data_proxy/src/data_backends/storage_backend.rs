@@ -1,4 +1,4 @@
-use crate::structs::{ObjectLocation, PartETag};
+use crate::structs::{Object, ObjectLocation, PartETag};
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -90,4 +90,12 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     /// * `location` - The location of the object
     async fn delete_object(&self, location: ObjectLocation) -> Result<()>;
+
+    /// Initialize a new location for a specific object
+    /// This takes the object_info into account and creates a new location for the object
+    async fn initialize_location(
+        &self,
+        obj: &Object,
+        ex_bucket: Option<String>,
+    ) -> Result<ObjectLocation>;
 }

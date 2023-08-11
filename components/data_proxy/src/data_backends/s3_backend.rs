@@ -1,3 +1,4 @@
+use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
 
@@ -12,15 +13,20 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
     Client,
 };
+use diesel_ulid::DieselUlid;
+use rand::distributions::Alphanumeric;
+use rand::thread_rng;
+use rand::Rng;
 use tokio_stream::StreamExt;
 
 #[derive(Debug, Clone)]
 pub struct S3Backend {
     pub s3_client: Client,
+    endpoint_id: String,
 }
 
 impl S3Backend {
-    pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(endpoint_id: String) -> Result<Self, Box<dyn std::error::Error>> {
         let s3_endpoint = dotenvy::var("AWS_S3_HOST").unwrap();
 
         let config = aws_config::load_from_env().await;
@@ -31,7 +37,10 @@ impl S3Backend {
 
         let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
-        let handler = S3Backend { s3_client };
+        let handler = S3Backend {
+            s3_client,
+            endpoint_id,
+        };
         Ok(handler)
     }
 }
@@ -214,6 +223,33 @@ impl StorageBackend for S3Backend {
             .await?;
         Ok(())
     }
+
+    /// Initialize a new location for a specific object
+    /// This takes the object_info into account and creates a new location for the object
+    async fn initialize_location(
+        &self,
+        _obj: &Object,
+        ex_bucket: Option<String>,
+    ) -> Result<ObjectLocation> {
+        let key: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+
+        Ok(ObjectLocation {
+            id: DieselUlid::generate(),
+            bucket: match ex_bucket {
+                Some(bucket) => bucket,
+                None => self.get_random_bucket(),
+            },
+            key,
+            encryption_key: None,
+            compressed: false,
+            raw_content_len: 0,
+            disk_content_len: 0,
+        })
+    }
 }
 
 impl S3Backend {
@@ -234,5 +270,14 @@ impl S3Backend {
                 }
             },
         }
+    }
+
+    pub fn get_random_bucket(&self) -> String {
+        let bucket: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(2)
+            .map(char::from)
+            .collect();
+        format!("{}-{}", self.endpoint_id, bucket)
     }
 }
