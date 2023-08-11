@@ -306,6 +306,19 @@ impl From<ObjectType> for ResourceVariant {
     }
 }
 
+impl TryFrom<ResourceId> for ObjectMapping<DieselUlid> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ResourceId) -> Result<Self> {
+        Ok(match value {
+            ResourceId::ProjectId(id) => ObjectMapping::PROJECT(DieselUlid::from_str(&id)?),
+            ResourceId::CollectionId(id) => ObjectMapping::COLLECTION(DieselUlid::from_str(&id)?),
+            ResourceId::DatasetId(id) => ObjectMapping::DATASET(DieselUlid::from_str(&id)?),
+            ResourceId::ObjectId(id) => ObjectMapping::OBJECT(DieselUlid::from_str(&id)?),
+        })
+    }
+}
+
 impl From<ObjectMapping<DieselUlid>> for ResourceId {
     fn from(value: ObjectMapping<DieselUlid>) -> Self {
         match value {
@@ -406,6 +419,24 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
             permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
             resource_id: db_token.object_id.map(ResourceId::from),
         }),
+    }
+}
+
+// Conversion from database model permission level to proto permission level
+impl TryFrom<PermissionLevel> for DbPermissionLevel {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PermissionLevel) -> std::result::Result<Self, Self::Error> {
+        Ok(match value {
+            PermissionLevel::Unspecified => {
+                return Err(anyhow::anyhow!("Unspecified permission level"))
+            }
+            PermissionLevel::None => DbPermissionLevel::NONE,
+            PermissionLevel::Read => DbPermissionLevel::READ,
+            PermissionLevel::Append => DbPermissionLevel::APPEND,
+            PermissionLevel::Write => DbPermissionLevel::WRITE,
+            PermissionLevel::Admin => DbPermissionLevel::ADMIN,
+        })
     }
 }
 
