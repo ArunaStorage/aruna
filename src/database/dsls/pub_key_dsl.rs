@@ -4,7 +4,7 @@ use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, PartialEq)]
 pub struct PubKey {
     pub id: i16,
     pub proxy: Option<DieselUlid>,
@@ -57,5 +57,34 @@ impl PubKey {
             .query_opt(&prepared, &[&pubkey])
             .await?
             .map(|e| PubKey::from_row(&e)))
+    }
+
+    /// As the primary ke is a auto incrementing serial it is stupid to provide a id for inserts...
+    pub async fn create_without_id(
+        proxy: Option<String>,
+        pubkey: &str,
+        client: &Client,
+    ) -> Result<PubKey> {
+        let row = if let Some(endpoint_id) = proxy {
+            let query = "
+            INSERT INTO pub_keys (proxy, pubkey) 
+              VALUES ($1, $2) ON CONFLICT DO NOTHING 
+            RETURNING id, proxy, pubkey;";
+            let prepared = client.prepare(query).await?;
+
+            client
+                .query_one(&prepared, &[&endpoint_id, &pubkey])
+                .await?
+        } else {
+            let query = "
+            INSERT INTO pub_keys (pubkey) 
+              VALUES ($1) ON CONFLICT DO NOTHING 
+            RETURNING id, proxy, pubkey;";
+            let prepared = client.prepare(query).await?;
+
+            client.query_one(&prepared, &[&pubkey]).await?
+        };
+
+        Ok(PubKey::from_row(&row))
     }
 }
