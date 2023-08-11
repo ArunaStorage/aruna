@@ -137,7 +137,7 @@ impl TokenHandler {
             encode_secret
         );
         let public_pem = format!(
-            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
             decode_secret
         );
 
