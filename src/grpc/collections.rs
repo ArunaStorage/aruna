@@ -180,7 +180,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         for o in updates {
-            self.cache.update_object(&o.object.id, o.clone());
+            self.cache.remove_object(&o.object.id)
         }
 
         let response = DeleteCollectionResponse {};

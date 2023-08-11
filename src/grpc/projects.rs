@@ -185,7 +185,7 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         for o in updates {
-            self.cache.update_object(&o.object.id, o.clone());
+            self.cache.remove_object(&o.object.id)
         }
 
         return_with_log!(DeleteProjectResponse {});

@@ -55,7 +55,7 @@ impl CreateToken {
                 .ok_or_else(|| anyhow!("Timestamp conversion error"))?,
             None => Utc::now()
                 .naive_local()
-                .checked_add_months(Months::new(6))
+                .checked_add_months(Months::new(120))
                 .ok_or_else(|| anyhow!("Expiry creation error"))?,
         };
         Ok(exp)
