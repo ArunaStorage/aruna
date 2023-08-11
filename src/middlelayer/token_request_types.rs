@@ -1,10 +1,60 @@
 use anyhow::Result;
-use aruna_rust_api::api::storage::services::v2::{DeleteApiTokenRequest, GetApiTokenRequest};
+use aruna_rust_api::api::storage::{
+    models::v2::Permission,
+    services::v2::{CreateApiTokenRequest, DeleteApiTokenRequest, GetApiTokenRequest},
+};
+use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
+use prost_wkt_types::Timestamp;
 use std::str::FromStr;
 
+use crate::database::{
+    dsls::user_dsl::APIToken,
+    enums::{DbPermissionLevel, ObjectMapping},
+};
+
+pub struct CreateToken(pub CreateApiTokenRequest);
 pub struct DeleteToken(pub DeleteApiTokenRequest);
 pub struct GetToken(pub GetApiTokenRequest);
+
+impl CreateToken {
+    pub fn build_token(
+        &self,
+        pubkey_serial: i32,
+        token_name: String,
+        expiry: Option<Timestamp>,
+        permission: Option<Permission>,
+    ) -> Result<APIToken> {
+        let (resource_id, user_right) = if let Some(perm) = permission {
+            if let Some(resource_id) = perm.resource_id {
+                let object_mapping = ObjectMapping::try_from(resource_id)?;
+                let perm_level = DbPermissionLevel::try_from(perm.permission_level)?;
+
+                (Some(object_mapping), perm_level)
+            } else {
+                return Err(anyhow::anyhow!("Missing resource id"));
+            }
+        } else {
+            (None, DbPermissionLevel::NONE)
+        };
+
+        Ok(APIToken {
+            pub_key: pubkey_serial,
+            name: token_name,
+            created_at: chrono::Utc::now().naive_utc(),
+            expires_at: if let Some(expiration) = expiry {
+                NaiveDateTime::from_timestamp_opt(expiration.seconds, 0)
+                    .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
+            } else {
+                // Add 10 years to token lifetime if  expiry unspecified
+                NaiveDateTime::from_timestamp_opt(chrono::Utc::now().timestamp() + 315360000, 0)
+                    .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
+            },
+            object_id: resource_id,
+            user_rights: user_right,
+        })
+    }
+}
 
 impl DeleteToken {
     pub fn get_token_id(&self) -> Result<DieselUlid> {

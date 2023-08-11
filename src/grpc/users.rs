@@ -1,9 +1,10 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
+use crate::auth::token_handler::TokenHandler;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::token_request_types::{DeleteToken, GetToken};
+use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken};
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
@@ -23,7 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-crate::impl_grpc_server!(UserServiceImpl);
+crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>);
 
 #[tonic::async_trait]
 impl UserService for UserServiceImpl {
@@ -108,9 +109,48 @@ impl UserService for UserServiceImpl {
 
     async fn create_api_token(
         &self,
-        _request: Request<CreateApiTokenRequest>,
+        request: Request<CreateApiTokenRequest>,
     ) -> Result<Response<CreateApiTokenResponse>, Status> {
-        todo!()
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Check empty context if is registered user
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let (user_id, _) = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()])
+                .await,
+            "Unauthorized"
+        );
+
+        // Create token
+        let middlelayer_request = CreateToken(inner_request);
+        let (token_ulid, token) = tonic_internal!(
+            self.database_handler.create_token(
+                &user_id,
+                self.token_handler.get_current_pubkey_serial() as i32,
+                middlelayer_request,
+            ),
+            "Token creation failed"
+        );
+
+        // Sign token
+        let token_secret = tonic_internal!(
+            self.token_handler.sign_user_token(
+                &user_id,
+                token_ulid,
+                middlelayer_request.0.expires_at,
+            ),
+            "Token creation failed"
+        );
+
+        // Create and return response
+        return_with_log!(CreateApiTokenResponse {
+            token: token,
+            token_secret: token_secret,
+        });
     }
 
     async fn get_api_token(
