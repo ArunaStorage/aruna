@@ -11,7 +11,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -24,7 +24,6 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionNameRequest, UpdateCollectionNameResponse,
 };
 use diesel_ulid::DieselUlid;
-use rusty_ulid::DecodingError;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
@@ -134,21 +133,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = request.into_inner();
 
-        let zipped: Vec<(DieselUlid, Context)> = tonic_invalid!(
-            request
-                .collection_ids
-                .iter()
-                .map(
-                    |id| -> std::result::Result<(DieselUlid, Context), DecodingError> {
-                        let id = DieselUlid::from_str(&id)?;
-                        let ctx = Context::res_ctx(id, DbPermissionLevel::READ, true);
-                        Ok((id, ctx))
-                    }
-                )
-                .collect::<std::result::Result<Vec<(DieselUlid, Context)>, DecodingError>>(),
-            "Invalid collection ids"
-        );
-        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = zipped.into_iter().unzip();
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = get_id_and_ctx(request.collection_ids)?;
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, ctxs).await,
@@ -158,13 +143,7 @@ impl CollectionService for CollectionServiceImpl {
         let res: Result<Vec<Collection>> = ids
             .iter()
             .map(|id| -> Result<Collection> {
-                let owr = self
-                    .cache
-                    .get_object(id)
-                    .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
-                let coll: generic_resource::Resource = owr
-                    .try_into()
-                    .map_err(|_| tonic::Status::internal("Collection conversion error"))?;
+                let coll = query(&self.cache, id)?;
                 coll.into_inner()
             })
             .collect();

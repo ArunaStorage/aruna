@@ -1,10 +1,15 @@
 use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
+use crate::database::enums::DbPermissionLevel;
 use crate::grpc::users::UserServiceImpl;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, Collection, Dataset, Object, Project, User,
 };
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
+use rusty_ulid::DecodingError;
+use std::str::FromStr;
+use std::sync::Arc;
 use tonic::{Result, Status};
 use xxhash_rust::xxh3::xxh3_128;
 
@@ -105,4 +110,28 @@ pub fn checksum_user(user: &User) -> anyhow::Result<String> {
     Ok(general_purpose::STANDARD_NO_PAD
         .encode(xxh3_128(&bincode::serialize(&user.attributes)?).to_be_bytes())
         .to_string())
+}
+
+pub fn get_id_and_ctx(ids: Vec<String>) -> Result<(Vec<DieselUlid>, Vec<Context>)> {
+    let zipped = tonic_invalid!(
+        ids.iter()
+            .map(
+                |id| -> std::result::Result<(DieselUlid, Context), DecodingError> {
+                    let id = DieselUlid::from_str(&id)?;
+                    let ctx = Context::res_ctx(id, DbPermissionLevel::READ, true);
+                    Ok((id, ctx))
+                },
+            )
+            .collect::<std::result::Result<Vec<(DieselUlid, Context)>, DecodingError>>(),
+        "Invalid ids"
+    );
+    let (ids, ctxs) = zipped.into_iter().unzip();
+    Ok((ids, ctxs))
+}
+pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Resource, Status> {
+    let owr = cache
+        .get_object(id)
+        .ok_or_else(|| tonic::Status::not_found("Resource not found"))?;
+    owr.try_into()
+        .map_err(|_| tonic::Status::internal("Conversion error"))
 }

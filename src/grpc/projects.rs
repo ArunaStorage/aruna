@@ -10,9 +10,9 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Project};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
@@ -126,9 +126,35 @@ impl ProjectService for ProjectServiceImpl {
 
     async fn get_projects(
         &self,
-        _request: Request<GetProjectsRequest>,
+        request: Request<GetProjectsRequest>,
     ) -> Result<Response<GetProjectsResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = get_id_and_ctx(request.dataset_ids)?;
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, ctxs).await,
+            "Unauthorized"
+        );
+
+        let res: Result<Vec<Project>> = ids
+            .iter()
+            .map(|id| -> Result<Project> {
+                let proj = query(&self.cache, id)?;
+                proj.into_inner()
+            })
+            .collect();
+
+        let response = GetProjectsResponse { projects: res? };
+
+        return_with_log!(response);
     }
     async fn delete_project(
         &self,

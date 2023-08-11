@@ -8,8 +8,8 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
     CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
@@ -367,11 +367,34 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_objects(
         &self,
-        _request: Request<GetObjectsRequest>,
+        request: Request<GetObjectsRequest>,
     ) -> Result<Response<GetObjectsResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "GetObjects is not implemented.",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = get_id_and_ctx(request.object_ids)?;
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, ctxs).await,
+            "Unauthorized"
+        );
+
+        let res: Result<Vec<Object>> = ids
+            .iter()
+            .map(|id| -> Result<Object> {
+                let obj = query(&self.cache, id)?;
+                obj.into_inner()
+            })
+            .collect();
+
+        let response = GetObjectsResponse { objects: res? };
+
+        return_with_log!(response);
     }
 }
