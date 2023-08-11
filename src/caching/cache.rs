@@ -39,6 +39,25 @@ impl Cache {
         self.user_cache.get(id).map(|x| x.value().clone())
     }
 
+    pub fn get_pubkey(&self, serial: i32) -> Option<PubKey> {
+        self.pubkeys.get(&serial).map(|x| x.value().clone())
+    }
+
+    pub fn get_pubkey_serial(&self, raw_pubkey: String) -> Option<i32> {
+        for entry in &self.pubkeys {
+            match entry.value() {
+                PubKey::DataProxy((raw_key, _))
+                | PubKey::Server((raw_key, _)) => {
+                    if raw_pubkey == *raw_key {
+                        return Some(*entry.key());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;

@@ -99,10 +99,10 @@ impl TokenHandler {
             .ok_or_else(|| anyhow!("Unspecified kid"))?
             .clone();
 
-        let dec_key = match key {
-            PubKey::DataProxy(k) => {
+        let (_, dec_key) = match key {
+            PubKey::DataProxy((_, key)) => {
                 let claims =
-                    decode::<ArunaTokenClaims>(token, &k, &Validation::new(Algorithm::EdDSA))?;
+                    decode::<ArunaTokenClaims>(token, &key, &Validation::new(Algorithm::EdDSA))?;
 
                 let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
 

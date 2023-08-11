@@ -4,8 +4,8 @@ use jsonwebtoken::DecodingKey;
 
 #[derive(Clone)]
 pub enum PubKey {
-    DataProxy(DecodingKey),
-    Server(DecodingKey),
+    DataProxy((String, DecodingKey)), // DataProxy((Key String, DecodingKey))
+    Server((String, DecodingKey)),    // Server((Key String, DecodingKey))
 }
 
 impl ObjectWithRelations {
