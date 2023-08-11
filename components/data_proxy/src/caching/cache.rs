@@ -25,6 +25,8 @@ pub struct Cache {
     pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
     // Maps with path as key and set of ObjectIds as value
     pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
+    // Pubkeys
+    pub pubkeys: DashMap<i32, PubKey, RandomState>,
     // Persistence layer
     pub persistence: Option<Arc<Database>>,
     pub notifications: Option<GrpcQueryHandler>,
@@ -45,6 +47,7 @@ impl Cache {
             user_access_keys: DashMap::default(),
             resources: DashMap::default(),
             paths: DashMap::default(),
+            pubkeys: DashMap::default(),
             persistence,
             notifications: None,
         }));
@@ -70,16 +73,20 @@ impl Cache {
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         if let Some(persistence) = &self.persistence {
             PubKey::delete_all(&persistence.get_client().await?).await?;
-            for pk in pks {
+            for pk in pks.iter() {
                 pk.upsert(&persistence.get_client().await?).await?;
             }
         }
-
+        self.pubkeys.clear();
+        for pk in pks.into_iter() {
+            self.pubkeys.insert(pk.id, pk.clone());
+        }
         Ok(())
     }
 
     pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
+
         let mut access_ids = Vec::new();
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
             let user_access = User {
