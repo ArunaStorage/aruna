@@ -3,6 +3,7 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
+use crate::middlelayer::clone_request_types::CloneObject;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
@@ -284,12 +285,38 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn clone_object(
         &self,
-        _request: Request<CloneObjectRequest>,
+        request: Request<CloneObjectRequest>,
     ) -> Result<Response<CloneObjectResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "CloneObject is not implemented.",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = CloneObject(request.into_inner());
+        let object_id = tonic_invalid!(request.get_object_id(), "Invalid object id");
+        let (parent_id, parent_mapping) = tonic_invalid!(request.get_parent(), "Invalid object id");
+        let ctx = Context::res_ctx(parent_id, DbPermissionLevel::WRITE, true);
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        )
+        .ok_or_else(|| tonic::Status::not_found("User id not found"))?;
+        let new = tonic_internal!(
+            self.database_handler
+                .clone_object(&user_id, &object_id, parent_mapping)
+                .await,
+            "Internal clone object error"
+        );
+        self.cache.add_object(new.clone());
+
+        let converted: generic_resource::Resource =
+            tonic_internal!(new.try_into(), "Conversion error");
+        let response = CloneObjectResponse {
+            object: Some(converted.into_inner()?),
+        };
+        return_with_log!(response);
     }
 
     async fn delete_object(
