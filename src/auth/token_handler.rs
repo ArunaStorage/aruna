@@ -5,6 +5,7 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::Algorithm;
+use jsonwebtoken::EncodingKey;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -13,6 +14,8 @@ use std::sync::RwLock;
 
 use crate::caching::cache::Cache;
 use crate::caching::structs::PubKey;
+use crate::database::connection::Database;
+use crate::database::dsls::pub_key_dsl::PubKey as DbPubKey;
 use crate::database::enums::DbPermissionLevel;
 
 #[derive(Deserialize, Debug)]
@@ -49,15 +52,58 @@ pub struct TokenHandler {
     cache: Arc<Cache>,
     oidc_realminfo: String,
     oidc_pubkey: Arc<RwLock<Option<DecodingKey>>>,
+    signing_info: Arc<RwLock<(i64, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
 
 impl TokenHandler {
-    pub fn new(cache: Arc<Cache>, oidc_realminfo: String) -> Self {
-        TokenHandler {
+    pub async fn new(
+        cache: Arc<Cache>,
+        database: Arc<Database>,
+        oidc_realminfo: String,
+        encode_secret: String,
+        decode_secret: String,
+    ) -> anyhow::Result<Self> {
+        let private_pem = format!(
+            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+            encode_secret
+        );
+        let public_pem = format!(
+            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+            decode_secret
+        );
+
+        // Read encoding and decoding key; On error panic. This is too important
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
+        let decoding_key = DecodingKey::from_ed_pem(public_pem.as_bytes()).unwrap();
+
+        // Check if public key already exists in database/cache
+        let pubkey_serial: i64 = if let Some(key_serial) = cache.get_pubkey_serial(encode_secret) {
+            key_serial as i64
+        } else {
+            // Add to database (no connection available) and cache?
+            let client = database.get_client().await.unwrap();
+            let pub_key = DbPubKey::create_without_id(None, &decode_secret, &client).await?; 
+            
+            // Notification --> Announcement::PubKey::New ?
+
+            cache.add_pubkey(
+                pub_key.id as i32,
+                PubKey::Server((decode_secret, decoding_key.clone())),
+            );
+
+            // Notification --> Announcement::PubKey::New ?
+            pub_key.id as i64
+        };
+
+        // Return initialized TokenHandler
+        Ok(TokenHandler {
             cache,
             oidc_realminfo,
             oidc_pubkey: Arc::new(RwLock::new(None)),
-        }
+            signing_info: Arc::new(RwLock::new((pubkey_serial, encoding_key, decoding_key))),
+        })
+    }
+
     }
 
     pub async fn process_token(
