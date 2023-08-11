@@ -42,7 +42,7 @@ impl DataproxyUserService for DataProxyUserService {
         &self,
         _request: tonic::Request<PushReplicaRequest>,
     ) -> std::result::Result<tonic::Response<PushReplicaResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     /// PullReplica
@@ -54,7 +54,7 @@ impl DataproxyUserService for DataProxyUserService {
         &self,
         _request: tonic::Request<PullReplicaRequest>,
     ) -> std::result::Result<tonic::Response<PullReplicaResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     /// PullReplica
@@ -66,6 +66,6 @@ impl DataproxyUserService for DataProxyUserService {
         &self,
         _request: tonic::Request<ReplicationStatusRequest>,
     ) -> std::result::Result<tonic::Response<ReplicationStatusResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 }

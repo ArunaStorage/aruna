@@ -12,7 +12,7 @@ pub struct ProxyService {
 }
 
 impl ProxyService {
-    pub fn _new(cache: Arc<RwLock<Cache>>) -> Self {
+    pub fn new(cache: Arc<RwLock<Cache>>) -> Self {
         Self { cache }
     }
 }
@@ -28,7 +28,7 @@ impl DataproxyService for ProxyService {
         &self,
         _request: tonic::Request<RequestReplicationRequest>,
     ) -> std::result::Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
     /// InitReplication
     ///
@@ -39,6 +39,6 @@ impl DataproxyService for ProxyService {
         &self,
         _request: tonic::Request<InitReplicationRequest>,
     ) -> std::result::Result<tonic::Response<InitReplicationResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 }
