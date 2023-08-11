@@ -43,11 +43,11 @@ impl Cache {
         self.pubkeys.get(&serial).map(|x| x.value().clone())
     }
 
-    pub fn get_pubkey_serial(&self, raw_pubkey: String) -> Option<i32> {
+    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
         for entry in &self.pubkeys {
             match entry.value() {
                 PubKey::DataProxy((raw_key, _)) | PubKey::Server((raw_key, _)) => {
-                    if raw_pubkey == *raw_key {
+                    if raw_pubkey == raw_key {
                         return Some(*entry.key());
                     }
                 }
