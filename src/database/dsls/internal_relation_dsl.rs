@@ -176,8 +176,6 @@ impl InternalRelation {
         }
         let query_two = create_multi_query(&inserts);
         let query = format!("{query_one}{query_two};");
-        dbg!(&query);
-        dbg!(&inserts);
         let prepared = client.prepare(&query).await?;
         client.execute(&prepared, &inserts).await?;
         Ok(())
