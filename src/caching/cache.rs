@@ -46,8 +46,7 @@ impl Cache {
     pub fn get_pubkey_serial(&self, raw_pubkey: String) -> Option<i32> {
         for entry in &self.pubkeys {
             match entry.value() {
-                PubKey::DataProxy((raw_key, _))
-                | PubKey::Server((raw_key, _)) => {
+                PubKey::DataProxy((raw_key, _)) | PubKey::Server((raw_key, _)) => {
                     if raw_pubkey == *raw_key {
                         return Some(*entry.key());
                     }

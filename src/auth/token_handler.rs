@@ -3,9 +3,12 @@ use anyhow::bail;
 use anyhow::Result;
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
+use jsonwebtoken::encode;
 use jsonwebtoken::Algorithm;
 use jsonwebtoken::EncodingKey;
+use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -107,6 +110,39 @@ impl TokenHandler {
             oidc_pubkey: Arc::new(RwLock::new(None)),
             signing_info: Arc::new(RwLock::new((pubkey_serial, encoding_key, decoding_key))),
         })
+    }
+
+    ///ToDo: Rust Doc
+    pub fn sign_user_token(
+        &self,
+        user_id: &DieselUlid,
+        token_id: Option<String>, // None if OIDC token
+        expires_at: Option<prost_wkt_types::Timestamp>,
+    ) -> Result<String> {
+        // Gets the signing key / mutex -> if this returns a poison error this should also panic
+        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+        let signing_key = self.signing_info.read().unwrap();
+
+        let claims = ArunaTokenClaims {
+            iss: "aruna".to_string(),
+            sub: user_id.to_string(),
+            exp: if expires_at.is_none() {
+                // Add 10 years to token lifetime if  expiry unspecified
+                (Utc::now().timestamp() as usize) + 315360000
+            } else {
+                expires_at.unwrap().seconds as usize
+            },
+            tid: token_id,
+            intent: None,
+        };
+
+        let header = Header {
+            kid: Some(format!("{}", signing_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        Ok(encode(&header, &claims, &signing_key.1)?)
     }
 
     }
