@@ -28,7 +28,7 @@ impl DataproxyUserService for DataProxyUserService {
         &self,
         request: tonic::Request<GetCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
-        if let Some(a) = self.cache.clone().auth.clone() {
+        if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = get_token_from_md(&request.metadata())
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
 
@@ -37,7 +37,7 @@ impl DataproxyUserService for DataProxyUserService {
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
 
-            if let Some(q_handler) = self.cache.clone().notifications.clone() {
+            if let Some(q_handler) = self.cache.notifications.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|e| {
                     log::debug!("Error getting user from queue handler {e}");
                     tonic::Status::unauthenticated("Unable to authenticate user")

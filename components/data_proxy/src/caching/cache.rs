@@ -15,10 +15,8 @@ use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
-use std::{
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{str::FromStr, sync::Arc};
+use tokio::sync::RwLock;
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
@@ -32,9 +30,9 @@ pub struct Cache {
     // Pubkeys
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
-    pub persistence: Option<Arc<Database>>,
-    pub notifications: Option<Arc<GrpcQueryHandler>>,
-    pub auth: Option<Arc<AuthHandler>>,
+    pub persistence: RwLock<Option<Database>>,
+    pub notifications: RwLock<Option<GrpcQueryHandler>>,
+    pub auth: RwLock<Option<AuthHandler>>,
 }
 
 impl Cache {
@@ -42,31 +40,41 @@ impl Cache {
         notifications_url: Option<impl Into<String>>,
         with_persistence: bool,
         self_id: DieselUlid,
-    ) -> Result<Arc<RwLock<Self>>> {
+    ) -> Result<Arc<Self>> {
         let persistence = if with_persistence {
-            None
+            RwLock::new(None)
         } else {
-            Some(Arc::new(Database::new()?))
+            RwLock::new(Some(Database::new()?))
         };
-        let cache = Arc::new(RwLock::new(Cache {
+        let cache = Arc::new(Cache {
             users: DashMap::default(),
             user_access_keys: DashMap::default(),
             resources: DashMap::default(),
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
             persistence,
-            notifications: None,
-            auth: None,
-        }));
-        let notifications = match notifications_url {
-            Some(s) => Some(Arc::new(GrpcQueryHandler::new(s, cache.clone()).await?)),
-            None => None,
+            notifications: RwLock::new(None),
+            auth: RwLock::new(None),
+        });
+        if let Some(url) = notifications_url {
+            cache
+                .set_notifications(GrpcQueryHandler::new(url, cache.clone()).await?)
+                .await
         };
 
         let auth_handler = AuthHandler::new(cache.clone(), self_id);
-        cache.write().unwrap().notifications = notifications;
-        cache.write().unwrap().auth = Some(Arc::new(auth_handler));
+        cache.set_auth(auth_handler);
         Ok(cache)
+    }
+
+    pub async fn set_notifications(&self, notifications: GrpcQueryHandler) {
+        let mut guard = self.notifications.write().await;
+        *guard = Some(notifications);
+    }
+
+    pub async fn set_auth(&self, auth: AuthHandler) {
+        let mut guard = self.auth.write().await;
+        *guard = Some(auth);
     }
 
     /// Requests a secret key from the cache
@@ -108,7 +116,7 @@ impl Cache {
             secret: new_secret.clone(),
             permissions: perm,
         };
-        if let Some(persistence) = &self.persistence {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
             user_access.upsert(&persistence.get_client().await?).await?;
         }
 
@@ -118,7 +126,7 @@ impl Cache {
     }
 
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
-        if let Some(persistence) = &self.persistence {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
             PubKey::delete_all(&persistence.get_client().await?).await?;
             for pk in pks.iter() {
                 pk.upsert(&persistence.get_client().await?).await?;
@@ -160,7 +168,7 @@ impl Cache {
                     .unwrap_or_default(),
                 permissions: perm,
             };
-            if let Some(persistence) = &self.persistence {
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user_access.upsert(&persistence.get_client().await?).await?;
             }
             self.users.insert(key.clone(), user_access);
@@ -179,7 +187,7 @@ impl Cache {
 
         for key in keys {
             let user = self.users.remove(&key);
-            if let Some(persistence) = &self.persistence {
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
                 if let Some((_, user)) = user {
                     User::delete(&user.user_id.to_string(), &persistence.get_client().await?)
                         .await?;
@@ -194,7 +202,7 @@ impl Cache {
         object: Object,
         location: Option<ObjectLocation>,
     ) -> Result<()> {
-        if let Some(persistence) = &self.persistence {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
             object.upsert(&persistence.get_client().await?).await?;
             if let Some(l) = &location {
                 l.upsert(&persistence.get_client().await?).await?;
@@ -209,7 +217,7 @@ impl Cache {
     }
 
     pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
-        if let Some(persistence) = &self.persistence {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
             Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
         }

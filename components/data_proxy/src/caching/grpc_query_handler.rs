@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
@@ -40,7 +39,6 @@ use aruna_rust_api::api::{
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::RwLock;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
@@ -57,12 +55,12 @@ pub struct GrpcQueryHandler {
     endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
-    cache: Arc<RwLock<Cache>>,
+    cache: Arc<Cache>,
 }
 
 impl GrpcQueryHandler {
     #[allow(dead_code)]
-    pub async fn new(server: impl Into<String>, cache: Arc<RwLock<Cache>>) -> Result<Self> {
+    pub async fn new(server: impl Into<String>, cache: Arc<Cache>) -> Result<Self> {
         let tls_config = ClientTlsConfig::new();
         let endpoint = Channel::from_shared(server.into())?.tls_config(tls_config)?;
         let channel = endpoint.connect().await?;
@@ -222,18 +220,15 @@ impl GrpcQueryHandler {
             | anouncement_event::EventVariant::RemovePubkey(_)
             | anouncement_event::EventVariant::NewDataProxyId(_)
             | anouncement_event::EventVariant::RemoveDataProxyId(_)
-            | anouncement_event::EventVariant::UpdateDataProxyId(_) => match self.cache.read() {
-                Ok(data) => {
-                    let pks = self
-                        .get_pubkeys()
-                        .await?
-                        .into_iter()
-                        .map(PubKey::from)
-                        .collect();
-                    data.set_pubkeys(pks).await?
-                }
-                _ => bail!("Poisoned lock"),
-            },
+            | anouncement_event::EventVariant::UpdateDataProxyId(_) => {
+                let pks = self
+                    .get_pubkeys()
+                    .await?
+                    .into_iter()
+                    .map(PubKey::from)
+                    .collect();
+                self.cache.set_pubkeys(pks).await?
+            }
             anouncement_event::EventVariant::Downtime(_) => (),
             anouncement_event::EventVariant::Version(_) => (),
         }
@@ -244,29 +239,21 @@ impl GrpcQueryHandler {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
-                match self.cache.read() {
-                    Ok(data) => {
-                        if data.is_user(uid) {
-                            let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                            data.upsert_user(user_info.clone());
-                        }
-                    }
-                    _ => bail!("Poisoned lock"),
+                if self.cache.is_user(uid) {
+                    let user_info = self.get_user(uid, message.checksum.clone()).await?;
+                    self.cache.upsert_user(user_info.clone());
                 };
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
-                match self.cache.read() {
-                    Ok(data) => {
-                        if data.is_user(uid) {
-                            data.remove_user(uid);
-                        }
-                    }
-                    _ => bail!("Poisoned lock"),
+
+                if self.cache.is_user(uid) {
+                    self.cache.remove_user(uid);
                 };
             }
-            _ => (),
+            EventVariant::Unspecified => (),
         }
+
         Ok(message.reply)
     }
 
@@ -274,56 +261,36 @@ impl GrpcQueryHandler {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
                 if let Some(r) = event.resource {
-                    if let Ok(cache) = self.cache.read() {
-                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
-                            return Ok(event.reply);
-                        }
-                    } else {
-                        bail!("Poisoned lock")
+                    if !self
+                        .cache
+                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
+                    {
+                        return Ok(event.reply);
                     };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                            if let Ok(cache) = self.cache.read() {
-                                let object = self
-                                    .get_project(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                    .await?;
-                                cache.upsert_object(object.try_into()?, None).await?;
-                            } else {
-                                bail!("Poisoned lock")
-                            };
+                            let object = self
+                                .get_project(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                            if let Ok(cache) = self.cache.read() {
-                                let object = self
-                                    .get_collection(
-                                        &DieselUlid::from_str(&r.resource_id)?,
-                                        r.checksum,
-                                    )
-                                    .await?;
-                                cache.upsert_object(object.try_into()?, None).await?;
-                            } else {
-                                bail!("Poisoned lock")
-                            };
+                            let object = self
+                                .get_collection(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                            if let Ok(cache) = self.cache.read() {
-                                let object = self
-                                    .get_dataset(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                    .await?;
-                                cache.upsert_object(object.try_into()?, None).await?;
-                            } else {
-                                bail!("Poisoned lock")
-                            };
+                            let object = self
+                                .get_dataset(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                            if let Ok(cache) = self.cache.read() {
-                                let object = self
-                                    .get_object(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                    .await?;
-                                cache.upsert_object(object.try_into()?, None).await?;
-                            } else {
-                                bail!("Poisoned lock")
-                            };
+                            let object = self
+                                .get_object(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
+                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         _ => (),
                     }
@@ -331,20 +298,15 @@ impl GrpcQueryHandler {
             }
             EventVariant::Deleted => {
                 if let Some(r) = event.resource {
-                    if let Ok(cache) = self.cache.read() {
-                        if !cache.is_resource(DieselUlid::from_str(&r.resource_id)?) {
-                            return Ok(event.reply);
-                        }
-                    } else {
-                        bail!("Poisoned lock")
+                    if !self
+                        .cache
+                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
+                    {
+                        return Ok(event.reply);
                     };
-                    if let Ok(cache) = self.cache.read() {
-                        cache
-                            .delete_object(DieselUlid::from_str(&r.resource_id)?)
-                            .await?;
-                    } else {
-                        bail!("Poisoned lock")
-                    };
+                    self.cache
+                        .delete_object(DieselUlid::from_str(&r.resource_id)?)
+                        .await?;
                 }
             }
             _ => (),

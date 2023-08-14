@@ -1,4 +1,8 @@
-use std::io::Write;
+use anyhow::Result;
+use caching::cache::Cache;
+use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use s3_frontend::impersonating_client::ImpersonatingClient;
+use std::{io::Write, str::FromStr, sync::Arc};
 
 // mod bundler;
 mod caching;
@@ -12,17 +16,26 @@ mod structs;
 mod macros;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     dotenvy::from_filename(".env").ok();
-    let _hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
+
+    let remote_synced = dotenvy::var("DATA_PROXY_REMOTE_SYNCED")?.parse::<bool>()?;
+    let aruna_host_url = if let true = remote_synced {
+        Some(dotenvy::var("ARUNA_HOST_URL")?)
+    } else {
+        None
+    };
+    let with_persistence = dotenvy::var("DATA_PROXY_PERSISTENCE")?.parse::<bool>()?;
+
+    let _hostname = dotenvy::var("PROXY_HOSTNAME")?;
     // External S3 server
-    let _proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
+    let _proxy_data_host = dotenvy::var("PROXY_DATA_HOST")?;
     // ULID of the endpoint
-    let _endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
+    let endpoint_id = dotenvy::var("ENDPOINT_ID")?;
     // Aruna Backend
-    let _backend_host = dotenvy::var("BACKEND_HOST").unwrap();
+    let _backend_host = dotenvy::var("BACKEND_HOST")?;
     // Internal backchannel Aruna -> Dproxy
-    let _internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
+    let _internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL")?;
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -38,8 +51,26 @@ async fn main() {
         })
         .filter_level(log::LevelFilter::Debug)
         .init();
+
+    let storage_backend: Arc<Box<dyn StorageBackend>> =
+        Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
+
+    let imp_client = Arc::new(ImpersonatingClient::new(
+        endpoint_id.clone(),
+        aruna_host_url.clone(),
+    ));
+    let cache = Arc::new(
+        Cache::new(
+            aruna_host_url,
+            with_persistence,
+            diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
+        )
+        .await?,
+    );
+
+    Ok(())
 }
-//     let s3_client = match S3Backend::new().await {
+//      {
 //         Ok(value) => value,
 //         Err(err) => {
 //             log::error!("{}", err);

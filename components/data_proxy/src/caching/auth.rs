@@ -11,7 +11,7 @@ use std::sync::{Arc, RwLock};
 use tonic::metadata::MetadataMap;
 
 pub struct AuthHandler {
-    pub cache: Arc<RwLock<Cache>>,
+    pub cache: Arc<Cache>,
     pub self_id: DieselUlid,
 }
 
@@ -89,7 +89,7 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
-    pub fn new(cache: Arc<RwLock<Cache>>, self_id: DieselUlid) -> Self {
+    pub fn new(cache: Arc<Cache>, self_id: DieselUlid) -> Self {
         Self { cache, self_id }
     }
 
@@ -97,21 +97,16 @@ impl AuthHandler {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
-        match self.cache.read() {
-            Ok(cache) => {
-                let (pk, dec_key) = cache.get_pubkey(i32::from_str(&kid)?)?;
-                let claims = self.extract_claims(token, &dec_key)?;
+        let (pk, dec_key) = self.cache.get_pubkey(i32::from_str(&kid)?)?;
+        let claims = self.extract_claims(token, &dec_key)?;
 
-                if let Some(it) = claims.it {
-                    if it.action == Action::CreateSecrets && it.target == self.self_id {
-                        return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
-                    }
-                }
-
-                bail!("Invalid permissions")
+        if let Some(it) = claims.it {
+            if it.action == Action::CreateSecrets && it.target == self.self_id {
+                return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
             }
-            Err(_) => bail!("Invalid permissions"),
         }
+
+        bail!("Invalid permissions")
     }
 
     pub fn extract_claims(&self, token: &str, dec_key: &DecodingKey) -> Result<ArunaTokenClaims> {
