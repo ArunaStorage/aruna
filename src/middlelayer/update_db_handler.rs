@@ -95,20 +95,21 @@ impl DatabaseHandler {
         bool, // Creates revision
     )> {
         let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
         let req = UpdateObject(request.clone());
         let id = req.get_id()?;
-        let old = Object::get(id, transaction_client)
+        let old = Object::get(id, &client)
             .await?
             .ok_or(anyhow!("Object not found."))?;
-        let flag = if request.name.is_some()
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        let (id, flag) = if request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
+            let id = DieselUlid::generate();
             // Create new object
             let create_object = Object {
-                id: DieselUlid::generate(),
+                id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number + 1,
@@ -130,7 +131,8 @@ impl DatabaseHandler {
                 let relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            true
+            transaction.commit().await?;
+            (id, true)
         } else {
             // Update in place
             let update_object = Object {
@@ -156,11 +158,10 @@ impl DatabaseHandler {
                 let relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            false
+            transaction.commit().await?;
+            (id, false)
         };
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-        transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok((object_with_relations, flag))
     }
 }

@@ -1,12 +1,13 @@
 use crate::common::init_db::init_handler;
 use crate::common::test_utils;
-use aruna_rust_api::api::storage::models::v2::KeyValue as APIKeyValue;
+use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
+use aruna_rust_api::api::storage::services::v2::update_object_request::Parent;
 use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
     UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest, UpdateDatasetDataClassRequest,
     UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest,
-    UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest,
-    UpdateProjectNameRequest,
+    UpdateObjectRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
+    UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
 };
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
@@ -15,6 +16,7 @@ use aruna_server::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_types::Json;
 
 #[tokio::test]
@@ -381,4 +383,87 @@ async fn test_update_keyvals() {
             _ => panic!(),
         };
     }
+}
+
+#[tokio::test]
+async fn update_object_test() {
+    // Init
+    let db_handler = init_handler().await;
+    let object_id = DieselUlid::generate();
+    let object_mapping = ObjectMapping::OBJECT(object_id);
+    let parent_id = DieselUlid::generate();
+    let parent_mapping = ObjectMapping::PROJECT(parent_id);
+    let user = test_utils::new_user(vec![object_mapping]);
+    let mut object = test_utils::object_from_mapping(user.id, object_mapping);
+    let parent = test_utils::object_from_mapping(user.id, parent_mapping);
+    object.key_values.0 .0.push(KeyValue {
+        key: "to_delete".to_string(),
+        value: "deleted".to_string(),
+        variant: KeyValueVariant::LABEL,
+    });
+    let client = db_handler.database.get_client().await.unwrap();
+    user.create(&client).await.unwrap();
+    object.create(&client).await.unwrap();
+    parent.create(&client).await.unwrap();
+
+    // test
+    let update_request = UpdateObjectRequest {
+        object_id: object_id.to_string(),
+        name: None,
+        description: Some("A new description".to_string()),
+        add_key_values: vec![APIKeyValue {
+            key: "New".to_string(),
+            value: "value".to_string(),
+            variant: 1,
+        }],
+
+        remove_key_values: vec![],
+        data_class: 1,
+        hashes: vec![],
+        parent: Some(Parent::ProjectId(parent_id.to_string())),
+    };
+    let (updated, is_new) = db_handler
+        .update_grpc_object(update_request, user.id)
+        .await
+        .unwrap();
+    assert!(!is_new);
+    assert_eq!(updated.object.id, object_id);
+    assert_eq!(updated.object.description, "A new description".to_string());
+    assert!(updated.object.key_values.0 .0.contains(&KeyValue {
+        key: "New".to_string(),
+        value: "value".to_string(),
+        variant: KeyValueVariant::LABEL,
+    }));
+    assert_eq!(updated.object.data_class, DataClass::PUBLIC);
+    assert!(updated.inbound_belongs_to.0.contains_key(&parent_id));
+    let trigger_new_request = UpdateObjectRequest {
+        object_id: object_id.to_string(),
+        name: Some("new_name".to_string()),
+        description: None,
+        add_key_values: vec![],
+        remove_key_values: vec![APIKeyValue {
+            key: "to_delete".to_string(),
+            value: "deleted".to_string(),
+            variant: 1,
+        }],
+        data_class: 1,
+        hashes: vec![Hash {
+            alg: 1,
+            hash: "dd98d701915b2bc5aad5dc9190194844".to_string(),
+        }],
+        parent: None,
+    };
+    let (new, is_new) = db_handler
+        .update_grpc_object(trigger_new_request, user.id)
+        .await
+        .unwrap();
+    assert!(is_new);
+    assert_ne!(new.object.id, object_id);
+    assert_eq!(new.object.name, "new_name".to_string());
+    assert!(!new.object.key_values.0 .0.iter().contains(&KeyValue {
+        key: "to_delete".to_string(),
+        value: "deleted".to_string(),
+        variant: KeyValueVariant::LABEL,
+    }));
+    assert!(!new.object.hashes.0 .0.is_empty());
 }
