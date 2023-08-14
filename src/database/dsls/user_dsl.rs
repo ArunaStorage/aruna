@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -231,7 +231,7 @@ impl User {
     pub async fn add_user_token(
         client: &Client,
         user_id: &DieselUlid,
-        token: HashMap<DieselUlid, APIToken>,
+        token: HashMap<DieselUlid, &APIToken>,
     ) -> Result<()> {
         let query = "UPDATE users
             SET attributes = jsonb_set(attributes, '{tokens}', attributes->'tokens' || $1::jsonb, true) 

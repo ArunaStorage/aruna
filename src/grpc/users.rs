@@ -117,22 +117,24 @@ impl UserService for UserServiceImpl {
         let (metadata, _, inner_request) = request.into_parts();
 
         // Check empty context if is registered user
-        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let request_token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
         let user_id = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::default()])
+                .check_permissions(&request_token, vec![Context::default()])
                 .await,
             "Unauthorized"
         );
 
-        // Create token
+        // Create token in database
         let middlelayer_request = CreateToken(inner_request);
         let (token_ulid, token) = tonic_internal!(
-            self.database_handler.create_token(
+            self.database_handler
+                .create_token(
                 &user_id,
                 self.token_handler.get_current_pubkey_serial() as i32,
-                middlelayer_request,
-            ),
+                    middlelayer_request.clone(),
+                )
+                .await,
             "Token creation failed"
         );
 
@@ -140,17 +142,18 @@ impl UserService for UserServiceImpl {
         let token_secret = tonic_internal!(
             self.token_handler.sign_user_token(
                 &user_id,
-                token_ulid,
+                &token_ulid,
                 middlelayer_request.0.expires_at,
             ),
             "Token creation failed"
         );
 
         // Create and return response
-        return_with_log!(CreateApiTokenResponse {
-            token: token,
+        let response = CreateApiTokenResponse {
+            token: Some(convert_token_to_proto(&token_ulid, token)),
             token_secret: token_secret,
-        });
+        };
+        return_with_log!(response);
     }
 
     async fn get_api_token(

@@ -82,8 +82,8 @@ impl From<u8> for Action {
 
 #[derive(Debug)]
 pub struct Intent {
-    target: DieselUlid,
-    action: Action,
+    pub target: DieselUlid,
+    pub action: Action,
 }
 
 impl Serialize for Intent {
