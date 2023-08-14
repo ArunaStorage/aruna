@@ -1,11 +1,9 @@
 use anyhow::Result;
-use aruna_rust_api::api::storage::{
-    models::v2::Permission,
-    services::v2::{CreateApiTokenRequest, DeleteApiTokenRequest, GetApiTokenRequest},
+use aruna_rust_api::api::storage::services::v2::{
+    CreateApiTokenRequest, DeleteApiTokenRequest, GetApiTokenRequest,
 };
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
-use prost_wkt_types::Timestamp;
 use std::str::FromStr;
 
 use crate::database::{
@@ -13,21 +11,16 @@ use crate::database::{
     enums::{DbPermissionLevel, ObjectMapping},
 };
 
+#[derive(Clone)]
 pub struct CreateToken(pub CreateApiTokenRequest);
 pub struct DeleteToken(pub DeleteApiTokenRequest);
 pub struct GetToken(pub GetApiTokenRequest);
 
 impl CreateToken {
-    pub fn build_token(
-        &self,
-        pubkey_serial: i32,
-        token_name: String,
-        expiry: Option<Timestamp>,
-        permission: Option<Permission>,
-    ) -> Result<APIToken> {
-        let (resource_id, user_right) = if let Some(perm) = permission {
-            if let Some(resource_id) = perm.resource_id {
-                let object_mapping = ObjectMapping::try_from(resource_id)?;
+    pub fn build_token(&self, pubkey_serial: i32) -> Result<APIToken> {
+        let (resource_id, user_right) = if let Some(perm) = &self.0.permission {
+            if let Some(resource_id) = &perm.resource_id {
+                let object_mapping = ObjectMapping::try_from(resource_id.clone())?;
                 let perm_level = DbPermissionLevel::try_from(perm.permission_level)?;
 
                 (Some(object_mapping), perm_level)
@@ -40,9 +33,9 @@ impl CreateToken {
 
         Ok(APIToken {
             pub_key: pubkey_serial,
-            name: token_name,
+            name: self.0.name.clone(),
             created_at: chrono::Utc::now().naive_utc(),
-            expires_at: if let Some(expiration) = expiry {
+            expires_at: if let Some(expiration) = &self.0.expires_at {
                 NaiveDateTime::from_timestamp_opt(expiration.seconds, 0)
                     .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
             } else {

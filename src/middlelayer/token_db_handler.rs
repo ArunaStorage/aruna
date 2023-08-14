@@ -21,16 +21,12 @@ impl DatabaseHandler {
         let transaction = client.transaction().await?;
         let client = transaction.client();
 
-        // Extract request parameter
-        let name = request.0.name;
-        let expiry = request.0.expires_at;
-        let permission = request.0.permission;
-
         // Generate APIToken and add to user
         let token_ulid = DieselUlid::generate();
-        let token = request.build_token(pubkey_serial, name, expiry, permission)?;
+        let token = request.build_token(pubkey_serial)?;
 
-        User::add_user_token(client, user_id, HashMap::from([(token_ulid, token)])).await?;
+        // Add token to user attributes
+        User::add_user_token(client, user_id, HashMap::from([(token_ulid, &token)])).await?;
 
         // Return token_id and token
         Ok((token_ulid, token))

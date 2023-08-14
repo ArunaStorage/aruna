@@ -1,28 +1,36 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
-use crate::auth::token_handler::TokenHandler;
+use crate::auth::token_handler::{Action, Intent, TokenHandler};
 use crate::caching::cache::Cache;
-use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::{DataProxyFeature, DbPermissionLevel};
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::endpoints_request_types::GetEP;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken};
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use crate::utils::conversions::{get_token_from_md, into_api_token};
+use crate::utils::conversions::{convert_token_to_proto, get_token_from_md, into_api_token};
 use anyhow::anyhow;
+
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
+use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsRequest;
+use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint as ApiEndpointEnum;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
     DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
     DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetNotActivatedUsersRequest,
-    GetNotActivatedUsersResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
-    GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
+    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
+    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetS3CredentialsUserRequest,
+    GetS3CredentialsUserResponse, GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest,
+    GetUserResponse, RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
     UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
+use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::{Request, Response, Status};
 crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>);
 
@@ -130,8 +138,8 @@ impl UserService for UserServiceImpl {
         let (token_ulid, token) = tonic_internal!(
             self.database_handler
                 .create_token(
-                &user_id,
-                self.token_handler.get_current_pubkey_serial() as i32,
+                    &user_id,
+                    self.token_handler.get_current_pubkey_serial() as i32,
                     middlelayer_request.clone(),
                 )
                 .await,
@@ -387,11 +395,98 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    ///ToDo: Rust Doc
     async fn get_s3_credentials_user(
         &self,
-        _request: Request<GetS3CredentialsUserRequest>,
+        request: Request<GetS3CredentialsUserRequest>,
     ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
-        todo!()
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Check empty context if is registered user
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let (user_id, maybe_token) = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![Context::default()])
+                .await,
+            "Unauthorized"
+        );
+
+        // Validate endpoint id format
+        let endpoint_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.endpoint_id),
+            "Invalid endpoint id format"
+        );
+
+        // Fetch endpoint from cache/database
+        let endpoint = tonic_invalid!(
+            self.database_handler
+                .get_endpoint(GetEP(GetEndpointRequest {
+                    endpoint: Some(ApiEndpointEnum::EndpointId(endpoint_ulid.to_string())),
+                }))
+                .await,
+            "Could not find specified endpoint"
+        );
+
+        // Create short-lived token with intent
+        let slt = tonic_internal!(
+            self.authorizer.token_handler.sign_dataproxy_slt(
+                &user_id,
+                if let Some(token_id) = maybe_token {
+                    Some(token_id.to_string())
+                } else {
+                    None
+                }, // Token_Id of user token; None if OIDC
+                Some(Intent {
+                    target: endpoint_ulid,
+                    action: Action::CreateSecrets
+                }),
+            ),
+            "Token signing failed"
+        );
+
+        // Request S3 credentials from Dataproxy
+        let mut endpoint_host_url: String = "".to_string();
+        for endpoint_config in endpoint.host_config.0 .0 {
+            if let DataProxyFeature::PROXY = endpoint_config.feature {
+                endpoint_host_url = endpoint_config.url;
+                break;
+            }
+        }
+
+        let mut dp_conn = tonic_internal!(
+            DataproxyUserServiceClient::connect(endpoint_host_url.clone()).await,
+            "Could not connect to endpoint"
+        );
+
+        // Create GetCredentialsRequest with one-shot token in header ...
+        let mut credentials_request = Request::new(GetCredentialsRequest {});
+        credentials_request.metadata_mut().append(
+            tonic_internal!(
+                AsciiMetadataKey::from_bytes("Authorization".as_bytes()),
+                "Request creation failed"
+            ),
+            tonic_internal!(
+                AsciiMetadataValue::try_from(format!("Bearer {}", slt)),
+                "Request creation failed"
+            ),
+        );
+
+        let response = tonic_internal!(
+            dp_conn.get_credentials(credentials_request).await,
+            "Could not get S3 credentials from Dataproxy"
+        )
+        .into_inner();
+
+        // Return S3 credentials to user
+        let response = GetS3CredentialsUserResponse {
+            s3_access_key: response.access_key,
+            s3_secret_key: response.secret_key,
+            s3_endpoint_url: endpoint_host_url.to_string(),
+        };
+        return_with_log!(response);
     }
 
     async fn get_dataproxy_token_user(

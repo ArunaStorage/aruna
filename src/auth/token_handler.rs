@@ -222,7 +222,6 @@ impl TokenHandler {
     pub fn sign_dataproxy_slt(
         &self,
         user_id: &DieselUlid,     // User id of original
-        endpoint_id: &DieselUlid, // Endpoint the token is signed for
         token_id: Option<String>, // None if original request came with OIDC
         intent: Option<Intent>,   // Some Dataproxy action to restrict token usage scope
     ) -> Result<String> {
@@ -249,11 +248,7 @@ impl TokenHandler {
 
     /// Signing function to create a token for a specific endpoint to fetch all notifications
     /// of its consumer.
-    pub fn sign_proxy_notifications_token(
-        &self,
-        endpoint_id: &DieselUlid,
-        token_id: &DieselUlid,
-    ) -> Result<String> {
+    pub fn sign_proxy_notifications_token(&self, endpoint_id: &DieselUlid) -> Result<String> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
         let signing_key = self.signing_info.read().unwrap();
