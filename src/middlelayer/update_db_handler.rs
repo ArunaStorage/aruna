@@ -1,6 +1,6 @@
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{KeyValueVariant, Object, ObjectWithRelations};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
@@ -71,7 +71,11 @@ impl DatabaseHandler {
                 .await?
                 .ok_or(anyhow!("Dataset does not exist."))?;
             for kv in rm_key_values.0 {
-                object.remove_key_value(transaction_client, kv).await?;
+                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                    object.remove_key_value(transaction_client, kv).await?;
+                } else {
+                    return Err(anyhow!("Cannot remove static labels."));
+                }
             }
         } else {
             return Err(anyhow!(

@@ -1,18 +1,21 @@
 use crate::common::init_db::init_handler;
 use crate::common::test_utils;
+use aruna_rust_api::api::storage::models::v2::KeyValue as APIKeyValue;
 use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
-    UpdateCollectionNameRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
-    UpdateDatasetNameRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
+    UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest, UpdateDatasetDataClassRequest,
+    UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest,
+    UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest,
     UpdateProjectNameRequest,
 };
 use aruna_server::database::crud::CrudDb;
-use aruna_server::database::dsls::object_dsl::Object;
+use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use aruna_server::database::enums::{DataClass, ObjectMapping, ObjectType};
 use aruna_server::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, NameUpdate,
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use diesel_ulid::DieselUlid;
+use postgres_types::Json;
 
 #[tokio::test]
 async fn test_update_dataclass() {
@@ -220,6 +223,160 @@ async fn test_update_description() {
                         .description,
                     *"dataset_description"
                 );
+            }
+            _ => panic!(),
+        };
+    }
+}
+#[tokio::test]
+async fn test_update_keyvals() {
+    // Init
+    let db_handler = init_handler().await;
+    let resources = vec![
+        ObjectMapping::PROJECT(DieselUlid::generate()),
+        ObjectMapping::COLLECTION(DieselUlid::generate()),
+        ObjectMapping::DATASET(DieselUlid::generate()),
+    ];
+    let user = test_utils::new_user(resources.clone());
+    let mut objects = Vec::new();
+    let kv = KeyValue {
+        key: "DELETE".to_string(),
+        value: "This key will be deleted".to_string(),
+        variant: KeyValueVariant::LABEL,
+    };
+    for r in resources {
+        let mut o = test_utils::object_from_mapping(user.id, r);
+        o.key_values = Json(KeyValues(vec![kv.clone()]));
+        objects.push(o);
+    }
+    let client = db_handler.database.get_client().await.unwrap();
+    user.create(&client).await.unwrap();
+    Object::batch_create(&objects, &client).await.unwrap();
+
+    // Test
+    assert!(
+        Object::get_objects(&objects.iter().map(|o| o.id).collect(), &client)
+            .await
+            .unwrap()
+            .into_iter()
+            .all(|o| o.key_values.0 .0.contains(&kv))
+    );
+    let valid = APIKeyValue {
+        key: "ADDED".to_string(),
+        value: "This label gets added".to_string(),
+        variant: 1,
+    };
+    let valid_converted = KeyValue {
+        key: "ADDED".to_string(),
+        value: "This label gets added".to_string(),
+        variant: KeyValueVariant::LABEL,
+    };
+    let static_kv = APIKeyValue {
+        key: "ADDED".to_string(),
+        value: "This label gets added".to_string(),
+        variant: 2,
+    };
+    let static_converted = KeyValue {
+        key: "ADDED".to_string(),
+        value: "This label gets added".to_string(),
+        variant: KeyValueVariant::STATIC_LABEL,
+    };
+    let deleted = APIKeyValue {
+        key: "DELETE".to_string(),
+        value: "This key will be deleted".to_string(),
+        variant: 1,
+    };
+    for r in objects {
+        match r.object_type {
+            ObjectType::PROJECT => {
+                let request = KeyValueUpdate::Project(UpdateProjectKeyValuesRequest {
+                    project_id: r.id.to_string(),
+                    add_key_values: vec![valid.clone(), static_kv.clone()],
+                    remove_key_values: vec![deleted.clone()],
+                });
+                db_handler.update_keyvals(request).await.unwrap();
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&valid_converted),);
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&static_converted),);
+                let err = KeyValueUpdate::Project(UpdateProjectKeyValuesRequest {
+                    project_id: r.id.to_string(),
+                    add_key_values: vec![],
+                    remove_key_values: vec![static_kv.clone()],
+                });
+                assert!(db_handler.update_keyvals(err).await.is_err());
+            }
+            ObjectType::COLLECTION => {
+                let request = KeyValueUpdate::Collection(UpdateCollectionKeyValuesRequest {
+                    collection_id: r.id.to_string(),
+                    add_key_values: vec![valid.clone(), static_kv.clone()],
+                    remove_key_values: vec![deleted.clone()],
+                });
+                db_handler.update_keyvals(request).await.unwrap();
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&valid_converted),);
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&static_converted),);
+                let err = KeyValueUpdate::Collection(UpdateCollectionKeyValuesRequest {
+                    collection_id: r.id.to_string(),
+                    add_key_values: vec![],
+                    remove_key_values: vec![static_kv.clone()],
+                });
+                assert!(db_handler.update_keyvals(err).await.is_err());
+            }
+            ObjectType::DATASET => {
+                let request = KeyValueUpdate::Dataset(UpdateDatasetKeyValuesRequest {
+                    dataset_id: r.id.to_string(),
+                    add_key_values: vec![valid.clone(), static_kv.clone()],
+                    remove_key_values: vec![deleted.clone()],
+                });
+                db_handler.update_keyvals(request).await.unwrap();
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&valid_converted),);
+                assert!(Object::get(r.id, &client)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .key_values
+                    .0
+                     .0
+                    .contains(&static_converted),);
+                let err = KeyValueUpdate::Dataset(UpdateDatasetKeyValuesRequest {
+                    dataset_id: r.id.to_string(),
+                    add_key_values: vec![],
+                    remove_key_values: vec![static_kv.clone()],
+                });
+                assert!(db_handler.update_keyvals(err).await.is_err());
             }
             _ => panic!(),
         };
