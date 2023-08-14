@@ -1,5 +1,7 @@
 use crate::database::crud::CrudDb;
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::enums::ObjectType;
 use ahash::RandomState;
@@ -112,6 +114,7 @@ impl SnapshotRequest {
     }
     pub async fn get_cloned_dataset(dataset: ObjectWithRelations) -> Result<SnapshotDataset> {
         let new_id = DieselUlid::generate();
+
         let mut relations =
             SnapshotRequest::get_other_relations(dataset.outbound.0, new_id).await?;
         let mut belongs_to: Vec<InternalRelation> = dataset
@@ -120,6 +123,15 @@ impl SnapshotRequest {
             .into_iter()
             .map(|r| r.1.clone_relation(&new_id))
             .collect();
+        let version = InternalRelation {
+            id: DieselUlid::generate(),
+            origin_pid: new_id,
+            origin_type: ObjectType::DATASET,
+            relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+            target_pid: dataset.object.id,
+            target_type: ObjectType::DATASET,
+        };
+        relations.push(version);
         relations.append(&mut belongs_to);
         Ok(SnapshotDataset {
             dataset: dataset.object.get_cloned_persistent(new_id),
@@ -135,6 +147,15 @@ impl SnapshotRequest {
         let mut dataset_ulids: Vec<DieselUlid> = Vec::new();
         let mut relations: Vec<InternalRelation> =
             SnapshotRequest::get_other_relations(collection.outbound.0, new_id).await?;
+        let version = InternalRelation {
+            id: DieselUlid::generate(),
+            origin_pid: new_id,
+            origin_type: ObjectType::COLLECTION,
+            relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+            target_pid: collection.object.id,
+            target_type: ObjectType::COLLECTION,
+        };
+        relations.push(version);
         for r in collection.outbound_belongs_to.0 {
             if r.1.target_type == ObjectType::OBJECT {
                 relations.push(r.1);
@@ -146,12 +167,28 @@ impl SnapshotRequest {
             Object::get_objects_with_relations(&dataset_ulids, client).await?;
         let mut datasets = Vec::new();
         for d in datasets_with_relations {
-            let mut outbound = d.outbound.0.into_iter().map(|r| r.1).collect();
-            let mut outbound_belongs_to =
-                d.outbound_belongs_to.0.into_iter().map(|r| r.1).collect();
+            let new_dataset_id = DieselUlid::generate();
+            let new_dataset = d.object.get_cloned_persistent(new_dataset_id);
+            let new_cloned_relation = |r: (DieselUlid, InternalRelation)| -> InternalRelation {
+                InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid: new_dataset_id,
+                    origin_type: ObjectType::DATASET,
+                    relation_name: r.1.relation_name,
+                    target_pid: r.1.target_pid,
+                    target_type: r.1.target_type,
+                }
+            };
+            let mut outbound = d.outbound.0.into_iter().map(new_cloned_relation).collect();
+            let mut outbound_belongs_to = d
+                .outbound_belongs_to
+                .0
+                .into_iter()
+                .map(new_cloned_relation)
+                .collect();
             relations.append(&mut outbound);
             relations.append(&mut outbound_belongs_to);
-            datasets.push(d.object);
+            datasets.push(new_dataset);
         }
         Ok(SnapshotCollection {
             collection: collection.object.get_cloned_persistent(new_id),
