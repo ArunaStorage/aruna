@@ -3,7 +3,10 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
+use http::Method;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use s3s::auth::Credentials;
+use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -116,6 +119,25 @@ impl AuthHandler {
             &Validation::new(jsonwebtoken::Algorithm::EdDSA),
         )?;
         Ok(token.claims)
+    }
+
+    pub async fn check_access(
+        &self,
+        creds: &Credentials,
+        method: &Method,
+        path: &S3Path,
+    ) -> Result<()> {
+        let user = self
+            .cache
+            .get_user_by_key(&creds.access_key)
+            .ok_or_else(|| anyhow!("Unknown user"))?;
+
+        Ok(())
+    }
+
+    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<DieselUlid> {
+        //self.cache.get
+        todo!()
     }
 }
 

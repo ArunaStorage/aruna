@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, PubKey, User},
+    structs::{Object, ObjectLocation, ObjectType, PubKey, User},
 };
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -18,6 +18,14 @@ use s3s::auth::SecretKey;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub enum ResourceString {
+    Project(String),
+    Collection(String, String),
+    Dataset(String, Option<String>, String),
+    Object(String, Option<String>, Option<String>, String),
+}
+
 pub struct Cache {
     // Map with AccessKey as key and User as value
     pub users: DashMap<String, User, RandomState>,
@@ -25,8 +33,8 @@ pub struct Cache {
     pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
     pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
-    // Maps with path as key and set of ObjectIds as value
-    pub paths: DashMap<String, DashSet<DieselUlid>, RandomState>,
+    // Maps with bucket / key as key and set of all ObjectIds as value
+    pub paths: DashMap<ResourceString, DieselUlid, RandomState>,
     // Pubkeys
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
@@ -146,6 +154,168 @@ impl Cache {
         Ok(())
     }
 
+    pub fn get_name_trees(
+        &self,
+        resource_id: &str,
+        variant: ObjectType,
+    ) -> Result<Vec<ResourceString>> {
+        // FIXME: This is really inefficient, but should work in a first iteration
+        let resource_id = DieselUlid::from_str(resource_id)?;
+        let (initial_res, _) = self
+            .resources
+            .get(&resource_id)
+            .ok_or_else(|| anyhow!("Resource not found"))?
+            .clone();
+        match variant {
+            ObjectType::PROJECT => return Ok(vec![ResourceString::Project(initial_res.name)]),
+            ObjectType::COLLECTION => {
+                let mut res = Vec::new();
+                for elem in self.resources.iter() {
+                    if initial_res.children.contains(elem.key()) {
+                        res.push(ResourceString::Collection(
+                            self.resources
+                                .get(elem.key())
+                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                .0
+                                .name
+                                .clone(),
+                            initial_res.name.clone(),
+                        ));
+                    }
+                }
+                return Ok(res);
+            }
+            ObjectType::DATASET => {
+                let mut res = Vec::new();
+                for elem in self.resources.iter() {
+                    if initial_res.children.contains(elem.key()) {
+                        if elem.value().0.object_type == ObjectType::PROJECT {
+                            res.push(ResourceString::Dataset(
+                                self.resources
+                                    .get(elem.key())
+                                    .ok_or_else(|| anyhow!("Resource not found"))?
+                                    .0
+                                    .name
+                                    .clone(),
+                                None,
+                                initial_res.name.clone(),
+                            ));
+                        } else {
+                            for elem2 in self.resources.iter() {
+                                if elem.value().0.children.contains(elem2.key())
+                                    && elem2.value().0.object_type == ObjectType::COLLECTION
+                                {
+                                    res.push(ResourceString::Dataset(
+                                        self.resources
+                                            .get(elem2.key())
+                                            .ok_or_else(|| anyhow!("Resource not found"))?
+                                            .0
+                                            .name
+                                            .clone(),
+                                        Some(
+                                            self.resources
+                                                .get(elem.key())
+                                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                                .0
+                                                .name
+                                                .clone(),
+                                        ),
+                                        initial_res.name.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok(res);
+            }
+            ObjectType::OBJECT => {
+                let mut res = Vec::new();
+                for elem in self.resources.iter() {
+                    if initial_res.children.contains(elem.key()) {
+                        if elem.value().0.object_type == ObjectType::PROJECT {
+                            res.push(ResourceString::Object(
+                                self.resources
+                                    .get(elem.key())
+                                    .ok_or_else(|| anyhow!("Resource not found"))?
+                                    .0
+                                    .name
+                                    .clone(),
+                                None,
+                                None,
+                                initial_res.name.clone(),
+                            ));
+                        } else if elem.value().0.object_type == ObjectType::COLLECTION {
+                            for elem2 in self.resources.iter() {
+                                if elem.value().0.children.contains(elem2.key())
+                                    && elem2.value().0.object_type == ObjectType::COLLECTION
+                                {
+                                    res.push(ResourceString::Object(
+                                        self.resources
+                                            .get(elem2.key())
+                                            .ok_or_else(|| anyhow!("Resource not found"))?
+                                            .0
+                                            .name
+                                            .clone(),
+                                        Some(
+                                            self.resources
+                                                .get(elem.key())
+                                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                                .0
+                                                .name
+                                                .clone(),
+                                        ),
+                                        None,
+                                        initial_res.name.clone(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            for elem2 in self.resources.iter() {
+                                if elem.value().0.children.contains(elem2.key()) {
+                                    for elem3 in self.resources.iter() {
+                                        if elem2.value().0.children.contains(elem3.key()) {
+                                            res.push(ResourceString::Object(
+                                                self.resources
+                                                    .get(elem2.key())
+                                                    .ok_or_else(|| anyhow!("Resource not found"))?
+                                                    .0
+                                                    .name
+                                                    .clone(),
+                                                Some(
+                                                    self.resources
+                                                        .get(elem2.key())
+                                                        .ok_or_else(|| {
+                                                            anyhow!("Resource not found")
+                                                        })?
+                                                        .0
+                                                        .name
+                                                        .clone(),
+                                                ),
+                                                Some(
+                                                    self.resources
+                                                        .get(elem.key())
+                                                        .ok_or_else(|| {
+                                                            anyhow!("Resource not found")
+                                                        })?
+                                                        .0
+                                                        .name
+                                                        .clone(),
+                                                ),
+                                                initial_res.name.clone(),
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok(res);
+            }
+        }
+    }
+
     pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
         Ok(self
             .pubkeys
@@ -226,6 +396,10 @@ impl Cache {
             self.paths.remove(&obj.name);
         };
         Ok(())
+    }
+
+    pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
+        self.users.get(access_key).map(|e| e.value().clone())
     }
 
     pub fn is_user(&self, user_id: DieselUlid) -> bool {

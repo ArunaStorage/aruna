@@ -26,8 +26,13 @@ impl S3Auth for AuthProvider {
     }
 
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
+        if cx.method() == "GET" {}
+
         match cx.credentials() {
-            Some(_) => Ok(()),
+            Some(cred) => match self.cache.auth.read().await.as_ref() {
+                Some(auth) => auth.check_permissions(token),
+                None => Ok(()),
+            },
             None => Err(s3_error!(AccessDenied, "Signature is required")),
         }
     }
