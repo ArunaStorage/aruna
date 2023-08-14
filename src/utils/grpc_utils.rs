@@ -119,7 +119,7 @@ pub fn get_id_and_ctx(ids: Vec<String>) -> Result<(Vec<DieselUlid>, Vec<Context>
         ids.iter()
             .map(
                 |id| -> std::result::Result<(DieselUlid, Context), DecodingError> {
-                    let id = DieselUlid::from_str(&id)?;
+                    let id = DieselUlid::from_str(id)?;
                     let ctx = Context::res_ctx(id, DbPermissionLevel::READ, true);
                     Ok((id, ctx))
                 },

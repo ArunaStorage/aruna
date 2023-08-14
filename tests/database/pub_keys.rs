@@ -82,7 +82,7 @@ async fn test_pub_key_serial_auto_incerement() {
     assert!(dummy_key_002.id > dummy_key_001.id);
 
     // Fetch pubkey by its key
-    for key in vec![dummy_key_001, dummy_key_002] {
+    for key in [dummy_key_001, dummy_key_002] {
         let fetched_key = PubKey::get_by_key(&key.pubkey, client)
             .await
             .unwrap()

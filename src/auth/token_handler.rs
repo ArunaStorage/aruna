@@ -91,14 +91,8 @@ impl Serialize for Intent {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(
-            format!(
-                "{}_{:?}",
-                self.target.to_string(),
-                self.action.clone() as u8
-            )
-            .as_str(),
-        )
+        serializer
+            .serialize_str(format!("{}_{:?}", self.target, self.action.clone() as u8).as_str())
     }
 }
 
@@ -197,11 +191,11 @@ impl TokenHandler {
         let claims = ArunaTokenClaims {
             iss: "aruna".to_string(),
             sub: user_id.to_string(),
-            exp: if expires_at.is_none() {
+            exp: if let Some(expiration) = expires_at {
+                expiration.seconds as usize
+            } else {
                 // Add 10 years to token lifetime if  expiry unspecified
                 (Utc::now().timestamp() as usize) + 315360000
-            } else {
-                expires_at.unwrap().seconds as usize
             },
             tid: Some(token_id.to_string()),
             it: None,
@@ -327,7 +321,7 @@ impl TokenHandler {
                 // Intent is mandatory with Dataproxy signed tokens
                 if let Some(intent) = claims.claims.it {
                     // Check if endpoint id matches the id associated with the pubkey
-                    if !(endpoint_id == intent.target) {
+                    if endpoint_id != intent.target {
                         bail!("Invalid intent target id")
                     }
 

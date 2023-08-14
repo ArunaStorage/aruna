@@ -159,7 +159,7 @@ impl UserService for UserServiceImpl {
         // Create and return response
         let response = CreateApiTokenResponse {
             token: Some(convert_token_to_proto(&token_ulid, token)),
-            token_secret: token_secret,
+            token_secret,
         };
         return_with_log!(response);
     }
@@ -474,11 +474,7 @@ impl UserService for UserServiceImpl {
         let slt = tonic_internal!(
             self.authorizer.token_handler.sign_dataproxy_slt(
                 &user_id,
-                if let Some(token_id) = maybe_token {
-                    Some(token_id.to_string())
-                } else {
-                    None
-                }, // Token_Id of user token; None if OIDC
+                maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
                 Some(Intent {
                     target: endpoint_ulid,
                     action: Action::CreateSecrets

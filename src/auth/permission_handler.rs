@@ -15,7 +15,7 @@ impl PermissionHandler {
     pub fn new(cache: Arc<Cache>, token_handler: Arc<TokenHandler>) -> Self {
         Self {
             cache: cache.clone(),
-            token_handler: token_handler, //Arc::new(TokenHandler::new(cache, realm_info.to_string())),
+            token_handler, //Arc::new(TokenHandler::new(cache, realm_info.to_string())),
         }
     }
 
