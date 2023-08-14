@@ -153,7 +153,7 @@ pub enum EndpointStatus {
 }
 
 impl TryFrom<i32> for DbPermissionLevel {
-    type Error = Box<dyn Error + Sync + Send>;
+    type Error = anyhow::Error;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
@@ -163,7 +163,7 @@ impl TryFrom<i32> for DbPermissionLevel {
             4 => Ok(DbPermissionLevel::APPEND),
             5 => Ok(DbPermissionLevel::WRITE),
             6 => Ok(DbPermissionLevel::ADMIN),
-            _ => Err(anyhow!("Unknown permission level").into()),
+            _ => Err(anyhow!("Unknown permission level")),
         }
     }
 }

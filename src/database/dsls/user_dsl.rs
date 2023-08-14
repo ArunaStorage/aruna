@@ -1,4 +1,4 @@
-use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -32,7 +32,6 @@ pub struct APIToken {
     pub created_at: NaiveDateTime,
     pub expires_at: NaiveDateTime,
     pub object_id: Option<ObjectMapping<DieselUlid>>,
-    pub object_type: ObjectType,
     pub user_rights: DbPermissionLevel,
 }
 
@@ -232,7 +231,7 @@ impl User {
     pub async fn add_user_token(
         client: &Client,
         user_id: &DieselUlid,
-        token: HashMap<DieselUlid, APIToken>,
+        token: HashMap<DieselUlid, APIToken, RandomState>,
     ) -> Result<()> {
         let query = "UPDATE users
             SET attributes = jsonb_set(attributes, '{tokens}', attributes->'tokens' || $1::jsonb, true) 
@@ -256,7 +255,13 @@ impl User {
             .await?;
         Ok(())
     }
-
+    pub async fn remove_all_tokens(client: &Client, user_id: &DieselUlid) -> Result<()> {
+        let query =
+            "UPDATE users SET attributes = jsonb_set(attributes, '{tokens}', '{}') WHERE id = $1;";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[user_id]).await?;
+        Ok(())
+    }
     pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
         let query = "UPDATE users SET active = false WHERE id = $1";
         let prepared = client.prepare(query).await?;

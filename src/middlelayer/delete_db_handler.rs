@@ -40,8 +40,10 @@ impl DatabaseHandler {
                 vec![id]
             }
         };
-        let result = Object::get_objects_with_relations(&resources, transaction_client).await?;
         transaction.commit().await?;
+
+        let client = self.database.get_client().await?;
+        let result = Object::get_objects_with_relations(&resources, &client).await?;
         Ok(result)
     }
 }

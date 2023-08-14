@@ -1,4 +1,4 @@
-use aruna_server::database::enums::ObjectType;
+use crate::common::init_db;
 use aruna_server::database::{
     crud::CrudDb,
     dsls::user_dsl::{APIToken, User, UserAttributes},
@@ -9,12 +9,10 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use tokio_postgres::GenericClient;
 
-mod common;
-
 #[tokio::test]
 async fn create_user_test() {
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -50,7 +48,7 @@ async fn create_user_test() {
 
 #[tokio::test]
 async fn update_user_name_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -91,7 +89,7 @@ async fn update_user_name_test() {
 
 #[tokio::test]
 async fn update_user_email_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -132,7 +130,7 @@ async fn update_user_email_test() {
 
 #[tokio::test]
 async fn update_user_admin_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -173,7 +171,7 @@ async fn update_user_admin_test() {
 
 #[tokio::test]
 async fn update_user_service_account_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -214,7 +212,7 @@ async fn update_user_service_account_test() {
 
 #[tokio::test]
 async fn delete_user_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -247,7 +245,7 @@ async fn delete_user_test() {
 
 #[tokio::test]
 async fn add_permission_user_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -310,7 +308,7 @@ async fn add_permission_user_test() {
 
 #[tokio::test]
 async fn remove_user_permission_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let perm1 = DieselUlid::generate();
@@ -415,7 +413,7 @@ async fn remove_user_permission_test() {
 
 #[tokio::test]
 async fn user_token_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let perm1 = DieselUlid::generate();
@@ -441,7 +439,6 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: Some(ObjectMapping::PROJECT(DieselUlid::generate())),
-                        object_type: ObjectType::COLLECTION,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -453,7 +450,6 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: Some(ObjectMapping::COLLECTION(DieselUlid::generate())),
-                        object_type: ObjectType::OBJECT,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -465,7 +461,6 @@ async fn user_token_test() {
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: chrono::Utc::now().naive_utc(),
                         object_id: Some(ObjectMapping::DATASET(DieselUlid::generate())),
-                        object_type: ObjectType::DATASET,
                         user_rights: aruna_server::database::enums::DbPermissionLevel::ADMIN,
                     },
                 ),
@@ -507,25 +502,7 @@ async fn user_token_test() {
         2
     );
 
-    User::remove_user_token(&client, &user.id, &perm1)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        User::get(user.id, &client)
-            .await
-            .unwrap()
-            .unwrap()
-            .attributes
-            .0
-            .tokens
-            .len(),
-        1
-    );
-
-    User::remove_user_token(&client, &user.id, &perm3)
-        .await
-        .unwrap();
+    User::remove_all_tokens(&client, &user.id).await.unwrap();
 
     assert_eq!(
         User::get(user.id, &client)
@@ -542,7 +519,7 @@ async fn user_token_test() {
 
 #[tokio::test]
 async fn user_status_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

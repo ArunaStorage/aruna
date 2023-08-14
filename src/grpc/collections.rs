@@ -11,8 +11,8 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateCollectionResponse, DeleteCollectionRequest,
@@ -122,9 +122,35 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn get_collections(
         &self,
-        _request: Request<GetCollectionsRequest>,
+        request: Request<GetCollectionsRequest>,
     ) -> Result<Response<GetCollectionsResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = get_id_and_ctx(request.collection_ids)?;
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, ctxs).await,
+            "Unauthorized"
+        );
+
+        let res: Result<Vec<Collection>> = ids
+            .iter()
+            .map(|id| -> Result<Collection> {
+                let coll = query(&self.cache, id)?;
+                coll.into_inner()
+            })
+            .collect();
+
+        let response = GetCollectionsResponse { collections: res? };
+
+        return_with_log!(response);
     }
 
     async fn delete_collection(
@@ -154,7 +180,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         for o in updates {
-            self.cache.update_object(&o.object.id, o.clone());
+            self.cache.remove_object(&o.object.id)
         }
 
         let response = DeleteCollectionResponse {};

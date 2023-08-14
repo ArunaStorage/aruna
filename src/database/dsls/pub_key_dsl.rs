@@ -45,3 +45,19 @@ impl CrudDb for PubKey {
         Ok(())
     }
 }
+
+impl PubKey {
+    pub async fn get_max_id(client: &Client) -> Result<i16> {
+        let query = "SELECT MAX(id) FROM pub_keys;";
+        let prepared = client.prepare(query).await?;
+        let res = client.query_opt(&prepared, &[]).await?.map(|r| r.get(0));
+        Ok(res.unwrap_or(0))
+    }
+}
+
+impl Eq for PubKey {}
+impl PartialEq for PubKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.pubkey == other.pubkey && self.proxy == other.proxy
+    }
+}

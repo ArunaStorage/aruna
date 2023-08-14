@@ -4,7 +4,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
 use crate::database::enums::ObjectType;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -25,9 +25,6 @@ impl DatabaseHandler {
         let object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
-        // Fetch all object paths
-        let object_hierarchies = object.fetch_object_hierarchies(transaction_client).await?;
-
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => DashMap::default(),
@@ -47,6 +44,18 @@ impl DatabaseHandler {
                     DashMap::from_iter([(parent.get_id()?, ir)])
                 }
             };
+
+        // Fetch all object paths
+        let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
+            vec![Hierarchy {
+                project_id: object.id.to_string(),
+                collection_id: None,
+                dataset_id: None,
+                object_id: None,
+            }]
+        } else {
+            object.fetch_object_hierarchies(transaction_client).await?
+        };
 
         // Create DTO which combines the object and its internal relations
         let object_with_rel = ObjectWithRelations {

@@ -11,8 +11,8 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::IntoGenericInner;
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse,
@@ -121,9 +121,35 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn get_datasets(
         &self,
-        _request: Request<GetDatasetsRequest>,
+        request: Request<GetDatasetsRequest>,
     ) -> Result<Response<GetDatasetsResponse>> {
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+
+        let (ids, ctxs): (Vec<DieselUlid>, Vec<Context>) = get_id_and_ctx(request.dataset_ids)?;
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, ctxs).await,
+            "Unauthorized"
+        );
+
+        let res: Result<Vec<Dataset>> = ids
+            .iter()
+            .map(|id| -> Result<Dataset> {
+                let ds = query(&self.cache, id)?;
+                ds.into_inner()
+            })
+            .collect();
+
+        let response = GetDatasetsResponse { datasets: res? };
+
+        return_with_log!(response);
     }
 
     async fn delete_dataset(
@@ -153,7 +179,7 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         for o in updates {
-            self.cache.update_object(&o.object.id, o.clone());
+            self.cache.remove_object(&o.object.id);
         }
 
         let response = DeleteDatasetResponse {};
