@@ -10,11 +10,11 @@ use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use s3s::auth::SecretKey;
+use s3s::{auth::SecretKey, path::S3Path};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -24,6 +24,42 @@ pub enum ResourceString {
     Collection(String, String),
     Dataset(String, Option<String>, String),
     Object(String, Option<String>, Option<String>, String),
+}
+
+impl TryFrom<S3Path> for ResourceString {
+    type Error = anyhow::Error;
+    fn try_from(value: S3Path) -> Result<Self> {
+        if let Some(b, k) = value.as_object() {
+            let mut results = Vec::new();
+
+            let pathvec = k.split('/').collect::<Vec<&str>>();
+            match pathvec.len() {
+                0 => {
+                    results.push(ResourceString::Project(b.to_string()));
+                }
+                1 => {
+                    results.push(ResourceString::Collection(
+                        b.to_string(),
+                        pathvec[0].to_string(),
+                    ));
+                    results.push(ResourceString::Dataset(
+                        b.to_string(),
+                        None,
+                        pathvec[0].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        None,
+                        pathvec[0].to_string(),
+                    ));
+                }
+            }
+            return Ok(results);
+        } else {
+            return Err(anyhow!("Invalid path"));
+        }
+    }
 }
 
 pub struct Cache {
@@ -378,11 +414,14 @@ impl Cache {
                 l.upsert(&persistence.get_client().await?).await?;
             }
         }
-        self.paths.insert(
-            object.name.to_string(),
-            DashSet::from_iter(object.clone().children.into_iter()),
-        );
+        let object_id = object.id.clone();
+        let obj_type = object.object_type.clone();
         self.resources.insert(object.id, (object, location));
+        self.paths.retain(|_, v| v != &object_id);
+        let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
+        for e in tree {
+            self.paths.insert(e, object_id);
+        }
         Ok(())
     }
 
@@ -391,10 +430,8 @@ impl Cache {
             Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
         }
-        let old = self.resources.remove(&id);
-        if let Some((_, (obj, _))) = old {
-            self.paths.remove(&obj.name);
-        };
+        self.resources.remove(&id);
+        self.paths.retain(|_, v| v != &id);
         Ok(())
     }
 
