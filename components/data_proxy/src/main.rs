@@ -1,8 +1,12 @@
 use anyhow::Result;
 use caching::cache::Cache;
-use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use data_backends::{
+    s3_backend::S3Backend,
+    storage_backend::{self, StorageBackend},
+};
 use s3_frontend::impersonating_client::ImpersonatingClient;
 use std::{io::Write, str::FromStr, sync::Arc};
+use tokio::try_join;
 
 // mod bundler;
 mod caching;
@@ -27,15 +31,9 @@ async fn main() -> Result<()> {
     };
     let with_persistence = dotenvy::var("DATA_PROXY_PERSISTENCE")?.parse::<bool>()?;
 
-    let _hostname = dotenvy::var("PROXY_HOSTNAME")?;
-    // External S3 server
-    let _proxy_data_host = dotenvy::var("PROXY_DATA_HOST")?;
+    let hostname = dotenvy::var("DATA_PROXY_DATA_SERVER")?;
     // ULID of the endpoint
-    let endpoint_id = dotenvy::var("ENDPOINT_ID")?;
-    // Aruna Backend
-    let _backend_host = dotenvy::var("BACKEND_HOST")?;
-    // Internal backchannel Aruna -> Dproxy
-    let _internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL")?;
+    let endpoint_id = dotenvy::var("DATA_PROXY_ENDPOINT_ID")?;
 
     env_logger::Builder::new()
         .format(|buf, record| {
@@ -59,16 +57,29 @@ async fn main() -> Result<()> {
         endpoint_id.clone(),
         aruna_host_url.clone(),
     ));
-    let cache = Arc::new(
-        Cache::new(
-            aruna_host_url,
-            with_persistence,
-            diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
-        )
-        .await?,
-    );
+    let cache = Cache::new(
+        aruna_host_url,
+        with_persistence,
+        diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
+    )
+    .await?;
 
-    Ok(())
+    let s3_server = s3_frontend::s3server::S3Server::new(
+        "0.0.0.0:9000",
+        hostname,
+        storage_backend,
+        imp_client,
+        cache,
+    )
+    .await?;
+
+    match try_join!(s3_server.run()) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            log::error!("{}", err);
+            Err(err)
+        }
+    }
 }
 //      {
 //         Ok(value) => value,

@@ -63,7 +63,7 @@ impl Cache {
         };
 
         let auth_handler = AuthHandler::new(cache.clone(), self_id);
-        cache.set_auth(auth_handler);
+        cache.set_auth(auth_handler).await;
         Ok(cache)
     }
 

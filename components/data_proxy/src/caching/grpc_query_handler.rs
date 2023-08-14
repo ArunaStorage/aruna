@@ -241,14 +241,14 @@ impl GrpcQueryHandler {
                 let uid = DieselUlid::from_str(&message.user_id)?;
                 if self.cache.is_user(uid) {
                     let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                    self.cache.upsert_user(user_info.clone());
+                    self.cache.upsert_user(user_info.clone()).await?;
                 };
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
 
                 if self.cache.is_user(uid) {
-                    self.cache.remove_user(uid);
+                    self.cache.remove_user(uid).await?;
                 };
             }
             EventVariant::Unspecified => (),
