@@ -10,10 +10,10 @@ use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
-use aruna_rust_api::api::storage::services::v2::Pubkey;
 use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
 use std::{
     str::FromStr,
@@ -33,8 +33,8 @@ pub struct Cache {
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     pub persistence: Option<Arc<Database>>,
-    pub notifications: Option<GrpcQueryHandler>,
-    pub auth: Option<AuthHandler>,
+    pub notifications: Option<Arc<GrpcQueryHandler>>,
+    pub auth: Option<Arc<AuthHandler>>,
 }
 
 impl Cache {
@@ -59,13 +59,13 @@ impl Cache {
             auth: None,
         }));
         let notifications = match notifications_url {
-            Some(s) => Some(GrpcQueryHandler::new(s, cache.clone()).await?),
+            Some(s) => Some(Arc::new(GrpcQueryHandler::new(s, cache.clone()).await?)),
             None => None,
         };
 
         let auth_handler = AuthHandler::new(cache.clone(), self_id);
         cache.write().unwrap().notifications = notifications;
-        cache.write().unwrap().auth = Some(auth_handler);
+        cache.write().unwrap().auth = Some(Arc::new(auth_handler));
         Ok(cache)
     }
 
@@ -78,6 +78,43 @@ impl Cache {
                 .secret
                 .as_ref(),
         ))
+    }
+
+    /// Requests a secret key from the cache
+    pub async fn create_secret(
+        &self,
+        user: GrpcUser,
+        access_key: Option<String>,
+    ) -> Result<(String, String)> {
+        let new_secret = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect::<String>();
+
+        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+
+        let perm = user
+            .extract_access_key_permissions()?
+            .iter()
+            .find(|e| e.0 == access_key.as_str())
+            .ok_or_else(|| anyhow!("Access key not found"))?
+            .1
+            .clone();
+
+        let user_access = User {
+            access_key: access_key.to_string(),
+            user_id: DieselUlid::from_str(&user.id)?,
+            secret: new_secret.clone(),
+            permissions: perm,
+        };
+        if let Some(persistence) = &self.persistence {
+            user_access.upsert(&persistence.get_client().await?).await?;
+        }
+
+        self.users.insert(access_key.to_string(), user_access);
+
+        Ok((access_key, new_secret))
     }
 
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {

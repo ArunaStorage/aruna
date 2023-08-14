@@ -1,19 +1,21 @@
-use std::sync::{Arc, RwLock};
-
+use crate::database::persistence::WithGenericBytes;
+use crate::{
+    caching::{auth::get_token_from_md, cache::Cache},
+    structs::User,
+};
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::DataproxyUserService, GetCredentialsRequest,
     GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
     PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
 };
-
-use crate::caching::cache::Cache;
+use std::sync::Arc;
 
 pub struct DataProxyUserService {
-    pub cache: Arc<RwLock<Cache>>,
+    pub cache: Arc<Cache>,
 }
 
 impl DataProxyUserService {
-    pub fn new(cache: Arc<RwLock<Cache>>) -> Self {
+    pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
 }
@@ -28,9 +30,45 @@ impl DataproxyUserService for DataProxyUserService {
     /// specific S3AccessKey and S3SecretKey
     async fn get_credentials(
         &self,
-        _request: tonic::Request<GetCredentialsRequest>,
+        request: tonic::Request<GetCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
-        todo!()
+        if let Some(a) = self.cache.clone().auth.clone() {
+            let token = get_token_from_md(&request.metadata())
+                .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+
+            let (u, tid) = a.check_permissions(&token).map_err(|e| {
+                log::debug!("Error checking permissions: {}", e);
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
+
+            if let Some(q_handler) = self.cache.clone().notifications.clone() {
+                let user = q_handler.get_user(u, "".to_string()).await.map_err(|e| {
+                    log::debug!("Error getting user from queue handler {e}");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
+
+                let (access_key, secret_key) = self
+                    .cache
+                    .clone()
+                    .create_secret(user, tid)
+                    .await
+                    .map_err(|e| {
+                        log::debug!("Error creating secret: {}", e);
+                        tonic::Status::unauthenticated("Unable to authenticate user")
+                    })?;
+
+                return Ok(tonic::Response::new(GetCredentialsResponse {
+                    access_key,
+                    secret_key,
+                }));
+            };
+        } else {
+            return Err(tonic::Status::unauthenticated(
+                "Unable to authenticate user",
+            ));
+        }
+
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     /// PushReplica

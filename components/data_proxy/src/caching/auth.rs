@@ -1,5 +1,6 @@
 use super::cache::Cache;
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
@@ -7,6 +8,7 @@ use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use tonic::metadata::MetadataMap;
 
 pub struct AuthHandler {
     pub cache: Arc<RwLock<Cache>>,
@@ -91,7 +93,7 @@ impl AuthHandler {
         Self { cache, self_id }
     }
 
-    pub fn check_permissions(&self, token: &str) -> Result<Option<DieselUlid>> {
+    pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
@@ -102,13 +104,13 @@ impl AuthHandler {
 
                 if let Some(it) = claims.it {
                     if it.action == Action::CreateSecrets && it.target == self.self_id {
-                        return Ok(Some(DieselUlid::from_str(&claims.sub)?));
+                        return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
                     }
                 }
 
-                Ok(None)
+                bail!("Invalid permissions")
             }
-            Err(_) => Ok(None),
+            Err(_) => bail!("Invalid permissions"),
         }
     }
 
@@ -120,4 +122,41 @@ impl AuthHandler {
         )?;
         Ok(token.claims)
     }
+}
+
+pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
+    let token_string = md
+        .get("Authorization")
+        .ok_or(anyhow!("Metadata token not found"))?
+        .to_str()?;
+
+    let split = token_string.split(' ').collect::<Vec<_>>();
+
+    if split.len() != 2 {
+        log::debug!(
+            "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
+            split.len()
+        );
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[0] != "Bearer" {
+        log::debug!(
+            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
+            split[0]
+        );
+
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[1].is_empty() {
+        log::debug!(
+            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
+            split[1].len()
+        );
+
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    Ok(split[1].to_string())
 }

@@ -101,7 +101,7 @@ impl GrpcQueryHandler {
 }
 
 impl GrpcQueryHandler {
-    async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
+    pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let user = self
             .user_service
             .clone()
