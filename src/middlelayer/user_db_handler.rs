@@ -37,27 +37,21 @@ impl DatabaseHandler {
         Ok((user_id, user))
     }
     pub async fn deactivate_user(&self, request: DeactivateUser) -> Result<(DieselUlid, User)> {
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let client = transaction.client();
+        let client = self.database.get_client().await?;
         let id = request.get_id()?;
-        User::deactivate_user(client, &id).await?;
-        let user = User::get(id, client)
+        User::deactivate_user(&client, &id).await?;
+        let user = User::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
-        transaction.commit().await?;
         Ok((id, user))
     }
     pub async fn activate_user(&self, request: ActivateUser) -> Result<(DieselUlid, User)> {
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let client = transaction.client();
+        let client = self.database.get_client().await?;
         let id = request.get_id()?;
-        User::activate_user(client, &id).await?;
-        let user = User::get(id, client)
+        User::activate_user(&client, &id).await?;
+        let user = User::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
-        transaction.commit().await?;
         Ok((id, user))
     }
     pub async fn update_display_name(
@@ -65,15 +59,12 @@ impl DatabaseHandler {
         request: UpdateUserName,
         user_id: DieselUlid,
     ) -> Result<User> {
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let client = transaction.client();
+        let client = self.database.get_client().await?;
         let name = request.get_name();
-        User::update_display_name(client, &user_id, name).await?;
-        let user = User::get(user_id, client)
+        User::update_display_name(&client, &user_id, name).await?;
+        let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
-        transaction.commit().await?;
         Ok(user)
     }
     pub async fn update_email(
@@ -81,15 +72,12 @@ impl DatabaseHandler {
         request: UpdateUserEmail,
         user_id: DieselUlid,
     ) -> Result<User> {
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let client = transaction.client();
+        let client = self.database.get_client().await?;
         let email = request.get_email();
-        User::update_email(client, &user_id, email).await?;
-        let user = User::get(user_id, client)
+        User::update_email(&client, &user_id, email).await?;
+        let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
-        transaction.commit().await?;
         Ok(user)
     }
 }

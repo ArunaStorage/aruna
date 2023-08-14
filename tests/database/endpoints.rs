@@ -5,29 +5,28 @@ use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-mod common;
+use crate::common::{init_db, test_utils};
 
 #[tokio::test]
 async fn create_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
 
-    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-
-    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test".to_string(),
+        name: "create_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
-        documentation_object: doc_obj,
+        documentation_object: Some(doc_obj),
         is_public: true,
         is_default: false,
         status: EndpointStatus::INITIALIZING,
@@ -36,28 +35,29 @@ async fn create_test() {
 
     let new = Endpoint::get(ep_id, client).await.unwrap().unwrap();
     assert_eq!(endpoint, new);
+    Endpoint::delete_by_id(&ep_id, client).await.unwrap(); // Needed because of unique constraints
 }
 
 #[tokio::test]
 async fn delete_test() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test".to_string(),
+        name: "delete_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
-        documentation_object: doc_obj,
+        documentation_object: Some(doc_obj),
         is_public: true,
         is_default: false,
         status: EndpointStatus::INITIALIZING,
@@ -70,30 +70,30 @@ async fn delete_test() {
 }
 #[tokio::test]
 async fn get_by_tests() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = common::test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = common::test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
-
+    let unique_name = DieselUlid::generate().to_string(); // Endpoint names need to be unique
     let endpoint = Endpoint {
         id: ep_id,
-        name: "test_123_unique".to_string(),
+        name: unique_name.clone(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
-        documentation_object: doc_obj,
+        documentation_object: Some(doc_obj),
         is_public: true,
         is_default: true,
         status: EndpointStatus::INITIALIZING,
     };
     endpoint.create(client).await.unwrap();
 
-    let new = Endpoint::get_by_name("test_123_unique".to_string(), client)
+    let new = Endpoint::get_by_name(unique_name, client)
         .await
         .unwrap()
         .unwrap();
@@ -103,4 +103,5 @@ async fn get_by_tests() {
     let default = Endpoint::get_default(client).await.unwrap().unwrap();
 
     assert_eq!(endpoint, default);
+    Endpoint::delete_by_id(&ep_id, client).await.unwrap(); // Needed because of unique constraints
 }

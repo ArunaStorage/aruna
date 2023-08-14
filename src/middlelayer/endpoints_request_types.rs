@@ -1,4 +1,5 @@
 use crate::database::dsls::endpoint_dsl::Endpoint;
+use crate::database::dsls::pub_key_dsl::PubKey;
 use crate::database::enums::EndpointStatus;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::{
@@ -14,19 +15,24 @@ pub struct DeleteEP(pub DeleteEndpointRequest);
 pub struct GetEP(pub GetEndpointRequest);
 
 impl CreateEP {
-    pub fn build_endpoint(&self) -> Result<Endpoint> {
+    pub fn build_endpoint(&self) -> Result<(Endpoint, PubKey)> {
         let id = DieselUlid::generate();
         let endpoint = Endpoint {
             id,
             name: self.0.name.clone(),
             endpoint_variant: self.0.ep_variant.try_into()?,
             host_config: Json(self.0.host_configs.clone().try_into()?),
-            documentation_object: Default::default(),
+            documentation_object: None,
             is_public: self.0.is_public,
             is_default: false, // TODO: Add API request to change default Endpoint
             status: EndpointStatus::INITIALIZING,
         };
-        Ok(endpoint)
+        let pubkey = PubKey {
+            id: 0,
+            proxy: Some(id),
+            pubkey: self.0.pubkey.clone(),
+        };
+        Ok((endpoint, pubkey))
     }
 }
 

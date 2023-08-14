@@ -108,7 +108,7 @@ impl UserService for UserServiceImpl {
         );
         let (user_id, user) = tonic_internal!(
             self.database_handler.activate_user(request).await,
-            "Internal deactivate user error"
+            "Internal activate user error"
         );
         self.cache.update_user(&user_id, user);
 
@@ -198,9 +198,35 @@ impl UserService for UserServiceImpl {
 
     async fn get_api_tokens(
         &self,
-        _request: Request<GetApiTokensRequest>,
+        request: Request<GetApiTokensRequest>,
     ) -> Result<Response<GetApiTokensResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        )
+        .ok_or_else(|| Status::internal("User id not returned"))?;
+        let user = tonic_invalid!(
+            self.cache
+                .get_user(&user_id)
+                .ok_or_else(|| anyhow!("Not found")),
+            "User not found"
+        );
+        let token = Vec::from_iter(
+            user.attributes
+                .0
+                .tokens
+                .into_iter()
+                .map(|t| into_api_token(t.0, t.1)),
+        );
+        let response = GetApiTokensResponse { token };
+
+        return_with_log!(response);
     }
 
     async fn delete_api_token(
@@ -229,9 +255,25 @@ impl UserService for UserServiceImpl {
 
     async fn delete_api_tokens(
         &self,
-        _request: Request<DeleteApiTokensRequest>,
+        request: Request<DeleteApiTokensRequest>,
     ) -> Result<Response<DeleteApiTokensResponse>, Status> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        )
+        .ok_or_else(|| Status::internal("User id not returned"))?;
+        let user = tonic_internal!(
+            self.database_handler.delete_all_tokens(user_id).await,
+            "Internal database request error"
+        );
+        self.cache.update_user(&user_id, user);
+        return_with_log!(DeleteApiTokensResponse {});
     }
 
     async fn get_user(
@@ -398,6 +440,7 @@ impl UserService for UserServiceImpl {
     ///ToDo: Rust Doc
     async fn get_s3_credentials_user(
         &self,
+        request: Request<GetS3CredentialsUserRequest>,
         request: Request<GetS3CredentialsUserRequest>,
     ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
         log_received!(&request);

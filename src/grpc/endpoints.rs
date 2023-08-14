@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::caching::structs::PubKey;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
 use crate::utils::conversions::get_token_from_md;
@@ -12,6 +13,7 @@ use aruna_rust_api::api::storage::services::v2::{
     GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse, GetEndpointsRequest,
     GetEndpointsResponse,
 };
+use jsonwebtoken::DecodingKey;
 use std::sync::Arc;
 use tonic::{Request, Response, Result, Status};
 
@@ -36,9 +38,16 @@ impl EndpointService for EndpointServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
-        let ep = tonic_invalid!(
+        let (ep, pk) = tonic_invalid!(
             self.database_handler.create_endpoint(request).await,
             "Invalid create endpoint request"
+        );
+        self.cache.add_pubkey(
+            pk.id as i32,
+            PubKey::DataProxy(tonic_invalid!(
+                DecodingKey::from_ed_components(&pk.pubkey),
+                "Invalid pubkey"
+            )),
         );
 
         let result = CreateEndpointResponse {

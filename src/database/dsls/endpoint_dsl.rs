@@ -15,7 +15,7 @@ pub struct Endpoint {
     pub name: String,
     pub host_config: Json<HostConfigs>,
     pub endpoint_variant: EndpointVariant,
-    pub documentation_object: DieselUlid,
+    pub documentation_object: Option<DieselUlid>,
     pub is_public: bool,
     pub is_default: bool,
     pub status: EndpointStatus,

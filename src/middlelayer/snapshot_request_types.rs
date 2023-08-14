@@ -12,29 +12,32 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tokio_postgres::Client;
 
+#[derive(Debug)]
 pub enum SnapshotRequest {
     Project(ArchiveProjectRequest),
     Collection(SnapshotCollectionRequest),
     Dataset(SnapshotDatasetRequest),
 }
-
+#[derive(Debug)]
 pub enum SnapshotResponse {
     ArchiveProject(SnapshotProject),
     SnapshotCollection(SnapshotCollection),
     SnapshotDataset(SnapshotDataset),
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SnapshotDataset {
     pub dataset: Object,
     pub relations: Vec<InternalRelation>,
 }
 
+#[derive(Clone, Debug)]
 pub struct SnapshotCollection {
     pub collection: Object,
     pub datasets: Vec<Object>,
     pub relations: Vec<InternalRelation>,
 }
 
+#[derive(Clone, Debug)]
 pub struct SnapshotProject {
     pub resource_ids: Vec<DieselUlid>,
 }
@@ -163,20 +166,23 @@ impl SnapshotRequest {
         let mut collections: Vec<DieselUlid> = Vec::new();
         let mut datasets: Vec<DieselUlid> = Vec::new();
         for resource in project.outbound_belongs_to.0 {
-            if resource.1.origin_type == ObjectType::COLLECTION {
+            if resource.1.target_type == ObjectType::COLLECTION {
                 collections.push(resource.0);
-            } else if resource.1.origin_type == ObjectType::DATASET {
+            } else if resource.1.target_type == ObjectType::DATASET {
                 datasets.push(resource.0);
             } else {
                 continue;
             };
         }
-        let collections_with_relations =
-            Object::get_objects_with_relations(&collections, client).await?;
-        for collection in &collections_with_relations {
-            for resource in &collection.outbound_belongs_to.0 {
-                if resource.target_type == ObjectType::DATASET {
-                    datasets.push(resource.target_pid);
+
+        if !collections.is_empty() {
+            let collections_with_relations =
+                Object::get_objects_with_relations(&collections, client).await?;
+            for collection in &collections_with_relations {
+                for resource in &collection.outbound_belongs_to.0 {
+                    if resource.target_type == ObjectType::DATASET {
+                        datasets.push(resource.target_pid);
+                    }
                 }
             }
         }

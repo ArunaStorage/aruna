@@ -1,13 +1,12 @@
+use crate::common::init_db;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tokio_postgres::GenericClient;
 
-mod common;
-
 #[tokio::test]
 async fn test_crud() {
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
@@ -34,17 +33,20 @@ async fn test_crud() {
     key_two.create(client).await.unwrap();
     key_three.create(client).await.unwrap();
 
+    let comp = [&key_one, &key_two, &key_three];
     let all = PubKey::all(client).await.unwrap();
 
-    assert_eq!(all.len(), 3);
+    assert!(comp.iter().all(|pk| all.contains(pk)));
 
     key_one.delete(client).await.unwrap();
     key_two.delete(client).await.unwrap();
     key_three.delete(client).await.unwrap();
 
-    let empty = PubKey::all(client).await.unwrap();
+    let rest = PubKey::all(client).await.unwrap();
 
-    assert!(empty.is_empty())
+    assert!([&key_one, &key_two, &key_three]
+        .iter()
+        .all(|k| !rest.contains(k)))
 }
 
 #[tokio::test]

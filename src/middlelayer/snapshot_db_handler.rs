@@ -9,21 +9,18 @@ impl DatabaseHandler {
         &self,
         request: SnapshotRequest,
     ) -> Result<(DieselUlid, Vec<ObjectWithRelations>)> {
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
+        let client = self.database.get_client().await?;
         let id = request.get_id()?;
-        let resource = Object::get_object_with_relations(&id, transaction_client).await?;
+        let resource = Object::get_object_with_relations(&id, &client).await?;
         let (new_object_id, snapshot_resources) = match request {
             SnapshotRequest::Project(_) => (
                 id,
                 SnapshotResponse::ArchiveProject(
-                    SnapshotRequest::get_archived_project(resource, transaction_client).await?,
+                    SnapshotRequest::get_archived_project(resource, &client).await?,
                 ),
             ),
             SnapshotRequest::Collection(_) => {
-                let request =
-                    SnapshotRequest::get_cloned_collection(resource, transaction_client).await?;
+                let request = SnapshotRequest::get_cloned_collection(resource, &client).await?;
                 (
                     request.collection.id,
                     SnapshotResponse::SnapshotCollection(request),
@@ -37,6 +34,9 @@ impl DatabaseHandler {
                 )
             }
         };
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
         let result = snapshot_resources.snapshot(transaction_client).await?;
         transaction.commit().await?;
         Ok((new_object_id, result))
