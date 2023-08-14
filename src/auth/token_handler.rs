@@ -64,6 +64,8 @@ pub enum Action {
     All = 0,
     Notifications = 1,
     CreateSecrets = 2,
+    Impersonate = 3,
+    //DpExchange = 4,
 }
 
 impl From<u8> for Action {
@@ -72,6 +74,7 @@ impl From<u8> for Action {
             0 => Action::All,
             1 => Action::Notifications,
             2 => Action::CreateSecrets,
+            3 => Action::Impersonate,
             _ => panic!("Invalid action"),
         }
     }
@@ -155,10 +158,10 @@ impl TokenHandler {
 
             cache.add_pubkey(
                 pub_key.id as i32,
-                PubKey::Server((decode_secret, decoding_key.clone())),
+                PubKey::Server((decode_secret, decoding_key.clone())), //ToDo: Server ID?
             );
 
-            // Notification --> Announcement::PubKey::New ?
+            // Notification --> Announcement::PubKey::New?
 
             pub_key.id as i64
         };
@@ -299,15 +302,17 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
-        DieselUlid,
-        Option<DieselUlid>,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
+        DieselUlid,                           // User_ID or Endpoint_ID
+        Option<DieselUlid>,                   // Maybe Token_ID
+        Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
+        bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
     )> {
+        // Extract pubkey id from JWT header
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
 
+        // Fetch pubkey from cache
         let key = self
             .cache
             .pubkeys
@@ -315,42 +320,71 @@ impl TokenHandler {
             .ok_or_else(|| anyhow!("Unspecified kid"))?
             .clone();
 
+        // Check if pubkey is from ArunaServer or Dataproxy.
         let (_, dec_key) = match key {
-            PubKey::DataProxy((_, key)) => {
+            PubKey::DataProxy((_, key, endpoint_id)) => {
+                // Decode claims with pubkey
                 let claims =
                     decode::<ArunaTokenClaims>(token, &key, &Validation::new(Algorithm::EdDSA))?;
 
-                let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
-
-                let (option_user, perms) = match claims.claims.tid {
-                    Some(uid) => {
-                        let uid = DieselUlid::from_str(&uid)?;
-                        (
-                            Some(uid),
-                            self.cache
-                                .get_user(&uid)
-                                .ok_or_else(|| anyhow!("Invalid user"))?
-                                .get_permissions(None)?,
-                        )
+                // Intent is mandatory with Dataproxy signed tokens
+                if let Some(intent) = claims.claims.it {
+                    // Check if endpoint id matches the id associated with the pubkey
+                    if !(endpoint_id == intent.target) {
+                        bail!("Invalid intent target id")
                     }
-                    None => (None, vec![]),
-                };
-                return Ok((sub_id, option_user, perms, true));
+
+                    // Convert claims sub to ULID
+                    let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
+
+                    // Check if intent action is valid
+                    match intent.action {
+                        //Case 1: Dataproxy notification fetch
+                        Action::Notifications => {
+                            return Ok((sub_id, None, vec![], true));
+                        }
+                        //Case 2: Dataproxy user impersonation
+                        Action::Impersonate => {
+                            // Fetch user from cache
+                            let user = self.cache.get_user(&sub_id);
+
+                            // Convert token id if present
+                            let token = match claims.claims.tid {
+                                Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
+                                None => None,
+                            };
+
+                            // Fetch permissions associated with token
+                            if let Some(user) = user {
+                                let perms = user.get_permissions(token)?;
+                                return Ok((user.id, token, perms, false));
+                            }
+                            bail!("Invalid user provided")
+                        }
+                        _ => bail!("Invalid Dataproxy signed token intent"),
+                    }
+                } else {
+                    bail!("Missing intent in Dataproxy signed token")
+                }
             }
-            PubKey::Server(k) => k,
+            PubKey::Server(key) => key,
         };
+
+        // Decode claims with pubkey
         let claims =
             decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
 
+        // Fetch user from cache
         let uid = DieselUlid::from_str(&claims.claims.sub)?;
-
         let user = self.cache.get_user(&uid);
 
+        // Convert token id if present
         let token = match claims.claims.tid {
-            Some(uid) => Some(DieselUlid::from_str(&uid)?),
+            Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
             None => None,
         };
 
+        // Fetch permissions associated with token
         if let Some(user) = user {
             let perms = user.get_permissions(token)?;
             return Ok((user.id, token, perms, false));
@@ -367,14 +401,20 @@ impl TokenHandler {
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
     )> {
-        let header = decode_header(token)?;
-        // Validate key
+        // Read current oidc public key
         let read = {
             let lock = self.oidc_pubkey.try_read().unwrap();
             lock.clone()
         };
+
+        // Extract header from JWT
+        let header = decode_header(token)?;
+
+        // Decode JWT claims
         let token_data = match read {
-            Some(pk) => decode::<ArunaTokenClaims>(token, &pk, &Validation::new(header.alg))?,
+            Some(pubkey) => {
+                decode::<ArunaTokenClaims>(token, &pubkey, &Validation::new(header.alg))?
+            }
             None => decode::<ArunaTokenClaims>(
                 token,
                 &self.get_token_realminfo().await?,
@@ -382,13 +422,14 @@ impl TokenHandler {
             )?,
         };
 
+        // Fetch user from oidc provider
         let user = self.cache.get_user_by_oidc(&token_data.claims.sub)?;
-
         let perms = user.get_permissions(None)?;
 
         Ok((user.id, None, perms, false))
     }
 
+    /// Fetches the public key from the OIDC provider.
     async fn get_token_realminfo(&self) -> Result<DecodingKey> {
         let resp = reqwest::get(&self.oidc_realminfo)
             .await?
@@ -410,3 +451,7 @@ impl TokenHandler {
         Ok(dec_key)
     }
 }
+
+// Token tests
+#[cfg(test)]
+mod tests {}
