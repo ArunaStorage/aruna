@@ -22,14 +22,13 @@ impl DatabaseHandler {
             .ok_or(anyhow!("Resource not found."))?
             .data_class
             .into();
-        if old_class > dataclass.clone().into() {
+        if old_class < dataclass.clone().into() {
             return Err(anyhow!("Dataclasses can only be relaxed."));
         }
         Object::update_dataclass(id, dataclass, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
+
         Ok(object_with_relations)
     }
     pub async fn update_name(&self, request: NameUpdate) -> Result<ObjectWithRelations> {
@@ -39,10 +38,8 @@ impl DatabaseHandler {
         let name = request.get_name();
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_description(
@@ -55,9 +52,8 @@ impl DatabaseHandler {
         let description = request.get_description();
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
@@ -82,10 +78,8 @@ impl DatabaseHandler {
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
-
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_grpc_object(

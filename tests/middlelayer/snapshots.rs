@@ -10,6 +10,7 @@ use aruna_server::database::dsls::object_dsl::Object;
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::middlelayer::snapshot_request_types::SnapshotRequest;
 use diesel_ulid::DieselUlid;
+
 #[tokio::test]
 async fn test_archive() {
     let db_handler = init_handler().await;
@@ -104,14 +105,25 @@ async fn test_snapshot_collection() {
     let request = SnapshotRequest::Collection(SnapshotCollectionRequest {
         collection_id: collection_id.to_string(),
     });
-    let (_, snapshot) = db_handler.snapshot(request).await.unwrap();
+    let (new, snapshot) = db_handler.snapshot(request).await.unwrap();
     assert!(snapshot.iter().all(|o| !o.object.dynamic));
-    let old_coll = Object::get(collection_id, &client).await.unwrap().unwrap();
+    let old_coll = Object::get_object_with_relations(&collection_id, &client)
+        .await
+        .unwrap();
     let old_ds_1 = Object::get(d1_id, &client).await.unwrap().unwrap();
     let old_ds_2 = Object::get(d2_id, &client).await.unwrap().unwrap();
-    assert!(old_coll.dynamic);
+    assert!(old_coll.object.dynamic);
     assert!(old_ds_1.dynamic);
     assert!(old_ds_2.dynamic);
+
+    let version = old_coll
+        .inbound
+        .0
+        .iter()
+        .find(|r| r.relation_name == *INTERNAL_RELATION_VARIANT_VERSION)
+        .unwrap();
+    assert_eq!(version.target_pid, collection_id);
+    assert_eq!(version.origin_pid, new);
 }
 #[tokio::test]
 async fn test_snapshot_dataset() {
@@ -144,8 +156,19 @@ async fn test_snapshot_dataset() {
     let request = SnapshotRequest::Dataset(SnapshotDatasetRequest {
         dataset_id: dataset_id.to_string(),
     });
-    let (_, snapshot) = db_handler.snapshot(request).await.unwrap();
+    let (new, snapshot) = db_handler.snapshot(request).await.unwrap();
     assert!(snapshot.iter().all(|o| !o.object.dynamic));
-    let old = Object::get(dataset_id, &client).await.unwrap().unwrap();
-    assert!(old.dynamic);
+    let old = Object::get_object_with_relations(&dataset_id, &client)
+        .await
+        .unwrap();
+    assert!(old.object.dynamic);
+
+    let version = old
+        .inbound
+        .0
+        .iter()
+        .find(|r| r.relation_name == *INTERNAL_RELATION_VARIANT_VERSION)
+        .unwrap();
+    assert_eq!(version.target_pid, dataset_id);
+    assert_eq!(version.origin_pid, new);
 }

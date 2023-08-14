@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, SnapshotCollectionRequest, SnapshotDatasetRequest,
 };
 use dashmap::DashMap;
+use deadpool_postgres::Object as DClient;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tokio_postgres::Client;
@@ -45,7 +46,7 @@ pub struct SnapshotProject {
 }
 
 impl SnapshotResponse {
-    pub async fn snapshot(&self, client: &Client) -> Result<Vec<ObjectWithRelations>> {
+    pub async fn snapshot(&self, client: DClient) -> Result<Vec<ObjectWithRelations>> {
         let result = match self {
             SnapshotResponse::ArchiveProject(req) => {
                 SnapshotResponse::archive_project(req, client).await?
@@ -61,27 +62,36 @@ impl SnapshotResponse {
     }
     async fn archive_project(
         project: &SnapshotProject,
-        client: &Client,
+        mut client: DClient,
     ) -> Result<Vec<ObjectWithRelations>> {
-        Object::archive(&project.resource_ids, client).await
+        let transaction = client.transaction().await?;
+        let client = transaction.client();
+        let objects = Object::archive(&project.resource_ids, client).await?;
+        transaction.commit().await?;
+        Ok(objects)
     }
     async fn snapshot_dataset(
         dataset: &SnapshotDataset,
-        client: &Client,
+        mut client: DClient,
     ) -> Result<Vec<ObjectWithRelations>> {
-        dataset.dataset.create(client).await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        dataset.dataset.create(transaction_client).await?;
         if !dataset.relations.is_empty() {
-            InternalRelation::batch_create(&dataset.relations, client).await?;
+            InternalRelation::batch_create(&dataset.relations, transaction_client).await?;
         }
+        transaction.commit().await?;
         Ok(vec![
-            Object::get_object_with_relations(&dataset.dataset.id, client).await?,
+            Object::get_object_with_relations(&dataset.dataset.id, &client).await?,
         ])
     }
     async fn snapshot_collection(
         collection: &SnapshotCollection,
-        client: &Client,
+        mut client: DClient,
     ) -> Result<Vec<ObjectWithRelations>> {
-        collection.collection.create(client).await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        collection.collection.create(transaction_client).await?;
         let mut updated: Vec<DieselUlid> = collection
             .datasets
             .clone()
@@ -89,9 +99,10 @@ impl SnapshotResponse {
             .map(|o| o.id)
             .collect();
         updated.push(collection.collection.id);
-        Object::batch_create(&collection.datasets, client).await?;
-        InternalRelation::batch_create(&collection.relations, client).await?;
-        let results = Object::get_objects_with_relations(&updated, client).await?;
+        Object::batch_create(&collection.datasets, transaction_client).await?;
+        InternalRelation::batch_create(&collection.relations, transaction_client).await?;
+        transaction.commit().await?;
+        let results = Object::get_objects_with_relations(&updated, &client).await?;
         Ok(results)
     }
 }

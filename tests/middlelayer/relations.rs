@@ -43,10 +43,6 @@ async fn test_modify() {
     InternalRelation::batch_create(&vec![belongs_to, other], &client)
         .await
         .unwrap();
-    //let owr_before = Object::get_object_with_relations(&origin, &client)
-    //    .await
-    //    .unwrap();
-    //dbg!(&owr_before);
 
     // test
     let rel_mod_one = Relation {
