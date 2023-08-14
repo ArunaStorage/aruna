@@ -209,8 +209,7 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::internal("User id not returned"))?;
+        );
         let user = tonic_invalid!(
             self.cache
                 .get_user(&user_id)
@@ -266,8 +265,7 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::internal("User id not returned"))?;
+        );
         let user = tonic_internal!(
             self.database_handler.delete_all_tokens(user_id).await,
             "Internal database request error"
@@ -440,7 +438,6 @@ impl UserService for UserServiceImpl {
     ///ToDo: Rust Doc
     async fn get_s3_credentials_user(
         &self,
-        request: Request<GetS3CredentialsUserRequest>,
         request: Request<GetS3CredentialsUserRequest>,
     ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
         log_received!(&request);

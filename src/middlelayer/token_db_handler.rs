@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use crate::database::dsls::user_dsl::User;
 use crate::database::{crud::CrudDb, dsls::user_dsl::APIToken};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken};
+use ahash::HashMap;
 use anyhow::{anyhow, Result};
 use diesel_ulid::DieselUlid;
 
@@ -24,7 +23,9 @@ impl DatabaseHandler {
         let token = request.build_token(pubkey_serial)?;
 
         // Add token to user attributes
-        User::add_user_token(client, user_id, HashMap::from([(token_ulid, &token)])).await?;
+        let mut test: HashMap<DieselUlid, &APIToken> = HashMap::default();
+        test.insert(token_ulid, &token);
+        User::add_user_token(client, user_id, test).await?;
 
         // Return token_id and token
         Ok((token_ulid, token))

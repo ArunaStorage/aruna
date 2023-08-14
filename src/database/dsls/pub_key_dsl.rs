@@ -53,7 +53,7 @@ impl PubKey {
         let res = client.query_opt(&prepared, &[]).await?.map(|r| r.get(0));
         Ok(res.unwrap_or(0))
     }
-    
+
     /// Queries the pub_keys table for a specific pubkey.
     /// As the pubkeys are unique on the database level it returns an Option which includes the
     /// pubkey if it exists.
@@ -96,9 +96,11 @@ impl PubKey {
     }
 }
 
+/*
 impl Eq for PubKey {}
 impl PartialEq for PubKey {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id && self.pubkey == other.pubkey && self.proxy == other.proxy
     }
 }
+*/

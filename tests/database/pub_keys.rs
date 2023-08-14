@@ -52,7 +52,7 @@ async fn test_crud() {
 #[tokio::test]
 async fn test_pub_key_serial_auto_incerement() {
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_db::init_db().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

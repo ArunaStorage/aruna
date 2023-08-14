@@ -299,8 +299,7 @@ impl ObjectService for ObjectServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| tonic::Status::not_found("User id not found"))?;
+        );
         let new = tonic_internal!(
             self.database_handler
                 .clone_object(&user_id, &object_id, parent_mapping)
