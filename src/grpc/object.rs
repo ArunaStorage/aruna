@@ -52,8 +52,7 @@ impl ObjectService for ObjectServiceImpl {
                 .check_permissions(&token, vec![parent_ctx])
                 .await,
             "Unauthorized"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         let object_with_rel = tonic_internal!(
             self.database_handler
@@ -261,8 +260,7 @@ impl ObjectService for ObjectServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| tonic::Status::invalid_argument("Invalid user"))?;
+        );
 
         let (object, new_revision) = tonic_internal!(
             self.database_handler

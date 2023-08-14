@@ -49,8 +49,7 @@ impl SearchService for SearchServiceImpl {
                 .check_permissions(&token, vec![Context::default()])
                 .await,
             "Permission denied"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         // Check if: 0 < limit <= 100
         if inner_request.limit <= 0 || inner_request.limit > 100 {
@@ -121,8 +120,7 @@ impl SearchService for SearchServiceImpl {
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Permission denied"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         // Get Object from cache
         let mut object_plus = self

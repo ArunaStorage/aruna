@@ -118,7 +118,7 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (user_id, _) = tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![Context::default()])
                 .await,
@@ -167,8 +167,8 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::internal("User id not returned"))?;
+        );
+
         let user = tonic_invalid!(
             self.cache
                 .get_user(&user_id)
@@ -206,8 +206,8 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::internal("User id not returned"))?;
+        );
+
         let user = tonic_internal!(
             self.database_handler.delete_token(user_id, request).await,
             "Internal database request error"
@@ -244,8 +244,7 @@ impl UserService for UserServiceImpl {
             (None, ctx) => tonic_auth!(
                 self.authorizer.check_permissions(&token, vec![ctx]).await,
                 "Unauthorized"
-            )
-            .ok_or_else(|| Status::internal("GetUser error"))?,
+            ),
         };
         let user = self.cache.get_user(&user_id);
         let response = GetUserResponse {
@@ -275,8 +274,7 @@ impl UserService for UserServiceImpl {
             (None, ctx) => tonic_auth!(
                 self.authorizer.check_permissions(&token, vec![ctx]).await,
                 "Unauthorized"
-            )
-            .ok_or_else(|| Status::internal("GetUser error"))?,
+            ),
         };
         let user = self.cache.get_user(&user_id);
         let response = GetUserRedactedResponse {
@@ -299,8 +297,8 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::invalid_argument("No user id found"))?;
+        );
+
         let user = tonic_internal!(
             self.database_handler
                 .update_display_name(request, user_id)
@@ -331,8 +329,7 @@ impl UserService for UserServiceImpl {
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
-        )
-        .ok_or_else(|| Status::invalid_argument("No user id found"))?;
+        );
 
         let user = tonic_internal!(
             self.database_handler.update_email(request, user_id).await,

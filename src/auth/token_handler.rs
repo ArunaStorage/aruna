@@ -59,7 +59,7 @@ struct ArunaTokenClaims {
 
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     All = 0,
     Notifications = 1,
@@ -286,6 +286,7 @@ impl TokenHandler {
         Option<DieselUlid>, // User_id
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
+        Option<Action>,
     )> {
         let decoded = general_purpose::STANDARD.decode(token)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
@@ -306,6 +307,7 @@ impl TokenHandler {
         Option<DieselUlid>,                   // Maybe Token_ID
         Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
         bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
+        Option<Action>,
     )> {
         // Extract pubkey id from JWT header
         let kid = decode_header(token)?
@@ -341,7 +343,7 @@ impl TokenHandler {
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
                         Action::Notifications => {
-                            return Ok((sub_id, None, vec![], true));
+                            return Ok((sub_id, None, vec![], true, Some(intent.action)));
                         }
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
@@ -357,7 +359,7 @@ impl TokenHandler {
                             // Fetch permissions associated with token
                             if let Some(user) = user {
                                 let perms = user.get_permissions(token)?;
-                                return Ok((user.id, token, perms, false));
+                                return Ok((user.id, token, perms, true, Some(intent.action)));
                             }
                             bail!("Invalid user provided")
                         }
@@ -387,7 +389,7 @@ impl TokenHandler {
         // Fetch permissions associated with token
         if let Some(user) = user {
             let perms = user.get_permissions(token)?;
-            return Ok((user.id, token, perms, false));
+            return Ok((user.id, token, perms, false, None));
         }
         bail!("Invalid user")
     }
@@ -400,6 +402,7 @@ impl TokenHandler {
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
+        Option<Action>,
     )> {
         // Read current oidc public key
         let read = {
@@ -426,7 +429,7 @@ impl TokenHandler {
         let user = self.cache.get_user_by_oidc(&token_data.claims.sub)?;
         let perms = user.get_permissions(None)?;
 
-        Ok((user.id, None, perms, false))
+        Ok((user.id, None, perms, false, None))
     }
 
     /// Fetches the public key from the OIDC provider.

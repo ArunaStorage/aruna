@@ -1,5 +1,8 @@
-use super::{structs::Context, token_handler::TokenHandler};
-use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
+use super::{
+    structs::{Context, ContextVariant},
+    token_handler::{Action, TokenHandler},
+};
+use crate::caching::cache::Cache;
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -16,46 +19,74 @@ impl PermissionHandler {
         }
     }
 
-    pub async fn check_permissions(
+    pub async fn check_permissions_verbose(
         &self,
         token: &str,
         mut ctxs: Vec<Context>,
-    ) -> Result<Option<DieselUlid>, tonic::Status> {
-        let (mut main_id, associated_id, permissions, is_proxy) = tonic_auth!(
+    ) -> Result<(DieselUlid, Option<DieselUlid>), tonic::Status> {
+        // What are the cases?
+        // 1. User Aruna token       --> (user_id, token_id)
+        // 2. User OIDC token        --> (user_id, None)
+        // 3. Endpoint signed token  --> (user_id, ?)
+        // 4. Endpoint notifications --> (endpoint_id, None)
+        let (main_id, associated_id, permissions, is_proxy, proxy_action) = tonic_auth!(
             self.token_handler.process_token(token).await,
             "Unauthorized"
         );
 
+        // Individual permission checking if token is signed from Dataproxy
         if is_proxy {
-            match associated_id {
-                Some(id) => {
-                    ctxs.push(Context::user_ctx(id, DbPermissionLevel::READ));
-                    if !self.cache.check_proxy_ctxs(&main_id, &ctxs) {
-                        return Err(tonic::Status::unauthenticated(
-                            "Invalid proxy authentication",
-                        ));
+            // Add Dataproxy context
+            ctxs.push(Context::proxy());
+
+            if let Some(action) = proxy_action {
+                if action == Action::Impersonate {
+                    //Case 1: Impersonate
+                    //  - Check if provided contexts are resource only
+                    for ctx in &ctxs {
+                        match ctx.variant {
+                            ContextVariant::ResourceContext(_) => {}
+                            _ => return Err(tonic::Status::invalid_argument(
+                                "Only resource functionality allowed for Dataproxy signed tokens",
+                            )),
+                        }
                     }
-                    main_id = id;
+                } else if action == Action::Notifications {
+                    //Case 2: Notifications
+                    //  - How to check permissions for specific function!? ...
+                    unimplemented!(
+                        "Permission check for Dataproxy notification fetch not yet implemented"
+                    )
                 }
-                None => {
-                    return if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
-                        Ok(None)
-                    } else {
-                        Err(tonic::Status::unauthenticated(
-                            "Invalid proxy authentication",
-                        ))
-                    }
+
+                if !self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                    return Err(tonic::Status::unauthenticated(
+                        "Invalid proxy authentication",
+                    ));
                 }
+            } else {
+                return Err(tonic::Status::internal("Missing "));
             }
         }
 
+        // Check permissions for standard ArunaServer user
         if self
             .cache
             .check_permissions_with_contexts(&ctxs, &permissions, &main_id)
         {
-            Ok(Some(main_id))
+            Ok((main_id, associated_id))
         } else {
             Err(tonic::Status::unauthenticated("Invalid permissions"))
         }
+    }
+
+    ///ToDo: Rust Doc
+    pub async fn check_permissions(
+        &self,
+        token: &str,
+        ctxs: Vec<Context>,
+    ) -> Result<DieselUlid, tonic::Status> {
+        let (user_id, _) = self.check_permissions_verbose(token, ctxs).await?;
+        Ok(user_id)
     }
 }
