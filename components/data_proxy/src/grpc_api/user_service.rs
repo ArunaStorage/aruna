@@ -1,8 +1,4 @@
-use crate::database::persistence::WithGenericBytes;
-use crate::{
-    caching::{auth::get_token_from_md, cache::Cache},
-    structs::User,
-};
+use crate::caching::{auth::get_token_from_md, cache::Cache};
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::DataproxyUserService, GetCredentialsRequest,
     GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
