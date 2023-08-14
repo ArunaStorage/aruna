@@ -9,14 +9,14 @@ use s3s::S3;
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct S3ServiceServer {
+pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
     endpoint_id: String,
 }
 
-impl S3ServiceServer {
+impl ArunaS3Service {
     pub async fn new(backend: Arc<Box<dyn StorageBackend>>, endpoint_id: String) -> Result<Self> {
-        Ok(S3ServiceServer {
+        Ok(ArunaS3Service {
             backend: backend.clone(),
             endpoint_id,
         })
@@ -24,7 +24,7 @@ impl S3ServiceServer {
 }
 
 #[async_trait::async_trait]
-impl S3 for S3ServiceServer {
+impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn put_object(
         &self,

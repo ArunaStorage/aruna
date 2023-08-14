@@ -1,5 +1,5 @@
 use super::auth::AuthProvider;
-use super::s3service::S3ServiceServer;
+use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
@@ -22,7 +22,7 @@ impl S3Server {
         endpoint_id: impl Into<String>,
         cache: Arc<cache::Cache>,
     ) -> Result<Self> {
-        let s3service = S3ServiceServer::new(backend, endpoint_id.into()).await?;
+        let s3service = ArunaS3Service::new(backend, endpoint_id.into()).await?;
 
         let service = {
             let mut b = S3ServiceBuilder::new(s3service);
