@@ -6,7 +6,6 @@ use s3s::{
 use std::sync::Arc;
 
 /// Aruna authprovider
-#[derive(Debug)]
 pub struct AuthProvider {
     cache: Arc<Cache>,
 }
@@ -20,7 +19,10 @@ impl AuthProvider {
 #[async_trait::async_trait]
 impl S3Auth for AuthProvider {
     async fn get_secret_key(&self, access_key: &str) -> S3Result<SecretKey> {
-        self.cache.get_secret(access_key)
+        Ok(self
+            .cache
+            .get_secret(access_key)
+            .map_err(|_| s3_error!(AccessDenied, "Invalid access key"))?)
     }
 
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {

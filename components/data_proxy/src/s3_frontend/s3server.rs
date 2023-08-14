@@ -1,12 +1,13 @@
+use super::auth::AuthProvider;
+use super::s3service::S3ServiceServer;
+use crate::caching::cache;
+use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use hyper::Server;
 use s3s::service::S3Service;
+use s3s::service::S3ServiceBuilder;
 use std::{net::TcpListener, sync::Arc};
 use tracing::info;
-
-use crate::data_backends::storage_backend::StorageBackend;
-
-use super::{auth::AuthProvider, data_handler::DataHandler, s3service::S3ServiceServer};
 
 pub struct S3Server {
     s3service: S3Service,
@@ -17,26 +18,24 @@ impl S3Server {
     pub async fn new(
         address: impl Into<String> + Copy,
         hostname: impl Into<String>,
-        aruna_server: impl Into<String>,
         backend: Arc<Box<dyn StorageBackend>>,
-        data_handler: Arc<DataHandler>,
         endpoint_id: impl Into<String>,
+        cache: Arc<cache::Cache>,
     ) -> Result<Self> {
-        let server_url = aruna_server.into();
+        let s3service = S3ServiceServer::new(backend, endpoint_id.into()).await?;
 
-        let mut service = S3Service::new(Box::new(
-            S3ServiceServer::new(backend, data_handler, endpoint_id.into()).await?,
-        ));
+        let service = {
+            let mut b = S3ServiceBuilder::new(s3service);
+            b.set_base_domain(hostname);
+            b.set_auth(AuthProvider::new(cache).await);
+            b.build()
+        };
 
-        service.set_base_domain(hostname);
-        service.set_auth(Box::new(AuthProvider::new(server_url).await?));
-
-        Ok(S3Server {
+        Ok(Self {
             s3service: service,
             address: address.into(),
         })
     }
-
     pub async fn run(self) -> Result<()> {
         // Run server
         let listener = TcpListener::bind(&self.address)?;
