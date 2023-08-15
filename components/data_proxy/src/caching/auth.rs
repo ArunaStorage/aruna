@@ -3,6 +3,7 @@ use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
 
 use super::cache::Cache;
+use super::cache::ResourceIds;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -15,7 +16,7 @@ use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tonic::metadata::MetadataMap;
 
 pub struct AuthHandler {
@@ -105,7 +106,7 @@ impl AuthHandler {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))?;
-        let (pk, dec_key) = self.cache.get_pubkey(i32::from_str(&kid)?)?;
+        let (_, dec_key) = self.cache.get_pubkey(i32::from_str(&kid)?)?;
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
@@ -136,7 +137,7 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
     ) -> Result<()> {
-        let obj = self.extract_object_from_path(path)?;
+        let (ids, obj) = self.extract_object_from_path(path)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
 
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
@@ -147,24 +148,34 @@ impl AuthHandler {
                     .cache
                     .get_user_by_key(&creds.access_key)
                     .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                for (res_id, perm) in user.permissions {
+                    if ids.check_if_in(res_id) {
+                        if perm >= db_perm_from_method {
+                            return Ok(());
+                        }
+                    }
+                }
             }
         }
 
         Err(anyhow!("Invalid permissions"))
     }
 
-    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<Object> {
+    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<(ResourceIds, Object)> {
         let res_strings = ResourceStrings::try_from(path)?.0;
         for res in res_strings {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
-                return Ok(self
-                    .cache
-                    .resources
-                    .get(&e)
-                    .ok_or_else(|| anyhow!("Unknown object"))?
-                    .value()
-                    .0
-                    .clone());
+                return Ok((
+                    e.clone(),
+                    self.cache
+                        .resources
+                        .get(&e.get_id())
+                        .ok_or_else(|| anyhow!("Unknown object"))?
+                        .value()
+                        .0
+                        .clone(),
+                ));
             }
         }
         return Err(anyhow!("No object found in path"));

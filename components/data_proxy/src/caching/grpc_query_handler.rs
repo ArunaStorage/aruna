@@ -52,15 +52,20 @@ pub struct GrpcQueryHandler {
     dataset_service: DatasetServiceClient<Channel>,
     object_service: ObjectServiceClient<Channel>,
     user_service: UserServiceClient<Channel>,
-    endpoint_service: EndpointServiceClient<Channel>,
+    _endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
+    endpoint_id: String,
 }
 
 impl GrpcQueryHandler {
     #[allow(dead_code)]
-    pub async fn new(server: impl Into<String>, cache: Arc<Cache>) -> Result<Self> {
+    pub async fn new(
+        server: impl Into<String>,
+        cache: Arc<Cache>,
+        endpoint_id: String,
+    ) -> Result<Self> {
         let tls_config = ClientTlsConfig::new();
         let endpoint = Channel::from_shared(server.into())?.tls_config(tls_config)?;
         let channel = endpoint.connect().await?;
@@ -76,7 +81,8 @@ impl GrpcQueryHandler {
 
         let user_service = user_service_client::UserServiceClient::new(channel.clone());
 
-        let endpoint_service = endpoint_service_client::EndpointServiceClient::new(channel.clone());
+        let _endpoint_service =
+            endpoint_service_client::EndpointServiceClient::new(channel.clone());
 
         let storage_status_service =
             storage_status_service_client::StorageStatusServiceClient::new(channel.clone());
@@ -90,10 +96,11 @@ impl GrpcQueryHandler {
             dataset_service,
             object_service,
             user_service,
-            endpoint_service,
+            _endpoint_service,
             storage_status_service,
             event_notification_service,
             cache,
+            endpoint_id,
         })
     }
 }
@@ -169,12 +176,12 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown object"))
     }
 
-    pub async fn create_notifications_channel(&self, stream_consumer: String) -> Result<()> {
+    pub async fn create_notifications_channel(&self) -> Result<()> {
         let stream = self
             .event_notification_service
             .clone()
             .get_event_message_batch_stream(Request::new(GetEventMessageBatchStreamRequest {
-                stream_consumer,
+                stream_consumer: self.endpoint_id.to_string(),
                 batch_size: 10,
             }))
             .await?;
