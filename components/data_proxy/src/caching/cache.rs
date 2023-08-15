@@ -177,7 +177,7 @@ impl Cache {
         let persistence = if with_persistence {
             RwLock::new(None)
         } else {
-            RwLock::new(Some(Database::new()?))
+            RwLock::new(Some(Database::new().await?))
         };
         let cache = Arc::new(Cache {
             users: DashMap::default(),
