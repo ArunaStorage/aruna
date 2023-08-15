@@ -12,7 +12,7 @@ pub struct ProxyService {
 }
 
 impl ProxyService {
-    pub fn new(cache: Arc<RwLock<Cache>>) -> Self {
+    pub fn _new(cache: Arc<RwLock<Cache>>) -> Self {
         Self { cache }
     }
 }

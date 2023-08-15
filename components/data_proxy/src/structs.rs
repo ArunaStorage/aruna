@@ -1,5 +1,5 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use anyhow::bail;
+use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
@@ -7,6 +7,8 @@ use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
 };
+use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
+use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
@@ -75,6 +77,7 @@ pub struct Object {
     pub hashes: HashMap<String, String>,
     pub dynamic: bool,
     pub children: HashSet<DieselUlid>,
+    pub parents: HashSet<DieselUlid>,
     pub synced: bool,
 }
 
@@ -216,32 +219,57 @@ impl From<PermissionLevel> for DbPermissionLevel {
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Project) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
             .relations
             .iter()
-            .filter(|x| {
+            .filter_map(|x| {
                 if let Some(rel) = &x.relation {
                     match rel {
                         Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
+                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, true))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    RelationDirection::Outbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, false))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
                         }
-                        _ => false,
+                        _ => None,
                     }
                 } else {
-                    false
+                    None
                 }
             })
-            .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
-                } else {
-                    bail!("No relation found")
-                }
-            })
+            .partition(|e| match e {
+                Ok((_, inbound)) => *inbound,
+                _ => false,
+            });
+
+        let inbounds = inbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+        let outbounds = outbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
             .collect::<Result<HashSet<DieselUlid>>>()?;
 
         Ok(Object {
@@ -253,7 +281,8 @@ impl TryFrom<Project> for Object {
             object_type: ObjectType::PROJECT,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            children: filtered_relations,
+            parents: inbounds,
+            children: outbounds,
             synced: false,
         })
     }
@@ -262,32 +291,57 @@ impl TryFrom<Project> for Object {
 impl TryFrom<Collection> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
             .relations
             .iter()
-            .filter(|x| {
+            .filter_map(|x| {
                 if let Some(rel) = &x.relation {
                     match rel {
                         Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
+                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, true))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    RelationDirection::Outbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, false))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
                         }
-                        _ => false,
+                        _ => None,
                     }
                 } else {
-                    false
+                    None
                 }
             })
-            .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
-                } else {
-                    bail!("No relation found")
-                }
-            })
+            .partition(|e| match e {
+                Ok((_, inbound)) => *inbound,
+                _ => false,
+            });
+
+        let inbounds = inbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+        let outbounds = outbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
             .collect::<Result<HashSet<DieselUlid>>>()?;
 
         Ok(Object {
@@ -299,7 +353,8 @@ impl TryFrom<Collection> for Object {
             object_type: ObjectType::COLLECTION,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            children: filtered_relations,
+            parents: inbounds,
+            children: outbounds,
             synced: false,
         })
     }
@@ -308,32 +363,57 @@ impl TryFrom<Collection> for Object {
 impl TryFrom<Dataset> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Dataset) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
             .relations
             .iter()
-            .filter(|x| {
+            .filter_map(|x| {
                 if let Some(rel) = &x.relation {
                     match rel {
                         Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
+                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, true))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    RelationDirection::Outbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, false))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
                         }
-                        _ => false,
+                        _ => None,
                     }
                 } else {
-                    false
+                    None
                 }
             })
-            .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
-                } else {
-                    bail!("No relation found")
-                }
-            })
+            .partition(|e| match e {
+                Ok((_, inbound)) => *inbound,
+                _ => false,
+            });
+
+        let inbounds = inbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+        let outbounds = outbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
             .collect::<Result<HashSet<DieselUlid>>>()?;
 
         Ok(Object {
@@ -345,7 +425,8 @@ impl TryFrom<Dataset> for Object {
             object_type: ObjectType::DATASET,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            children: filtered_relations,
+            parents: inbounds,
+            children: outbounds,
             synced: false,
         })
     }
@@ -354,32 +435,57 @@ impl TryFrom<Dataset> for Object {
 impl TryFrom<GrpcObject> for Object {
     type Error = anyhow::Error;
     fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
             .relations
             .iter()
-            .filter(|x| {
+            .filter_map(|x| {
                 if let Some(rel) = &x.relation {
                     match rel {
                         Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
+                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, true))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    RelationDirection::Outbound => {
+                                        match DieselUlid::from_str(&var.resource_id) {
+                                            Ok(id) => Some(Ok((id, false))),
+                                            Err(e) => {
+                                                println!("Error: {}", e);
+                                                Some(Err(anyhow!("Invalid ULID")))
+                                            }
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
                         }
-                        _ => false,
+                        _ => None,
                     }
                 } else {
-                    false
+                    None
                 }
             })
-            .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
-                } else {
-                    bail!("No relation found")
-                }
-            })
+            .partition(|e| match e {
+                Ok((_, inbound)) => *inbound,
+                _ => false,
+            });
+
+        let inbounds = inbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
+            .collect::<Result<HashSet<DieselUlid>>>()?;
+        let outbounds = outbound
+            .into_iter()
+            .map(|e| e.map(|(id, _)| id))
             .collect::<Result<HashSet<DieselUlid>>>()?;
 
         Ok(Object {
@@ -391,8 +497,34 @@ impl TryFrom<GrpcObject> for Object {
             object_type: ObjectType::OBJECT,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            children: filtered_relations,
+            parents: inbounds,
+            children: outbounds,
             synced: false,
         })
+    }
+}
+
+impl From<Object> for CreateProjectRequest {
+    fn from(value: Object) -> Self {
+        CreateProjectRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+        }
+    }
+}
+
+impl From<Object> for CreateCollectionRequest {
+    fn from(value: Object) -> Self {
+        CreateCollectionRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(x.to_string())),
+        }
     }
 }

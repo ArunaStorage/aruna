@@ -1,7 +1,6 @@
 use anyhow::Result;
 use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
-use s3_frontend::impersonating_client::ImpersonatingClient;
 use std::{io::Write, str::FromStr, sync::Arc};
 use tokio::try_join;
 
@@ -50,10 +49,6 @@ async fn main() -> Result<()> {
     let storage_backend: Arc<Box<dyn StorageBackend>> =
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
 
-    let imp_client = Arc::new(ImpersonatingClient::new(
-        endpoint_id.clone(),
-        aruna_host_url.clone(),
-    ));
     let cache = Cache::new(
         aruna_host_url,
         with_persistence,
@@ -61,14 +56,9 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let s3_server = s3_frontend::s3server::S3Server::new(
-        "0.0.0.0:9000",
-        hostname,
-        storage_backend,
-        imp_client,
-        cache,
-    )
-    .await?;
+    let s3_server =
+        s3_frontend::s3server::S3Server::new("0.0.0.0:9000", hostname, storage_backend, cache)
+            .await?;
 
     match try_join!(s3_server.run()) {
         Ok(_) => Ok(()),

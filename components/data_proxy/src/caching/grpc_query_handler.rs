@@ -105,6 +105,7 @@ impl GrpcQueryHandler {
     }
 }
 
+// Aruna grpc request section
 impl GrpcQueryHandler {
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let user = self
@@ -128,6 +129,16 @@ impl GrpcQueryHandler {
             .into_inner()
             .pubkeys)
     }
+
+    async fn create_project(&self, object: Object) -> Result<()> {
+        let project = Project::from(object);
+        self.project_service
+            .clone()
+            .create_project(Request::new(project))
+            .await?;
+        Ok(())
+    }
+
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
         self.project_service
             .clone()
@@ -204,7 +215,10 @@ impl GrpcQueryHandler {
         }
         Err(anyhow!("Stream was closed by sender"))
     }
+}
 
+/// Request handling section
+impl GrpcQueryHandler {
     async fn process_message(&self, message: EventMessage) -> Result<Option<Reply>> {
         match message.message_variant.unwrap() {
             MessageVariant::ResourceEvent(r_event) => self.process_resource_event(r_event).await,

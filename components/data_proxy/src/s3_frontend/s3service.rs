@@ -1,4 +1,3 @@
-use super::impersonating_client::ImpersonatingClient;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
@@ -13,7 +12,6 @@ use std::sync::Arc;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
-    client: Arc<ImpersonatingClient>,
     cache: Arc<Cache>,
 }
 
@@ -24,14 +22,9 @@ impl Debug for ArunaS3Service {
 }
 
 impl ArunaS3Service {
-    pub async fn new(
-        backend: Arc<Box<dyn StorageBackend>>,
-        client: Arc<ImpersonatingClient>,
-        cache: Arc<Cache>,
-    ) -> Result<Self> {
+    pub async fn new(backend: Arc<Box<dyn StorageBackend>>, cache: Arc<Cache>) -> Result<Self> {
         Ok(ArunaS3Service {
             backend: backend.clone(),
-            client,
             cache,
         })
     }

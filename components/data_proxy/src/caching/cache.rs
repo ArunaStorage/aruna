@@ -164,7 +164,7 @@ pub struct Cache {
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     pub persistence: RwLock<Option<Database>>,
-    pub notifications: RwLock<Option<Arc<GrpcQueryHandler>>>,
+    pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
 }
 
@@ -186,7 +186,7 @@ impl Cache {
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
             persistence,
-            notifications: RwLock::new(None),
+            aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
         if let Some(url) = notifications_url {
@@ -210,7 +210,7 @@ impl Cache {
     }
 
     pub async fn set_notifications(&self, notifications: Arc<GrpcQueryHandler>) {
-        let mut guard = self.notifications.write().await;
+        let mut guard = self.aruna_client.write().await;
         *guard = Some(notifications);
     }
 

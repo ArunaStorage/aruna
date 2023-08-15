@@ -1,5 +1,4 @@
 use super::auth::AuthProvider;
-use super::impersonating_client::ImpersonatingClient;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
@@ -20,10 +19,9 @@ impl S3Server {
         address: impl Into<String> + Copy,
         hostname: impl Into<String>,
         backend: Arc<Box<dyn StorageBackend>>,
-        client: Arc<ImpersonatingClient>,
         cache: Arc<cache::Cache>,
     ) -> Result<Self> {
-        let s3service = ArunaS3Service::new(backend, client, cache.clone()).await?;
+        let s3service = ArunaS3Service::new(backend, cache.clone()).await?;
 
         let service = {
             let mut b = S3ServiceBuilder::new(s3service);
