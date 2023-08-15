@@ -1,3 +1,5 @@
+use crate::structs::Object as DPObject;
+use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
@@ -15,6 +17,7 @@ use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
@@ -41,8 +44,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
-
-use crate::structs::PubKey;
 
 use super::cache::Cache;
 
@@ -130,11 +131,10 @@ impl GrpcQueryHandler {
             .pubkeys)
     }
 
-    async fn create_project(&self, object: Object) -> Result<()> {
-        let project = Project::from(object);
+    async fn create_project(&self, object: DPObject) -> Result<()> {
         self.project_service
             .clone()
-            .create_project(Request::new(project))
+            .create_project(Request::new(CreateProjectRequest::from(object)))
             .await?;
         Ok(())
     }
