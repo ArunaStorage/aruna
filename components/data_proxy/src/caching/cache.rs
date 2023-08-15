@@ -26,10 +26,13 @@ pub enum ResourceString {
     Object(String, Option<String>, Option<String>, String),
 }
 
-impl TryFrom<S3Path> for ResourceString {
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub struct ResourceStrings(pub Vec<ResourceString>);
+
+impl TryFrom<&S3Path> for ResourceStrings {
     type Error = anyhow::Error;
-    fn try_from(value: S3Path) -> Result<Self> {
-        if let Some(b, k) = value.as_object() {
+    fn try_from(value: &S3Path) -> Result<Self> {
+        if let Some((b, k)) = value.as_object() {
             let mut results = Vec::new();
 
             let pathvec = k.split('/').collect::<Vec<&str>>();
@@ -54,8 +57,43 @@ impl TryFrom<S3Path> for ResourceString {
                         pathvec[0].to_string(),
                     ));
                 }
+                2 => {
+                    results.push(ResourceString::Dataset(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        pathvec[1].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        None,
+                        pathvec[1].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        Some(pathvec[0].to_string()),
+                        pathvec[1].to_string(),
+                    ));
+                }
+                3 => {
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        Some(pathvec[1].to_string()),
+                        pathvec[2].to_string(),
+                    ));
+                }
+                _ => {
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        None,
+                        k.to_string(),
+                    ));
+                }
             }
-            return Ok(results);
+            return Ok(ResourceStrings(results));
         } else {
             return Err(anyhow!("Invalid path"));
         }
@@ -188,6 +226,10 @@ impl Cache {
             self.pubkeys.insert(pk.id, (pk.clone(), dec_key));
         }
         Ok(())
+    }
+
+    pub fn get_res_by_res_string(&self, res: ResourceString) -> Option<DieselUlid> {
+        self.paths.get(&res).map(|e| e.value().clone())
     }
 
     pub fn get_name_trees(

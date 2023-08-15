@@ -1,7 +1,12 @@
+use crate::caching::cache::ResourceStrings;
+use crate::structs::DbPermissionLevel;
+use crate::structs::Object;
+
 use super::cache::Cache;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
@@ -19,7 +24,7 @@ pub struct AuthHandler {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ArunaTokenClaims {
+pub(crate) struct ArunaTokenClaims {
     iss: String, // Currently always 'aruna'
     sub: String, // User_ID / DataProxy_ID
     exp: usize,  // Expiration timestamp
@@ -112,7 +117,11 @@ impl AuthHandler {
         bail!("Invalid permissions")
     }
 
-    pub fn extract_claims(&self, token: &str, dec_key: &DecodingKey) -> Result<ArunaTokenClaims> {
+    pub(crate) fn extract_claims(
+        &self,
+        token: &str,
+        dec_key: &DecodingKey,
+    ) -> Result<ArunaTokenClaims> {
         let token = decode::<ArunaTokenClaims>(
             token,
             dec_key,
@@ -123,21 +132,42 @@ impl AuthHandler {
 
     pub async fn check_access(
         &self,
-        creds: &Credentials,
+        creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
     ) -> Result<()> {
-        let user = self
-            .cache
-            .get_user_by_key(&creds.access_key)
-            .ok_or_else(|| anyhow!("Unknown user"))?;
+        let obj = self.extract_object_from_path(path)?;
+        let db_perm_from_method = DbPermissionLevel::from(method);
 
-        Ok(())
+        if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
+            return Ok(());
+        } else {
+            if let Some(creds) = creds {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+            }
+        }
+
+        Err(anyhow!("Invalid permissions"))
     }
 
-    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<DieselUlid> {
-        //self.cache.get
-        todo!()
+    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<Object> {
+        let res_strings = ResourceStrings::try_from(path)?.0;
+        for res in res_strings {
+            if let Some(e) = self.cache.get_res_by_res_string(res) {
+                return Ok(self
+                    .cache
+                    .resources
+                    .get(&e)
+                    .ok_or_else(|| anyhow!("Unknown object"))?
+                    .value()
+                    .0
+                    .clone());
+            }
+        }
+        return Err(anyhow!("No object found in path"));
     }
 }
 

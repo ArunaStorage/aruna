@@ -9,6 +9,7 @@ use aruna_rust_api::api::storage::models::v2::{
 };
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
+use http::Method;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -23,6 +24,17 @@ pub enum DbPermissionLevel {
     APPEND,
     WRITE,
     ADMIN,
+}
+
+impl From<&Method> for DbPermissionLevel {
+    fn from(method: &Method) -> Self {
+        match *method {
+            Method::GET | Method::OPTIONS => DbPermissionLevel::READ,
+            Method::POST => DbPermissionLevel::APPEND,
+            Method::PUT | Method::DELETE => DbPermissionLevel::WRITE,
+            _ => DbPermissionLevel::ADMIN,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
