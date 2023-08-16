@@ -236,6 +236,18 @@ impl NatsIoHandler {
         })
     }
 
+    ///ToDo: Rust Doc
+    async fn get_event_consumer(
+        &self,
+        event_consumer_id: String,
+    ) -> anyhow::Result<Consumer<Config>> {
+        // Try to get consumer from stream
+        Ok(match self.stream.get_consumer(&event_consumer_id).await {
+            Ok(consumer) => consumer,
+            Err(err) => return Err(anyhow::anyhow!(err)),
+        })
+    }
+
     //ToDo: Rust Doc
     pub async fn create_push_consumer(
         &self,
