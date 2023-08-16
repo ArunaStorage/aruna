@@ -73,17 +73,18 @@ impl PubKey {
         pubkey: &str,
         client: &Client,
     ) -> Result<PubKey> {
-        let row = if let Some(endpoint_id) = proxy {
-            let query = "
+        let query = "
             INSERT INTO pub_keys (proxy, pubkey) 
               VALUES ($1, $2) ON CONFLICT DO NOTHING 
             RETURNING id, proxy, pubkey;";
-            let prepared = client.prepare(query).await?;
+        let prepared = client.prepare(query).await?;
 
         // Execute prepared statement
         let pubkey = match client.query_opt(&prepared, &[&proxy, &pubkey]).await? {
             Some(row) => PubKey::from_row(&row),
-            None => PubKey::get_by_key(pubkey, client).await?.ok_or_else(|| anyhow::anyhow!("Broken."))?,
+            None => PubKey::get_by_key(pubkey, client)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Broken."))?,
         };
 
         // Return inserted/fetched pubkey

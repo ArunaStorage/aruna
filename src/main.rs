@@ -1,14 +1,27 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use aruna_rust_api::api::{storage::services::v2::{
-    endpoint_service_server::EndpointServiceServer, project_service_server::ProjectServiceServer, collection_service_server::CollectionServiceServer, dataset_service_server::DatasetServiceServer, object_service_server::ObjectServiceServer, relations_service_server::RelationsServiceServer, user_service_server::UserServiceServer, search_service_server::SearchServiceServer,
-}, notification::services::v2::event_notification_service_server::EventNotificationServiceServer};
+use aruna_rust_api::api::{
+    notification::services::v2::event_notification_service_server::EventNotificationServiceServer,
+    storage::services::v2::{
+        collection_service_server::CollectionServiceServer,
+        dataset_service_server::DatasetServiceServer,
+        endpoint_service_server::EndpointServiceServer, object_service_server::ObjectServiceServer,
+        project_service_server::ProjectServiceServer,
+        relations_service_server::RelationsServiceServer,
+        search_service_server::SearchServiceServer, user_service_server::UserServiceServer,
+    },
+};
 use aruna_server::{
     auth::{permission_handler::PermissionHandler, token_handler::TokenHandler},
     caching::{cache::Cache, notifications_handler::NotificationHandler},
     database::{self, dsls::endpoint_dsl::Endpoint},
-    grpc::{endpoints::EndpointServiceImpl, projects::ProjectServiceImpl, collections::CollectionServiceImpl, datasets::DatasetServiceImpl, object::ObjectServiceImpl, relations::RelationsServiceImpl, notification::NotificationServiceImpl, users::UserServiceImpl, search::SearchServiceImpl},
+    grpc::{
+        collections::CollectionServiceImpl, datasets::DatasetServiceImpl,
+        endpoints::EndpointServiceImpl, notification::NotificationServiceImpl,
+        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
+        search::SearchServiceImpl, users::UserServiceImpl,
+    },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
     search::meilisearch_client::MeilisearchClient,
@@ -25,7 +38,7 @@ pub async fn main() -> Result<()> {
         .env()
         .init()
         .unwrap();
-    
+
     // Load env
     dotenvy::from_filename(".env")?;
 
@@ -101,66 +114,71 @@ pub async fn main() -> Result<()> {
     let client = db_arc.get_client().await?;
     if let Some(_) = Endpoint::get_default(&client).await? {
         // Add other services
-        builder = builder.add_service(UserServiceServer::new(
-            UserServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-                token_handler_arc.clone()
-            ).await
-        )).add_service(ProjectServiceServer::new(
-            ProjectServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-                meilisearch_arc.clone(),
-            ).await
-        ))
-        .add_service(CollectionServiceServer::new(
-            CollectionServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-            ).await
-        ))
-        .add_service(DatasetServiceServer::new(
-            DatasetServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-            ).await
-        ))
-        .add_service(ObjectServiceServer::new(
-            ObjectServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-            ).await
-        ))
-        .add_service(RelationsServiceServer::new(
-            RelationsServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-            ).await
-        ))
-        .add_service(EventNotificationServiceServer::new(
-            NotificationServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-                natsio_arc.clone()
-            ).await
-        ))
-        .add_service(SearchServiceServer::new(
-            SearchServiceImpl::new(
-                db_handler_arc.clone(),
-                auth_arc.clone(),
-                cache_arc.clone(),
-                meilisearch_arc.clone()
-            ).await
-        ));
-
+        builder = builder
+            .add_service(UserServiceServer::new(
+                UserServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    token_handler_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(ProjectServiceServer::new(
+                ProjectServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    meilisearch_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(CollectionServiceServer::new(
+                CollectionServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(DatasetServiceServer::new(
+                DatasetServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(ObjectServiceServer::new(
+                ObjectServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
+                    .await,
+            ))
+            .add_service(RelationsServiceServer::new(
+                RelationsServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(EventNotificationServiceServer::new(
+                NotificationServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    natsio_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(SearchServiceServer::new(
+                SearchServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    meilisearch_arc.clone(),
+                )
+                .await,
+            ));
     }
 
     // Do it.
