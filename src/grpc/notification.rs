@@ -103,12 +103,14 @@ impl EventNotificationService for NotificationServiceImpl {
             let consumer_name = DieselUlid::generate(); // Some random id as name
             let consumer_subject = generate_endpoint_subject(&user_id); // user id is endpoint id
             tonic_internal!(
-                self.natsio_handler.create_push_consumer(
-                    consumer_name,
-                    consumer_subject,
-                    DeliverPolicy::All,
-                    false,
-                ),
+                self.natsio_handler
+                    .create_push_consumer(
+                        consumer_name,
+                        consumer_subject,
+                        DeliverPolicy::All,
+                        false,
+                    )
+                    .await,
                 "Consumer creation failed"
             )
         } else {
@@ -600,7 +602,8 @@ fn extract_context_event_type_from_target(
                 ResourceVariant::from_i32(resource_variant).ok_or(Status::invalid_argument(""))?;
             let variant_type =
                 ObjectType::try_from(variant).map_err(|_| Status::invalid_argument(""))?;
-            let event_type = EventType::Resource((resource_id, variant_type, with_subresources));
+            let event_type =
+                EventType::Resource((resource_id.to_string(), variant_type, with_subresources));
 
             let context = Context::res_ctx(
                 tonic_invalid!(
@@ -614,7 +617,7 @@ fn extract_context_event_type_from_target(
             (context, event_type)
         }
         Target::User(user_id) => {
-            let event_type = EventType::User(user_id);
+            let event_type = EventType::User(user_id.to_string());
 
             let context = Context::user_ctx(
                 tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id format"),
