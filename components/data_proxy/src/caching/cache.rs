@@ -14,7 +14,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use s3s::{auth::SecretKey, path::S3Path};
+use s3s::auth::SecretKey;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 

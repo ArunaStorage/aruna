@@ -92,13 +92,17 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<PutObjectInput>,
     ) -> S3Result<S3Response<PutObjectOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // if req.input.content_length == 0 {
-        //     return Err(s3_error!(
-        //         MissingContentLength,
-        //         "Missing or invalid (0) content-length"
-        //     ));
-        // }
+        match req.input.content_length {
+            Some(0) | None => {
+                return Err(s3_error!(
+                    MissingContentLength,
+                    "Missing or invalid (0) content-length"
+                ));
+            }
+            _ => {}
+        };
+
+        todo!()
 
         // let mut anotif = ArunaNotifier::new(
         //     self.data_handler.internal_notifier_service.clone(),

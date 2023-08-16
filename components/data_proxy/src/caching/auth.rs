@@ -161,7 +161,7 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
     ) -> Result<Option<(ResourceIds, String, Option<String>)>> {
-        let (ids, obj) = self.extract_object_from_path(path)?;
+        let (ids, obj) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
 
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
@@ -191,9 +191,38 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
-    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<(ResourceIds, Object)> {
-        let res_strings = ResourceStrings::try_from(path)?.0;
+    pub fn extract_object_from_path(
+        &self,
+        path: &S3Path,
+        method: &Method,
+    ) -> Result<(ResourceIds, Object)> {
+        let res_strings = ResourceStrings::try_from(path)?;
+
+        let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
+            res_strings.permutate()
+        } else {
+            (res_strings.0, vec![])
+        };
+
+        res_strings.sort();
+        alt.sort();
+
         for res in res_strings {
+            if let Some(e) = self.cache.get_res_by_res_string(res) {
+                return Ok((
+                    e.clone(),
+                    self.cache
+                        .resources
+                        .get(&e.get_id())
+                        .ok_or_else(|| anyhow!("Unknown object"))?
+                        .value()
+                        .0
+                        .clone(),
+                ));
+            }
+        }
+
+        for res in alt {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
                 return Ok((
                     e.clone(),

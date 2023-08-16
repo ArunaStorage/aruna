@@ -578,7 +578,7 @@ impl From<Object> for CreateObjectRequest {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Ord)]
 pub enum ResourceString {
     Project(String),
     Collection(String, String),
@@ -586,8 +586,179 @@ pub enum ResourceString {
     Object(String, Option<String>, Option<String>, String),
 }
 
+impl PartialOrd for ResourceString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self {
+            ResourceString::Project(_) => match other {
+                ResourceString::Project(_) => Some(std::cmp::Ordering::Equal),
+                _ => Some(std::cmp::Ordering::Greater),
+            },
+            ResourceString::Collection(_, _) => match other {
+                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
+                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Equal),
+                _ => Some(std::cmp::Ordering::Greater),
+            },
+            ResourceString::Dataset(_, _, _) => match other {
+                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
+                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
+                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Equal),
+                _ => Some(std::cmp::Ordering::Greater),
+            },
+            ResourceString::Object(_, _, _, _) => match other {
+                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
+                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
+                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Less),
+                ResourceString::Object(_, _, _, _) => Some(std::cmp::Ordering::Equal),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 pub struct ResourceStrings(pub Vec<ResourceString>);
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord, Default)]
+pub struct Missing {
+    pub p: Option<String>,
+    pub c: Option<String>,
+    pub d: Option<String>,
+    pub o: Option<String>,
+}
+
+impl ResourceStrings {
+    pub fn permutate(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
+        let mut orig = Vec::new();
+        let mut permutations = Vec::new();
+
+        for x in self.0.drain(..) {
+            match x {
+                ResourceString::Project(p) => {
+                    orig.push(ResourceString::Project(p.clone()));
+                }
+                ResourceString::Collection(p, c) => {
+                    orig.push(ResourceString::Collection(p.clone(), c.clone()));
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            c: Some(c.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+                ResourceString::Dataset(p, c, d) => {
+                    orig.push(ResourceString::Dataset(p.clone(), c.clone(), d.clone()));
+                    if let Some(c) = c {
+                        permutations.push((
+                            ResourceString::Collection(p.clone(), c.clone()),
+                            Missing {
+                                d: Some(d.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                c: Some(c.clone()),
+                                d: Some(d.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            d: Some(d.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+                ResourceString::Object(p, c, d, o) => {
+                    orig.push(ResourceString::Object(
+                        p.clone(),
+                        c.clone(),
+                        d.clone(),
+                        o.clone(),
+                    ));
+                    if let Some(c) = &c {
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                c: Some(c.clone()),
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        permutations.push((
+                            ResourceString::Collection(p.clone(), c.clone()),
+                            Missing {
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        if let Some(d) = &d {
+                            permutations.push((
+                                ResourceString::Project(p.clone()),
+                                Missing {
+                                    c: Some(c.clone()),
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+
+                            permutations.push((
+                                ResourceString::Collection(p.clone(), c.clone()),
+                                Missing {
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+
+                            permutations.push((
+                                ResourceString::Dataset(p.clone(), Some(c.clone()), d.clone()),
+                                Missing {
+                                    c: Some(c.clone()),
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                    } else if let Some(d) = &d {
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                d: Some(d.clone()),
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        permutations.push((
+                            ResourceString::Dataset(p.clone(), None, d.clone()),
+                            Missing {
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            o: Some(o.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
+        }
+
+        (orig, permutations)
+    }
+}
 
 impl TryFrom<&S3Path> for ResourceStrings {
     type Error = anyhow::Error;
