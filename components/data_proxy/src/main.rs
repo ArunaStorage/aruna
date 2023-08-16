@@ -46,6 +46,8 @@ async fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Debug)
         .init();
 
+    let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY")?;
+
     let storage_backend: Arc<Box<dyn StorageBackend>> =
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
 
@@ -53,6 +55,7 @@ async fn main() -> Result<()> {
         aruna_host_url,
         with_persistence,
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
+        encoding_key,
     )
     .await?;
 

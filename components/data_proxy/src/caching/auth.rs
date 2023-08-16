@@ -10,6 +10,7 @@ use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use jsonwebtoken::EncodingKey;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use s3s::auth::Credentials;
 use s3s::path::S3Path;
@@ -22,6 +23,7 @@ use tonic::metadata::MetadataMap;
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
     pub self_id: DieselUlid,
+    pub encoding_key: EncodingKey,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,19 +41,22 @@ pub(crate) struct ArunaTokenClaims {
 
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Action {
     All = 0,
-    Notifications = 1,
-    CreateSecrets = 2,
+    CreateSecrets = 1,
+    Impersonate = 2,
+    FetchInfo = 3,
+    //DpExchange = 4,
 }
 
 impl From<u8> for Action {
     fn from(input: u8) -> Self {
         match input {
             0 => Action::All,
-            1 => Action::Notifications,
-            2 => Action::CreateSecrets,
+            1 => Action::CreateSecrets,
+            2 => Action::Impersonate,
+            3 => Action::FetchInfo,
             _ => panic!("Invalid action"),
         }
     }
@@ -59,8 +64,8 @@ impl From<u8> for Action {
 
 #[derive(Debug)]
 pub struct Intent {
-    target: DieselUlid,
-    action: Action,
+    pub target: DieselUlid,
+    pub action: Action,
 }
 
 impl Serialize for Intent {
@@ -98,8 +103,18 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
-    pub fn new(cache: Arc<Cache>, self_id: DieselUlid) -> Self {
-        Self { cache, self_id }
+    pub fn new(cache: Arc<Cache>, self_id: DieselUlid, encode_secret: String) -> Self {
+        let private_pem = format!(
+            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+            encode_secret
+        );
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
+
+        Self {
+            cache,
+            self_id,
+            encoding_key,
+        }
     }
 
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
