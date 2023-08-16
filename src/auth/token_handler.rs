@@ -277,14 +277,15 @@ impl TokenHandler {
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
         match claims.iss.as_str() {
-            "oidc.test.com" => self.validate_oidc_only(token).await,
-            "aruna" => self.validate_aruna(token).await,
+            "aruna" => self.validate_server_token(token).await,
+            "aruna_dataproxy" => self.validate_dataproxy_token(token).await,
+            "oidc.test.com" => self.validate_oidc_token(token).await,
             _ => Err(anyhow!("Unknown issuer")),
         }
     }
 
     ///ToDo: Rust Doc
-    async fn validate_aruna(
+    async fn validate_server_token(
         &self,
         token: &str,
     ) -> Result<(
@@ -292,6 +293,59 @@ impl TokenHandler {
         Option<DieselUlid>,                   // Maybe Token_ID
         Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
         bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
+        Option<Action>,
+    )> {
+        // Extract pubkey id from JWT header
+        let kid = decode_header(token)?
+            .kid
+            .ok_or_else(|| anyhow!("Unspecified kid"))?;
+
+        // Fetch pubkey from cache
+        let cached_key = self
+            .cache
+            .pubkeys
+            .get(&kid.parse::<i32>()?)
+            .ok_or_else(|| anyhow!("Unspecified kid"))?
+            .clone();
+
+        // Check if pubkey is from ArunaServer or Dataproxy.
+        let (_, dec_key) = match cached_key {
+            PubKey::Server(key) => key,
+            PubKey::DataProxy((_, _, _)) => return Err(anyhow::anyhow!("Token not signed from ArunaServer")),
+        };
+
+        // Decode claims with pubkey
+        let claims =
+            decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
+
+        // Fetch user from cache
+        let uid = DieselUlid::from_str(&claims.claims.sub)?;
+        let user = self.cache.get_user(&uid);
+
+        // Convert token id if present
+        let token = match claims.claims.tid {
+            Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
+            None => None,
+        };
+
+        // Fetch permissions associated with token
+        if let Some(user) = user {
+            let perms = user.get_permissions(token)?;
+            return Ok((user.id, token, perms, false, None));
+        }
+        bail!("Invalid user")
+    }
+
+    ///ToDo: Rust Doc
+    async fn validate_dataproxy_token(
+        &self,
+        token: &str,
+    ) 
+    -> Result<(
+        DieselUlid,
+        Option<DieselUlid>,
+        Vec<(DieselUlid, DbPermissionLevel)>,
+        bool,
         Option<Action>,
     )> {
         // Extract pubkey id from JWT header
@@ -308,7 +362,7 @@ impl TokenHandler {
             .clone();
 
         // Check if pubkey is from ArunaServer or Dataproxy.
-        let (_, dec_key) = match key {
+        match key {
             PubKey::DataProxy((_, key, endpoint_id)) => {
                 // Decode claims with pubkey
                 let claims =
@@ -354,32 +408,12 @@ impl TokenHandler {
                     bail!("Missing intent in Dataproxy signed token")
                 }
             }
-            PubKey::Server(key) => key,
-        };
-
-        // Decode claims with pubkey
-        let claims =
-            decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
-
-        // Fetch user from cache
-        let uid = DieselUlid::from_str(&claims.claims.sub)?;
-        let user = self.cache.get_user(&uid);
-
-        // Convert token id if present
-        let token = match claims.claims.tid {
-            Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
-            None => None,
-        };
-
-        // Fetch permissions associated with token
-        if let Some(user) = user {
-            let perms = user.get_permissions(token)?;
-            return Ok((user.id, token, perms, false, None));
+            PubKey::Server(_) => return Err(anyhow::anyhow!("Token not signed from Dataproxy")),
         }
-        bail!("Invalid user")
     }
 
-    async fn validate_oidc_only(
+    ///ToDo: Rust Doc
+    async fn validate_oidc_token(
         &self,
         token: &str,
     ) -> Result<(
