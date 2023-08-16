@@ -44,8 +44,8 @@ impl DatabaseHandler {
             )
             .await?;
         }
-        let object = Object::get_object_with_relations(&resource.id, transaction_client).await?;
         transaction.commit().await?;
+        let object = Object::get_object_with_relations(&resource.id, &client).await?;
         Ok(object)
     }
     pub async fn get_resource(

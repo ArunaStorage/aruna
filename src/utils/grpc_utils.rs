@@ -117,7 +117,7 @@ pub fn get_id_and_ctx(ids: Vec<String>) -> Result<(Vec<DieselUlid>, Vec<Context>
         ids.iter()
             .map(
                 |id| -> std::result::Result<(DieselUlid, Context), DecodingError> {
-                    let id = DieselUlid::from_str(&id)?;
+                    let id = DieselUlid::from_str(id)?;
                     let ctx = Context::res_ctx(id, DbPermissionLevel::READ, true);
                     Ok((id, ctx))
                 },
@@ -131,7 +131,7 @@ pub fn get_id_and_ctx(ids: Vec<String>) -> Result<(Vec<DieselUlid>, Vec<Context>
 pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Resource, Status> {
     let owr = cache
         .get_object(id)
-        .ok_or_else(|| tonic::Status::not_found("Resource not found"))?;
+        .ok_or_else(|| Status::not_found("Resource not found"))?;
     owr.try_into()
-        .map_err(|_| tonic::Status::internal("Conversion error"))
+        .map_err(|_| Status::internal("Conversion error"))
 }

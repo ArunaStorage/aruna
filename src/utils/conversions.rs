@@ -154,7 +154,7 @@ impl TryFrom<i32> for DataClass {
             2 => Ok(DataClass::PRIVATE),
             4 => Ok(DataClass::WORKSPACE),
             5 => Ok(DataClass::CONFIDENTIAL),
-            _ => Err(anyhow!("Not defined.")),
+            _ => Err(anyhow!("Dataclass not defined")),
         }
     }
 }

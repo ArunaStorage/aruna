@@ -164,7 +164,7 @@ impl UpdateObject {
     pub fn get_dataclass(&self, old: Object) -> Result<DataClass> {
         let new = self.0.data_class;
         let old: i32 = old.data_class.into();
-        if old > new {
+        if old < new {
             return Err(anyhow!("Dataclass can only be relaxed."));
         }
         new.try_into()

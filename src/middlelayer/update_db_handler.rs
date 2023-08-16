@@ -1,6 +1,6 @@
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{KeyValueVariant, Object, ObjectWithRelations};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
@@ -22,14 +22,13 @@ impl DatabaseHandler {
             .ok_or(anyhow!("Resource not found."))?
             .data_class
             .into();
-        if old_class > dataclass.clone().into() {
+        if old_class < dataclass.clone().into() {
             return Err(anyhow!("Dataclasses can only be relaxed."));
         }
         Object::update_dataclass(id, dataclass, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
+
         Ok(object_with_relations)
     }
     pub async fn update_name(&self, request: NameUpdate) -> Result<ObjectWithRelations> {
@@ -39,10 +38,8 @@ impl DatabaseHandler {
         let name = request.get_name();
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_description(
@@ -55,9 +52,8 @@ impl DatabaseHandler {
         let description = request.get_description();
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
@@ -75,17 +71,19 @@ impl DatabaseHandler {
                 .await?
                 .ok_or(anyhow!("Dataset does not exist."))?;
             for kv in rm_key_values.0 {
-                object.remove_key_value(transaction_client, kv).await?;
+                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                    object.remove_key_value(transaction_client, kv).await?;
+                } else {
+                    return Err(anyhow!("Cannot remove static labels."));
+                }
             }
         } else {
             return Err(anyhow!(
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
-
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
         transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok(object_with_relations)
     }
     pub async fn update_grpc_object(
@@ -97,20 +95,21 @@ impl DatabaseHandler {
         bool, // Creates revision
     )> {
         let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
         let req = UpdateObject(request.clone());
         let id = req.get_id()?;
-        let old = Object::get(id, transaction_client)
+        let old = Object::get(id, &client)
             .await?
             .ok_or(anyhow!("Object not found."))?;
-        let flag = if request.name.is_some()
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        let (id, flag) = if request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
+            let id = DieselUlid::generate();
             // Create new object
             let create_object = Object {
-                id: DieselUlid::generate(),
+                id,
                 content_len: old.content_len,
                 count: 1,
                 revision_number: old.revision_number + 1,
@@ -132,7 +131,8 @@ impl DatabaseHandler {
                 let relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            true
+            transaction.commit().await?;
+            (id, true)
         } else {
             // Update in place
             let update_object = Object {
@@ -158,11 +158,10 @@ impl DatabaseHandler {
                 let relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            false
+            transaction.commit().await?;
+            (id, false)
         };
-        let object_with_relations =
-            Object::get_object_with_relations(&id, transaction_client).await?;
-        transaction.commit().await?;
+        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
         Ok((object_with_relations, flag))
     }
 }
