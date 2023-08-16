@@ -23,7 +23,7 @@ impl PermissionHandler {
         &self,
         token: &str,
         mut ctxs: Vec<Context>,
-    ) -> Result<(DieselUlid, Option<DieselUlid>), tonic::Status> {
+    ) -> Result<(DieselUlid, Option<DieselUlid>, bool), tonic::Status> {
         // What are the cases?
         // 1. User Aruna token       --> (user_id, token_id)
         // 2. User OIDC token        --> (user_id, None)
@@ -77,7 +77,9 @@ impl PermissionHandler {
                     //unimplemented!("Permission check for Dataproxy notification fetch not yet implemented")
                 }
 
-                if !self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                    return Ok((main_id, associated_id, true));
+                } else {
                     return Err(tonic::Status::unauthenticated(
                         "Invalid proxy authentication",
                     ));
@@ -92,7 +94,7 @@ impl PermissionHandler {
             .cache
             .check_permissions_with_contexts(&ctxs, &permissions, &main_id)
         {
-            Ok((main_id, associated_id))
+            Ok((main_id, associated_id, false))
         } else {
             Err(tonic::Status::unauthenticated("Invalid permissions"))
         }
@@ -104,7 +106,7 @@ impl PermissionHandler {
         token: &str,
         ctxs: Vec<Context>,
     ) -> Result<DieselUlid, tonic::Status> {
-        let (user_id, _) = self.check_permissions_verbose(token, ctxs).await?;
+        let (user_id, _, _) = self.check_permissions_verbose(token, ctxs).await?;
         Ok(user_id)
     }
 }

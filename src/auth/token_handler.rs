@@ -311,7 +311,9 @@ impl TokenHandler {
         // Check if pubkey is from ArunaServer or Dataproxy.
         let (_, dec_key) = match cached_key {
             PubKey::Server(key) => key,
-            PubKey::DataProxy((_, _, _)) => return Err(anyhow::anyhow!("Token not signed from ArunaServer")),
+            PubKey::DataProxy((_, _, _)) => {
+                return Err(anyhow::anyhow!("Token not signed from ArunaServer"))
+            }
         };
 
         // Decode claims with pubkey
@@ -340,8 +342,7 @@ impl TokenHandler {
     async fn validate_dataproxy_token(
         &self,
         token: &str,
-    ) 
-    -> Result<(
+    ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
