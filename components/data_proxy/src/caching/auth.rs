@@ -161,12 +161,12 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
-    ) -> Result<()> {
+    ) -> Result<Option<(ResourceIds, String, Option<String>)>> {
         let (ids, obj) = self.extract_object_from_path(path)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
 
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
-            return Ok(());
+            return Ok(None);
         } else {
             if let Some(creds) = creds {
                 let user = self
@@ -177,7 +177,12 @@ impl AuthHandler {
                 for (res_id, perm) in user.permissions {
                     if ids.check_if_in(res_id) {
                         if perm >= db_perm_from_method {
-                            return Ok(());
+                            let res_id = if res_id == user.user_id {
+                                None
+                            } else {
+                                Some(res_id.to_string())
+                            };
+                            return Ok(Some((ids, user.user_id.to_string(), res_id)));
                         }
                     }
                 }
@@ -208,17 +213,17 @@ impl AuthHandler {
 
     pub(crate) fn sign_impersonating_token(
         &self,
-        user_id: &str,
-        tid: Option<&str>,
+        user_id: impl Into<String>,
+        tid: Option<impl Into<String>>,
     ) -> Result<String> {
         let claims = ArunaTokenClaims {
             iss: "aruna_dataproxy".to_string(),
-            sub: user_id.to_string(),
+            sub: user_id.into(),
             exp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .add(Duration::from_secs(15 * 60))
                 .as_secs() as usize,
-            tid: tid.map(|x| x.to_string()),
+            tid: tid.map(|x| x.into()),
             it: Some(Intent {
                 target: self.self_id,
                 action: Action::Impersonate,

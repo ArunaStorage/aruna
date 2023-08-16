@@ -1,5 +1,7 @@
 use crate::caching::cache::Cache;
+use crate::caching::cache::ResourceIds;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::Object as ProxyObject;
 use anyhow::Result;
 use s3s::dto::*;
 use s3s::s3_error;
@@ -32,6 +34,57 @@ impl ArunaS3Service {
 
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
+    #[tracing::instrument]
+    async fn create_bucket(
+        &self,
+        req: S3Request<CreateBucketInput>,
+    ) -> S3Result<S3Response<CreateBucketOutput>> {
+        let data = req
+            .extensions
+            .get::<Option<(ResourceIds, String, Option<String>)>>();
+
+        let mut new_object = ProxyObject::from(req.input);
+
+        if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
+            let (_, user, token) = data.map(|e| e.clone()).flatten().unwrap();
+
+            let token = self
+                .cache
+                .auth
+                .read()
+                .await
+                .as_ref()
+                .unwrap()
+                .sign_impersonating_token(&user, token)
+                .map_err(|e| {
+                    dbg!(e);
+                    s3_error!(NotSignedUp, "Unauthorized")
+                })?;
+
+            new_object = client
+                .create_project(new_object, &token)
+                .await
+                .map_err(|e| {
+                    dbg!(e);
+                    s3_error!(InternalError, "[BACKEND] Unable to create project")
+                })?;
+        }
+        let output = CreateBucketOutput {
+            location: Some(new_object.name.to_string()),
+            ..Default::default()
+        };
+
+        self.cache
+            .upsert_object(new_object, None)
+            .await
+            .map_err(|e| {
+                dbg!(e);
+                s3_error!(InternalError, "Unable to cache new bucket")
+            })?;
+
+        Ok(S3Response::new(output))
+    }
+
     #[tracing::instrument]
     async fn put_object(
         &self,
@@ -693,16 +746,6 @@ impl S3 for ArunaS3Service {
         Err(s3_error!(
             NotImplemented,
             "ListObjects is not implemented yet"
-        ))
-    }
-
-    async fn create_bucket(
-        &self,
-        _req: S3Request<CreateBucketInput>,
-    ) -> S3Result<S3Response<CreateBucketOutput>> {
-        Err(s3_error!(
-            NotImplemented,
-            "CreateBucket is not implemented yet"
         ))
     }
 }

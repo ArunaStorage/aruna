@@ -14,6 +14,7 @@ use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use s3s::dto::CreateBucketInput;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -540,6 +541,24 @@ impl From<Object> for CreateDatasetRequest {
             external_relations: vec![],
             data_class: value.data_class.into(),
             parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::ProjectId(x.to_string())),
+        }
+    }
+}
+
+impl From<CreateBucketInput> for Object {
+    fn from(value: CreateBucketInput) -> Self {
+        Object {
+            id: DieselUlid::generate(),
+            name: value.bucket,
+            key_values: vec![],
+            object_status: Status::Available,
+            data_class: DataClass::Private,
+            object_type: ObjectType::PROJECT,
+            hashes: HashMap::default(),
+            dynamic: false,
+            parents: HashSet::default(),
+            children: HashSet::default(),
+            synced: false,
         }
     }
 }

@@ -157,7 +157,7 @@ impl GrpcQueryHandler {
             .pubkeys)
     }
 
-    async fn create_project(&self, object: DPObject, token: &str) -> Result<()> {
+    pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
         req.metadata_mut().append(
@@ -165,8 +165,16 @@ impl GrpcQueryHandler {
             AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
         );
 
-        self.project_service.clone().create_project(req).await?;
-        Ok(())
+        let response = self
+            .project_service
+            .clone()
+            .create_project(req)
+            .await?
+            .into_inner()
+            .project
+            .ok_or(anyhow!("unknown project"))?;
+
+        Ok(DPObject::try_from(response)?)
     }
 
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
