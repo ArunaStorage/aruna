@@ -1,7 +1,8 @@
+use std::collections::{BTreeMap, BTreeSet};
 use super::impersonating_client::ImpersonatingClient;
-use crate::caching::cache::Cache;
+use crate::caching::cache::{Cache, ResourceIds, ResourceString};
 use crate::data_backends::storage_backend::StorageBackend;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use s3s::dto::*;
 use s3s::s3_error;
 use s3s::S3Request;
@@ -9,7 +10,16 @@ use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::sync::Arc;
+use ahash::HashSet;
+use aruna_rust_api::api::storage::models::v2::DataClass;
+use base64::Engine;
+use base64::engine::general_purpose;
+use dashmap::DashMap;
+use diesel_ulid::DieselUlid;
+use crate::structs::ObjectLocation;
+use crate::structs::Object;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -702,7 +712,182 @@ impl S3 for ArunaS3Service {
             "ListObjects is not implemented yet"
         ))
     }
+    async fn list_objects_v2(
+        &self,
+        req: S3Request<ListObjectsV2Input>,
+    ) -> S3Result<S3Response<ListObjectsV2Output>> {
+        log::debug!("{:?}", &req);
+        let project_name = ResourceString::Project(req.input.bucket.clone());
+        match self.cache.paths.get(&project_name) {
+            Some(_) => {},
+            None => return Err(s3_error!(NoSuchBucket, "No bucket found"))
+        };
+        let root = &req.input.bucket;
 
+        let continuation_token = match req.input.continuation_token {
+            Some(t) => {
+                let decoded_token =
+                //TODO ERROR HANDLING
+                    general_purpose::STANDARD_NO_PAD.decode(t).map_err(|_| s3_error!(NoSuchBucket, "TODO"))?;
+                //TODO ERROR HANDLING
+                let decoded_token = std::str::from_utf8(&decoded_token).map_err(|_| s3_error!(NoSuchBucket, "TODO"))?
+                    .to_string();
+                Some(decoded_token)
+            }
+            None => None,
+        };
+
+        let delimiter = req.input.delimiter;
+        let prefix = req.input.prefix;
+
+        let sorted  = self.cache.paths.iter().filter_map(|e| match e.key().clone() {
+            ResourceString::Collection(temp_root, collection)
+            if &temp_root == root => {
+                Some(([temp_root, collection].join("/"), e.value().into()))
+            },
+            ResourceString::Dataset(temp_root, collection, dataset )
+            if &temp_root == root =>
+                Some(([temp_root, collection.unwrap_or("".to_string()), dataset].join("/"), e.value().into())),
+            ResourceString::Object(temp_root, collection, dataset , object)
+            if &temp_root == root =>
+                Some(([temp_root, collection.unwrap_or("".to_string()), dataset.unwrap_or("".to_string()), object].join("/"), e.value().into())),
+            ResourceString::Project(temp_root) if &temp_root == root => Some((temp_root, e.value().into())),
+            _ => None,
+        }).collect::<BTreeMap<String, DieselUlid>>();
+        let start_after = match (req.input.start_after, continuation_token.clone()) {
+            (Some(_), Some(ct)) => ct,
+            (None, Some(ct)) => ct,
+            (Some(s), None) => s,
+            _ =>{ let (path,_ ) = sorted.first_key_value().ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
+                path.clone()
+            }
+            ,
+        };
+        let max_keys = match req.input.max_keys {
+            Some(k) if k < 1000 => k as usize,
+            _ => 1000usize,
+        };
+
+        let mut keys: HashSet<Contents> = HashSet::default();
+        let mut common_prefixes: HashSet<String> = HashSet::default();
+        let mut new_continuation_token: Option<String> = None;
+
+        match (delimiter.clone(), prefix.clone()) {
+            (Some(delimiter), Some(prefix)) => {
+                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                    if let Some(split) = path.strip_prefix(&prefix) {
+                        if let Some((sub_prefix, _)) = split.split_once(&delimiter) {
+                        // If Some split -> common prefixes
+                        common_prefixes.insert([prefix.to_string(),sub_prefix.to_string()].join(""));
+                        if idx == max_keys {
+                            if idx == max_keys + 1{
+                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            }
+                            break
+                        }
+                    } else {
+                        let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
+                        keys.insert(entry);
+                        if idx == max_keys {
+                            if idx == max_keys + 1{
+                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            }
+                            break
+                        }
+                    };
+                    } else {
+                        continue
+                    };
+                    if idx == max_keys {
+                        if idx == max_keys + 1{
+                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        }
+                        break
+                    }
+                }
+            }
+            (Some(delimiter), None) => {
+                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                    if let Some((pre, _)) = path.split_once(&delimiter) {
+                        // If Some split -> common prefixes
+                        common_prefixes.insert(pre.to_string());
+                        if idx == max_keys {
+                            if idx == max_keys + 1{
+                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            }
+                            break
+                        }
+                    } else {
+                        // If None split -> Entry
+                        let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
+                        keys.insert(entry);
+                        if idx == max_keys {
+                            if idx == max_keys + 1{
+                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            }
+                            break
+                        }
+                    };
+                }
+            },
+            (None, Some(prefix)) => {
+                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                    let entry: Contents = if path.strip_prefix(&prefix).is_some() {
+                        (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into()
+                    } else {
+                        continue
+                    };
+                    keys.insert(entry.clone());
+                    if idx == max_keys {
+                        if idx == max_keys + 1{
+                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        }
+                        break
+                    }
+                }
+            },
+
+            (None, None) => {
+                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                    let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
+                    keys.insert(entry.clone());
+                    if idx == max_keys {
+                        if idx == max_keys + 1{
+                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(entry.key));
+                        }
+                        break
+                    }
+                }
+            }
+        }
+        let key_count = keys.len() as i32;
+        let common_prefixes = Some(common_prefixes.into_iter().map(|e| CommonPrefix{ prefix: Some(e)}).collect());
+        let contents = Some(keys.into_iter().map(|e| s3s::dto::Object{
+            checksum_algorithm: None,
+            e_tag: Some(e.etag.to_string()),
+            key: Some(e.key),
+            last_modified: None,
+            owner: None,
+            size: e.size,
+            storage_class: None, // TODO: Use dataclass here
+        }).collect());
+
+        let result = S3Response::new(ListObjectsV2Output{
+            common_prefixes,
+            contents,
+            continuation_token,
+            delimiter,
+            encoding_type: None,
+            is_truncated: new_continuation_token.is_some(),
+            key_count,
+            max_keys: 0,
+            name: Some(root.clone()),
+            next_continuation_token: new_continuation_token,
+            prefix,
+            start_after: Some(start_after),
+        });
+        Ok(result)
+    }
     async fn create_bucket(
         &self,
         _req: S3Request<CreateBucketInput>,
@@ -711,5 +896,27 @@ impl S3 for ArunaS3Service {
             NotImplemented,
             "CreateBucket is not implemented yet"
         ))
+    }
+}
+
+// TODO: Move into utils
+#[derive(Eq, PartialEq, Hash, Clone)]
+struct Contents {
+    pub key: String,
+    pub etag: DieselUlid,
+    pub size: i64,
+    pub storage_class: DataClass,
+}
+impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
+    fn from(value: (&String, &(Object, Option<ObjectLocation>))) -> Self {
+        Contents {
+            key: value.0.clone(),
+            etag: value.1.0.id,
+            size: match &value.1.1 {
+                Some(s) => s.raw_content_len,
+                None => 0,
+            },
+            storage_class: value.1.0.data_class,
+        }
     }
 }

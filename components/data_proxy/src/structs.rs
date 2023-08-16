@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
+use crate::caching::cache::ResourceIds;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DbPermissionLevel {
@@ -394,5 +395,16 @@ impl TryFrom<GrpcObject> for Object {
             children: filtered_relations,
             synced: false,
         })
+    }
+}
+
+impl From<&ResourceIds> for DieselUlid {
+    fn from(value: &ResourceIds) -> Self {
+       match value {
+           ResourceIds::Project(id) => *id,
+           ResourceIds::Collection(_, id) => *id,
+           ResourceIds::Dataset(_, _,id) => *id,
+           ResourceIds::Object(_,_,_,id) => *id,
+       }
     }
 }
