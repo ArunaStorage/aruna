@@ -132,8 +132,8 @@ impl<'de> Deserialize<'de> for Action {
         let action_byte = u8::from_str(&deserialized_string)
             .map_err(|_| serde::de::Error::custom("Conversion to u8 failed"))?;
 
-        Ok(Action::try_from(action_byte)
-            .map_err(|_| serde::de::Error::custom("Conversion to Action failed"))?)
+        Action::try_from(action_byte)
+            .map_err(|_| serde::de::Error::custom("Conversion to Action failed"))
     }
 }
 
