@@ -6,7 +6,9 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
-use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer, PushConsumer, Consumer};
+use async_nats::jetstream::consumer::{
+    Config, Consumer, DeliverPolicy, PullConsumer, PushConsumer,
+};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -295,8 +297,14 @@ impl NatsIoHandler {
         );
 
         // Evaluate number of notifications and the corresponding subjects
-        let subjects = generate_resource_message_subjects(object_hierarchies);
+        let mut subjects = generate_resource_message_subjects(object_hierarchies);
 
+        // Add individual endpoint subjects
+        for endpoint_ulid in &object.object.endpoints.0 {
+            subjects.push(format!("AOS.{}", endpoint_ulid.key()))
+        }
+
+        // Create message payload
         let message_variant = MessageVariant::ResourceEvent(ResourceEvent {
             resource: Some(Resource {
                 resource_id: object.object.id.to_string(),
@@ -325,21 +333,34 @@ impl NatsIoHandler {
         event_variant: EventVariant,
     ) -> anyhow::Result<()> {
         // Calculate user checksum
-        let user_checksum = tonic_internal!(checksum_user(&ApiUser::from(user.clone())), "");
+        let user_checksum = tonic_internal!(
+            checksum_user(&ApiUser::from(user.clone())),
+            "User checksum calculation failed"
+        );
 
         // Generate message subject
-        let subject = generate_user_message_subject(&user.id.to_string());
+        let mut subjects = vec![generate_user_message_subject(&user.id.to_string())];
 
-        self.register_event(
-            MessageVariant::UserEvent(UserEvent {
-                user_id: user.id.to_string(),
-                event_variant: event_variant as i32,
-                checksum: user_checksum,
-                reply: None,
-            }),
-            subject,
-        )
-        .await
+        // Add individual endpoint subjects
+        for trusted_endpoint in &user.attributes.0.trusted_endpoints {
+            subjects.push(format!("AOS.{}", trusted_endpoint.key()))
+        }
+
+        // Emit user event messages
+        for subject in subjects {
+            self.register_event(
+                MessageVariant::UserEvent(UserEvent {
+                    user_id: user.id.to_string(),
+                    event_variant: event_variant as i32,
+                    checksum: user_checksum.clone(),
+                    reply: None,
+                }),
+                subject,
+            )
+            .await?
+        }
+
+        Ok(())
     }
 }
 
