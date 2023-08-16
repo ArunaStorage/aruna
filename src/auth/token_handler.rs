@@ -171,7 +171,7 @@ impl TokenHandler {
         } else {
             // Add public key to database and cache
             let client = database.get_client().await.unwrap();
-            let pub_key = DbPubKey::create_without_id(None, &decode_secret, &client).await?;
+            let pub_key = DbPubKey::create_or_get_without_id(None, &decode_secret, &client).await?;
 
             cache.add_pubkey(
                 pub_key.id as i32,
