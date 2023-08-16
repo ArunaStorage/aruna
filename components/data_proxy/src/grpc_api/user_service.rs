@@ -29,7 +29,7 @@ impl DataproxyUserService for DataProxyUserService {
         request: tonic::Request<GetCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
-            let token = get_token_from_md(&request.metadata())
+            let token = get_token_from_md(request.metadata())
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
 
             let (u, tid) = a.check_permissions(&token).map_err(|e| {

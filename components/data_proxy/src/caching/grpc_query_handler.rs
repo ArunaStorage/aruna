@@ -174,7 +174,7 @@ impl GrpcQueryHandler {
             .project
             .ok_or(anyhow!("unknown project"))?;
 
-        Ok(DPObject::try_from(response)?)
+        DPObject::try_from(response)
     }
 
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {

@@ -625,6 +625,8 @@ pub struct Missing {
     pub o: Option<String>,
 }
 
+// s3://foo/bar/baz
+
 impl ResourceStrings {
     pub fn permutate(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
         let mut orig = Vec::new();
@@ -766,6 +768,8 @@ impl TryFrom<&S3Path> for ResourceStrings {
         if let Some((b, k)) = value.as_object() {
             let mut results = Vec::new();
 
+            // s3://foo/bar
+
             let pathvec = k.split('/').collect::<Vec<&str>>();
             match pathvec.len() {
                 0 => {
@@ -824,9 +828,9 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
             }
-            return Ok(ResourceStrings(results));
+            Ok(ResourceStrings(results))
         } else {
-            return Err(anyhow!("Invalid path"));
+            Err(anyhow!("Invalid path"))
         }
     }
 }
@@ -858,10 +862,10 @@ impl PartialEq<DieselUlid> for ResourceIds {
 impl ResourceIds {
     pub fn get_id(&self) -> DieselUlid {
         match self {
-            ResourceIds::Project(id) => id.clone(),
-            ResourceIds::Collection(_, id) => id.clone(),
-            ResourceIds::Dataset(_, _, id) => id.clone(),
-            ResourceIds::Object(_, _, _, id) => id.clone(),
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
         }
     }
 
@@ -888,6 +892,7 @@ pub struct CheckAccessResult {
     pub missing_resources: Option<Missing>,
     pub user_id: String,
     pub token_id: Option<String>,
+    pub object: Object,
 }
 
 impl CheckAccessResult {
@@ -896,12 +901,14 @@ impl CheckAccessResult {
         missing_resources: Option<Missing>,
         user_id: String,
         token_id: Option<String>,
+        object: Object,
     ) -> Self {
         Self {
             resource_ids,
             missing_resources,
             user_id,
             token_id,
+            object,
         }
     }
 }

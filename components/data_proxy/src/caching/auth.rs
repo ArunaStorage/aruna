@@ -82,7 +82,7 @@ impl Serialize for Intent {
         serializer.serialize_str(
             format!(
                 "{}_{:?}",
-                self.target.to_string(),
+                self.target,
                 self.action.clone() as u8
             )
             .as_str(),
@@ -166,30 +166,33 @@ impl AuthHandler {
         let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
-            return Ok(CheckAccessResult::new(ids, missing, "".to_string(), None));
-        } else {
-            if let Some(creds) = creds {
-                let user = self
-                    .cache
-                    .get_user_by_key(&creds.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+            return Ok(CheckAccessResult::new(
+                ids,
+                missing,
+                "".to_string(),
+                None,
+                obj,
+            ));
+        } else if let Some(creds) = creds {
+            let user = self
+                .cache
+                .get_user_by_key(&creds.access_key)
+                .ok_or_else(|| anyhow!("Unknown user"))?;
 
-                for (token_id, perm) in user.permissions {
-                    if ids.check_if_in(token_id) {
-                        if perm >= db_perm_from_method {
-                            let res_id = if token_id == user.user_id {
-                                None
-                            } else {
-                                Some(token_id.to_string())
-                            };
-                            return Ok(CheckAccessResult::new(
-                                ids,
-                                missing,
-                                user.user_id.to_string(),
-                                res_id,
-                            ));
-                        }
-                    }
+            for (token_id, perm) in user.permissions {
+                if ids.check_if_in(token_id) && perm >= db_perm_from_method {
+                    let res_id = if token_id == user.user_id {
+                        None
+                    } else {
+                        Some(token_id.to_string())
+                    };
+                    return Ok(CheckAccessResult::new(
+                        ids,
+                        missing,
+                        user.user_id.to_string(),
+                        res_id,
+                        obj,
+                    ));
                 }
             }
         }
@@ -244,7 +247,7 @@ impl AuthHandler {
                 ));
             }
         }
-        return Err(anyhow!("No object found in path"));
+        Err(anyhow!("No object found in path"))
     }
 
     pub(crate) fn sign_impersonating_token(

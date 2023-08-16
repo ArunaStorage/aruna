@@ -176,7 +176,7 @@ impl Cache {
             .clone();
         match variant {
             ObjectType::PROJECT => {
-                return Ok(vec![(
+                Ok(vec![(
                     ResourceString::Project(initial_res.name),
                     ResourceIds::Project(initial_res.id),
                 )])
@@ -200,7 +200,7 @@ impl Cache {
                         ));
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
             ObjectType::DATASET => {
                 let mut res = Vec::new();
@@ -249,7 +249,7 @@ impl Cache {
                         }
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
             ObjectType::OBJECT => {
                 let mut res = Vec::new();
@@ -336,7 +336,7 @@ impl Cache {
                         }
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
         }
     }
@@ -403,7 +403,7 @@ impl Cache {
                 l.upsert(&persistence.get_client().await?).await?;
             }
         }
-        let object_id = object.id.clone();
+        let object_id = object.id;
         let obj_type = object.object_type.clone();
         self.resources.insert(object.id, (object, location));
         self.paths.retain(|_, v| v != &object_id);

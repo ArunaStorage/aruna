@@ -1,9 +1,9 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::CheckAccessResult;
-use crate::structs::Missing;
+
 use crate::structs::Object as ProxyObject;
-use crate::structs::ResourceIds;
+
 use anyhow::Result;
 use s3s::dto::*;
 use s3s::s3_error;
@@ -43,8 +43,7 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<CreateBucketOutput>> {
         let data = req
             .extensions
-            .get::<CheckAccessResult>()
-            .map(|element| element.clone());
+            .get::<CheckAccessResult>().cloned();
 
         let mut new_object = ProxyObject::from(req.input);
 
@@ -308,7 +307,7 @@ impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn create_multipart_upload(
         &self,
-        req: S3Request<CreateMultipartUploadInput>,
+        _req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
         // let mut anotif = ArunaNotifier::new(
@@ -347,7 +346,7 @@ impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn upload_part(
         &self,
-        req: S3Request<UploadPartInput>,
+        _req: S3Request<UploadPartInput>,
     ) -> S3Result<S3Response<UploadPartOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
         // if req.input.content_length == 0 {
@@ -416,7 +415,7 @@ impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn complete_multipart_upload(
         &self,
-        req: S3Request<CompleteMultipartUploadInput>,
+        _req: S3Request<CompleteMultipartUploadInput>,
     ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
         // let mut anotif = ArunaNotifier::new(
@@ -470,7 +469,7 @@ impl S3 for ArunaS3Service {
 
     async fn get_object(
         &self,
-        req: S3Request<GetObjectInput>,
+        _req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
 
@@ -680,7 +679,7 @@ impl S3 for ArunaS3Service {
 
     async fn head_object(
         &self,
-        req: S3Request<HeadObjectInput>,
+        _req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
         // Get the credentials
