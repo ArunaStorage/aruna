@@ -231,7 +231,7 @@ impl User {
     pub async fn add_user_token(
         client: &Client,
         user_id: &DieselUlid,
-        token: HashMap<DieselUlid, APIToken, RandomState>,
+        token: HashMap<DieselUlid, &APIToken, RandomState>,
     ) -> Result<()> {
         let query = "UPDATE users
             SET attributes = jsonb_set(attributes, '{tokens}', attributes->'tokens' || $1::jsonb, true) 

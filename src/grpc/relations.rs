@@ -46,8 +46,7 @@ impl RelationsService for RelationsServiceImpl {
                 .check_permissions(&token, labels_info.resources_to_check)
                 .await,
             "Unauthorized"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         let object = tonic_internal!(
             self.database_handler

@@ -90,7 +90,7 @@ impl EventNotificationService for NotificationServiceImpl {
             Target::Anouncements(_) => Context::default(),
             Target::All(_) => Context::proxy(),
         };
-        let _user_id = tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![perm_context])
                 .await,
@@ -118,7 +118,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Create stream consumer in database
         let stream_consumer = StreamConsumer {
             id: DieselUlid::generate(),
-            user_id: _user_id,
+            user_id: Some(user_id),
             config: postgres_types::Json(consumer_config),
         };
 

@@ -58,8 +58,7 @@ impl CollectionService for CollectionServiceImpl {
                 .check_permissions(&token, vec![parent_ctx])
                 .await,
             "Unauthorized"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         let object_with_rel = tonic_internal!(
             self.database_handler

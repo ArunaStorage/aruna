@@ -42,13 +42,14 @@ impl EndpointService for EndpointServiceImpl {
             self.database_handler.create_endpoint(request).await,
             "Invalid create endpoint request"
         );
-        self.cache.add_pubkey(
-            pk.id as i32,
-            PubKey::DataProxy(tonic_invalid!(
-                DecodingKey::from_ed_components(&pk.pubkey),
-                "Invalid pubkey"
-            )),
+
+        let test = tonic_invalid!(
+            DecodingKey::from_ed_components(&pk.pubkey),
+            "Invalid pubkey"
         );
+
+        self.cache
+            .add_pubkey(pk.id as i32, PubKey::DataProxy((pk.pubkey, test, ep.id)));
 
         let result = CreateEndpointResponse {
             endpoint: Some(tonic_internal!(ep.try_into(), "Endpoint conversion error")),

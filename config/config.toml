@@ -1,6 +1,10 @@
 database_url    = 'host=localhost user=root password=test123 port=26257 dbname=test'
 oauth_realminfo = 'http://localhost:8999/aruna.json'
 
+[token_keys]
+encoding_key = 'Base64_ed25519_Private_Key'
+decoding_key = 'Base64_ed25519_Public_Key'
+
 [default_endpoint]
 ep_type               = 'S3'
 endpoint_name         = 'Default Data Proxy'

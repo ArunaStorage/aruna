@@ -18,7 +18,7 @@ chrono = "0.4.26"
 dotenv = "0.15.0"
 http = "0.2.9"
 itertools = "0.11.0"
-jsonwebtoken = "8.3.0"
+jsonwebtoken = {version = "8.3.0", features = ["use_pem"]}
 lazy_static = "1.4.0"
 log = "0.4.19"
 meilisearch-sdk = "0.24.1"

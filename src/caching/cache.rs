@@ -44,6 +44,24 @@ impl Cache {
         self.user_cache.get(id).map(|x| x.value().clone())
     }
 
+    pub fn get_pubkey(&self, serial: i32) -> Option<PubKey> {
+        self.pubkeys.get(&serial).map(|x| x.value().clone())
+    }
+
+    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
+        for entry in &self.pubkeys {
+            match entry.value() {
+                PubKey::DataProxy((raw_key, _, _)) | PubKey::Server((raw_key, _)) => {
+                    if raw_pubkey == raw_key {
+                        return Some(*entry.key());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
@@ -120,7 +138,7 @@ impl Cache {
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
         ctxs.iter().all(|x| match &x.variant {
             crate::auth::structs::ContextVariant::Activated => true,
-            crate::auth::structs::ContextVariant::ResourceContext((id, _)) => {
+            crate::auth::structs::ContextVariant::Resource((id, _)) => {
                 if let Some(obj) = self.get_object(id) {
                     obj.object.endpoints.0.contains_key(endpoint_id)
                 } else {
@@ -159,7 +177,7 @@ impl Cache {
                 crate::auth::structs::ContextVariant::Activated => {
                     return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
                 }
-                crate::auth::structs::ContextVariant::ResourceContext((id, perm)) => {
+                crate::auth::structs::ContextVariant::Resource((id, perm)) => {
                     resources.insert(*id, *perm);
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {

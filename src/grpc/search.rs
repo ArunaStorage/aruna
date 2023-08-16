@@ -1,5 +1,8 @@
-use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
+use crate::database::dsls::object_dsl::KeyValues;
+use crate::database::enums::DataClass;
+use crate::{auth::permission_handler::PermissionHandler, database::enums::DbPermissionLevel};
+use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
     services::v2::{
@@ -7,7 +10,12 @@ use aruna_rust_api::api::storage::{
         SearchResourcesRequest, SearchResourcesResponse,
     },
 };
+use dashmap::DashMap;
+use diesel_ulid::DieselUlid;
+use postgres_types::Json;
+use std::str::FromStr;
 use std::sync::Arc;
+use tonic::Status;
 
 use crate::{
     auth::structs::Context,
@@ -41,13 +49,12 @@ impl SearchService for SearchServiceImpl {
                 .check_permissions(&token, vec![Context::default()])
                 .await,
             "Permission denied"
-        )
-        .ok_or(tonic::Status::invalid_argument("Missing user id"))?;
+        );
 
         // Check if: 0 < limit <= 100
         if inner_request.limit <= 0 || inner_request.limit > 100 {
             return Err(tonic::Status::invalid_argument(
-                "Limit must be between 0 and 100",
+                "Limit must be between 1 and 100",
             ));
         }
 
@@ -89,8 +96,68 @@ impl SearchService for SearchServiceImpl {
     ///ToDo: Rust Doc
     async fn get_public_resource(
         &self,
-        _request: tonic::Request<GetPublicResourceRequest>,
+        request: tonic::Request<GetPublicResourceRequest>,
     ) -> Result<tonic::Response<GetPublicResourceResponse>, tonic::Status> {
-        todo!()
+        log_received!(&request);
+
+        // Consumer gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token and check permissions with empty context
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token extraction failed"
+        );
+
+        // Validate format of provided id
+        let resource_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        // Check permissions
+        let ctx = Context::res_ctx(resource_ulid, DbPermissionLevel::READ, true);
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Permission denied"
+        );
+
+        // Get Object from cache
+        let mut object_plus = self
+            .cache
+            .get_object(&resource_ulid)
+            .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
+
+        // Check if object metadata is publicly available
+        match object_plus.object.data_class {
+            DataClass::PUBLIC | DataClass::PRIVATE => {}
+            _ => return Err(Status::invalid_argument("Resource is not public")),
+        }
+
+        // Strip infos
+        let stripped_labels = object_plus
+            .object
+            .key_values
+            .0
+             .0
+            .into_iter()
+            .filter(|kv| kv.key.contains("app.aruna-storage"))
+            .collect::<Vec<_>>();
+
+        object_plus.object.key_values = Json(KeyValues(stripped_labels));
+        object_plus.object.endpoints = Json(DashMap::default());
+
+        // Convert to proto resource
+        let generic_object: generic_resource::Resource =
+            tonic_invalid!(object_plus.try_into(), "Invalid object");
+
+        // Create response and return with log
+        let response = GetPublicResourceResponse {
+            resources: Some(GenericResource {
+                resource: Some(generic_object),
+            }),
+        };
+
+        return_with_log!(response);
     }
 }

@@ -1,37 +1,36 @@
-use crate::database::crud::CrudDb;
-use crate::database::dsls::endpoint_dsl::Endpoint;
-use crate::database::dsls::user_dsl::{APIToken, User};
-use crate::database::enums::DataProxyFeature;
+use crate::database::dsls::user_dsl::User;
+use crate::database::{crud::CrudDb, dsls::user_dsl::APIToken};
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetS3};
-use ahash::{HashMap, HashMapExt};
+use crate::middlelayer::token_request_types::{CreateToken, DeleteToken};
+use ahash::HashMap;
 use anyhow::{anyhow, Result};
-use chrono::Utc;
 use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
-    pub async fn create_token(&self, user_id: DieselUlid, request: CreateToken) -> Result<User> {
-        let client = self.database.get_client().await?;
-        let object_id = request.get_resource()?;
-        let user_rights = request.get_rights()?;
-        let expires_at = request.get_expiry()?;
-        let token_id = DieselUlid::generate();
-        let token = APIToken {
-            pub_key: 0,
-            name: request.0.name,
-            created_at: Utc::now().naive_local(),
-            expires_at,
-            object_id,
-            user_rights,
-        };
-        let mut map = HashMap::new();
-        map.insert(token_id, token);
-        User::add_user_token(&client, &user_id, map).await?;
-        let user = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
-        Ok(user)
+    pub async fn create_token(
+        &self,
+        user_id: &DieselUlid,
+        pubkey_serial: i32,
+        request: CreateToken,
+    ) -> Result<(DieselUlid, APIToken)> {
+        // Init database transaction
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let client = transaction.client();
+
+        // Generate APIToken and add to user
+        let token_ulid = DieselUlid::generate();
+        let token = request.build_token(pubkey_serial)?;
+
+        // Add token to user attributes
+        let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
+        token_map.insert(token_ulid, &token);
+        User::add_user_token(client, user_id, token_map).await?;
+
+        // Return token_id and token
+        Ok((token_ulid, token))
     }
+
     pub async fn delete_token(&self, user_id: DieselUlid, request: DeleteToken) -> Result<User> {
         let client = self.database.get_client().await?;
         let token_id = request.get_token_id()?;
@@ -48,24 +47,5 @@ impl DatabaseHandler {
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
         Ok(user)
-    }
-
-    pub async fn get_s3_creds(&self, request: GetS3) -> Result<String> {
-        // 1. Create short-lived dataproxy token
-        let client = self.database.get_client().await?;
-        let endpoint_id = request.get_endpoint_id()?;
-        let ep = Endpoint::get(endpoint_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("No endpoint found"))?;
-        let config = ep
-            .host_config
-            .0
-             .0
-            .iter()
-            .find(|c| c.feature == DataProxyFeature::PROXY)
-            .ok_or_else(|| anyhow!("No s3 config found"))?;
-        let _url = &config.url;
-        // 2. Request s3-creds with short-lived dataproxy token
-        todo!()
     }
 }

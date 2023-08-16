@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use postgres_types::{FromSql, Kind, ToSql, Type};
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 
 #[derive(
     Debug, Default, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize,
@@ -169,7 +168,7 @@ impl TryFrom<i32> for DbPermissionLevel {
 }
 
 impl TryFrom<&[u8]> for ObjectStatus {
-    type Error = Box<dyn Error + Sync + Send>;
+    type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         match String::from_utf8_lossy(value).as_ref() {
@@ -178,7 +177,7 @@ impl TryFrom<&[u8]> for ObjectStatus {
             "AVAILABLE" => Ok(ObjectStatus::AVAILABLE),
             "ERROR" => Ok(ObjectStatus::ERROR),
             "DELETED" => Ok(ObjectStatus::DELETED),
-            _ => Err(anyhow!("Unknown type").into()),
+            _ => Err(anyhow!("Unknown type")),
         }
     }
 }

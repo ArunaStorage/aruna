@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ContextVariant {
     Activated,
-    ResourceContext((DieselUlid, DbPermissionLevel)),
+    Resource((DieselUlid, DbPermissionLevel)),
     User((DieselUlid, DbPermissionLevel)),
     GlobalProxy,
     GlobalAdmin,
@@ -24,7 +24,7 @@ pub struct Context {
 impl Context {
     pub fn res_ctx(id: DieselUlid, level: DbPermissionLevel, allow_sa: bool) -> Self {
         Self {
-            variant: ContextVariant::ResourceContext((id, level)),
+            variant: ContextVariant::Resource((id, level)),
             allow_service_account: allow_sa,
             is_self: false,
         }

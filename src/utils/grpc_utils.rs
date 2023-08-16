@@ -69,11 +69,13 @@ impl UserServiceImpl {
                 Ok(id)
             }
 
-            (None, ctx) => tonic_auth!(
-                self.authorizer.check_permissions(&token, vec![ctx]).await,
-                "Unauthorized"
-            )
-            .ok_or_else(|| Status::internal("GetUser error")),
+            (None, ctx) => {
+                let user_id = tonic_auth!(
+                    self.authorizer.check_permissions(&token, vec![ctx]).await,
+                    "Unauthorized"
+                );
+                Ok(user_id)
+            }
         }
     }
 }
