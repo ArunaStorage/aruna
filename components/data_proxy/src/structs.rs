@@ -1,5 +1,5 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use anyhow::bail;
+use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
+use std::slice::Iter;
 use crate::caching::cache::ResourceIds;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -217,25 +218,9 @@ impl From<PermissionLevel> for DbPermissionLevel {
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Project) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let filtered_relations = relations_from_iter(value
             .relations
-            .iter()
-            .filter(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                    var.defined_variant() == InternalRelationVariant::BelongsTo
-                        && var.direction() == RelationDirection::Outbound
-                } else {
-                    false
-                }
-            })
-            .map(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                        Ok(DieselUlid::from_str(&var.resource_id)?)
-                } else {
-                    bail!("No relation found")
-                }
-            })
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .iter())?;
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -255,25 +240,9 @@ impl TryFrom<Project> for Object {
 impl TryFrom<Collection> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let filtered_relations = relations_from_iter(value
             .relations
-            .iter()
-            .filter(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                    var.defined_variant() == InternalRelationVariant::BelongsTo
-                        && var.direction() == RelationDirection::Outbound
-                } else {
-                    false
-                }
-            })
-            .map(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                        Ok(DieselUlid::from_str(&var.resource_id)?)
-                } else {
-                    bail!("No relation found")
-                }
-            })
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .iter())?;
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -293,26 +262,10 @@ impl TryFrom<Collection> for Object {
 impl TryFrom<Dataset> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Dataset) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let _test: Iter<aruna_rust_api::api::storage::models::v2::Relation> = value.relations.iter();
+        let filtered_relations = relations_from_iter(value
             .relations
-            .iter()
-            .filter(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                    var.defined_variant() == InternalRelationVariant::BelongsTo
-                        && var.direction() == RelationDirection::Outbound
-                } else {
-                    false
-                }
-            })
-            .map(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                        Ok(DieselUlid::from_str(&var.resource_id)?)
-                } else {
-                    bail!("No relation found")
-                }
-            })
-            .collect::<Result<HashSet<DieselUlid>>>()?;
-
+            .iter())?;
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
@@ -331,25 +284,9 @@ impl TryFrom<Dataset> for Object {
 impl TryFrom<GrpcObject> for Object {
     type Error = anyhow::Error;
     fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
-        let filtered_relations = value
+        let filtered_relations = relations_from_iter(value
             .relations
-            .iter()
-            .filter(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                    var.defined_variant() == InternalRelationVariant::BelongsTo
-                        && var.direction() == RelationDirection::Outbound
-                } else {
-                    false
-                }
-            })
-            .map(|x| {
-                if let Some(Relation::Internal(var)) = &x.relation {
-                        Ok(DieselUlid::from_str(&var.resource_id)?)
-                } else {
-                    bail!("No relation found")
-                }
-            })
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .iter())?;
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -375,4 +312,20 @@ impl From<&ResourceIds> for DieselUlid {
            ResourceIds::Object(_,_,_,id) => *id,
        }
     }
+}
+
+fn relations_from_iter(iter: Iter<aruna_rust_api::api::storage::models::v2::Relation>) -> Result<HashSet<DieselUlid>> {
+    iter.filter_map(|x: &aruna_rust_api::api::storage::models::v2::Relation| -> Option<Result<DieselUlid>> {
+        if let Some(Relation::Internal(var)) = &x.relation {
+            if var.defined_variant() == InternalRelationVariant::BelongsTo
+                && var.direction() == RelationDirection::Outbound {
+                let id = DieselUlid::from_str(&var.resource_id).map_err(|_|anyhow!("Decoding error"));
+                Some(id)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }).collect::<Result<HashSet<DieselUlid>>>()
 }
