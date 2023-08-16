@@ -30,13 +30,13 @@ pub fn get_collection_children(input: &ObjectWithRelations, cache: &Cache) -> Co
     let origin = input.object.id;
     let mut dataset_children: Vec<DatasetRelations> = Vec::new();
     let object_children = get_object_children(input);
-    for d in input
+    for dataset in input
         .outbound_belongs_to
         .0
         .iter()
         .filter(|r| r.target_type == ObjectType::DATASET)
     {
-        if let Some(ds) = cache.get_object(&d.origin_pid) {
+        if let Some(ds) = cache.get_object(&dataset.origin_pid) {
             dataset_children.push(get_dataset_relations(&ds))
         };
     }
@@ -51,23 +51,23 @@ pub fn get_project_children(input: &ObjectWithRelations, cache: &Cache) -> Proje
     let mut collection_children: Vec<CollectionRelations> = Vec::new();
     let mut dataset_children: Vec<DatasetRelations> = Vec::new();
     let object_children = get_object_children(input);
-    for c in input
+    for collection in input
         .outbound_belongs_to
         .0
         .iter()
         .filter(|r| r.target_type == ObjectType::COLLECTION)
     {
-        if let Some(col) = cache.get_object(&c.origin_pid) {
+        if let Some(col) = cache.get_object(&collection.origin_pid) {
             collection_children.push(get_collection_children(&col, cache))
         };
     }
-    for d in input
+    for dataset in input
         .outbound_belongs_to
         .0
         .iter()
         .filter(|r| r.target_type == ObjectType::DATASET)
     {
-        if let Some(ds) = cache.get_object(&d.origin_pid) {
+        if let Some(ds) = cache.get_object(&dataset.origin_pid) {
             dataset_children.push(get_dataset_relations(&ds))
         };
     }
