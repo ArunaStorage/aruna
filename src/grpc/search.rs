@@ -24,7 +24,7 @@ use crate::{
     utils::conversions::get_token_from_md,
 };
 
-crate::impl_grpc_server!(SearchServiceImpl, search_client: MeilisearchClient);
+crate::impl_grpc_server!(SearchServiceImpl, search_client: Arc<MeilisearchClient>);
 
 #[tonic::async_trait]
 impl SearchService for SearchServiceImpl {

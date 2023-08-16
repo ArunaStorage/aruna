@@ -8,16 +8,16 @@ pub struct Database {
 
 impl Database {
     pub fn new(
-        database_host: &str,
+        database_host: String,
         database_port: u16,
-        database_name: &str,
-        database_user: &str,
+        database_name: String,
+        database_user: String,
     ) -> Result<Self> {
         let mut cfg = Config::new();
-        cfg.host = Some(database_host.to_string());
+        cfg.host = Some(database_host);
         cfg.port = Some(database_port);
-        cfg.user = Some(database_user.to_string());
-        cfg.dbname = Some(database_name.to_string());
+        cfg.user = Some(database_user);
+        cfg.dbname = Some(database_name);
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
@@ -28,8 +28,16 @@ impl Database {
         })
     }
 
+    /*
+    pub fn new (conn_str: &str) -> Result<Self> {
+        let conf = tokio_postgres::Config
+    }
+    */
+
     pub async fn initialize_db(&self) -> Result<()> {
         let client = self.connection_pool.get().await?;
+        dbg!(&client);
+
         let initial = tokio::fs::read_to_string("./src/database/schema.sql").await?;
         client.batch_execute(&initial).await?;
         Ok(())

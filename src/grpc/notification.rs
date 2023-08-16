@@ -35,7 +35,7 @@ use crate::{
 
 crate::impl_grpc_server!(
     NotificationServiceImpl,
-    natsio_handler: NatsIoHandler
+    natsio_handler: Arc<NatsIoHandler>
 );
 
 #[tonic::async_trait]

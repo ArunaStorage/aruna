@@ -1,5 +1,6 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
+use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
@@ -67,8 +68,8 @@ impl PubKey {
     }
 
     /// As the primary ke is a auto incrementing serial it is stupid to provide a id for inserts...
-    pub async fn create_without_id(
-        proxy: Option<String>,
+    pub async fn create_or_get_without_id(
+        proxy: Option<DieselUlid>,
         pubkey: &str,
         client: &Client,
     ) -> Result<PubKey> {
@@ -80,10 +81,15 @@ impl PubKey {
         let prepared = client.prepare(query).await?;
 
         // Execute prepared statement
-        let row = client.query_one(&prepared, &[&proxy, &pubkey]).await?;
+        let pubkey = match client.query_opt(&prepared, &[&proxy, &pubkey]).await? {
+            Some(row) => PubKey::from_row(&row),
+            None => PubKey::get_by_key(pubkey, client)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Broken."))?,
+        };
 
-        // Return inserted pubkey
-        Ok(PubKey::from_row(&row))
+        // Return inserted/fetched pubkey
+        Ok(pubkey)
     }
 }
 

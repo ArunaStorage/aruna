@@ -85,7 +85,7 @@ pub struct Object {
     pub external_relations: Json<ExternalRelations>,
     pub hashes: Json<Hashes>,
     pub dynamic: bool,
-    pub endpoints: Json<DashMap<DieselUlid, bool, RandomState>>,
+    pub endpoints: Json<DashMap<DieselUlid, bool, RandomState>>, // <Endpoint_id, leader>
 }
 
 #[derive(FromRow, Debug, FromSql, Clone)]
