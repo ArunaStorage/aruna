@@ -1,4 +1,5 @@
 use super::cache::Cache;
+use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Missing;
 use crate::structs::Object;
@@ -161,12 +162,11 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
-    ) -> Result<Option<(ResourceIds, Option<Missing>, String, Option<String>)>> {
+    ) -> Result<CheckAccessResult> {
         let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
-
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
-            return Ok(None);
+            return Ok(CheckAccessResult::new(ids, missing, "".to_string(), None));
         } else {
             if let Some(creds) = creds {
                 let user = self
@@ -174,15 +174,20 @@ impl AuthHandler {
                     .get_user_by_key(&creds.access_key)
                     .ok_or_else(|| anyhow!("Unknown user"))?;
 
-                for (res_id, perm) in user.permissions {
-                    if ids.check_if_in(res_id) {
+                for (token_id, perm) in user.permissions {
+                    if ids.check_if_in(token_id) {
                         if perm >= db_perm_from_method {
-                            let res_id = if res_id == user.user_id {
+                            let res_id = if token_id == user.user_id {
                                 None
                             } else {
-                                Some(res_id.to_string())
+                                Some(token_id.to_string())
                             };
-                            return Ok(Some((ids, missing, user.user_id.to_string(), res_id)));
+                            return Ok(CheckAccessResult::new(
+                                ids,
+                                missing,
+                                user.user_id.to_string(),
+                                res_id,
+                            ));
                         }
                     }
                 }

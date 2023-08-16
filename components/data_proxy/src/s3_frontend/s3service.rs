@@ -1,5 +1,6 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::CheckAccessResult;
 use crate::structs::Missing;
 use crate::structs::Object as ProxyObject;
 use crate::structs::ResourceIds;
@@ -42,14 +43,15 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<CreateBucketOutput>> {
         let data = req
             .extensions
-            .get::<Option<(ResourceIds, Option<Missing>, String, Option<String>)>>()
-            .map(|e| e.clone())
-            .flatten();
+            .get::<CheckAccessResult>()
+            .map(|element| element.clone());
 
         let mut new_object = ProxyObject::from(req.input);
 
         if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
-            let (_, _, user, token) = data.unwrap();
+            let CheckAccessResult {
+                user_id, token_id, ..
+            } = data.ok_or_else(|| s3_error!(InternalError, "Internal Error"))?;
 
             let token = self
                 .cache
@@ -58,7 +60,7 @@ impl S3 for ArunaS3Service {
                 .await
                 .as_ref()
                 .unwrap()
-                .sign_impersonating_token(&user, token)
+                .sign_impersonating_token(user_id, token_id)
                 .map_err(|e| {
                     dbg!(e);
                     s3_error!(NotSignedUp, "Unauthorized")

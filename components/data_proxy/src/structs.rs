@@ -881,3 +881,27 @@ impl ResourceIds {
         }
     }
 }
+
+#[derive(Clone)]
+pub struct CheckAccessResult {
+    pub resource_ids: ResourceIds,
+    pub missing_resources: Option<Missing>,
+    pub user_id: String,
+    pub token_id: Option<String>,
+}
+
+impl CheckAccessResult {
+    pub fn new(
+        resource_ids: ResourceIds,
+        missing_resources: Option<Missing>,
+        user_id: String,
+        token_id: Option<String>,
+    ) -> Self {
+        Self {
+            resource_ids,
+            missing_resources,
+            user_id,
+            token_id,
+        }
+    }
+}
