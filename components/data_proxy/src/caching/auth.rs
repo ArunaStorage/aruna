@@ -18,8 +18,11 @@ use s3s::auth::Credentials;
 use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
 
 pub struct AuthHandler {
@@ -109,7 +112,7 @@ impl AuthHandler {
         cache: Arc<Cache>,
         self_id: DieselUlid,
         encode_secret: String,
-        token_serial: i32,
+        encoding_key_serial: i32,
     ) -> Self {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
@@ -120,7 +123,7 @@ impl AuthHandler {
         Self {
             cache,
             self_id,
-            encoding_key: (token_serial, encoding_key),
+            encoding_key: (encoding_key_serial, encoding_key),
         }
     }
 
@@ -209,13 +212,34 @@ impl AuthHandler {
         tid: Option<&str>,
     ) -> Result<String> {
         let claims = ArunaTokenClaims {
-            iss: "aruna".to_string(),
+            iss: "aruna_dataproxy".to_string(),
             sub: user_id.to_string(),
-            exp: 0,
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(15 * 60))
+                .as_secs() as usize,
             tid: tid.map(|x| x.to_string()),
             it: Some(Intent {
                 target: self.self_id,
                 action: Action::Impersonate,
+            }),
+        };
+
+        self.sign_token(claims)
+    }
+
+    pub(crate) fn sign_notification_token(&self) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: "aruna_dataproxy".to_string(),
+            sub: self.self_id.to_string(),
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(60 * 60 * 24 * 365 * 10))
+                .as_secs() as usize,
+            tid: None,
+            it: Some(Intent {
+                target: self.self_id,
+                action: Action::FetchInfo,
             }),
         };
 
