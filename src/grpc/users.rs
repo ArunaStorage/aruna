@@ -14,6 +14,7 @@ use anyhow::anyhow;
 
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
 use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsRequest;
+use aruna_rust_api::api::storage::models::v2::context::Context as ProtoContext;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint as ApiEndpointEnum;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -527,8 +528,65 @@ impl UserService for UserServiceImpl {
 
     async fn get_dataproxy_token_user(
         &self,
-        _request: Request<GetDataproxyTokenUserRequest>,
+        request: Request<GetDataproxyTokenUserRequest>,
     ) -> Result<Response<GetDataproxyTokenUserResponse>, Status> {
-        todo!()
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Check empty context if is registered user
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let (_, maybe_token) = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![Context::default()])
+                .await,
+            "Unauthorized"
+        );
+
+        // Validate provided endpoint/user id format
+        let endpoint_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.endpoint_id),
+            "Invalid endpoint id format"
+        );
+        let user_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.endpoint_id),
+            "Invalid endpoint id format"
+        );
+
+        // Create token based on provided context
+        let response_token = if let Some(context) = inner_request.context {
+            match context.context {
+                Some(con) => {
+                    match con {
+                        ProtoContext::S3Credentials(_) => {
+                            tonic_internal!(
+                                self.authorizer.token_handler.sign_dataproxy_slt(
+                                    &user_ulid, // Shouldn't we just take the user id associated with the request token?
+                                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                                    Some(Intent {
+                                        target: endpoint_ulid,
+                                        action: Action::CreateSecrets
+                                    }),
+                                ),
+                                "Token signing failed"
+                            )
+                        }
+                        ProtoContext::Copy(_) => {
+                            unimplemented!("Dataproxy copy token creation not yet implemented")
+                        }
+                    }
+                }
+                None => return Err(Status::invalid_argument("No context provided")),
+            }
+        } else {
+            return Err(Status::invalid_argument("No context provided"));
+        };
+
+        // Return token to user
+        let response = GetDataproxyTokenUserResponse {
+            token: response_token,
+        };
+        return_with_log!(response);
     }
 }
