@@ -221,24 +221,16 @@ impl TryFrom<Project> for Object {
             .relations
             .iter()
             .filter(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
-                        }
-                        _ => false,
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                    var.defined_variant() == InternalRelationVariant::BelongsTo
+                        && var.direction() == RelationDirection::Outbound
                 } else {
                     false
                 }
             })
             .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                        Ok(DieselUlid::from_str(&var.resource_id)?)
                 } else {
                     bail!("No relation found")
                 }
@@ -267,24 +259,16 @@ impl TryFrom<Collection> for Object {
             .relations
             .iter()
             .filter(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
-                        }
-                        _ => false,
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                    var.defined_variant() == InternalRelationVariant::BelongsTo
+                        && var.direction() == RelationDirection::Outbound
                 } else {
                     false
                 }
             })
             .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                        Ok(DieselUlid::from_str(&var.resource_id)?)
                 } else {
                     bail!("No relation found")
                 }
@@ -313,24 +297,16 @@ impl TryFrom<Dataset> for Object {
             .relations
             .iter()
             .filter(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
-                        }
-                        _ => false,
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                    var.defined_variant() == InternalRelationVariant::BelongsTo
+                        && var.direction() == RelationDirection::Outbound
                 } else {
                     false
                 }
             })
             .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                        Ok(DieselUlid::from_str(&var.resource_id)?)
                 } else {
                     bail!("No relation found")
                 }
@@ -359,24 +335,16 @@ impl TryFrom<GrpcObject> for Object {
             .relations
             .iter()
             .filter(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            var.defined_variant() == InternalRelationVariant::BelongsTo
-                                && var.direction() == RelationDirection::Outbound
-                        }
-                        _ => false,
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                    var.defined_variant() == InternalRelationVariant::BelongsTo
+                        && var.direction() == RelationDirection::Outbound
                 } else {
                     false
                 }
             })
             .map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => Ok(DieselUlid::from_str(&var.resource_id)?),
-                        _ => bail!("No relation found"),
-                    }
+                if let Some(Relation::Internal(var)) = &x.relation {
+                        Ok(DieselUlid::from_str(&var.resource_id)?)
                 } else {
                     bail!("No relation found")
                 }

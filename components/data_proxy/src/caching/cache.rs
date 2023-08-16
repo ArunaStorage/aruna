@@ -93,9 +93,9 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
             }
-            return Ok(ResourceStrings(results));
+            Ok(ResourceStrings(results))
         } else {
-            return Err(anyhow!("Invalid path"));
+            Err(anyhow!("Invalid path"))
         }
     }
 }
@@ -127,10 +127,10 @@ impl PartialEq<DieselUlid> for ResourceIds {
 impl ResourceIds {
     pub fn get_id(&self) -> DieselUlid {
         match self {
-            ResourceIds::Project(id) => id.clone(),
-            ResourceIds::Collection(_, id) => id.clone(),
-            ResourceIds::Dataset(_, _, id) => id.clone(),
-            ResourceIds::Object(_, _, _, id) => id.clone(),
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
         }
     }
 
@@ -190,10 +190,10 @@ impl Cache {
             auth: RwLock::new(None),
         });
         if let Some(url) = notifications_url {
-            let notication_handler: Arc<GrpcQueryHandler> =
+            let notification_handler: Arc<GrpcQueryHandler> =
                 Arc::new(GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await?);
 
-            let notifications_handler_clone = notication_handler.clone();
+            let notifications_handler_clone = notification_handler.clone();
             tokio::spawn(async move {
                 notifications_handler_clone
                     .clone()
@@ -201,7 +201,7 @@ impl Cache {
                     .await
             });
 
-            cache.set_notifications(notication_handler).await
+            cache.set_notifications(notification_handler).await
         };
 
         let auth_handler = AuthHandler::new(cache.clone(), self_id);
@@ -306,7 +306,7 @@ impl Cache {
             .clone();
         match variant {
             ObjectType::PROJECT => {
-                return Ok(vec![(
+                Ok(vec![(
                     ResourceString::Project(initial_res.name),
                     ResourceIds::Project(initial_res.id),
                 )])
@@ -330,7 +330,7 @@ impl Cache {
                         ));
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
             ObjectType::DATASET => {
                 let mut res = Vec::new();
@@ -379,7 +379,7 @@ impl Cache {
                         }
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
             ObjectType::OBJECT => {
                 let mut res = Vec::new();
@@ -466,7 +466,7 @@ impl Cache {
                         }
                     }
                 }
-                return Ok(res);
+                Ok(res)
             }
         }
     }
@@ -533,7 +533,7 @@ impl Cache {
                 l.upsert(&persistence.get_client().await?).await?;
             }
         }
-        let object_id = object.id.clone();
+        let object_id = object.id;
         let obj_type = object.object_type.clone();
         self.resources.insert(object.id, (object, location));
         self.paths.retain(|_, v| v != &object_id);

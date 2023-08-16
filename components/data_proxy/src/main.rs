@@ -2,7 +2,7 @@ use anyhow::Result;
 use caching::cache::Cache;
 use data_backends::{
     s3_backend::S3Backend,
-    storage_backend::{self, StorageBackend},
+    storage_backend::StorageBackend,
 };
 use s3_frontend::impersonating_client::ImpersonatingClient;
 use std::{io::Write, str::FromStr, sync::Arc};

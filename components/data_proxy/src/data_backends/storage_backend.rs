@@ -43,7 +43,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// Initiates a multipart upload.
     /// Returns the UploadID of the multipart upload
     /// This is modelled after other multipart upload mechanisms like from S3
-    /// This should be comptible with FS based multipart uploads as well
+    /// This should be compatible with FS based multipart uploads as well
     /// # Arguments
     ///
     /// * `location` - The location of the object which to load

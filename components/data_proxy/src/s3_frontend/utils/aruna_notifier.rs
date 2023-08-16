@@ -191,7 +191,7 @@ impl ArunaNotifier {
         self.encryption_key.clone().ok_or_else(|| {
             s3_error!(
                 InternalError,
-                "Internal notifier error unable to retreive enc_key"
+                "Internal notifier error unable to retrieve enc_key"
             )
         })
     }

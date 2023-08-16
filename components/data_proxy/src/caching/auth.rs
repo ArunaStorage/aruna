@@ -71,7 +71,7 @@ impl Serialize for Intent {
         serializer.serialize_str(
             format!(
                 "{}_{:?}",
-                self.target.to_string(),
+                self.target,
                 self.action.clone() as u8
             )
             .as_str(),
@@ -142,18 +142,16 @@ impl AuthHandler {
 
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
             return Ok(());
-        } else {
-            if let Some(creds) = creds {
-                let user = self
-                    .cache
-                    .get_user_by_key(&creds.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+        } else if let Some(creds) = creds {
+            let user = self
+                .cache
+                .get_user_by_key(&creds.access_key)
+                .ok_or_else(|| anyhow!("Unknown user"))?;
 
-                for (res_id, perm) in user.permissions {
-                    if ids.check_if_in(res_id) {
-                        if perm >= db_perm_from_method {
-                            return Ok(());
-                        }
+            for (res_id, perm) in user.permissions {
+                if ids.check_if_in(res_id) {
+                    if perm >= db_perm_from_method {
+                        return Ok(());
                     }
                 }
             }
@@ -178,7 +176,7 @@ impl AuthHandler {
                 ));
             }
         }
-        return Err(anyhow!("No object found in path"));
+        Err(anyhow!("No object found in path"))
     }
 }
 
