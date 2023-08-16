@@ -21,7 +21,7 @@ use crate::database::{
 };
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
     Token, User as ApiUser, UserAttributes,
@@ -303,6 +303,20 @@ impl From<ObjectType> for ResourceVariant {
             ObjectType::DATASET => ResourceVariant::Dataset,
             ObjectType::OBJECT => ResourceVariant::Object,
         }
+    }
+}
+
+impl TryFrom<ResourceVariant> for ObjectType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ResourceVariant) -> std::result::Result<Self, Self::Error> {
+        Ok(match value {
+            ResourceVariant::Unspecified => bail!("Unspecified resource variant not allowed"),
+            ResourceVariant::Project => ObjectType::PROJECT,
+            ResourceVariant::Collection => ObjectType::COLLECTION,
+            ResourceVariant::Dataset => ObjectType::DATASET,
+            ResourceVariant::Object => ObjectType::OBJECT,
+        })
     }
 }
 
