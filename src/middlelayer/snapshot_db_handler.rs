@@ -34,11 +34,7 @@ impl DatabaseHandler {
                 )
             }
         };
-        let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
-        let result = snapshot_resources.snapshot(transaction_client).await?;
-        transaction.commit().await?;
+        let result = snapshot_resources.snapshot(client).await?;
         Ok((new_object_id, result))
     }
 }

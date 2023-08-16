@@ -70,3 +70,32 @@ pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelati
         relation_name: "BELONGS_TO".to_string(),
     }
 }
+pub fn object_from_mapping(
+    user_id: DieselUlid,
+    object_mapping: ObjectMapping<DieselUlid>,
+) -> Object {
+    let (id, object_type) = match object_mapping {
+        ObjectMapping::PROJECT(id) => (id, ObjectType::PROJECT),
+        ObjectMapping::COLLECTION(id) => (id, ObjectType::COLLECTION),
+        ObjectMapping::DATASET(id) => (id, ObjectType::DATASET),
+        ObjectMapping::OBJECT(id) => (id, ObjectType::OBJECT),
+    };
+    Object {
+        id,
+        revision_number: 0,
+        name: "a".to_string(),
+        description: "b".to_string(),
+        count: 1,
+        created_at: None,
+        content_len: 1337,
+        created_by: user_id,
+        key_values: Json(KeyValues(vec![])),
+        object_status: ObjectStatus::AVAILABLE,
+        data_class: DataClass::PRIVATE,
+        object_type,
+        external_relations: Json(ExternalRelations(DashMap::default())),
+        hashes: Json(Hashes(Vec::new())),
+        dynamic: false,
+        endpoints: Json(DashMap::default()),
+    }
+}
