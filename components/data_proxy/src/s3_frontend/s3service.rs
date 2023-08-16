@@ -1,9 +1,9 @@
 use super::impersonating_client::ImpersonatingClient;
-use crate::caching::cache::{Cache, ResourceString};
+use crate::caching::cache::{Cache, ResourceIds, ResourceString};
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
-use ahash::HashSet;
+use ahash::{HashSet, RandomState};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use base64::engine::general_purpose;
@@ -17,7 +17,9 @@ use s3s::S3Result;
 use s3s::S3;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::sync::Arc;
+use dashmap::mapref::one::Ref;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -363,72 +365,35 @@ impl S3 for ArunaS3Service {
 
     async fn head_object(
         &self,
-        _req: S3Request<HeadObjectInput>,
+        req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // Get the credentials
+        // TODO: Special bucket
+        let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
+            DieselUlid::from_str(&req.input.key).map_err(|_| s3_error!(NoSuchKey, "No object found"))?
+        } else {
+        match req.extensions.get::<Option<(ResourceIds, String, Option<String>)>>().cloned().flatten() {
+            Some((ids, _, _)) => match ids {
+                ResourceIds::Project(id) => Ok(id),
+                ResourceIds::Collection(_, id) => Ok(id),
+                ResourceIds::Dataset(_, _, id) => Ok(id),
+                ResourceIds::Object(_, _, _, id) => Ok(id),
+            },
+            None => Err(s3_error!(NoSuchKey, "No object found")),
+        }?};
+        let (object, location) = self.cache.resources.get(&id).ok_or_else(||s3_error!(NoSuchKey, "No object found"))?.clone();
+        let location = location.ok_or_else(||s3_error!(NoSuchUpload, "Object not stored in this DataProxy"))?;
+        let checksum_sha256 = object.hashes.get("SHA256").map(ChecksumSHA256::from);
 
-        // let creds = match _req.credentials {
-        //     Some(cred) => cred,
-        //     None => {
-        //         log::error!("{}", "Not identified PutObjectRequest");
-        //         return Err(s3_error!(NotSignedUp, "Your account is not signed up"));
-        //     }
-        // };
-
-        // let rev_id = match _req.input.version_id {
-        //     Some(a) => a,
-        //     None => String::new(),
-        // };
-
-        // let get_location_response = self
-        //     .data_handler
-        //     .internal_notifier_service
-        //     .clone()
-        //     .get_object_location(GetObjectLocationRequest {
-        //         path: format!("s3://{}/{}", _req.input.bucket, _req.input.key),
-        //         revision_id: rev_id,
-        //         access_key: creds.access_key,
-        //         endpoint_id: self.data_handler.settings.endpoint_id.to_string(),
-        //     })
-        //     .await
-        //     .map_err(|_| s3_error!(NoSuchKey, "Key not found, tag: head_get_loc"))?
-        //     .into_inner();
-
-        // let _location = get_location_response
-        //     .location
-        //     .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_loc"))?;
-
-        // let object = get_location_response
-        //     .object
-        //     .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_obj"))?;
-
-        // let sha256_hash = object
-        //     .hashes
-        //     .iter()
-        //     .find(|a| a.alg == Hashalgorithm::Sha256 as i32)
-        //     .cloned()
-        //     .ok_or_else(|| s3_error!(NoSuchKey, "Key not found, tag: head_sha"))?;
-
-        // let timestamp = object
-        //     .created
-        //     .map(|e| {
-        //         Timestamp::parse(
-        //             TimestampFormat::EpochSeconds,
-        //             format!("{}", e.seconds).as_str(),
-        //         )
-        //     })
-        //     .ok_or_else(|| s3_error!(InternalError, "intenal processing error"))?
-        //     .map_err(|_| s3_error!(InternalError, "intenal processing error"))?;
-
-        // Ok(HeadObjectOutput {
-        //     content_length: object.content_len,
-        //     last_modified: Some(timestamp),
-        //     checksum_sha256: Some(sha256_hash.hash),
-        //     e_tag: Some(object.id),
-        //     version_id: Some(format!("{}", object.rev_number)),
-        //     ..Default::default()
-        // })
+        Ok(S3Response::new(HeadObjectOutput {
+            content_length: location.raw_content_len,
+            content_type: None,
+            content_disposition: None,
+            content_encoding: None,
+            e_tag: Some(location.id.to_string()),
+            storage_class: None,
+            checksum_sha256,
+            ..Default::default()
+        }))
     }
 
     async fn list_objects(
@@ -660,7 +625,7 @@ impl S3 for ArunaS3Service {
                 .collect(),
         );
 
-        let result = S3Response::new(ListObjectsV2Output {
+        let result = ListObjectsV2Output {
             common_prefixes,
             contents,
             continuation_token,
@@ -673,8 +638,9 @@ impl S3 for ArunaS3Service {
             next_continuation_token: new_continuation_token,
             prefix,
             start_after: Some(start_after),
-        });
-        Ok(result)
+        };
+        log::debug!("{:?}",&result);
+        Ok(S3Response::new(result))
     }
     #[tracing::instrument]
     async fn put_object(
