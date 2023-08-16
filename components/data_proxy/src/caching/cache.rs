@@ -174,6 +174,7 @@ impl Cache {
         with_persistence: bool,
         self_id: DieselUlid,
         encoding_key: String,
+        encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
         let persistence = if with_persistence {
             RwLock::new(None)
@@ -205,7 +206,8 @@ impl Cache {
             cache.set_notifications(notication_handler).await
         };
 
-        let auth_handler = AuthHandler::new(cache.clone(), self_id, encoding_key);
+        let auth_handler =
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
         cache.set_auth(auth_handler).await;
         Ok(cache)
     }

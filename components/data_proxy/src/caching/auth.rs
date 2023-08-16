@@ -10,7 +10,9 @@ use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use jsonwebtoken::Algorithm;
 use jsonwebtoken::EncodingKey;
+use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use s3s::auth::Credentials;
 use s3s::path::S3Path;
@@ -23,7 +25,7 @@ use tonic::metadata::MetadataMap;
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
     pub self_id: DieselUlid,
-    pub encoding_key: EncodingKey,
+    pub encoding_key: (i32, EncodingKey),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,7 +105,12 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
-    pub fn new(cache: Arc<Cache>, self_id: DieselUlid, encode_secret: String) -> Self {
+    pub fn new(
+        cache: Arc<Cache>,
+        self_id: DieselUlid,
+        encode_secret: String,
+        token_serial: i32,
+    ) -> Self {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
@@ -113,7 +120,7 @@ impl AuthHandler {
         Self {
             cache,
             self_id,
-            encoding_key,
+            encoding_key: (token_serial, encoding_key),
         }
     }
 
@@ -194,6 +201,37 @@ impl AuthHandler {
             }
         }
         return Err(anyhow!("No object found in path"));
+    }
+
+    pub(crate) fn sign_impersonating_token(
+        &self,
+        user_id: &str,
+        tid: Option<&str>,
+    ) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: "aruna".to_string(),
+            sub: user_id.to_string(),
+            exp: 0,
+            tid: tid.map(|x| x.to_string()),
+            it: Some(Intent {
+                target: self.self_id,
+                action: Action::Impersonate,
+            }),
+        };
+
+        self.sign_token(claims)
+    }
+
+    pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
+        let header = Header {
+            kid: Some(format!("{}", &self.encoding_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1)?;
+
+        Ok(token)
     }
 }
 
