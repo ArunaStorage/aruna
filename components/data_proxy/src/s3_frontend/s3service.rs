@@ -1,5 +1,6 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::Missing;
 use crate::structs::Object as ProxyObject;
 use crate::structs::ResourceIds;
 use anyhow::Result;
@@ -41,14 +42,14 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<CreateBucketOutput>> {
         let data = req
             .extensions
-            .get::<Option<(ResourceIds, String, Option<String>)>>()
+            .get::<Option<(ResourceIds, Option<Missing>, String, Option<String>)>>()
             .map(|e| e.clone())
             .flatten();
 
         let mut new_object = ProxyObject::from(req.input);
 
         if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
-            let (_, user, token) = data.unwrap();
+            let (_, _, user, token) = data.unwrap();
 
             let token = self
                 .cache

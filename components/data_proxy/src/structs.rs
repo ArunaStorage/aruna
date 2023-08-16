@@ -617,7 +617,7 @@ impl PartialOrd for ResourceString {
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 pub struct ResourceStrings(pub Vec<ResourceString>);
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord, Default)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Missing {
     pub p: Option<String>,
     pub c: Option<String>,

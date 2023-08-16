@@ -1,5 +1,6 @@
 use super::cache::Cache;
 use crate::structs::DbPermissionLevel;
+use crate::structs::Missing;
 use crate::structs::Object;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceStrings;
@@ -160,8 +161,8 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
-    ) -> Result<Option<(ResourceIds, String, Option<String>)>> {
-        let (ids, obj) = self.extract_object_from_path(path, method)?;
+    ) -> Result<Option<(ResourceIds, Option<Missing>, String, Option<String>)>> {
+        let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
 
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
@@ -181,7 +182,7 @@ impl AuthHandler {
                             } else {
                                 Some(res_id.to_string())
                             };
-                            return Ok(Some((ids, user.user_id.to_string(), res_id)));
+                            return Ok(Some((ids, missing, user.user_id.to_string(), res_id)));
                         }
                     }
                 }
@@ -195,7 +196,7 @@ impl AuthHandler {
         &self,
         path: &S3Path,
         method: &Method,
-    ) -> Result<(ResourceIds, Object)> {
+    ) -> Result<(ResourceIds, Object, Option<Missing>)> {
         let res_strings = ResourceStrings::try_from(path)?;
 
         let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
@@ -218,11 +219,12 @@ impl AuthHandler {
                         .value()
                         .0
                         .clone(),
+                    None,
                 ));
             }
         }
 
-        for res in alt {
+        for (res, missing) in alt {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
                 return Ok((
                     e.clone(),
@@ -233,6 +235,7 @@ impl AuthHandler {
                         .value()
                         .0
                         .clone(),
+                    Some(missing),
                 ));
             }
         }
