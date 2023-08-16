@@ -116,7 +116,7 @@ impl EventNotificationService for NotificationServiceImpl {
         } else {
             tonic_internal!(
                 self.natsio_handler
-                    .create_event_consumer(EventType::All, deliver_policy)
+                    .create_event_consumer(event_type, deliver_policy)
                     .await,
                 "Consumer creation failed"
             )

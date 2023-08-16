@@ -8,7 +8,8 @@ use aruna_rust_api::api::{
     },
     storage::models::v2::generic_resource,
 };
-use async_nats::jetstream::consumer::{DeliverPolicy, PushConsumer};
+use aruna_rust_api::api::storage::models::v2::User as ApiUser;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 
@@ -19,16 +20,16 @@ use crate::{
         dsls::{object_dsl::Object, user_dsl::User},
     },
     notification::natsio_handler::NatsIoHandler,
-    utils::grpc_utils::checksum_resource,
+    utils::grpc_utils::{checksum_resource, checksum_user},
 };
 
 use super::cache::Cache;
 
 pub struct NotificationHandler {
-    database: Arc<Database>,
-    cache: Arc<Cache>,
-    natsio_handler: Arc<NatsIoHandler>,
-    stream_consumer: PushConsumer,
+    //database: Arc<Database>,
+    //cache: Arc<Cache>,
+    //natsio_handler: Arc<NatsIoHandler>,
+    //stream_consumer: PushConsumer,
 }
 
 // Nats.io handler direkt
@@ -41,7 +42,7 @@ impl NotificationHandler {
         natsio_handler: Arc<NatsIoHandler>,
     ) -> anyhow::Result<Self> {
         // Create push consumer for all notifications
-        let myself_id = DieselUlid::generate(); //ToDo: Replace with istance id
+        let myself_id = DieselUlid::generate(); //ToDo: Replace with instance id?
         let (consumer_id, _) = natsio_handler
             .create_push_consumer(myself_id, "AOS.>".to_string(), DeliverPolicy::All, true)
             .await?;
@@ -70,7 +71,7 @@ impl NotificationHandler {
                     };
 
                     // Update cache
-                    NotificationHandler::update_resource_cache(
+                    NotificationHandler::update_server_cache(
                         msg_variant,
                         cache_clone.clone(),
                         database_clone.clone(),
@@ -81,17 +82,12 @@ impl NotificationHandler {
         })
         .await?;
 
-        // Return
-        Ok(NotificationHandler {
-            database,
-            cache,
-            natsio_handler,
-            stream_consumer: push_consumer,
-        })
+        // Return ... something
+        Ok(NotificationHandler {})
     }
 
     ///ToDo: Rust Doc
-    async fn update_resource_cache(
+    async fn update_server_cache(
         message: MessageVariant,
         cache: Arc<Cache>,
         database: Arc<Database>,
@@ -183,6 +179,12 @@ async fn process_user_event(
                 // Check if user already exists
                 if let Some(user) = cache.get_user(&user_ulid) {
                     // Convert to proto and compare checksum
+                    let proto_user = ApiUser::from(user.clone());
+                    let proto_checksum = checksum_user(&proto_user)?;
+
+                    if !(proto_checksum == user_event.checksum) {
+                        cache.update_user(&user_ulid, user);
+                    }
                 } else {
                     // Fetch user from database and add to cache
                     let client = database.get_client().await?;
