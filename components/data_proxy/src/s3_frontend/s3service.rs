@@ -1,23 +1,23 @@
-use std::collections::BTreeMap;
 use super::impersonating_client::ImpersonatingClient;
 use crate::caching::cache::{Cache, ResourceString};
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::Object;
+use crate::structs::ObjectLocation;
+use ahash::HashSet;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::DataClass;
+use base64::engine::general_purpose;
+use base64::Engine;
+use diesel_ulid::DieselUlid;
 use s3s::dto::*;
 use s3s::s3_error;
 use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
-use ahash::HashSet;
-use aruna_rust_api::api::storage::models::v2::DataClass;
-use base64::Engine;
-use base64::engine::general_purpose;
-use diesel_ulid::DieselUlid;
-use crate::structs::ObjectLocation;
-use crate::structs::Object;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -448,18 +448,18 @@ impl S3 for ArunaS3Service {
         log::debug!("{:?}", &req);
         let project_name = ResourceString::Project(req.input.bucket.clone());
         match self.cache.paths.get(&project_name) {
-            Some(_) => {},
-            None => return Err(s3_error!(NoSuchBucket, "No bucket found"))
+            Some(_) => {}
+            None => return Err(s3_error!(NoSuchBucket, "No bucket found")),
         };
         let root = &req.input.bucket;
 
         let continuation_token = match req.input.continuation_token {
             Some(t) => {
-                let decoded_token =
-                //TODO ERROR HANDLING
-                    general_purpose::STANDARD_NO_PAD.decode(t).map_err(|_| s3_error!(NoSuchBucket, "TODO"))?;
-                //TODO ERROR HANDLING
-                let decoded_token = std::str::from_utf8(&decoded_token).map_err(|_| s3_error!(NoSuchBucket, "TODO"))?
+                let decoded_token = general_purpose::STANDARD_NO_PAD
+                    .decode(t)
+                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?;
+                let decoded_token = std::str::from_utf8(&decoded_token)
+                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?
                     .to_string();
                 Some(decoded_token)
             }
@@ -469,28 +469,50 @@ impl S3 for ArunaS3Service {
         let delimiter = req.input.delimiter;
         let prefix = req.input.prefix;
 
-        let sorted  = self.cache.paths.iter().filter_map(|e| match e.key().clone() {
-            ResourceString::Collection(temp_root, collection)
-            if &temp_root == root => {
-                Some(([temp_root, collection].join("/"), e.value().into()))
-            },
-            ResourceString::Dataset(temp_root, collection, dataset )
-            if &temp_root == root =>
-                Some(([temp_root, collection.unwrap_or("".to_string()), dataset].join("/"), e.value().into())),
-            ResourceString::Object(temp_root, collection, dataset , object)
-            if &temp_root == root =>
-                Some(([temp_root, collection.unwrap_or("".to_string()), dataset.unwrap_or("".to_string()), object].join("/"), e.value().into())),
-            ResourceString::Project(temp_root) if &temp_root == root => Some((temp_root, e.value().into())),
-            _ => None,
-        }).collect::<BTreeMap<String, DieselUlid>>();
+        let sorted = self
+            .cache
+            .paths
+            .iter()
+            .filter_map(|e| match e.key().clone() {
+                ResourceString::Collection(temp_root, collection) if &temp_root == root => {
+                    Some(([temp_root, collection].join("/"), e.value().into()))
+                }
+                ResourceString::Dataset(temp_root, collection, dataset) if &temp_root == root => {
+                    Some((
+                        [temp_root, collection.unwrap_or("".to_string()), dataset].join("/"),
+                        e.value().into(),
+                    ))
+                }
+                ResourceString::Object(temp_root, collection, dataset, object)
+                    if &temp_root == root =>
+                {
+                    Some((
+                        [
+                            temp_root,
+                            collection.unwrap_or("".to_string()),
+                            dataset.unwrap_or("".to_string()),
+                            object,
+                        ]
+                        .join("/"),
+                        e.value().into(),
+                    ))
+                }
+                ResourceString::Project(temp_root) if &temp_root == root => {
+                    Some((temp_root, e.value().into()))
+                }
+                _ => None,
+            })
+            .collect::<BTreeMap<String, DieselUlid>>();
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
             (Some(s), None) => s,
-            _ =>{ let (path,_ ) = sorted.first_key_value().ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
+            _ => {
+                let (path, _) = sorted
+                    .first_key_value()
+                    .ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
                 path.clone()
             }
-            ,
         };
         let max_keys = match req.input.max_keys {
             Some(k) if k < 1000 => k as usize,
@@ -506,32 +528,40 @@ impl S3 for ArunaS3Service {
                 for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
                     if let Some(split) = path.strip_prefix(&prefix) {
                         if let Some((sub_prefix, _)) = split.split_once(&delimiter) {
-                        // If Some split -> common prefixes
-                        common_prefixes.insert([prefix.to_string(),sub_prefix.to_string()].join(""));
-                        if idx == max_keys {
-                            if idx == max_keys + 1{
-                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            // If Some split -> common prefixes
+                            if idx == max_keys + 1 {
+                                new_continuation_token =
+                                    Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                                break;
                             }
-                            break
-                        }
-                    } else {
-                        let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
-                        keys.insert(entry);
-                        if idx == max_keys {
-                            if idx == max_keys + 1{
-                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            common_prefixes
+                                .insert([prefix.to_string(), sub_prefix.to_string()].join(""));
+                        } else {
+                            let entry: Contents = (
+                                path,
+                                self.cache
+                                    .resources
+                                    .get(id)
+                                    .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                                    .value(),
+                            )
+                                .into();
+                            if idx == max_keys + 1 {
+                                new_continuation_token =
+                                    Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                                break;
                             }
-                            break
-                        }
-                    };
+                            keys.insert(entry);
+                        };
                     } else {
-                        continue
+                        continue;
                     };
                     if idx == max_keys {
-                        if idx == max_keys + 1{
-                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        if idx == max_keys + 1 {
+                            new_continuation_token =
+                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
                         }
-                        break
+                        break;
                     }
                 }
             }
@@ -539,69 +569,98 @@ impl S3 for ArunaS3Service {
                 for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
                     if let Some((pre, _)) = path.split_once(&delimiter) {
                         // If Some split -> common prefixes
-                        common_prefixes.insert(pre.to_string());
-                        if idx == max_keys {
-                            if idx == max_keys + 1{
-                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                            }
-                            break
+                        if idx == max_keys + 1 {
+                            new_continuation_token =
+                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            break;
                         }
+                        common_prefixes.insert(pre.to_string());
                     } else {
                         // If None split -> Entry
-                        let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
-                        keys.insert(entry);
-                        if idx == max_keys {
-                            if idx == max_keys + 1{
-                                new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                            }
-                            break
+                        let entry: Contents = (
+                            path,
+                            self.cache
+                                .resources
+                                .get(id)
+                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                                .value(),
+                        )
+                            .into();
+                        if idx == max_keys + 1 {
+                            new_continuation_token =
+                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            break;
                         }
+                        keys.insert(entry);
                     };
                 }
-            },
+            }
             (None, Some(prefix)) => {
                 for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
                     let entry: Contents = if path.strip_prefix(&prefix).is_some() {
-                        (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into()
+                        (
+                            path,
+                            self.cache
+                                .resources
+                                .get(id)
+                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                                .value(),
+                        )
+                            .into()
                     } else {
-                        continue
+                        continue;
                     };
-                    keys.insert(entry.clone());
-                    if idx == max_keys {
-                        if idx == max_keys + 1{
-                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                        }
-                        break
+                    if idx == max_keys + 1 {
+                        new_continuation_token =
+                            Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        break;
                     }
+                    keys.insert(entry.clone());
                 }
-            },
+            }
 
             (None, None) => {
                 for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
-                    let entry: Contents = (path, self.cache.resources.get(id).ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?.value()).into();
-                    keys.insert(entry.clone());
-                    if idx == max_keys {
-                        if idx == max_keys + 1{
-                            new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(entry.key));
-                        }
-                        break
+                    let entry: Contents = (
+                        path,
+                        self.cache
+                            .resources
+                            .get(id)
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                            .value(),
+                    )
+                        .into();
+                    if idx == max_keys + 1 {
+                        new_continuation_token =
+                            Some(general_purpose::STANDARD_NO_PAD.encode(entry.key));
+                        break;
                     }
+                    keys.insert(entry.clone());
                 }
             }
         }
         let key_count = keys.len() as i32;
-        let common_prefixes = Some(common_prefixes.into_iter().map(|e| CommonPrefix{ prefix: Some(e)}).collect());
-        let contents = Some(keys.into_iter().map(|e| s3s::dto::Object{
-            checksum_algorithm: None,
-            e_tag: Some(e.etag.to_string()),
-            key: Some(e.key),
-            last_modified: None,
-            owner: None,
-            size: e.size,
-            storage_class: None, // TODO: Use dataclass here
-        }).collect());
+        let common_prefixes = Some(
+            common_prefixes
+                .into_iter()
+                .map(|e| CommonPrefix { prefix: Some(e) })
+                .collect(),
+        );
+        let contents = Some(
+            keys.into_iter()
+                .map(|e| s3s::dto::Object {
+                    checksum_algorithm: None,
+                    e_tag: Some(e.etag.to_string()),
+                    key: Some(e.key),
+                    last_modified: None,
+                    owner: None,
+                    size: e.size,
+                    storage_class: None, // TODO: Use dataclass here
+                })
+                .collect(),
+        );
 
-        let result = S3Response::new(ListObjectsV2Output{
+        let result = S3Response::new(ListObjectsV2Output {
             common_prefixes,
             contents,
             continuation_token,
@@ -909,12 +968,12 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     fn from(value: (&String, &(Object, Option<ObjectLocation>))) -> Self {
         Contents {
             key: value.0.clone(),
-            etag: value.1.0.id,
-            size: match &value.1.1 {
+            etag: value.1 .0.id,
+            size: match &value.1 .1 {
                 Some(s) => s.raw_content_len,
                 None => 0,
             },
-            storage_class: value.1.0.data_class,
+            storage_class: value.1 .0.data_class,
         }
     }
 }
