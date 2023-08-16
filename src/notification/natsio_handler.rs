@@ -6,9 +6,7 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
-use async_nats::jetstream::consumer::{
-    Config, Consumer, DeliverPolicy, PullConsumer, PushConsumer,
-};
+use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer, PushConsumer};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -24,8 +22,9 @@ use crate::utils::grpc_utils::{checksum_resource, checksum_user};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
-    generate_announcement_subject, generate_resource_message_subjects, generate_resource_subject,
-    generate_user_message_subject, generate_user_subject, validate_reply_msg,
+    generate_announcement_subject, generate_endpoint_subject, generate_resource_message_subjects,
+    generate_resource_subject, generate_user_message_subject, generate_user_subject,
+    validate_reply_msg,
 };
 
 // ----- Constants used for notifications -------------------- //
@@ -239,10 +238,22 @@ impl NatsIoHandler {
     }
 
     ///ToDo: Rust Doc
-    async fn get_event_consumer(
+    pub async fn get_push_consumer(
         &self,
         event_consumer_id: String,
-    ) -> anyhow::Result<Consumer<Config>> {
+    ) -> anyhow::Result<PushConsumer> {
+        // Try to get consumer from stream
+        Ok(match self.stream.get_consumer(&event_consumer_id).await {
+            Ok(consumer) => consumer,
+            Err(err) => return Err(anyhow::anyhow!(err)),
+        })
+    }
+
+    ///ToDo: Rust Doc
+    pub async fn get_pull_consumer(
+        &self,
+        event_consumer_id: String,
+    ) -> anyhow::Result<PullConsumer> {
         // Try to get consumer from stream
         Ok(match self.stream.get_consumer(&event_consumer_id).await {
             Ok(consumer) => consumer,
@@ -257,27 +268,29 @@ impl NatsIoHandler {
         consumer_subject: String,
         delivery_policy: DeliverPolicy,
         ephemeral: bool,
-    ) -> anyhow::Result<PushConsumer> {
+    ) -> anyhow::Result<(DieselUlid, Config)> {
         // Define consumer config
-        let consumer_config = async_nats::jetstream::consumer::push::Config {
+        let consumer_config = Config {
             name: Some(consumer_id.to_string()),
             durable_name: if ephemeral {
                 None
             } else {
                 Some(consumer_id.to_string())
             },
-            deliver_subject: consumer_subject,
+            deliver_subject: Some(consumer_subject),
             //deliver_group: Some("workers".to_string()), // Maybe later for better distribution
             deliver_policy: delivery_policy,
             idle_heartbeat: Duration::from_secs(60), // 60 seconds heartbeat
             ..Default::default()
         };
 
-        // Create consumer with the generated config
-        let push_consumer = self.stream.create_consumer(consumer_config.clone()).await?;
+        // Create consumer with the generated config if not already exists
+        self.stream
+            .get_or_create_consumer(&consumer_id.to_string(), consumer_config.clone())
+            .await?;
 
         // Return consumer id
-        return Ok(push_consumer);
+        return Ok((consumer_id, consumer_config));
     }
 
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
@@ -301,7 +314,7 @@ impl NatsIoHandler {
 
         // Add individual endpoint subjects
         for endpoint_ulid in &object.object.endpoints.0 {
-            subjects.push(format!("AOS.{}", endpoint_ulid.key()))
+            subjects.push(generate_endpoint_subject(&endpoint_ulid.key()))
         }
 
         // Create message payload
@@ -343,7 +356,7 @@ impl NatsIoHandler {
 
         // Add individual endpoint subjects
         for trusted_endpoint in &user.attributes.0.trusted_endpoints {
-            subjects.push(format!("AOS.{}", trusted_endpoint.key()))
+            subjects.push(generate_endpoint_subject(&trusted_endpoint.key()))
         }
 
         // Emit user event messages
