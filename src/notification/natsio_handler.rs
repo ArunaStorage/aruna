@@ -6,7 +6,7 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
-use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer};
+use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer, PushConsumer, Consumer};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -234,6 +234,36 @@ impl NatsIoHandler {
             stream,
             reply_secret: secret,
         })
+    }
+
+    //ToDo: Rust Doc
+    pub async fn create_push_consumer(
+        &self,
+        consumer_id: DieselUlid,
+        consumer_subject: String,
+        delivery_policy: DeliverPolicy,
+        ephemeral: bool,
+    ) -> anyhow::Result<PushConsumer> {
+        // Define consumer config
+        let consumer_config = async_nats::jetstream::consumer::push::Config {
+            name: Some(consumer_id.to_string()),
+            durable_name: if ephemeral {
+                None
+            } else {
+                Some(consumer_id.to_string())
+            },
+            deliver_subject: consumer_subject,
+            //deliver_group: Some("workers".to_string()), // Maybe later for better distribution
+            deliver_policy: delivery_policy,
+            idle_heartbeat: Duration::from_secs(60), // 60 seconds heartbeat
+            ..Default::default()
+        };
+
+        // Create consumer with the generated config
+        let push_consumer = self.stream.create_consumer(consumer_config.clone()).await?;
+
+        // Return consumer id
+        return Ok(push_consumer);
     }
 
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
