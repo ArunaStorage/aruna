@@ -8,6 +8,8 @@ use aruna_rust_api::api::storage::models::v2::{
     PermissionLevel, Project, RelationDirection, Status,
 };
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
+use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
@@ -525,6 +527,33 @@ impl From<Object> for CreateCollectionRequest {
             external_relations: vec![],
             data_class: value.data_class.into(),
             parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(x.to_string())),
+        }
+    }
+}
+
+impl From<Object> for CreateDatasetRequest {
+    fn from(value: Object) -> Self {
+        CreateDatasetRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::ProjectId(x.to_string())),
+        }
+    }
+}
+
+impl From<Object> for CreateObjectRequest {
+    fn from(value: Object) -> Self {
+        CreateObjectRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_object_request::Parent::ProjectId(x.to_string())),
+            hashes: vec![],
         }
     }
 }
