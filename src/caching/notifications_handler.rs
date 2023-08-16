@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
+use aruna_rust_api::api::storage::models::v2::User as ApiUser;
 use aruna_rust_api::api::{
     notification::services::v2::{
         anouncement_event::EventVariant as AnnEventVariant, event_message::MessageVariant,
@@ -8,7 +9,6 @@ use aruna_rust_api::api::{
     },
     storage::models::v2::generic_resource,
 };
-use aruna_rust_api::api::storage::models::v2::User as ApiUser;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
@@ -19,21 +19,17 @@ use crate::{
         crud::CrudDb,
         dsls::{object_dsl::Object, user_dsl::User},
     },
-    notification::natsio_handler::NatsIoHandler,
+    notification::{
+        handler::{EventHandler, EventType},
+        natsio_handler::NatsIoHandler,
+    },
     utils::grpc_utils::{checksum_resource, checksum_user},
 };
 
 use super::cache::Cache;
 
-pub struct NotificationHandler {
-    //database: Arc<Database>,
-    //cache: Arc<Cache>,
-    //natsio_handler: Arc<NatsIoHandler>,
-    //stream_consumer: PushConsumer,
-}
+pub struct NotificationHandler {}
 
-// Nats.io handler direkt
-// Message stream?
 impl NotificationHandler {
     ///ToDo: Rust Doc
     pub async fn new(
@@ -41,26 +37,22 @@ impl NotificationHandler {
         cache: Arc<Cache>,
         natsio_handler: Arc<NatsIoHandler>,
     ) -> anyhow::Result<Self> {
-        // Create push consumer for all notifications
-        let myself_id = DieselUlid::generate(); //ToDo: Replace with instance id?
-        let (consumer_id, _) = natsio_handler
-            .create_push_consumer(myself_id, "AOS.>".to_string(), DeliverPolicy::All, true)
+        // Create standard pull consumer to fetch all notifications
+        let (some1, _) = natsio_handler
+            .create_event_consumer(EventType::All, DeliverPolicy::All)
             .await?;
 
-        // Fetch push consumer from stream
-        let push_consumer = natsio_handler
-            .get_push_consumer(consumer_id.to_string())
-            .await?;
+        //Todo: Persist consumer for ArunaServer instances?
+        let pull_consumer = natsio_handler.get_pull_consumer(some1.to_string()).await?;
 
         // Async move the consumer listening
-        let mut messages = push_consumer.messages().await?;
+        let mut messages = pull_consumer.messages().await?;
         let cache_clone = cache.clone();
         let database_clone = database.clone();
         let _ = tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = messages.next().await {
-                    log::debug!("got message {:?}", nats_message);
-
+                    // Deserialize messages in gRPC definitions
                     let msg_variant = match serde_json::from_slice(
                         nats_message.message.payload.to_vec().as_slice(),
                     ) {
@@ -70,7 +62,7 @@ impl NotificationHandler {
                         }
                     };
 
-                    // Update cache
+                    // Update cache depending on message variant
                     NotificationHandler::update_server_cache(
                         msg_variant,
                         cache_clone.clone(),
@@ -79,8 +71,7 @@ impl NotificationHandler {
                     .await?;
                 }
             }
-        })
-        .await?;
+        });
 
         // Return ... something
         Ok(NotificationHandler {})
@@ -144,11 +135,10 @@ async fn process_resource_event(
                     }
                 }
                 EventVariant::Available => {
-                    todo!("Ignore or set resource available in cache")
+                    unimplemented!("Ignore or set resource available in cache?")
                 }
                 EventVariant::Deleted => {
-                    // Just delete resource from cache
-                    //  Or set status to deleted?
+                    unimplemented!("Delete from cache or set status to 'Deleted'?")
                 }
             }
         } else {
@@ -175,7 +165,7 @@ async fn process_user_event(
     if let Some(variant) = EventVariant::from_i32(user_event.event_variant) {
         match variant {
             EventVariant::Unspecified => bail!("Unspecified user event variant not allowed"),
-            EventVariant::Created => {
+            EventVariant::Created | EventVariant::Updated => {
                 // Check if user already exists
                 if let Some(user) = cache.get_user(&user_ulid) {
                     // Convert to proto and compare checksum
@@ -195,9 +185,8 @@ async fn process_user_event(
                     }
                 }
             }
-            EventVariant::Available => todo!(),
-            EventVariant::Updated => todo!(),
-            EventVariant::Deleted => todo!(),
+            EventVariant::Available => unimplemented!("Set user activated?"),
+            EventVariant::Deleted => cache.remove_user(&user_ulid),
         }
     } else {
         // Return error if variant is None
@@ -210,18 +199,26 @@ async fn process_user_event(
 fn process_announcement_event(announcement_event: AnouncementEvent) -> anyhow::Result<()> {
     if let Some(variant) = announcement_event.event_variant {
         match variant {
-            AnnEventVariant::NewDataProxyId(_) => unimplemented!("?"),
-            AnnEventVariant::RemoveDataProxyId(_) => unimplemented!("?"),
-            AnnEventVariant::UpdateDataProxyId(_) => unimplemented!("?"),
+            AnnEventVariant::NewDataProxyId(_) => {
+                unimplemented!("Endpoint cache currently not implemented")
+            }
+            AnnEventVariant::RemoveDataProxyId(_) => {
+                unimplemented!("Remove from trusted endpoints of users?")
+            }
+            AnnEventVariant::UpdateDataProxyId(_) => {
+                unimplemented!("Endpoint cache currently not implemented")
+            }
             AnnEventVariant::NewPubkey(_) => unimplemented!("Refresh pubkey cache"),
             AnnEventVariant::RemovePubkey(_) => unimplemented!("Refresh pubkey cache"),
             AnnEventVariant::Downtime(_) => {
                 unimplemented!("Prepare for downtime. Degradation or something ...")
             }
-            AnnEventVariant::Version(_) => unimplemented!("Ignore"),
+            AnnEventVariant::Version(version) => log::debug!("{:#?}", version),
         }
     } else {
         // Return error if variant is None
         bail!("Announcement event variant missing")
     }
+
+    Ok(())
 }

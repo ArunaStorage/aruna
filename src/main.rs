@@ -42,7 +42,7 @@ pub async fn main() -> Result<()> {
     // Load env
     dotenvy::from_filename(".env")?;
 
-    // Database
+    // Init database connection
     let db = database::connection::Database::new(
         dotenvy::var("DATABASE_HOST")?,
         dotenvy::var("DATABASE_PORT")?.parse::<u16>()?,
@@ -52,13 +52,11 @@ pub async fn main() -> Result<()> {
     db.initialize_db().await?;
     let db_arc = Arc::new(db);
 
-    log::info!("Database init");
-
-    // Cache
+    // Init cache
     let cache = Cache::new();
     let cache_arc = Arc::new(cache);
 
-    // Token Handler
+    // Init TokenHandler
     let token_handler = TokenHandler::new(
         cache_arc.clone(),
         db_arc.clone(),
@@ -69,33 +67,25 @@ pub async fn main() -> Result<()> {
     .await?;
     let token_handler_arc = Arc::new(token_handler);
 
-    // Permission Handler
+    // Init PermissionHandler
     let authorizer = PermissionHandler::new(cache_arc.clone(), token_handler_arc.clone());
     let auth_arc = Arc::new(authorizer);
 
-    // MailClient
-    let mailclient: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
-        Some(MailClient::new()?)
-    } else {
-        None
-    };
-
-    // NatsIoHandler
+    // Init NatsIoHandler
     let client = async_nats::connect(dotenvy::var("NATS_HOST")?).await?;
     let natsio_handler = NatsIoHandler::new(client, dotenvy::var("REPLY_SECRET")?, None)
         .await
-        .map_err(|_| anyhow::anyhow!(""))?;
-
+        .map_err(|_| anyhow::anyhow!("NatsIoHandler init failed"))?;
     let natsio_arc = Arc::new(natsio_handler);
 
-    // Database Handler
+    // Init DatabaseHandler
     let database_handler = DatabaseHandler {
         database: db_arc.clone(),
         natsio_handler: natsio_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
 
-    // Notification Handler
+    // NotificationHandler
     let _ = NotificationHandler::new(db_arc.clone(), cache_arc.clone(), natsio_arc.clone()).await?;
 
     // MeilisearchClient
@@ -105,6 +95,13 @@ pub async fn main() -> Result<()> {
     )?;
     let meilisearch_arc = Arc::new(meilisearch_client);
 
+    // init MailClient
+    let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
+        Some(MailClient::new()?)
+    } else {
+        None
+    };
+
     // Init server builder
     let mut builder = Server::builder().add_service(EndpointServiceServer::new(
         EndpointServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone()).await,
@@ -112,7 +109,7 @@ pub async fn main() -> Result<()> {
 
     // Check default endpoint -> Only endpoint service available
     let client = db_arc.get_client().await?;
-    if let Some(_) = Endpoint::get_default(&client).await? {
+    if Endpoint::get_default(&client).await?.is_some() {
         // Add other services
         builder = builder
             .add_service(UserServiceServer::new(
@@ -182,9 +179,11 @@ pub async fn main() -> Result<()> {
     }
 
     // Do it.
-    builder.serve("0.0.0.0:50052".parse()?).await?;
+    let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
+    log::info!("ArunaServer listening on {}", addr);
+    builder.serve(addr).await?;
 
-    // Cron scheduler
+    // Cron scheduler?
 
     Ok(())
 }

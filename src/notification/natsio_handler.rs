@@ -6,7 +6,7 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
-use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer, PushConsumer};
+use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -238,18 +238,6 @@ impl NatsIoHandler {
     }
 
     ///ToDo: Rust Doc
-    pub async fn get_push_consumer(
-        &self,
-        event_consumer_id: String,
-    ) -> anyhow::Result<PushConsumer> {
-        // Try to get consumer from stream
-        Ok(match self.stream.get_consumer(&event_consumer_id).await {
-            Ok(consumer) => consumer,
-            Err(err) => return Err(anyhow::anyhow!(err)),
-        })
-    }
-
-    ///ToDo: Rust Doc
     pub async fn get_pull_consumer(
         &self,
         event_consumer_id: String,
@@ -262,7 +250,7 @@ impl NatsIoHandler {
     }
 
     //ToDo: Rust Doc
-    pub async fn create_push_consumer(
+    pub async fn create_internal_consumer(
         &self,
         consumer_id: DieselUlid,
         consumer_subject: String,
@@ -272,13 +260,12 @@ impl NatsIoHandler {
         // Define consumer config
         let consumer_config = Config {
             name: Some(consumer_id.to_string()),
+            filter_subject: consumer_subject.clone(),
             durable_name: if ephemeral {
                 None
             } else {
                 Some(consumer_id.to_string())
             },
-            deliver_subject: Some(consumer_subject),
-            //deliver_group: Some("workers".to_string()), // Maybe later for better distribution
             deliver_policy: delivery_policy,
             idle_heartbeat: Duration::from_secs(60), // 60 seconds heartbeat
             ..Default::default()

@@ -101,10 +101,10 @@ impl EventNotificationService for NotificationServiceImpl {
         // Consumer creation depending on request token source
         let (consumer_id, consumer_config) = if is_proxy {
             let consumer_name = DieselUlid::generate(); // Some random id as name
-            let consumer_subject = generate_endpoint_subject(&user_id); // user id is endpoint id
+            let consumer_subject = generate_endpoint_subject(&user_id);
             tonic_internal!(
                 self.natsio_handler
-                    .create_push_consumer(
+                    .create_internal_consumer(
                         consumer_name,
                         consumer_subject,
                         DeliverPolicy::All,
