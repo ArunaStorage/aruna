@@ -1,9 +1,8 @@
-use crate::caching::cache::ResourceStrings;
+use super::cache::Cache;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
-
-use super::cache::Cache;
-use super::cache::ResourceIds;
+use crate::structs::ResourceIds;
+use crate::structs::ResourceStrings;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;

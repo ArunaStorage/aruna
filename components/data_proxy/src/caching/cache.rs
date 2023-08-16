@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, ObjectType, PubKey, User},
+    structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
 };
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -17,139 +17,6 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::{auth::SecretKey, path::S3Path};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub enum ResourceString {
-    Project(String),
-    Collection(String, String),
-    Dataset(String, Option<String>, String),
-    Object(String, Option<String>, Option<String>, String),
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub struct ResourceStrings(pub Vec<ResourceString>);
-
-impl TryFrom<&S3Path> for ResourceStrings {
-    type Error = anyhow::Error;
-    fn try_from(value: &S3Path) -> Result<Self> {
-        if let Some((b, k)) = value.as_object() {
-            let mut results = Vec::new();
-
-            let pathvec = k.split('/').collect::<Vec<&str>>();
-            match pathvec.len() {
-                0 => {
-                    results.push(ResourceString::Project(b.to_string()));
-                }
-                1 => {
-                    results.push(ResourceString::Collection(
-                        b.to_string(),
-                        pathvec[0].to_string(),
-                    ));
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        None,
-                        pathvec[0].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        pathvec[0].to_string(),
-                    ));
-                }
-                2 => {
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        None,
-                        pathvec[1].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                }
-                3 => {
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        Some(pathvec[1].to_string()),
-                        pathvec[2].to_string(),
-                    ));
-                }
-                _ => {
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        k.to_string(),
-                    ));
-                }
-            }
-            return Ok(ResourceStrings(results));
-        } else {
-            return Err(anyhow!("Invalid path"));
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub enum ResourceIds {
-    Project(DieselUlid),
-    Collection(DieselUlid, DieselUlid),
-    Dataset(DieselUlid, Option<DieselUlid>, DieselUlid),
-    Object(
-        DieselUlid,
-        Option<DieselUlid>,
-        Option<DieselUlid>,
-        DieselUlid,
-    ),
-}
-
-impl PartialEq<DieselUlid> for ResourceIds {
-    fn eq(&self, other: &DieselUlid) -> bool {
-        match self {
-            ResourceIds::Project(id) => id == other,
-            ResourceIds::Collection(_, id) => id == other,
-            ResourceIds::Dataset(_, _, id) => id == other,
-            ResourceIds::Object(_, _, _, id) => id == other,
-        }
-    }
-}
-
-impl ResourceIds {
-    pub fn get_id(&self) -> DieselUlid {
-        match self {
-            ResourceIds::Project(id) => id.clone(),
-            ResourceIds::Collection(_, id) => id.clone(),
-            ResourceIds::Dataset(_, _, id) => id.clone(),
-            ResourceIds::Object(_, _, _, id) => id.clone(),
-        }
-    }
-
-    pub fn check_if_in(&self, id: DieselUlid) -> bool {
-        match self {
-            ResourceIds::Project(pid) => pid == &id,
-            ResourceIds::Collection(pid, cid) => pid == &id || cid == &id,
-            ResourceIds::Dataset(pid, cid, did) => {
-                pid == &id || cid.unwrap_or_default() == id || did == &id
-            }
-            ResourceIds::Object(pid, cid, did, oid) => {
-                pid == &id
-                    || cid.unwrap_or_default() == id
-                    || did.unwrap_or_default() == id
-                    || oid == &id
-            }
-        }
-    }
-}
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
