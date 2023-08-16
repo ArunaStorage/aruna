@@ -59,12 +59,12 @@ struct ArunaTokenClaims {
 
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Action {
     All = 0,
-    Notifications = 1,
-    CreateSecrets = 2,
-    Impersonate = 3,
+    CreateSecrets = 1,
+    Impersonate = 2,
+    FetchInfo = 3,
     //DpExchange = 4,
 }
 
@@ -72,9 +72,9 @@ impl From<u8> for Action {
     fn from(input: u8) -> Self {
         match input {
             0 => Action::All,
-            1 => Action::Notifications,
-            2 => Action::CreateSecrets,
-            3 => Action::Impersonate,
+            1 => Action::CreateSecrets,
+            2 => Action::Impersonate,
+            3 => Action::FetchInfo,
             _ => panic!("Invalid action"),
         }
     }
@@ -96,6 +96,15 @@ impl Serialize for Intent {
     }
 }
 
+impl Serialize for Action {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(format!("{:?}", self.clone() as u8).as_str())
+    }
+}
+
 impl<'de> Deserialize<'de> for Intent {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -111,6 +120,20 @@ impl<'de> Deserialize<'de> for Intent {
                 .map_err(|_| serde::de::Error::custom("Invalid Action"))?
                 .into(),
         })
+    }
+}
+
+impl<'de> Deserialize<'de> for Action {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let deserialized_string = String::deserialize(deserializer)?;
+        let action_byte = u8::from_str(&deserialized_string)
+            .map_err(|_| serde::de::Error::custom("Conversion to u8 failed"))?;
+
+        Ok(Action::try_from(action_byte)
+            .map_err(|_| serde::de::Error::custom("Conversion to Action failed"))?)
     }
 }
 
@@ -240,33 +263,6 @@ impl TokenHandler {
         Ok(encode(&header, &claims, &signing_key.1)?)
     }
 
-    /// Signing function to create a token for a specific endpoint to fetch all notifications
-    /// of its consumer.
-    pub fn sign_proxy_notifications_token(&self, endpoint_id: &DieselUlid) -> Result<String> {
-        // Gets the signing key -> if this returns a poison error this should also panic
-        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let signing_key = self.signing_info.read().unwrap();
-
-        let claims = ArunaTokenClaims {
-            iss: "aruna".to_string(),
-            sub: endpoint_id.to_string(),
-            exp: (Utc::now().timestamp() as usize) + 315360000, // 10 years for now.
-            tid: None,
-            it: Some(Intent {
-                target: *endpoint_id,
-                action: Action::Notifications,
-            }),
-        };
-
-        let header = Header {
-            kid: Some(format!("{}", signing_key.0)),
-            alg: Algorithm::EdDSA,
-            ..Default::default()
-        };
-
-        Ok(encode(&header, &claims, &signing_key.1)?)
-    }
-
     pub async fn process_token(
         &self,
         token: &str,
@@ -331,7 +327,7 @@ impl TokenHandler {
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::Notifications => {
+                        Action::FetchInfo => {
                             return Ok((sub_id, None, vec![], true, Some(intent.action)));
                         }
                         //Case 2: Dataproxy user impersonation

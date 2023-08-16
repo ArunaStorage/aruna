@@ -2,7 +2,7 @@ use super::{
     structs::{Context, ContextVariant},
     token_handler::{Action, TokenHandler},
 };
-use crate::caching::cache::Cache;
+use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -42,21 +42,39 @@ impl PermissionHandler {
             if let Some(action) = proxy_action {
                 if action == Action::Impersonate {
                     //Case 1: Impersonate
-                    //  - Check if provided contexts are resource only
+                    //  - Check if provided contexts are proxy/activated/resource only
                     for ctx in &ctxs {
                         match ctx.variant {
-                            ContextVariant::ResourceContext(_) => {}
+                            ContextVariant::Activated
+                            | ContextVariant::GlobalProxy
+                            | ContextVariant::Resource(_) => {}
                             _ => return Err(tonic::Status::invalid_argument(
                                 "Only resource functionality allowed for Dataproxy signed tokens",
                             )),
                         }
                     }
-                } else if action == Action::Notifications {
-                    //Case 2: Notifications
-                    //  - How to check permissions for specific function!? ...
-                    unimplemented!(
-                        "Permission check for Dataproxy notification fetch not yet implemented"
-                    )
+                } else if action == Action::FetchInfo {
+                    //Case 2: FetchInfo
+                    //  - Only get functions -> DbPermissionLevel::READ in contexts
+                    for ctx in &ctxs {
+                        match ctx.variant {
+                            ContextVariant::Activated | ContextVariant::GlobalProxy => {}
+                            ContextVariant::Resource((_, perm))
+                            | ContextVariant::User((_, perm)) => {
+                                if perm > DbPermissionLevel::READ {
+                                    return Err(tonic::Status::permission_denied(
+                                        "Only get functions allowed",
+                                    ));
+                                }
+                            }
+                            ContextVariant::GlobalAdmin => {
+                                return Err(tonic::Status::permission_denied(
+                                    "Only get functions allowed",
+                                ))
+                            }
+                        }
+                    }
+                    //unimplemented!("Permission check for Dataproxy notification fetch not yet implemented")
                 }
 
                 if !self.cache.check_proxy_ctxs(&main_id, &ctxs) {
@@ -65,11 +83,11 @@ impl PermissionHandler {
                     ));
                 }
             } else {
-                return Err(tonic::Status::internal("Missing "));
+                return Err(tonic::Status::internal("Missing intent action"));
             }
         }
 
-        // Check permissions for standard ArunaServer user
+        // Check permissions for standard ArunaServer user token
         if self
             .cache
             .check_permissions_with_contexts(&ctxs, &permissions, &main_id)

@@ -23,9 +23,9 @@ impl DatabaseHandler {
         let token = request.build_token(pubkey_serial)?;
 
         // Add token to user attributes
-        let mut test: HashMap<DieselUlid, &APIToken> = HashMap::default();
-        test.insert(token_ulid, &token);
-        User::add_user_token(client, user_id, test).await?;
+        let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
+        token_map.insert(token_ulid, &token);
+        User::add_user_token(client, user_id, token_map).await?;
 
         // Return token_id and token
         Ok((token_ulid, token))
