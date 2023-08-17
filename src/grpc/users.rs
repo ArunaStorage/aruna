@@ -313,20 +313,21 @@ impl UserService for UserServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error"
         );
-        let request = GetUser::GetUserRedacted(request.into_inner());
-        let user_id = match tonic_invalid!(request.get_user(), "Invalid user id") {
-            (Some(id), ctx) => {
-                tonic_auth!(
-                    self.authorizer.check_permissions(&token, vec![ctx]).await,
-                    "Unauthorized"
-                );
-                id
-            }
-            (None, ctx) => tonic_auth!(
-                self.authorizer.check_permissions(&token, vec![ctx]).await,
-                "Unauthorized"
-            ),
-        };
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::user_ctx(
+                        tonic_invalid!(
+                            DieselUlid::from_str(&request.get_ref().user_id),
+                            "Invalid user_id"
+                        ),
+                        DbPermissionLevel::ADMIN
+                    )]
+                )
+                .await,
+            "Unauthorized"
+        );
         let user = self.cache.get_user(&user_id);
         let response = GetUserRedactedResponse {
             user: user.map(|user| user.into_redacted()),

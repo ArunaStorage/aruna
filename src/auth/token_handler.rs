@@ -45,7 +45,7 @@ struct KeyCloakResponse {
 /// - intent: Combination of specific endpoint and action.
 ///           Strongly restricts the usability of the token.
 #[derive(Debug, Serialize, Deserialize)]
-struct ArunaTokenClaims {
+pub(crate) struct ArunaTokenClaims {
     iss: String,     // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
     exp: usize,      // Expiration timestamp

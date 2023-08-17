@@ -1,5 +1,6 @@
 use super::structs::PubKeyEnum;
 use crate::auth::structs::Context;
+use crate::auth::structs::ContextVariant;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::get_all_objects_with_relations;
@@ -192,15 +193,15 @@ impl Cache {
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
         self.check_lock();
         ctxs.iter().all(|x| match &x.variant {
-            crate::auth::structs::ContextVariant::Activated => true,
-            crate::auth::structs::ContextVariant::Resource((id, _)) => {
+            ContextVariant::Activated => true,
+            ContextVariant::Resource((id, _)) => {
                 if let Some(obj) = self.get_object(id) {
                     obj.object.endpoints.0.contains_key(endpoint_id)
                 } else {
                     false
                 }
             }
-            crate::auth::structs::ContextVariant::User((uid, permlevel)) => {
+            ContextVariant::User((uid, permlevel)) => {
                 if *permlevel == DbPermissionLevel::READ {
                     if let Some(user) = self.get_user(uid) {
                         user.attributes
@@ -214,8 +215,8 @@ impl Cache {
                     false
                 }
             }
-            crate::auth::structs::ContextVariant::GlobalAdmin => false,
-            crate::auth::structs::ContextVariant::GlobalProxy => true,
+            ContextVariant::GlobalAdmin | ContextVariant::SelfUser => false,
+            ContextVariant::GlobalProxy => true,
         })
     }
 
@@ -239,24 +240,20 @@ impl Cache {
 
         for ctx in ctxs {
             match &ctx.variant {
-                crate::auth::structs::ContextVariant::Activated => return user.active,
-                crate::auth::structs::ContextVariant::Resource((id, perm)) => {
+                ContextVariant::Activated => return user.active,
+                ContextVariant::Resource((id, perm)) => {
                     resources.insert(*id, *perm);
                 }
-                crate::auth::structs::ContextVariant::User((uid, _)) => {
+                ContextVariant::User((uid, _)) => {
                     return if uid == user_id {
                         !user.attributes.0.service_account
                     } else {
                         false
                     }
                 }
-                crate::auth::structs::ContextVariant::GlobalProxy
-                | crate::auth::structs::ContextVariant::GlobalAdmin => return false,
+                ContextVariant::SelfUser => return true,
+                ContextVariant::GlobalProxy | ContextVariant::GlobalAdmin => return false,
             }
-        }
-
-        if !user.active {
-            return false;
         }
 
         for (id, got_perm) in permitted {
