@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::caching::structs::PubKey;
+use crate::caching::structs::PubKeyEnum;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
 use crate::utils::conversions::get_token_from_md;
@@ -38,18 +38,21 @@ impl EndpointService for EndpointServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
+
+        let test = tonic_invalid!(
+            DecodingKey::from_ed_components(&request.0.pubkey),
+            "Invalid pubkey"
+        );
+
         let (ep, pk) = tonic_invalid!(
             self.database_handler.create_endpoint(request).await,
             "Invalid create endpoint request"
         );
 
-        let test = tonic_invalid!(
-            DecodingKey::from_ed_components(&pk.pubkey),
-            "Invalid pubkey"
+        self.cache.add_pubkey(
+            pk.id as i32,
+            PubKeyEnum::DataProxy((pk.pubkey, test, ep.id)),
         );
-
-        self.cache
-            .add_pubkey(pk.id as i32, PubKey::DataProxy((pk.pubkey, test, ep.id)));
 
         let result = CreateEndpointResponse {
             endpoint: Some(tonic_internal!(ep.try_into(), "Endpoint conversion error")),

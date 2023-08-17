@@ -614,6 +614,21 @@ impl PartialEq for ObjectWithRelations {
 }
 impl Eq for ObjectWithRelations {}
 
+pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<ObjectWithRelations>> {
+    let query = "SELECT o.*,
+        COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+        COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+        FROM objects o
+        LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+        GROUP BY o.id;";
+    let prepared = client.prepare(query).await?;
+    let row = client.query(&prepared, &[]).await?;
+
+    Ok(row.iter().map(ObjectWithRelations::from_row).collect())
+}
+
 impl ObjectWithRelations {
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
         Self {

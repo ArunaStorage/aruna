@@ -1,8 +1,10 @@
-use std::collections::VecDeque;
-
-use super::structs::PubKey;
+use super::structs::PubKeyEnum;
 use crate::auth::structs::Context;
+use crate::database::connection::Database;
+use crate::database::crud::CrudDb;
+use crate::database::dsls::object_dsl::get_all_objects_with_relations;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
@@ -17,6 +19,9 @@ use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
+use std::collections::VecDeque;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -24,7 +29,8 @@ use diesel_ulid::DieselUlid;
 pub struct Cache {
     pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
     pub user_cache: DashMap<DieselUlid, User, RandomState>,
-    pub pubkeys: DashMap<i32, PubKey, RandomState>,
+    pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
+    lock: AtomicBool,
 }
 
 impl Cache {
@@ -33,25 +39,61 @@ impl Cache {
             object_cache: DashMap::default(),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
+            lock: AtomicBool::new(false),
         }
     }
 
+    pub async fn sync_cache(&self, db: Arc<Database>) -> Result<()> {
+        self.lock.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.object_cache.clear();
+        self.user_cache.clear();
+        self.pubkeys.clear();
+        let client = db.get_client().await?;
+
+        let all_objects = get_all_objects_with_relations(&client).await?;
+        for obj in all_objects {
+            self.object_cache.insert(obj.object.id, obj);
+        }
+
+        let users = User::all(&client).await?;
+        for user in users {
+            self.user_cache.insert(user.id, user);
+        }
+
+        let pubkeys = DbPubkey::all(&client).await?;
+        for pubkey in pubkeys {
+            self.pubkeys
+                .insert(pubkey.id as i32, PubKeyEnum::try_from(pubkey)?);
+        }
+
+        self.lock.store(false, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn check_lock(&self) {
+        while self.lock.load(std::sync::atomic::Ordering::Relaxed) {}
+    }
+
     pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
+        self.check_lock();
         self.object_cache.get(id).map(|x| x.value().clone())
     }
 
     pub fn get_user(&self, id: &DieselUlid) -> Option<User> {
+        self.check_lock();
         self.user_cache.get(id).map(|x| x.value().clone())
     }
 
-    pub fn get_pubkey(&self, serial: i32) -> Option<PubKey> {
+    pub fn get_pubkey(&self, serial: i32) -> Option<PubKeyEnum> {
+        self.check_lock();
         self.pubkeys.get(&serial).map(|x| x.value().clone())
     }
 
     pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
+        self.check_lock();
         for entry in &self.pubkeys {
             match entry.value() {
-                PubKey::DataProxy((raw_key, _, _)) | PubKey::Server((raw_key, _)) => {
+                PubKeyEnum::DataProxy((raw_key, _, _)) | PubKeyEnum::Server((raw_key, _)) => {
                     if raw_pubkey == raw_key {
                         return Some(*entry.key());
                     }
@@ -63,42 +105,51 @@ impl Cache {
     }
 
     pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
+        self.check_lock();
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
         }
     }
 
     pub fn update_user(&self, id: &DieselUlid, user: User) {
+        self.check_lock();
         if let Some(mut x) = self.user_cache.get_mut(id) {
             *x.value_mut() = user;
         }
     }
 
     pub fn add_object(&self, rel: ObjectWithRelations) {
+        self.check_lock();
         self.object_cache.insert(rel.object.id, rel);
     }
 
     pub fn remove_object(&self, id: &DieselUlid) {
+        self.check_lock();
         self.object_cache.remove(id);
     }
 
     pub fn add_user(&self, id: DieselUlid, user: User) {
+        self.check_lock();
         self.user_cache.insert(id, user);
     }
 
-    pub fn add_pubkey(&self, id: i32, key: PubKey) {
+    pub fn add_pubkey(&self, id: i32, key: PubKeyEnum) {
+        self.check_lock();
         self.pubkeys.insert(id, key);
     }
 
     pub fn remove_pubkey(&self, id: &i32) {
+        self.check_lock();
         self.pubkeys.remove(id);
     }
 
     pub fn remove_user(&self, id: &DieselUlid) {
+        self.check_lock();
         self.user_cache.remove(id);
     }
 
     pub fn get_user_by_oidc(&self, external_id: &str) -> Result<User> {
+        self.check_lock();
         self.user_cache
             .iter()
             .find(|x| x.value().external_id == Some(external_id.to_string()))
@@ -107,10 +158,12 @@ impl Cache {
     }
 
     pub async fn get_all(&self) -> Vec<APIUser> {
+        self.check_lock();
         Vec::from_iter(self.user_cache.iter().map(|u| u.clone().into()))
     }
 
     pub async fn get_all_deactivated(&self) -> Vec<APIUser> {
+        self.check_lock();
         Vec::from_iter(self.user_cache.iter().filter_map(|u| {
             if u.active {
                 Some(u.clone().into())
@@ -120,6 +173,7 @@ impl Cache {
         }))
     }
     pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
+        self.check_lock();
         let init = self
             .object_cache
             .get(id)
@@ -136,6 +190,7 @@ impl Cache {
     }
 
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
+        self.check_lock();
         ctxs.iter().all(|x| match &x.variant {
             crate::auth::structs::ContextVariant::Activated => true,
             crate::auth::structs::ContextVariant::Resource((id, _)) => {
@@ -170,6 +225,7 @@ impl Cache {
         permitted: &[(DieselUlid, DbPermissionLevel)],
         user_id: &DieselUlid,
     ) -> bool {
+        self.check_lock();
         let mut resources = HashMap::default();
 
         for ctx in ctxs {
@@ -223,6 +279,7 @@ impl Cache {
         perm: DbPermissionLevel,
         ctxs: &mut HashMap<DieselUlid, DbPermissionLevel>,
     ) -> Result<bool> {
+        self.check_lock();
         if ctxs.is_empty() {
             return Ok(true);
         }
@@ -253,6 +310,7 @@ impl Cache {
         &self,
         root: &DieselUlid,
     ) -> Result<Vec<Vec<ObjectMapping<DieselUlid>>>> {
+        self.check_lock();
         let mut split_indexes = Vec::new(); // Used to store history where path splits
         let mut current_hierarchy = Vec::with_capacity(4); // Maximum length of hierarchy is 4
         let mut finished_hierarchies = vec![];
@@ -311,6 +369,7 @@ impl Cache {
         current_path: &mut Vec<ObjectMapping<DieselUlid>>,
         finished_hierarchies: &mut Vec<Vec<ObjectMapping<DieselUlid>>>,
     ) -> Result<()> {
+        self.check_lock();
         // Fetch current object with relations
         if let Some(current_object) = self.get_object(current_object_id) {
             // End current hierarchy if node is project

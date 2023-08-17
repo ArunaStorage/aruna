@@ -55,6 +55,7 @@ pub async fn main() -> Result<()> {
     // Init cache
     let cache = Cache::new();
     let cache_arc = Arc::new(cache);
+    cache_arc.sync_cache(db_arc.clone()).await?;
 
     // Init TokenHandler
     let token_handler = TokenHandler::new(
