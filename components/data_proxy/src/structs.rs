@@ -578,7 +578,7 @@ impl From<Object> for CreateObjectRequest {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ResourceString {
     Project(String),
     Collection(String, String),
@@ -588,27 +588,33 @@ pub enum ResourceString {
 
 impl PartialOrd for ResourceString {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ResourceString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self {
             ResourceString::Project(_) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Collection(_, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Dataset(_, _, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Object(_, _, _, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Object(_, _, _, _) => Some(std::cmp::Ordering::Equal),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Less,
+                ResourceString::Object(_, _, _, _) => std::cmp::Ordering::Equal,
             },
         }
     }
