@@ -597,24 +597,32 @@ impl Ord for ResourceString {
         match self {
             ResourceString::Project(_) => match other {
                 ResourceString::Project(_) => std::cmp::Ordering::Equal,
-                _ => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Less,
             },
             ResourceString::Collection(_, _) => match other {
-                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Project(_) => std::cmp::Ordering::Greater,
                 ResourceString::Collection(_, _) => std::cmp::Ordering::Equal,
-                _ => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Less,
             },
             ResourceString::Dataset(_, _, _) => match other {
-                ResourceString::Project(_) => std::cmp::Ordering::Less,
-                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Project(_) => std::cmp::Ordering::Greater,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Greater,
                 ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Equal,
-                _ => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Less,
             },
-            ResourceString::Object(_, _, _, _) => match other {
-                ResourceString::Project(_) => std::cmp::Ordering::Less,
-                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
-                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Less,
-                ResourceString::Object(_, _, _, _) => std::cmp::Ordering::Equal,
+            ResourceString::Object(_, c1, d1, _) => match other {
+                ResourceString::Object(_, c2, d2, _) => {
+                    if c1.is_some() && c2.is_none() {
+                        std::cmp::Ordering::Greater
+                    } else if c2.is_none() && c1.is_some() {
+                        std::cmp::Ordering::Less
+                    } else if d1.is_some() && d2.is_none() {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Less
+                    }
+                }
+                _ => std::cmp::Ordering::Greater,
             },
         }
     }
@@ -773,24 +781,12 @@ impl TryFrom<&S3Path> for ResourceStrings {
     fn try_from(value: &S3Path) -> Result<Self> {
         if let Some((b, k)) = value.as_object() {
             let mut results = Vec::new();
-
-            // s3://foo/bar
-
             let pathvec = k.split('/').collect::<Vec<&str>>();
             match pathvec.len() {
                 0 => {
                     results.push(ResourceString::Project(b.to_string()));
                 }
                 1 => {
-                    results.push(ResourceString::Collection(
-                        b.to_string(),
-                        pathvec[0].to_string(),
-                    ));
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        None,
-                        pathvec[0].to_string(),
-                    ));
                     results.push(ResourceString::Object(
                         b.to_string(),
                         None,
@@ -799,17 +795,6 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
                 2 => {
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        None,
-                        pathvec[1].to_string(),
-                    ));
                     results.push(ResourceString::Object(
                         b.to_string(),
                         None,
@@ -916,5 +901,42 @@ impl CheckAccessResult {
             token_id,
             object,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResourceString;
+
+    #[test]
+
+    fn test_resource_strings_cmp() {
+        let p_a = ResourceString::Project("a".to_string());
+        let o_a = ResourceString::Object(
+            "a".to_string(),
+            Some("a".to_string()),
+            Some("a".to_string()),
+            "a".to_string(),
+        );
+        let o_b = ResourceString::Object(
+            "a".to_string(),
+            None,
+            Some("a".to_string()),
+            "a".to_string(),
+        );
+
+        let o_c = ResourceString::Object(
+            "a".to_string(),
+            Some("a".to_string()),
+            None,
+            "a".to_string(),
+        );
+
+        let o_d = ResourceString::Object("a".to_string(), None, None, "a".to_string());
+
+        assert!(p_a < o_a);
+        assert!(o_a > o_b);
+        assert!(o_b > o_c);
+        assert!(o_c > o_d);
     }
 }
