@@ -103,12 +103,12 @@ impl CrudDb for Object {
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-        );";
+        ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
 
-        client
-            .query(
+        let row = client
+            .query_one(
                 &prepared,
                 &[
                     &self.id,
@@ -129,6 +129,8 @@ impl CrudDb for Object {
                 ],
             )
             .await?;
+
+        *self = Object::from_row(&row);
         Ok(())
     }
 

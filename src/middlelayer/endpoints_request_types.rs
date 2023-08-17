@@ -24,7 +24,7 @@ impl CreateEP {
             host_config: Json(self.0.host_configs.clone().try_into()?),
             documentation_object: None,
             is_public: self.0.is_public,
-            status: EndpointStatus::INITIALIZING,
+            status: EndpointStatus::AVAILABLE,
         };
         let pubkey = PubKey {
             id: 0,
