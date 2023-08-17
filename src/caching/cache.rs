@@ -249,7 +249,7 @@ impl Cache {
                 | crate::auth::structs::ContextVariant::GlobalProxy => {
                     return self
                         .get_user(user_id)
-                        .map(|e| !e.attributes.0.global_admin)
+                        .map(|e| e.attributes.0.global_admin)
                         .unwrap_or_default()
                 }
             }

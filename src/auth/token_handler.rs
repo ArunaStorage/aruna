@@ -162,15 +162,15 @@ impl TokenHandler {
         );
 
         // Read encoding and decoding key; On error panic, we do not want malformed keys.
-        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
-        let decoding_key = DecodingKey::from_ed_pem(public_pem.as_bytes()).unwrap();
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes())?;
+        let decoding_key = DecodingKey::from_ed_pem(public_pem.as_bytes())?;
 
         // Check if public key already exists in database/cache
         let pubkey_serial: i64 = if let Some(key_serial) = cache.get_pubkey_serial(&decode_secret) {
             key_serial as i64
         } else {
             // Add public key to database and cache
-            let client = database.get_client().await.unwrap();
+            let client = database.get_client().await?;
             let pub_key = DbPubKey::create_or_get_without_id(None, &decode_secret, &client).await?;
 
             cache.add_pubkey(

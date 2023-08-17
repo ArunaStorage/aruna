@@ -17,7 +17,6 @@ pub struct Endpoint {
     pub endpoint_variant: EndpointVariant,
     pub documentation_object: Option<DieselUlid>,
     pub is_public: bool,
-    pub is_default: bool,
     pub status: EndpointStatus,
 }
 
@@ -36,8 +35,8 @@ pub struct HostConfig {
 #[async_trait::async_trait]
 impl CrudDb for Endpoint {
     async fn create(&self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO endpoints (id, name, host_config, endpoint_variant, documentation_object, is_public, is_default, status) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8
+        let query = "INSERT INTO endpoints (id, name, host_config, endpoint_variant, documentation_object, is_public, status) VALUES (
+            $1, $2, $3, $4, $5, $6, $7
         );";
 
         let prepared = client.prepare(query).await?;
@@ -52,7 +51,6 @@ impl CrudDb for Endpoint {
                     &self.endpoint_variant,
                     &self.documentation_object,
                     &self.is_public,
-                    &self.is_default,
                     &self.status,
                 ],
             )
@@ -98,14 +96,6 @@ impl Endpoint {
         client.execute(&prepared, &[&id]).await?;
         Ok(())
     }
-    pub async fn get_default(client: &Client) -> Result<Option<Endpoint>> {
-        let query = "SELECT * FROM endpoints WHERE is_default = true;";
-        let prepared = client.prepare(query).await?;
-        Ok(client
-            .query_opt(&prepared, &[])
-            .await?
-            .map(|e| Endpoint::from_row(&e)))
-    }
 }
 impl Eq for Endpoint {}
 impl PartialEq for Endpoint {
@@ -114,7 +104,6 @@ impl PartialEq for Endpoint {
         let other_config: HashSet<_> = other.host_config.0 .0.iter().cloned().collect();
         self.id == other.id
             && self.name == other.name
-            && self.is_default == other.is_default
             && self.is_public == other.is_public
             && self.endpoint_variant == other.endpoint_variant
             && self.documentation_object == other.documentation_object

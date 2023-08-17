@@ -38,11 +38,4 @@ impl DatabaseHandler {
         Endpoint::delete_by_id(&id, client.client()).await?;
         Ok(())
     }
-    pub async fn get_default_endpoint(&self) -> Result<Endpoint> {
-        let client = self.database.get_client().await?;
-        let endpoint = Endpoint::get_default(client.client())
-            .await?
-            .ok_or_else(|| anyhow!("No default endpoint set"))?;
-        Ok(endpoint)
-    }
 }

@@ -24,7 +24,6 @@ impl CreateEP {
             host_config: Json(self.0.host_configs.clone().try_into()?),
             documentation_object: None,
             is_public: self.0.is_public,
-            is_default: false, // TODO: Add API request to change default Endpoint
             status: EndpointStatus::INITIALIZING,
         };
         let pubkey = PubKey {

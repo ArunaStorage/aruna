@@ -13,16 +13,15 @@ pub enum PubKeyEnum {
 impl TryFrom<PubKey> for PubKeyEnum {
     type Error = anyhow::Error;
     fn try_from(pk: PubKey) -> Result<Self> {
+        let public_pem = format!(
+            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+            &pk.pubkey
+        );
+        let decoding_key = DecodingKey::from_ed_pem(public_pem.as_bytes())?;
+
         Ok(match pk.proxy {
-            Some(proxy) => PubKeyEnum::DataProxy((
-                pk.pubkey.to_string(),
-                DecodingKey::from_ed_components(&pk.pubkey)?,
-                proxy,
-            )),
-            None => PubKeyEnum::Server((
-                pk.pubkey.to_string(),
-                DecodingKey::from_ed_components(&pk.pubkey)?,
-            )),
+            Some(proxy) => PubKeyEnum::DataProxy((pk.pubkey.to_string(), decoding_key, proxy)),
+            None => PubKeyEnum::Server((pk.pubkey.to_string(), decoding_key)),
         })
     }
 }
