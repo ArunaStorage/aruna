@@ -41,9 +41,7 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<CreateBucketInput>,
     ) -> S3Result<S3Response<CreateBucketOutput>> {
-        let data = req
-            .extensions
-            .get::<CheckAccessResult>().cloned();
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
 
         let mut new_object = ProxyObject::from(req.input);
 
@@ -59,10 +57,15 @@ impl S3 for ArunaS3Service {
                 .await
                 .as_ref()
                 .unwrap()
-                .sign_impersonating_token(user_id, token_id)
+                .sign_impersonating_token(
+                    user_id.ok_or_else(|| {
+                        s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                    })?,
+                    token_id,
+                )
                 .map_err(|e| {
                     dbg!(e);
-                    s3_error!(NotSignedUp, "Unauthorized")
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
                 })?;
 
             new_object = client
@@ -103,6 +106,12 @@ impl S3 for ArunaS3Service {
             }
             _ => {}
         };
+
+        let data = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
         todo!()
 

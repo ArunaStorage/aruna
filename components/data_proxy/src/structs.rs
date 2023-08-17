@@ -879,20 +879,20 @@ impl ResourceIds {
 
 #[derive(Clone)]
 pub struct CheckAccessResult {
-    pub resource_ids: ResourceIds,
-    pub missing_resources: Option<Missing>,
-    pub user_id: String,
+    pub user_id: Option<String>,
     pub token_id: Option<String>,
-    pub object: Object,
+    pub resource_ids: Option<ResourceIds>,
+    pub missing_resources: Option<Missing>,
+    pub object: Option<Object>,
 }
 
 impl CheckAccessResult {
     pub fn new(
-        resource_ids: ResourceIds,
-        missing_resources: Option<Missing>,
-        user_id: String,
+        user_id: Option<String>,
         token_id: Option<String>,
-        object: Object,
+        resource_ids: Option<ResourceIds>,
+        missing_resources: Option<Missing>,
+        object: Option<Object>,
     ) -> Self {
         Self {
             resource_ids,

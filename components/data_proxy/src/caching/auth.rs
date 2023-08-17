@@ -79,14 +79,8 @@ impl Serialize for Intent {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(
-            format!(
-                "{}_{:?}",
-                self.target,
-                self.action.clone() as u8
-            )
-            .as_str(),
-        )
+        serializer
+            .serialize_str(format!("{}_{:?}", self.target, self.action.clone() as u8).as_str())
     }
 }
 
@@ -163,15 +157,21 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
     ) -> Result<CheckAccessResult> {
+        if let Some(b) = path.as_bucket() {
+            if method == Method::POST || method == Method::PUT {}
+
+            // This subject is a "bucket" subject
+        }
+
         let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
-                ids,
-                missing,
-                "".to_string(),
                 None,
-                obj,
+                None,
+                Some(ids),
+                missing,
+                Some(obj),
             ));
         } else if let Some(creds) = creds {
             let user = self
@@ -181,17 +181,17 @@ impl AuthHandler {
 
             for (token_id, perm) in user.permissions {
                 if ids.check_if_in(token_id) && perm >= db_perm_from_method {
-                    let res_id = if token_id == user.user_id {
+                    let token_id = if token_id == user.user_id {
                         None
                     } else {
                         Some(token_id.to_string())
                     };
                     return Ok(CheckAccessResult::new(
-                        ids,
+                        Some(user.user_id.to_string()),
+                        token_id,
+                        Some(ids),
                         missing,
-                        user.user_id.to_string(),
-                        res_id,
-                        obj,
+                        Some(obj),
                     ));
                 }
             }
