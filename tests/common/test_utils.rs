@@ -70,6 +70,7 @@ pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelati
         relation_name: "BELONGS_TO".to_string(),
     }
 }
+#[allow(dead_code)]
 pub fn object_from_mapping(
     user_id: DieselUlid,
     object_mapping: ObjectMapping<DieselUlid>,
