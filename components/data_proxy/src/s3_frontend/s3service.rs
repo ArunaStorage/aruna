@@ -3,8 +3,10 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::CheckAccessResult;
 
 use crate::structs::Object as ProxyObject;
+use crate::structs::ResourceIds;
 
 use anyhow::Result;
+use diesel_ulid::DieselUlid;
 use s3s::dto::*;
 use s3s::s3_error;
 use s3s::S3Request;
@@ -107,13 +109,37 @@ impl S3 for ArunaS3Service {
             _ => {}
         };
 
-        let data = req
+        let CheckAccessResult {
+            user_id,
+            resource_ids,
+            missing_resources,
+            ..
+        } = req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
             .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        todo!()
+        let res_ids =
+            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
+
+        todo!();
+
+        // let new_object = ProxyObject {
+        //     id: DieselUlid::generate(),
+        //     name: ,
+        //     key_values: vec![],
+        //     object_status: Status::Inializing,
+        //     data_class: DataClass::Private,
+        //     object_type: (),
+        //     hashes: (),
+        //     dynamic: (),
+        //     children: (),
+        //     parents: (),
+        //     synced: (),
+        // };
+
+        //self.backend.initialize_location(obj, req.input.bucket);
 
         // let mut anotif = ArunaNotifier::new(
         //     self.data_handler.internal_notifier_service.clone(),

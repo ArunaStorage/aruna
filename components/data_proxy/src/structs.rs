@@ -15,6 +15,7 @@ use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
+use s3s::dto::PutObjectInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -873,6 +874,22 @@ impl ResourceIds {
                     || did.unwrap_or_default() == id
                     || oid == &id
             }
+        }
+    }
+
+    pub fn destructurize(
+        &self,
+    ) -> (
+        DieselUlid,
+        Option<DieselUlid>,
+        Option<DieselUlid>,
+        Option<DieselUlid>,
+    ) {
+        match self {
+            ResourceIds::Project(p) => (p.clone(), None, None, None),
+            ResourceIds::Collection(p, c) => (p.clone(), Some(c.clone()), None, None),
+            ResourceIds::Dataset(p, c, d) => (p.clone(), c.clone(), Some(d.clone()), None),
+            ResourceIds::Object(p, c, d, o) => (p.clone(), c.clone(), d.clone(), Some(o.clone())),
         }
     }
 }
