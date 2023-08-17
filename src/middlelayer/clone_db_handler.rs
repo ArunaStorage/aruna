@@ -29,7 +29,7 @@ impl DatabaseHandler {
             ObjectMapping::DATASET(id) => (id, ObjectType::DATASET),
             _ => return Err(anyhow!("Invalid parent")),
         };
-        let relation = InternalRelation {
+        let mut relation = InternalRelation {
             id: DieselUlid::generate(),
             origin_pid,
             origin_type,

@@ -17,7 +17,7 @@ pub struct StreamConsumer {
 #[async_trait::async_trait]
 impl CrudDb for StreamConsumer {
     //ToDo: Rust Doc
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO stream_consumers 
           (id, user_id, config) 
         VALUES 

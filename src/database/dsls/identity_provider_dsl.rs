@@ -15,7 +15,7 @@ pub struct IdentityProvider {
 #[async_trait::async_trait]
 impl CrudDb for IdentityProvider {
     //ToDo: Rust Doc
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO identity_providers 
           (id, name, url) 
         VALUES 

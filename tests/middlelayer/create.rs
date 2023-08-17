@@ -15,7 +15,7 @@ async fn create_project() {
     let db_handler = init_db::init_handler().await;
 
     // create user
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(&db_handler.database.get_client().await.unwrap())
         .await
         .unwrap();
@@ -55,7 +55,7 @@ async fn create_collection() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
 
     // create parent
@@ -104,7 +104,7 @@ async fn create_dataset() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     // create parent
     let parent = CreateRequest::Project(CreateProjectRequest {
@@ -152,7 +152,7 @@ async fn create_object() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     // create parent
     let parent = CreateRequest::Project(CreateProjectRequest {

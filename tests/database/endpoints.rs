@@ -16,12 +16,12 @@ async fn create_test() {
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let mut create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep_id,
         name: "create_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
@@ -46,12 +46,12 @@ async fn delete_test() {
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let mut create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
 
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep_id,
         name: "delete_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
@@ -74,12 +74,12 @@ async fn get_by_tests() {
 
     let ep_id = DieselUlid::generate();
     let doc_obj = DieselUlid::generate();
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(doc_obj)]);
     user.create(client).await.unwrap();
-    let create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
+    let mut create_doc = test_utils::new_object(user.id, doc_obj, ObjectType::OBJECT);
     create_doc.create(client).await.unwrap();
     let unique_name = DieselUlid::generate().to_string(); // Endpoint names need to be unique
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep_id,
         name: unique_name.clone(),
         host_config: Json(HostConfigs(Vec::new())),

@@ -12,7 +12,7 @@ impl DatabaseHandler {
         let idx = PubKey::get_max_id(&client).await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (endpoint, mut pubkey) = request.build_endpoint()?;
+        let (mut endpoint, mut pubkey) = request.build_endpoint()?;
         pubkey.id = idx + 1;
         endpoint.create(transaction_client).await?;
         pubkey.create(transaction_client).await?;

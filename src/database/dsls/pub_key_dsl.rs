@@ -13,7 +13,7 @@ pub struct PubKey {
 
 #[async_trait::async_trait]
 impl CrudDb for PubKey {
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO pub_keys (id, proxy, pubkey) VALUES ($1, $2, $3);";
         let prepared = client.prepare(query).await?;
         client

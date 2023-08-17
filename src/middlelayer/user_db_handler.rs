@@ -25,7 +25,7 @@ impl DatabaseHandler {
             custom_attributes: vec![],
             permissions: Default::default(),
         };
-        let user = User {
+        let mut user = User {
             id: user_id,
             display_name: request.get_display_name(),
             external_id: Some(external_id),

@@ -28,7 +28,7 @@ async fn test_update_dataclass() {
         ObjectMapping::COLLECTION(DieselUlid::generate()),
         ObjectMapping::DATASET(DieselUlid::generate()),
     ];
-    let user = test_utils::new_user(resources.clone());
+    let mut user = test_utils::new_user(resources.clone());
     let mut objects = Vec::new();
     for r in resources {
         objects.push(test_utils::object_from_mapping(user.id, r));
@@ -97,7 +97,7 @@ async fn test_update_name() {
         ObjectMapping::COLLECTION(DieselUlid::generate()),
         ObjectMapping::DATASET(DieselUlid::generate()),
     ];
-    let user = test_utils::new_user(resources.clone());
+    let mut user = test_utils::new_user(resources.clone());
     let mut objects = Vec::new();
     for r in resources {
         objects.push(test_utils::object_from_mapping(user.id, r));
@@ -162,7 +162,7 @@ async fn test_update_description() {
         ObjectMapping::COLLECTION(DieselUlid::generate()),
         ObjectMapping::DATASET(DieselUlid::generate()),
     ];
-    let user = test_utils::new_user(resources.clone());
+    let mut user = test_utils::new_user(resources.clone());
     let mut objects = Vec::new();
     for r in resources {
         objects.push(test_utils::object_from_mapping(user.id, r));
@@ -239,7 +239,7 @@ async fn test_update_keyvals() {
         ObjectMapping::COLLECTION(DieselUlid::generate()),
         ObjectMapping::DATASET(DieselUlid::generate()),
     ];
-    let user = test_utils::new_user(resources.clone());
+    let mut user = test_utils::new_user(resources.clone());
     let mut objects = Vec::new();
     let kv = KeyValue {
         key: "DELETE".to_string(),
@@ -393,9 +393,9 @@ async fn update_object_test() {
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();
     let parent_mapping = ObjectMapping::PROJECT(parent_id);
-    let user = test_utils::new_user(vec![object_mapping]);
+    let mut user = test_utils::new_user(vec![object_mapping]);
     let mut object = test_utils::object_from_mapping(user.id, object_mapping);
-    let parent = test_utils::object_from_mapping(user.id, parent_mapping);
+    let mut parent = test_utils::object_from_mapping(user.id, parent_mapping);
     object.key_values.0 .0.push(KeyValue {
         key: "to_delete".to_string(),
         value: "deleted".to_string(),

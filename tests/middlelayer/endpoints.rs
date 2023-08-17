@@ -15,7 +15,7 @@ async fn test_create_ep() {
     // init
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
-    let pk = PubKey {
+    let mut pk = PubKey {
         id: 0,
         proxy: None,
         pubkey: "SERVER_PUBKEY_DUMMY_1".to_string(),
@@ -46,12 +46,12 @@ async fn test_get_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep_id = DieselUlid::generate();
-    let pk = PubKey {
+    let mut pk = PubKey {
         id: 5001,
         proxy: Some(ep_id),
         pubkey: "SERVER_PUBKEY_DUMMY_2".to_string(),
     };
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep_id,
         name: "get_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
@@ -120,8 +120,8 @@ async fn test_get_all() {
         is_public: false,
         status: EndpointStatus::AVAILABLE,
     };
-    let eps = [&endpoint_one, &endpoint_two, &endpoint_three];
-    for ep in eps {
+    let mut eps = [endpoint_one, endpoint_two, endpoint_three];
+    for ep in eps.iter_mut() {
         ep.create(&client).await.unwrap();
     }
     // test
@@ -138,7 +138,7 @@ async fn test_delete_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep,
         name: "delete_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
@@ -162,7 +162,7 @@ async fn test_get_default_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep,
         name: "default_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),

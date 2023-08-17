@@ -34,7 +34,7 @@ pub struct HostConfig {
 
 #[async_trait::async_trait]
 impl CrudDb for Endpoint {
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO endpoints (id, name, host_config, endpoint_variant, documentation_object, is_public, status) VALUES (
             $1, $2, $3, $4, $5, $6, $7
         );";

@@ -12,7 +12,7 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
         let resource = Object::get_object_with_relations(&id, &client).await?;
-        let (new_object_id, snapshot_resources) = match request {
+        let (new_object_id, mut snapshot_resources) = match request {
             SnapshotRequest::Project(_) => (
                 id,
                 SnapshotResponse::ArchiveProject(

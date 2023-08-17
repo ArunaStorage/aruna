@@ -46,15 +46,15 @@ pub struct SnapshotProject {
 }
 
 impl SnapshotResponse {
-    pub async fn snapshot(&self, client: DClient) -> Result<Vec<ObjectWithRelations>> {
+    pub async fn snapshot(&mut self, client: DClient) -> Result<Vec<ObjectWithRelations>> {
         let result = match self {
             SnapshotResponse::ArchiveProject(req) => {
                 SnapshotResponse::archive_project(req, client).await?
             }
-            SnapshotResponse::SnapshotCollection(req) => {
+            SnapshotResponse::SnapshotCollection(ref mut req) => {
                 SnapshotResponse::snapshot_collection(req, client).await?
             }
-            SnapshotResponse::SnapshotDataset(req) => {
+            SnapshotResponse::SnapshotDataset(ref mut req) => {
                 SnapshotResponse::snapshot_dataset(req, client).await?
             }
         };
@@ -71,7 +71,7 @@ impl SnapshotResponse {
         Ok(objects)
     }
     async fn snapshot_dataset(
-        dataset: &SnapshotDataset,
+        dataset: &mut SnapshotDataset,
         mut client: DClient,
     ) -> Result<Vec<ObjectWithRelations>> {
         let transaction = client.transaction().await?;
@@ -86,7 +86,7 @@ impl SnapshotResponse {
         ])
     }
     async fn snapshot_collection(
-        collection: &SnapshotCollection,
+        collection: &mut SnapshotCollection,
         mut client: DClient,
     ) -> Result<Vec<ObjectWithRelations>> {
         let transaction = client.transaction().await?;

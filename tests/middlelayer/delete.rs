@@ -18,10 +18,10 @@ async fn delete_project() {
     let client = db_handler.database.get_client().await.unwrap();
 
     // create user + project
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
     let project_id = DieselUlid::generate();
-    let project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
+    let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
     project.create(&client).await.unwrap();
 
     // test request
@@ -46,10 +46,10 @@ async fn delete_collection() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + collection
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     let collection_id = DieselUlid::generate();
-    let collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
+    let mut collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
     collection.create(client).await.unwrap();
 
     // Test request
@@ -74,10 +74,10 @@ async fn delete_dataset() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + dataset
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     let dataset_id = DieselUlid::generate();
-    let dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let mut dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
     dataset.create(client).await.unwrap();
 
     // Test request
@@ -102,7 +102,7 @@ async fn delete_object() {
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + objects
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     let object = DieselUlid::generate();
     let object_v1 = DieselUlid::generate();

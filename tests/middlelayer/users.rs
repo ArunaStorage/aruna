@@ -41,7 +41,7 @@ use aruna_server::middlelayer::user_request_types::{
 async fn test_activate_user() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
     // Test activation
     let request = ActivateUser(ActivateUserRequest {
@@ -64,7 +64,7 @@ async fn test_activate_user() {
 async fn test_update_display_name() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
     // Test activation
     let new_display_name = "updated_name".to_string();
@@ -83,7 +83,7 @@ async fn test_update_display_name() {
 async fn test_update_email() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
     // Test activation
     let new_email = "updated@test.org".to_string();

@@ -54,7 +54,7 @@ pub struct CustomAttributes {
 #[async_trait::async_trait]
 impl CrudDb for User {
     //ToDo: Rust Doc
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
           (id, display_name, external_id, email, attributes, active) 
         VALUES 

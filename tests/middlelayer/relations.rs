@@ -21,7 +21,7 @@ async fn test_modify() {
     let client = db_handler.database.get_client().await.unwrap();
     let origin = DieselUlid::generate();
     let target = DieselUlid::generate();
-    let user = test_utils::new_user(vec![
+    let mut user = test_utils::new_user(vec![
         ObjectMapping::DATASET(origin),
         ObjectMapping::OBJECT(target),
     ]);

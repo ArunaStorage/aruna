@@ -16,7 +16,7 @@ async fn create_user_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -52,7 +52,7 @@ async fn update_user_name_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -93,7 +93,7 @@ async fn update_user_email_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -134,7 +134,7 @@ async fn update_user_admin_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -175,7 +175,7 @@ async fn update_user_service_account_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -216,7 +216,7 @@ async fn delete_user_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -249,7 +249,7 @@ async fn add_permission_user_test() {
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -315,7 +315,7 @@ async fn remove_user_permission_test() {
     let perm2 = DieselUlid::generate();
     let perm3 = DieselUlid::generate();
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -420,7 +420,7 @@ async fn user_token_test() {
     let perm2 = DieselUlid::generate();
     let perm3 = DieselUlid::generate();
     // Define and create user in database
-    let user = User {
+    let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
         external_id: None,
@@ -525,7 +525,7 @@ async fn user_status_test() {
 
     let id = DieselUlid::generate();
 
-    let user = User {
+    let mut user = User {
         id,
         display_name: "aha".to_string(),
         external_id: None,
