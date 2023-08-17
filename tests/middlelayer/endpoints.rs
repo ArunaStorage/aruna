@@ -35,7 +35,6 @@ async fn test_create_ep() {
     assert_eq!(ep.name, "endpoint_test".to_string());
     assert_eq!(ep.endpoint_variant, EndpointVariant::PERSISTENT);
     assert!(ep.is_public);
-    assert!(!ep.is_default);
     assert!(ep.host_config.0 .0.is_empty());
     assert!(pk.proxy.is_some());
     assert_eq!(pk.pubkey, "test".to_string());
@@ -59,7 +58,6 @@ async fn test_get_ep() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
         status: EndpointStatus::INITIALIZING,
     };
     endpoint.create(&client).await.unwrap();
@@ -102,8 +100,7 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     let endpoint_two = Endpoint {
         id: ep_two,
@@ -112,8 +109,7 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     let endpoint_three = Endpoint {
         id: ep_three,
@@ -122,8 +118,7 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     let eps = [&endpoint_one, &endpoint_two, &endpoint_three];
     for ep in eps {
@@ -150,8 +145,7 @@ async fn test_delete_ep() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(&client).await.unwrap();
 
@@ -175,13 +169,7 @@ async fn test_get_default_ep() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: true,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(&client).await.unwrap();
-
-    // test
-    let default = db_handler.get_default_endpoint().await.unwrap();
-    assert_eq!(endpoint, default);
-    endpoint.delete(&client).await.unwrap();
 }

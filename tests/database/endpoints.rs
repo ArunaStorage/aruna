@@ -28,8 +28,7 @@ async fn create_test() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: Some(doc_obj),
         is_public: true,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(client).await.unwrap();
 
@@ -59,8 +58,7 @@ async fn delete_test() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: Some(doc_obj),
         is_public: true,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(client).await.unwrap();
 
@@ -88,8 +86,7 @@ async fn get_by_tests() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: Some(doc_obj),
         is_public: true,
-        is_default: true,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(client).await.unwrap();
 
@@ -99,9 +96,4 @@ async fn get_by_tests() {
         .unwrap();
 
     assert_eq!(endpoint, new);
-
-    let default = Endpoint::get_default(client).await.unwrap().unwrap();
-
-    assert_eq!(endpoint, default);
-    Endpoint::delete_by_id(&ep_id, client).await.unwrap(); // Needed because of unique constraints
 }

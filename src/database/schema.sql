@@ -132,8 +132,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
     endpoint_variant "EndpointVariant" NOT NULL DEFAULT 'PERSISTENT',
     documentation_object UUID REFERENCES objects(id),
     is_public BOOL NOT NULL DEFAULT TRUE,
-    is_default BOOL NOT NULL DEFAULT FALSE,
-    status "EndpointStatus" NOT NULL DEFAULT 'INITIALIZING',
+    status "EndpointStatus" NOT NULL DEFAULT 'AVAILABLE',
     UNIQUE(name)
 
 );
