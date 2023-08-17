@@ -255,6 +255,10 @@ impl Cache {
             }
         }
 
+        if !user.active {
+            return false;
+        }
+
         for (id, got_perm) in permitted {
             if let Some(needed_perm) = resources.get(id) {
                 if got_perm >= needed_perm {

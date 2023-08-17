@@ -46,9 +46,9 @@ struct KeyCloakResponse {
 ///           Strongly restricts the usability of the token.
 #[derive(Debug, Serialize, Deserialize)]
 struct ArunaTokenClaims {
-    iss: String, // Currently always 'aruna'
-    sub: String, // User_ID / DataProxy_ID
-    exp: usize,  // Expiration timestamp
+    iss: String,     // Currently always 'aruna'
+    pub sub: String, // User_ID / DataProxy_ID
+    exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
     tid: Option<String>,
@@ -420,23 +420,12 @@ impl TokenHandler {
         }
     }
 
-    ///ToDo: Rust Doc
-    async fn validate_oidc_token(
-        &self,
-        token: &str,
-    ) -> Result<(
-        DieselUlid,
-        Option<DieselUlid>,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
-        Option<Action>,
-    )> {
+    pub(crate) async fn process_oidc_token(&self, token: &str) -> Result<ArunaTokenClaims> {
         // Read current oidc public key
         let read = {
             let lock = self.oidc_pubkey.try_read().unwrap();
             lock.clone()
         };
-
         // Extract header from JWT
         let header = decode_header(token)?;
 
@@ -452,8 +441,23 @@ impl TokenHandler {
             )?,
         };
 
+        Ok(token_data.claims)
+    }
+
+    ///ToDo: Rust Doc
+    async fn validate_oidc_token(
+        &self,
+        token: &str,
+    ) -> Result<(
+        DieselUlid,
+        Option<DieselUlid>,
+        Vec<(DieselUlid, DbPermissionLevel)>,
+        bool,
+        Option<Action>,
+    )> {
+        let claims = self.process_oidc_token(token).await?;
         // Fetch user from oidc provider
-        let user = self.cache.get_user_by_oidc(&token_data.claims.sub)?;
+        let user = self.cache.get_user_by_oidc(&claims.sub)?;
         let perms = user.get_permissions(None)?;
 
         Ok((user.id, None, perms, false, None))

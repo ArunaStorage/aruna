@@ -48,15 +48,14 @@ impl UserService for UserServiceImpl {
             "Token authentication error"
         );
         let request = RegisterUser(request.into_inner());
-        let ctx = Context::self_ctx(); //TODO: Implementation of empty ctx for user registration
-        let _external_id = tonic_auth!(
-            //TODO: Get external_id from token
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+        let external_id = tonic_auth!(
+            self.authorizer.check_unregistered_oidc(&token).await,
             "Unauthorized"
         );
         let (user_id, new_user) = tonic_internal!(
-            // TODO: Add Some(external_id) from token
-            self.database_handler.register_user(request, None).await,
+            self.database_handler
+                .register_user(request, external_id)
+                .await,
             "Internal register user error"
         );
         self.cache.add_user(user_id, new_user);

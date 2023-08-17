@@ -13,7 +13,7 @@ impl DatabaseHandler {
     pub async fn register_user(
         &self,
         request: RegisterUser,
-        external_id: Option<String>,
+        external_id: String,
     ) -> Result<(DieselUlid, User)> {
         let client = self.database.get_client().await?;
         let user_id = DieselUlid::generate();
@@ -28,7 +28,7 @@ impl DatabaseHandler {
         let user = User {
             id: user_id,
             display_name: request.get_display_name(),
-            external_id,
+            external_id: Some(external_id),
             email: request.get_email(),
             attributes: Json(new_attributes),
             active: false,
