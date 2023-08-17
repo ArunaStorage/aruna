@@ -1,11 +1,8 @@
 use super::impersonating_client::ImpersonatingClient;
 use crate::caching::cache::{Cache, ResourceIds, ResourceString};
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::structs::Object;
-use crate::structs::ObjectLocation;
-use ahash::{HashSet, RandomState};
+use ahash::{HashSet};
 use anyhow::Result;
-use aruna_rust_api::api::storage::models::v2::DataClass;
 use base64::engine::general_purpose;
 use base64::Engine;
 use diesel_ulid::DieselUlid;
@@ -19,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
-use dashmap::mapref::one::Ref;
+use crate::s3_frontend::utils::list_objects::{Contents, filter_list_objects};
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -434,40 +431,10 @@ impl S3 for ArunaS3Service {
         let delimiter = req.input.delimiter;
         let prefix = req.input.prefix;
 
-        let sorted = self
+        let sorted = filter_list_objects(&self
             .cache
             .paths
-            .iter()
-            .filter_map(|e| match e.key().clone() {
-                ResourceString::Collection(temp_root, collection) if &temp_root == root => {
-                    Some(([temp_root, collection].join("/"), e.value().into()))
-                }
-                ResourceString::Dataset(temp_root, collection, dataset) if &temp_root == root => {
-                    Some((
-                        [temp_root, collection.unwrap_or("".to_string()), dataset].join("/"),
-                        e.value().into(),
-                    ))
-                }
-                ResourceString::Object(temp_root, collection, dataset, object)
-                    if &temp_root == root =>
-                {
-                    Some((
-                        [
-                            temp_root,
-                            collection.unwrap_or("".to_string()),
-                            dataset.unwrap_or("".to_string()),
-                            object,
-                        ]
-                        .join("/"),
-                        e.value().into(),
-                    ))
-                }
-                ResourceString::Project(temp_root) if &temp_root == root => {
-                    Some((temp_root, e.value().into()))
-                }
-                _ => None,
-            })
-            .collect::<BTreeMap<String, DieselUlid>>();
+            , root);
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
@@ -919,27 +886,5 @@ impl S3 for ArunaS3Service {
         //     e_tag: Some(format!("-{}", etag)),
         //     ..Default::default()
         // })
-    }
-}
-
-// TODO: Move into utils
-#[derive(Eq, PartialEq, Hash, Clone)]
-struct Contents {
-    pub key: String,
-    pub etag: DieselUlid,
-    pub size: i64,
-    pub storage_class: DataClass,
-}
-impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
-    fn from(value: (&String, &(Object, Option<ObjectLocation>))) -> Self {
-        Contents {
-            key: value.0.clone(),
-            etag: value.1 .0.id,
-            size: match &value.1 .1 {
-                Some(s) => s.raw_content_len,
-                None => 0,
-            },
-            storage_class: value.1 .0.data_class,
-        }
     }
 }

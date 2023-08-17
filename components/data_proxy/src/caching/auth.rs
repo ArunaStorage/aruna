@@ -149,10 +149,8 @@ impl AuthHandler {
                 .ok_or_else(|| anyhow!("Unknown user"))?;
 
             for (res_id, perm) in user.permissions {
-                if ids.check_if_in(res_id) {
-                    if perm >= db_perm_from_method {
-                        return Ok(());
-                    }
+                if ids.check_if_in(res_id) && perm >= db_perm_from_method {
+                    return Ok(());
                 }
             }
         }
