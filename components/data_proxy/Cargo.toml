@@ -34,7 +34,7 @@ log = "0.4.20"
 md-5 = "0.10.5"
 rand = "0.8.5"
 reqwest = "0.11.18"
-s3s = "0.6.1"
+s3s = "0.7.0"
 serde = {version = "1.0.183", features = ["derive"]}
 sha2 = {version = "0.10.7", features = ["std", "asm", "sha2-asm"]}
 tokio = {version = "1.31.0", features = ["full"]}
