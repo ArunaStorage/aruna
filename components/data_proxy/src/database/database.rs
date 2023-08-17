@@ -6,7 +6,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         let database_host = dotenvy::var("PERSISTENCE_DB_HOST")?;
         let database_port = dotenvy::var("PERSISTENCE_DB_PORT")?.parse()?;
         let database_name = dotenvy::var("PERSISTENCE_DB_NAME")?;
@@ -22,13 +22,14 @@ impl Database {
         });
         let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
+        Database::initialize_db(&pool.get().await?).await?;
+
         Ok(Database {
             connection_pool: pool,
         })
     }
 
-    pub async fn initialize_db(&self) -> Result<()> {
-        let client = self.connection_pool.get().await?;
+    pub async fn initialize_db(client: &Client) -> Result<()> {
         let initial = tokio::fs::read_to_string("./src/database/schema.sql").await?;
         client.batch_execute(&initial).await?;
         Ok(())

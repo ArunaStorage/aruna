@@ -1,3 +1,5 @@
+use crate::structs::Object as DPObject;
+use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
@@ -15,6 +17,7 @@ use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
@@ -37,10 +40,10 @@ use aruna_rust_api::api::{
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
+use tonic::metadata::AsciiMetadataKey;
+use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
-
-use crate::structs::PubKey;
 
 use super::cache::Cache;
 
@@ -55,6 +58,7 @@ pub struct GrpcQueryHandler {
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
     endpoint_id: String,
+    long_lived_token: String,
 }
 
 impl GrpcQueryHandler {
@@ -88,6 +92,14 @@ impl GrpcQueryHandler {
         let event_notification_service =
             EventNotificationServiceClient::new(channel);
 
+        let long_lived_token = cache
+            .auth
+            .read()
+            .await
+            .as_ref()
+            .ok_or_else(|| anyhow!("No auth found"))?
+            .sign_notification_token()?;
+
         Ok(GrpcQueryHandler {
             project_service,
             collection_service,
@@ -99,18 +111,27 @@ impl GrpcQueryHandler {
             event_notification_service,
             cache,
             endpoint_id,
+            long_lived_token,
         })
     }
 }
 
+// Aruna grpc request section
 impl GrpcQueryHandler {
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
+        let mut req = Request::new(GetUserRedactedRequest {
+            user_id: id.to_string(),
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         let user = self
             .user_service
             .clone()
-            .get_user_redacted(Request::new(GetUserRedactedRequest {
-                user_id: id.to_string(),
-            }))
+            .get_user_redacted(req)
             .await?
             .into_inner()
             .user
@@ -118,20 +139,55 @@ impl GrpcQueryHandler {
         Ok(user)
     }
     async fn get_pubkeys(&self) -> Result<Vec<Pubkey>> {
+        let mut req = Request::new(GetPubkeysRequest {});
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         Ok(self
             .storage_status_service
             .clone()
-            .get_pubkeys(Request::new(GetPubkeysRequest {}))
+            .get_pubkeys(req)
             .await?
             .into_inner()
             .pubkeys)
     }
+
+    pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateProjectRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .project_service
+            .clone()
+            .create_project(req)
+            .await?
+            .into_inner()
+            .project
+            .ok_or(anyhow!("unknown project"))?;
+
+        DPObject::try_from(response)
+    }
+
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
+        let mut req = Request::new(GetProjectRequest {
+            project_id: id.to_string(),
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         self.project_service
             .clone()
-            .get_project(Request::new(GetProjectRequest {
-                project_id: id.to_string(),
-            }))
+            .get_project(req)
             .await?
             .into_inner()
             .project
@@ -139,11 +195,18 @@ impl GrpcQueryHandler {
     }
 
     async fn get_collection(&self, id: &DieselUlid, _checksum: String) -> Result<Collection> {
+        let mut req = Request::new(GetCollectionRequest {
+            collection_id: id.to_string(),
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         self.collection_service
             .clone()
-            .get_collection(Request::new(GetCollectionRequest {
-                collection_id: id.to_string(),
-            }))
+            .get_collection(req)
             .await?
             .into_inner()
             .collection
@@ -151,11 +214,18 @@ impl GrpcQueryHandler {
     }
 
     async fn get_dataset(&self, id: &DieselUlid, _checksum: String) -> Result<Dataset> {
+        let mut req = Request::new(GetDatasetRequest {
+            dataset_id: id.to_string(),
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         self.dataset_service
             .clone()
-            .get_dataset(Request::new(GetDatasetRequest {
-                dataset_id: id.to_string(),
-            }))
+            .get_dataset(req)
             .await?
             .into_inner()
             .dataset
@@ -163,11 +233,18 @@ impl GrpcQueryHandler {
     }
 
     async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
+        let mut req = Request::new(GetObjectRequest {
+            object_id: id.to_string(),
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         self.object_service
             .clone()
-            .get_object(Request::new(GetObjectRequest {
-                object_id: id.to_string(),
-            }))
+            .get_object(req)
             .await?
             .into_inner()
             .object
@@ -175,13 +252,20 @@ impl GrpcQueryHandler {
     }
 
     pub async fn create_notifications_channel(&self) -> Result<()> {
+        let mut req = Request::new(GetEventMessageBatchStreamRequest {
+            stream_consumer: self.endpoint_id.to_string(),
+            batch_size: 10,
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
         let stream = self
             .event_notification_service
             .clone()
-            .get_event_message_batch_stream(Request::new(GetEventMessageBatchStreamRequest {
-                stream_consumer: self.endpoint_id.to_string(),
-                batch_size: 10,
-            }))
+            .get_event_message_batch_stream(req)
             .await?;
 
         let mut inner_stream = stream.into_inner();
@@ -202,7 +286,10 @@ impl GrpcQueryHandler {
         }
         Err(anyhow!("Stream was closed by sender"))
     }
+}
 
+/// Request handling section
+impl GrpcQueryHandler {
     async fn process_message(&self, message: EventMessage) -> Result<Option<Reply>> {
         match message.message_variant.unwrap() {
             MessageVariant::ResourceEvent(r_event) => self.process_resource_event(r_event).await,

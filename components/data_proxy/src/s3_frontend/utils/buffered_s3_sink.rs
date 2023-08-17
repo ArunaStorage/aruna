@@ -1,4 +1,5 @@
-use crate::data_backends::storage_backend::{Location, PartETag, StorageBackend};
+use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::{ObjectLocation, PartETag};
 use anyhow::{anyhow, Result};
 use aruna_file::transformer::{Sink, Transformer};
 use async_channel::{Receiver, Sender};
@@ -8,7 +9,7 @@ use std::sync::Arc;
 pub struct BufferedS3Sink {
     backend: Arc<Box<dyn StorageBackend>>,
     buffer: BytesMut,
-    target_location: Location,
+    target_location: ObjectLocation,
     upload_id: Option<String>,
     part_number: Option<i32>,
     only_parts: bool,
@@ -22,7 +23,7 @@ impl Sink for BufferedS3Sink {}
 impl BufferedS3Sink {
     pub fn new(
         backend: Arc<Box<dyn StorageBackend>>,
-        target_location: Location,
+        target_location: ObjectLocation,
         upload_id: Option<String>,
         part_number: Option<i32>,
         only_parts: bool,

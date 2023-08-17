@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, ObjectType, PubKey, User},
+    structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
 };
 use ahash::RandomState;
 use anyhow::anyhow;
@@ -14,142 +14,9 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use s3s::{auth::SecretKey, path::S3Path};
+use s3s::auth::SecretKey;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub enum ResourceString {
-    Project(String),
-    Collection(String, String),
-    Dataset(String, Option<String>, String),
-    Object(String, Option<String>, Option<String>, String),
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub struct ResourceStrings(pub Vec<ResourceString>);
-
-impl TryFrom<&S3Path> for ResourceStrings {
-    type Error = anyhow::Error;
-    fn try_from(value: &S3Path) -> Result<Self> {
-        if let Some((b, k)) = value.as_object() {
-            let mut results = Vec::new();
-
-            let pathvec = k.split('/').collect::<Vec<&str>>();
-            match pathvec.len() {
-                0 => {
-                    results.push(ResourceString::Project(b.to_string()));
-                }
-                1 => {
-                    results.push(ResourceString::Collection(
-                        b.to_string(),
-                        pathvec[0].to_string(),
-                    ));
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        None,
-                        pathvec[0].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        pathvec[0].to_string(),
-                    ));
-                }
-                2 => {
-                    results.push(ResourceString::Dataset(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        None,
-                        pathvec[1].to_string(),
-                    ));
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                }
-                3 => {
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        Some(pathvec[1].to_string()),
-                        pathvec[2].to_string(),
-                    ));
-                }
-                _ => {
-                    results.push(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        k.to_string(),
-                    ));
-                }
-            }
-            Ok(ResourceStrings(results))
-        } else {
-            Err(anyhow!("Invalid path"))
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub enum ResourceIds {
-    Project(DieselUlid),
-    Collection(DieselUlid, DieselUlid),
-    Dataset(DieselUlid, Option<DieselUlid>, DieselUlid),
-    Object(
-        DieselUlid,
-        Option<DieselUlid>,
-        Option<DieselUlid>,
-        DieselUlid,
-    ),
-}
-
-impl PartialEq<DieselUlid> for ResourceIds {
-    fn eq(&self, other: &DieselUlid) -> bool {
-        match self {
-            ResourceIds::Project(id) => id == other,
-            ResourceIds::Collection(_, id) => id == other,
-            ResourceIds::Dataset(_, _, id) => id == other,
-            ResourceIds::Object(_, _, _, id) => id == other,
-        }
-    }
-}
-
-impl ResourceIds {
-    pub fn get_id(&self) -> DieselUlid {
-        match self {
-            ResourceIds::Project(id) => *id,
-            ResourceIds::Collection(_, id) => *id,
-            ResourceIds::Dataset(_, _, id) => *id,
-            ResourceIds::Object(_, _, _, id) => *id,
-        }
-    }
-
-    pub fn check_if_in(&self, id: DieselUlid) -> bool {
-        match self {
-            ResourceIds::Project(pid) => pid == &id,
-            ResourceIds::Collection(pid, cid) => pid == &id || cid == &id,
-            ResourceIds::Dataset(pid, cid, did) => {
-                pid == &id || cid.unwrap_or_default() == id || did == &id
-            }
-            ResourceIds::Object(pid, cid, did, oid) => {
-                pid == &id
-                    || cid.unwrap_or_default() == id
-                    || did.unwrap_or_default() == id
-                    || oid == &id
-            }
-        }
-    }
-}
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
@@ -164,7 +31,7 @@ pub struct Cache {
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     pub persistence: RwLock<Option<Database>>,
-    pub notifications: RwLock<Option<Arc<GrpcQueryHandler>>>,
+    pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
 }
 
@@ -173,11 +40,13 @@ impl Cache {
         notifications_url: Option<impl Into<String>>,
         with_persistence: bool,
         self_id: DieselUlid,
+        encoding_key: String,
+        encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
         let persistence = if with_persistence {
             RwLock::new(None)
         } else {
-            RwLock::new(Some(Database::new()?))
+            RwLock::new(Some(Database::new().await?))
         };
         let cache = Arc::new(Cache {
             users: DashMap::default(),
@@ -186,14 +55,14 @@ impl Cache {
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
             persistence,
-            notifications: RwLock::new(None),
+            aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
         if let Some(url) = notifications_url {
-            let notification_handler: Arc<GrpcQueryHandler> =
+            let notication_handler: Arc<GrpcQueryHandler> =
                 Arc::new(GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await?);
 
-            let notifications_handler_clone = notification_handler.clone();
+            let notifications_handler_clone = notication_handler.clone();
             tokio::spawn(async move {
                 notifications_handler_clone
                     .clone()
@@ -201,16 +70,17 @@ impl Cache {
                     .await
             });
 
-            cache.set_notifications(notification_handler).await
+            cache.set_notifications(notication_handler).await
         };
 
-        let auth_handler = AuthHandler::new(cache.clone(), self_id);
+        let auth_handler =
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
         cache.set_auth(auth_handler).await;
         Ok(cache)
     }
 
     pub async fn set_notifications(&self, notifications: Arc<GrpcQueryHandler>) {
-        let mut guard = self.notifications.write().await;
+        let mut guard = self.aruna_client.write().await;
         *guard = Some(notifications);
     }
 

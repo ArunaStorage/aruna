@@ -1,10 +1,6 @@
 use anyhow::Result;
 use caching::cache::Cache;
-use data_backends::{
-    s3_backend::S3Backend,
-    storage_backend::StorageBackend,
-};
-use s3_frontend::impersonating_client::ImpersonatingClient;
+use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use std::{io::Write, str::FromStr, sync::Arc};
 use tokio::try_join;
 
@@ -50,28 +46,24 @@ async fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Debug)
         .init();
 
+    let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY")?;
+    let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")?.parse::<i32>()?;
+
     let storage_backend: Arc<Box<dyn StorageBackend>> =
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
 
-    let imp_client = Arc::new(ImpersonatingClient::new(
-        endpoint_id.clone(),
-        aruna_host_url.clone(),
-    ));
     let cache = Cache::new(
         aruna_host_url,
         with_persistence,
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
+        encoding_key,
+        encoding_key_serial,
     )
     .await?;
 
-    let s3_server = s3_frontend::s3server::S3Server::new(
-        "0.0.0.0:9000",
-        hostname,
-        storage_backend,
-        imp_client,
-        cache,
-    )
-    .await?;
+    let s3_server =
+        s3_frontend::s3server::S3Server::new("0.0.0.0:9000", hostname, storage_backend, cache)
+            .await?;
 
     match try_join!(s3_server.run()) {
         Ok(_) => Ok(()),
@@ -81,88 +73,3 @@ async fn main() -> Result<()> {
         }
     }
 }
-//      {
-//         Ok(value) => value,
-//         Err(err) => {
-//             log::error!("{}", err);
-//             return;
-//         }
-//     };
-//     let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
-
-//     let data_handler = Arc::new(
-//         DataHandler::new(
-//             storage_backend.clone(),
-//             backend_host.to_string(),
-//             ServiceSettings {
-//                 endpoint_id: rusty_ulid::Ulid::from_str(&endpoint_id).unwrap(),
-//                 ..Default::default()
-//             },
-//         )
-//         .await
-//         .unwrap(),
-//     );
-
-//     let data_server = S3Server::new(
-//         &proxy_data_host,
-//         hostname,
-//         backend_host.to_string(),
-//         storage_backend.clone(),
-//         data_handler.clone(),
-//         endpoint_id.to_string(),
-//     )
-//     .await
-//     .unwrap();
-
-//     let internal_proxy_server =
-//         InternalServerImpl::new(storage_backend.clone(), data_handler.clone())
-//             .await
-//             .unwrap();
-//     let internal_proxy_socket = internal_backend_host.parse().unwrap();
-
-//     match external_bundler_url {
-//         Some(bundler_url) => {
-//             let bundl = Bundler::new(backend_host, endpoint_id).await.unwrap();
-
-//             let internal_bundler = InternalBundlerServiceImpl::new(bundl.clone());
-
-//             let internal_proxy_server = ProxyServer::new(
-//                 Some(Arc::new(internal_bundler)),
-//                 Arc::new(internal_proxy_server),
-//                 internal_proxy_socket,
-//             )
-//             .await
-//             .unwrap();
-
-//             let axum_handle = run_axum(bundler_url, bundl.clone(), storage_backend.clone());
-
-//             log::info!("Starting proxy, dataserver and axum server");
-//             let _end = match try_join!(
-//                 data_server.run(),
-//                 internal_proxy_server.serve(),
-//                 axum_handle
-//             ) {
-//                 Ok(value) => value,
-//                 Err(err) => {
-//                     log::error!("{}", err);
-//                     return;
-//                 }
-//             };
-//         }
-//         None => {
-//             let internal_proxy_server =
-//                 ProxyServer::new(None, Arc::new(internal_proxy_server), internal_proxy_socket)
-//                     .await
-//                     .unwrap();
-
-//             log::info!("Starting proxy and dataserver");
-//             let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
-//                 Ok(value) => value,
-//                 Err(err) => {
-//                     log::error!("{}", err);
-//                     return;
-//                 }
-//             };
-//         }
-//     }
-// }

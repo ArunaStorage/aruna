@@ -1,27 +1,35 @@
-use crate::caching::cache::ResourceStrings;
-use crate::structs::DbPermissionLevel;
-use crate::structs::Object;
-
 use super::cache::Cache;
-use super::cache::ResourceIds;
+use crate::structs::CheckAccessResult;
+use crate::structs::DbPermissionLevel;
+use crate::structs::Missing;
+use crate::structs::Object;
+use crate::structs::ResourceIds;
+use crate::structs::ResourceStrings;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use jsonwebtoken::Algorithm;
+use jsonwebtoken::EncodingKey;
+use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use s3s::auth::Credentials;
 use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
 
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
     pub self_id: DieselUlid,
+    pub encoding_key: (i32, EncodingKey),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,19 +47,22 @@ pub(crate) struct ArunaTokenClaims {
 
 #[repr(u8)]
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Action {
     All = 0,
-    Notifications = 1,
-    CreateSecrets = 2,
+    CreateSecrets = 1,
+    Impersonate = 2,
+    FetchInfo = 3,
+    //DpExchange = 4,
 }
 
 impl From<u8> for Action {
     fn from(input: u8) -> Self {
         match input {
             0 => Action::All,
-            1 => Action::Notifications,
-            2 => Action::CreateSecrets,
+            1 => Action::CreateSecrets,
+            2 => Action::Impersonate,
+            3 => Action::FetchInfo,
             _ => panic!("Invalid action"),
         }
     }
@@ -59,8 +70,8 @@ impl From<u8> for Action {
 
 #[derive(Debug)]
 pub struct Intent {
-    target: DieselUlid,
-    action: Action,
+    pub target: DieselUlid,
+    pub action: Action,
 }
 
 impl Serialize for Intent {
@@ -98,8 +109,23 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
-    pub fn new(cache: Arc<Cache>, self_id: DieselUlid) -> Self {
-        Self { cache, self_id }
+    pub fn new(
+        cache: Arc<Cache>,
+        self_id: DieselUlid,
+        encode_secret: String,
+        encoding_key_serial: i32,
+    ) -> Self {
+        let private_pem = format!(
+            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+            encode_secret
+        );
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
+
+        Self {
+            cache,
+            self_id,
+            encoding_key: (encoding_key_serial, encoding_key),
+        }
     }
 
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
@@ -136,21 +162,37 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
-    ) -> Result<()> {
-        let (ids, obj) = self.extract_object_from_path(path)?;
+    ) -> Result<CheckAccessResult> {
+        let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
-
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
-            return Ok(());
+            return Ok(CheckAccessResult::new(
+                ids,
+                missing,
+                "".to_string(),
+                None,
+                obj,
+            ));
         } else if let Some(creds) = creds {
             let user = self
                 .cache
                 .get_user_by_key(&creds.access_key)
                 .ok_or_else(|| anyhow!("Unknown user"))?;
 
-            for (res_id, perm) in user.permissions {
-                if ids.check_if_in(res_id) && perm >= db_perm_from_method {
-                    return Ok(());
+            for (token_id, perm) in user.permissions {
+                if ids.check_if_in(token_id) && perm >= db_perm_from_method {
+                    let res_id = if token_id == user.user_id {
+                        None
+                    } else {
+                        Some(token_id.to_string())
+                    };
+                    return Ok(CheckAccessResult::new(
+                        ids,
+                        missing,
+                        user.user_id.to_string(),
+                        res_id,
+                        obj,
+                    ));
                 }
             }
         }
@@ -158,8 +200,22 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
-    pub fn extract_object_from_path(&self, path: &S3Path) -> Result<(ResourceIds, Object)> {
-        let res_strings = ResourceStrings::try_from(path)?.0;
+    pub fn extract_object_from_path(
+        &self,
+        path: &S3Path,
+        method: &Method,
+    ) -> Result<(ResourceIds, Object, Option<Missing>)> {
+        let res_strings = ResourceStrings::try_from(path)?;
+
+        let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
+            res_strings.permutate()
+        } else {
+            (res_strings.0, vec![])
+        };
+
+        res_strings.sort();
+        alt.sort();
+
         for res in res_strings {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
                 return Ok((
@@ -171,10 +227,79 @@ impl AuthHandler {
                         .value()
                         .0
                         .clone(),
+                    None,
+                ));
+            }
+        }
+
+        for (res, missing) in alt {
+            if let Some(e) = self.cache.get_res_by_res_string(res) {
+                return Ok((
+                    e.clone(),
+                    self.cache
+                        .resources
+                        .get(&e.get_id())
+                        .ok_or_else(|| anyhow!("Unknown object"))?
+                        .value()
+                        .0
+                        .clone(),
+                    Some(missing),
                 ));
             }
         }
         Err(anyhow!("No object found in path"))
+    }
+
+    pub(crate) fn sign_impersonating_token(
+        &self,
+        user_id: impl Into<String>,
+        tid: Option<impl Into<String>>,
+    ) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: "aruna_dataproxy".to_string(),
+            sub: user_id.into(),
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(15 * 60))
+                .as_secs() as usize,
+            tid: tid.map(|x| x.into()),
+            it: Some(Intent {
+                target: self.self_id,
+                action: Action::Impersonate,
+            }),
+        };
+
+        self.sign_token(claims)
+    }
+
+    pub(crate) fn sign_notification_token(&self) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: "aruna_dataproxy".to_string(),
+            sub: self.self_id.to_string(),
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(60 * 60 * 24 * 365 * 10))
+                .as_secs() as usize,
+            tid: None,
+            it: Some(Intent {
+                target: self.self_id,
+                action: Action::FetchInfo,
+            }),
+        };
+
+        self.sign_token(claims)
+    }
+
+    pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
+        let header = Header {
+            kid: Some(format!("{}", &self.encoding_key.0)),
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+
+        let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1)?;
+
+        Ok(token)
     }
 }
 

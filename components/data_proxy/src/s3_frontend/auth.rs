@@ -28,9 +28,12 @@ impl S3Auth for AuthProvider {
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
-                auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
+                let result = auth
+                    .check_access(cx.credentials(), cx.method(), cx.s3_path())
                     .await
                     .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+
+                cx.extensions_mut().insert(result);
                 Ok(())
             }
             None => Ok(()),

@@ -37,7 +37,7 @@ impl DataproxyUserService for DataProxyUserService {
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
 
-            if let Some(q_handler) = self.cache.notifications.read().await.as_ref() {
+            if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|e| {
                     log::debug!("Error getting user from queue handler {e}");
                     tonic::Status::unauthenticated("Unable to authenticate user")
