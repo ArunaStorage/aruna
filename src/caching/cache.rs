@@ -228,30 +228,30 @@ impl Cache {
         self.check_lock();
         let mut resources = HashMap::default();
 
+        let user = match self.get_user(user_id) {
+            Some(user) => user,
+            None => return false,
+        };
+
+        if user.active && user.attributes.0.global_admin {
+            return true;
+        }
+
         for ctx in ctxs {
             match &ctx.variant {
-                crate::auth::structs::ContextVariant::Activated => {
-                    return self.get_user(user_id).map(|e| e.active).unwrap_or_default()
-                }
+                crate::auth::structs::ContextVariant::Activated => return user.active,
                 crate::auth::structs::ContextVariant::Resource((id, perm)) => {
                     resources.insert(*id, *perm);
                 }
                 crate::auth::structs::ContextVariant::User((uid, _)) => {
                     return if uid == user_id {
-                        true
+                        !user.attributes.0.service_account
                     } else {
-                        self.get_user(user_id)
-                            .map(|e| !e.attributes.0.service_account)
-                            .unwrap_or_default()
+                        false
                     }
                 }
-                crate::auth::structs::ContextVariant::GlobalAdmin
-                | crate::auth::structs::ContextVariant::GlobalProxy => {
-                    return self
-                        .get_user(user_id)
-                        .map(|e| e.attributes.0.global_admin)
-                        .unwrap_or_default()
-                }
+                crate::auth::structs::ContextVariant::GlobalProxy
+                | crate::auth::structs::ContextVariant::GlobalAdmin => return false,
             }
         }
 

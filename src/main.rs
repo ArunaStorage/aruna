@@ -86,6 +86,7 @@ pub async fn main() -> Result<()> {
         natsio_handler: natsio_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
+    dbg!("Bin hier!");
 
     // NotificationHandler
     let _ = NotificationHandler::new(db_arc.clone(), cache_arc.clone(), natsio_arc.clone()).await?;
@@ -119,9 +120,13 @@ pub async fn main() -> Result<()> {
 
     // Check default endpoint -> Only endpoint service available
     let client = db_arc.get_client().await?;
-    if Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
-        .await?
-        .is_some()
+
+    dbg!(&default_endpoint.is_empty());
+
+    if !&default_endpoint.is_empty()
+        && Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
+            .await?
+            .is_some()
     {
         // Add other services
         builder = builder

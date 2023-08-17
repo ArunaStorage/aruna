@@ -8,5 +8,5 @@ VALUES
     'test-admin',
     'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
     '{"global_admin": true, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
-    false
+    true
 );
