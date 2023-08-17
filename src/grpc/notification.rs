@@ -1,6 +1,8 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::enums::ObjectType;
+use crate::notification::utils::generate_endpoint_subject;
 use crate::{database::enums::DbPermissionLevel, middlelayer::db_handler::DatabaseHandler};
 use aruna_rust_api::api::notification::services::v2::{
     create_stream_consumer_request::{StreamType, Target},
@@ -11,6 +13,7 @@ use aruna_rust_api::api::notification::services::v2::{
     EventMessage, GetEventMessageBatchRequest, GetEventMessageBatchResponse,
     GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse, ResourceTarget,
 };
+use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -55,8 +58,7 @@ impl EventNotificationService for NotificationServiceImpl {
         request: tonic::Request<CreateStreamConsumerRequest>,
     ) -> Result<Response<CreateStreamConsumerResponse>, Status> {
         // Log some stuff
-        log::info!("Received CreateStreamConsumerRequest.");
-        log::debug!("{:?}", &request);
+        log_received!(&request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -67,32 +69,21 @@ impl EventNotificationService for NotificationServiceImpl {
             "Token extraction failed"
         );
 
-        // Evaluate fitting context and check permissions
-        let perm_context = match inner_request
+        // Extract target from inner request
+        let consumer_target = inner_request
             .target
-            .ok_or_else(|| Status::invalid_argument("Missing context"))?
-        {
-            Target::Resource(ResourceTarget {
-                resource_id,
-                resource_variant: _,
-            }) => Context::res_ctx(
-                tonic_invalid!(
-                    DieselUlid::from_str(&resource_id),
-                    "Invalid resource id format"
-                ),
-                DbPermissionLevel::READ,
-                true,
-            ),
-            Target::User(user_id) => Context::user_ctx(
-                tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user"),
-                DbPermissionLevel::READ,
-            ),
-            Target::Anouncements(_) => Context::default(),
-            Target::All(_) => Context::proxy(),
-        };
-        let user_id = tonic_auth!(
+            .ok_or_else(|| Status::invalid_argument("Missing target context"))?;
+
+        // Evaluate permission context and event type from consumer target
+        let (perm_context, event_type) = extract_context_event_type_from_target(
+            consumer_target,
+            inner_request.include_subresources,
+        )?;
+
+        // Check permission for evaluated permission context
+        let (user_id, _, is_proxy) = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![perm_context])
+                .check_permissions_verbose(&token, vec![perm_context])
                 .await,
             "Permission denied"
         );
@@ -104,21 +95,37 @@ impl EventNotificationService for NotificationServiceImpl {
                 "Stream type conversion failed"
             )
         } else {
-            DeliverPolicy::All
+            DeliverPolicy::All // Default
         };
 
-        // Create stream consumer in Nats.io
-        let (consumer_id, consumer_config) = tonic_internal!(
-            self.natsio_handler
-                .create_event_consumer(EventType::All, deliver_policy)
-                .await,
-            "Consumer creation failed"
-        );
+        // Consumer creation depending on request token source
+        let (consumer_id, consumer_config) = if is_proxy {
+            let consumer_name = DieselUlid::generate(); // Some random id as name
+            let consumer_subject = generate_endpoint_subject(&user_id);
+            tonic_internal!(
+                self.natsio_handler
+                    .create_internal_consumer(
+                        consumer_name,
+                        consumer_subject,
+                        DeliverPolicy::All,
+                        false,
+                    )
+                    .await,
+                "Consumer creation failed"
+            )
+        } else {
+            tonic_internal!(
+                self.natsio_handler
+                    .create_event_consumer(event_type, deliver_policy)
+                    .await,
+                "Consumer creation failed"
+            )
+        };
 
         // Create stream consumer in database
         let stream_consumer = StreamConsumer {
-            id: DieselUlid::generate(),
-            user_id: Some(user_id),
+            id: consumer_id,
+            user_id: if is_proxy { None } else { Some(user_id) },
             config: postgres_types::Json(consumer_config),
         };
 
@@ -140,13 +147,10 @@ impl EventNotificationService for NotificationServiceImpl {
         }
 
         // Create gRPC response
-        let grpc_response = Response::new(CreateStreamConsumerResponse {
+        let response = CreateStreamConsumerResponse {
             stream_consumer: consumer_id.to_string(),
-        });
-
-        log::info!("Sending CreateStreamConsumerResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
-        return Ok(grpc_response);
+        };
+        return_with_log!(response);
     }
 
     /// Fetch messages from an existing stream group.
@@ -352,8 +356,9 @@ impl EventNotificationService for NotificationServiceImpl {
             "Event stream handler creation failed"
         );
 
-        // Send messages in batches (if present)
-        let cloned_reply_signing_secret = "Move this into NatsIoHandler?".to_string();
+        // Send messages in batches if present
+        //ToDo: Push Consumer ...? Create ephemeral in EventStreamHndler
+        let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
             loop {
                 let nats_messages = match handler.get_event_consumer_messages(batch_size).await {
@@ -366,7 +371,7 @@ impl EventNotificationService for NotificationServiceImpl {
                 };
 
                 let mut proto_messages = Vec::new();
-                //ToDo: Conversion from Nats.io to api::EventMessage
+                // Conversion from Nats.io to api::EventMessage
                 for nats_message in nats_messages.into_iter() {
                     // Convert Nats.io message to proto message
                     let event_message =
@@ -509,7 +514,6 @@ impl EventNotificationService for NotificationServiceImpl {
 
         let transaction =
             tonic_internal!(client.transaction().await, "Transaction creation failed");
-
         let transaction_client = transaction.client();
 
         // Fetch stream consumer to check permissions against user_id
@@ -583,6 +587,48 @@ fn convert_stream_type(stream_type: StreamType) -> anyhow::Result<DeliverPolicy>
             start_sequence: info.sequence,
         }),
     }
+}
+
+fn extract_context_event_type_from_target(
+    target: Target,
+    with_subresources: bool,
+) -> Result<(Context, EventType), Status> {
+    Ok(match target {
+        Target::Resource(ResourceTarget {
+            resource_id,
+            resource_variant,
+        }) => {
+            let variant =
+                ResourceVariant::from_i32(resource_variant).ok_or(Status::invalid_argument(""))?;
+            let variant_type =
+                ObjectType::try_from(variant).map_err(|_| Status::invalid_argument(""))?;
+            let event_type =
+                EventType::Resource((resource_id.to_string(), variant_type, with_subresources));
+
+            let context = Context::res_ctx(
+                tonic_invalid!(
+                    DieselUlid::from_str(&resource_id),
+                    "Invalid resource id format"
+                ),
+                DbPermissionLevel::READ,
+                true,
+            );
+
+            (context, event_type)
+        }
+        Target::User(user_id) => {
+            let event_type = EventType::User(user_id.to_string());
+
+            let context = Context::user_ctx(
+                tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id format"),
+                DbPermissionLevel::READ,
+            );
+
+            (context, event_type)
+        }
+        Target::Anouncements(_) => (Context::default(), EventType::Announcement(None)),
+        Target::All(_) => (Context::proxy(), EventType::All),
+    })
 }
 
 ///ToDo: Rust Doc

@@ -1,5 +1,6 @@
 use aruna_rust_api::api::notification::services::v2::{anouncement_event::EventVariant, Reply};
 use base64::{engine::general_purpose, Engine};
+use diesel_ulid::DieselUlid;
 use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::Sha256;
@@ -97,6 +98,11 @@ pub fn generate_announcement_message_subject(event_variant: &EventVariant) -> St
         EventVariant::Downtime(_) => "AOS.ANNOUNCEMENT.DOWNTIME".to_string(),
         EventVariant::Version(_) => "AOS.ANNOUNCEMENT.VERSION".to_string(),
     }
+}
+
+///ToDo: Rust Doc
+pub fn generate_endpoint_subject(endpoint_id: &DieselUlid) -> String {
+    format!("AOS.ENDPOINT.{}", endpoint_id)
 }
 
 ///ToDo: Rust Doc

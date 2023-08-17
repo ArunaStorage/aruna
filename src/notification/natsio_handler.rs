@@ -22,8 +22,9 @@ use crate::utils::grpc_utils::{checksum_resource, checksum_user};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
-    generate_announcement_subject, generate_resource_message_subjects, generate_resource_subject,
-    generate_user_message_subject, generate_user_subject, validate_reply_msg,
+    generate_announcement_subject, generate_endpoint_subject, generate_resource_message_subjects,
+    generate_resource_subject, generate_user_message_subject, generate_user_subject,
+    validate_reply_msg,
 };
 
 // ----- Constants used for notifications -------------------- //
@@ -236,6 +237,49 @@ impl NatsIoHandler {
         })
     }
 
+    ///ToDo: Rust Doc
+    pub async fn get_pull_consumer(
+        &self,
+        event_consumer_id: String,
+    ) -> anyhow::Result<PullConsumer> {
+        // Try to get consumer from stream
+        Ok(match self.stream.get_consumer(&event_consumer_id).await {
+            Ok(consumer) => consumer,
+            Err(err) => return Err(anyhow::anyhow!(err)),
+        })
+    }
+
+    //ToDo: Rust Doc
+    pub async fn create_internal_consumer(
+        &self,
+        consumer_id: DieselUlid,
+        consumer_subject: String,
+        delivery_policy: DeliverPolicy,
+        ephemeral: bool,
+    ) -> anyhow::Result<(DieselUlid, Config)> {
+        // Define consumer config
+        let consumer_config = Config {
+            name: Some(consumer_id.to_string()),
+            filter_subject: consumer_subject.clone(),
+            durable_name: if ephemeral {
+                None
+            } else {
+                Some(consumer_id.to_string())
+            },
+            deliver_policy: delivery_policy,
+            idle_heartbeat: Duration::from_secs(60), // 60 seconds heartbeat
+            ..Default::default()
+        };
+
+        // Create consumer with the generated config if not already exists
+        self.stream
+            .get_or_create_consumer(&consumer_id.to_string(), consumer_config.clone())
+            .await?;
+
+        // Return consumer id
+        return Ok((consumer_id, consumer_config));
+    }
+
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
     pub async fn register_resource_event(
         &self,
@@ -253,8 +297,14 @@ impl NatsIoHandler {
         );
 
         // Evaluate number of notifications and the corresponding subjects
-        let subjects = generate_resource_message_subjects(object_hierarchies);
+        let mut subjects = generate_resource_message_subjects(object_hierarchies);
 
+        // Add individual endpoint subjects
+        for endpoint_ulid in &object.object.endpoints.0 {
+            subjects.push(generate_endpoint_subject(&endpoint_ulid.key()))
+        }
+
+        // Create message payload
         let message_variant = MessageVariant::ResourceEvent(ResourceEvent {
             resource: Some(Resource {
                 resource_id: object.object.id.to_string(),
@@ -283,21 +333,34 @@ impl NatsIoHandler {
         event_variant: EventVariant,
     ) -> anyhow::Result<()> {
         // Calculate user checksum
-        let user_checksum = tonic_internal!(checksum_user(&ApiUser::from(user.clone())), "");
+        let user_checksum = tonic_internal!(
+            checksum_user(&ApiUser::from(user.clone())),
+            "User checksum calculation failed"
+        );
 
         // Generate message subject
-        let subject = generate_user_message_subject(&user.id.to_string());
+        let mut subjects = vec![generate_user_message_subject(&user.id.to_string())];
 
-        self.register_event(
-            MessageVariant::UserEvent(UserEvent {
-                user_id: user.id.to_string(),
-                event_variant: event_variant as i32,
-                checksum: user_checksum,
-                reply: None,
-            }),
-            subject,
-        )
-        .await
+        // Add individual endpoint subjects
+        for trusted_endpoint in &user.attributes.0.trusted_endpoints {
+            subjects.push(generate_endpoint_subject(&trusted_endpoint.key()))
+        }
+
+        // Emit user event messages
+        for subject in subjects {
+            self.register_event(
+                MessageVariant::UserEvent(UserEvent {
+                    user_id: user.id.to_string(),
+                    event_variant: event_variant as i32,
+                    checksum: user_checksum.clone(),
+                    reply: None,
+                }),
+                subject,
+            )
+            .await?
+        }
+
+        Ok(())
     }
 }
 

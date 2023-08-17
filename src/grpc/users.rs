@@ -448,7 +448,7 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (user_id, maybe_token) = tonic_auth!(
+        let (user_id, maybe_token, _) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
@@ -537,7 +537,7 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (_, maybe_token) = tonic_auth!(
+        let (_, maybe_token, _) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
