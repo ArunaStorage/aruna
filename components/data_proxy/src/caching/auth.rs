@@ -157,14 +157,59 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
     ) -> Result<CheckAccessResult> {
+        let db_perm_from_method = DbPermissionLevel::from(method);
         if let Some(b) = path.as_bucket() {
-            if method == Method::POST || method == Method::PUT {}
+            if method == Method::POST || method == Method::PUT {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
 
-            // This subject is a "bucket" subject
+                let get_object = self
+                    .cache
+                    .get_res_by_res_string(crate::structs::ResourceString::Project(b.to_string()))
+                    .ok_or_else(|| anyhow!("Unknown object"))?;
+
+                let obj = &self
+                    .cache
+                    .resources
+                    .get(&get_object.get_id())
+                    .ok_or_else(|| anyhow!("Unknown object"))?
+                    .0;
+
+                for (res, perm) in user.permissions {
+                    if get_object.check_if_in(res) && perm >= db_perm_from_method {
+                        return Ok(CheckAccessResult::new(
+                            Some(user.user_id.to_string()),
+                            Some(user.access_key),
+                            Some(get_object),
+                            None,
+                            Some(obj.clone()),
+                        ));
+                    }
+                }
+            } else {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                return Ok(CheckAccessResult::new(
+                    Some(user.user_id.to_string()),
+                    Some(user.access_key),
+                    None,
+                    Some(Missing {
+                        p: Some(b.to_string()),
+                        c: None,
+                        d: None,
+                        o: None,
+                    }),
+                    None,
+                ));
+            }
         }
 
         let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
-        let db_perm_from_method = DbPermissionLevel::from(method);
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
                 None,
@@ -179,16 +224,11 @@ impl AuthHandler {
                 .get_user_by_key(&creds.access_key)
                 .ok_or_else(|| anyhow!("Unknown user"))?;
 
-            for (token_id, perm) in user.permissions {
-                if ids.check_if_in(token_id) && perm >= db_perm_from_method {
-                    let token_id = if token_id == user.user_id {
-                        None
-                    } else {
-                        Some(token_id.to_string())
-                    };
+            for (res, perm) in user.permissions {
+                if ids.check_if_in(res) && perm >= db_perm_from_method {
                     return Ok(CheckAccessResult::new(
                         Some(user.user_id.to_string()),
-                        token_id,
+                        Some(user.access_key),
                         Some(ids),
                         missing,
                         Some(obj),

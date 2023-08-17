@@ -333,17 +333,13 @@ impl GrpcQueryHandler {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
-                if self.cache.is_user(uid) {
-                    let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                    self.cache.upsert_user(user_info.clone()).await?;
-                };
+                let user_info = self.get_user(uid, message.checksum.clone()).await?;
+                self.cache.upsert_user(user_info.clone()).await?;
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
 
-                if self.cache.is_user(uid) {
-                    self.cache.remove_user(uid).await?;
-                };
+                self.cache.remove_user(uid).await?;
             }
             EventVariant::Unspecified => (),
         }
@@ -355,12 +351,6 @@ impl GrpcQueryHandler {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
                 if let Some(r) = event.resource {
-                    if !self
-                        .cache
-                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
-                    {
-                        return Ok(event.reply);
-                    };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             let object = self
@@ -392,12 +382,6 @@ impl GrpcQueryHandler {
             }
             EventVariant::Deleted => {
                 if let Some(r) = event.resource {
-                    if !self
-                        .cache
-                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
-                    {
-                        return Ok(event.reply);
-                    };
                     self.cache
                         .delete_object(DieselUlid::from_str(&r.resource_id)?)
                         .await?;

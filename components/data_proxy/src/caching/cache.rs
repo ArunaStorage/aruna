@@ -21,8 +21,6 @@ use tokio::sync::RwLock;
 pub struct Cache {
     // Map with AccessKey as key and User as value
     pub users: DashMap<String, User, RandomState>,
-    // HashMap that contains user_id <-> Vec<access_key> pairs
-    pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
     pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
     // Maps with bucket / key as key and set of all ObjectIds as value
@@ -50,7 +48,6 @@ impl Cache {
         };
         let cache = Arc::new(Cache {
             users: DashMap::default(),
-            user_access_keys: DashMap::default(),
             resources: DashMap::default(),
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
@@ -367,16 +364,21 @@ impl Cache {
             self.users.insert(key.clone(), user_access);
             access_ids.push(key);
         }
-        self.user_access_keys.insert(user_id, access_ids);
         Ok(())
     }
 
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         let keys = self
-            .user_access_keys
-            .remove(&user_id)
-            .ok_or_else(|| anyhow!("User not found"))?
-            .1;
+            .users
+            .iter()
+            .filter_map(|k| {
+                if k.value().user_id == user_id {
+                    Some(k.key().clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         for key in keys {
             let user = self.users.remove(&key);
@@ -424,13 +426,5 @@ impl Cache {
 
     pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
         self.users.get(access_key).map(|e| e.value().clone())
-    }
-
-    pub fn is_user(&self, user_id: DieselUlid) -> bool {
-        self.user_access_keys.get(&user_id).is_some()
-    }
-
-    pub fn is_resource(&self, resource_id: DieselUlid) -> bool {
-        self.resources.get(&resource_id).is_some()
     }
 }

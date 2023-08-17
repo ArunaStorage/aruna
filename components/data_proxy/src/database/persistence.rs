@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use bytes::Bytes;
 use deadpool_postgres::Client;
+use diesel_ulid::DieselUlid;
 use postgres_types::{FromSql, ToSql};
 use std::fmt::{Debug, Display, Formatter};
 
