@@ -18,7 +18,7 @@ async fn test_create_ep() {
     let pk = PubKey {
         id: 0,
         proxy: None,
-        pubkey: "SERVER_PUBKEY_DUMMY".to_string(),
+        pubkey: "SERVER_PUBKEY_DUMMY_1".to_string(),
     };
     pk.create(&client).await.unwrap();
 
@@ -48,9 +48,9 @@ async fn test_get_ep() {
     let client = db_handler.database.get_client().await.unwrap();
     let ep_id = DieselUlid::generate();
     let pk = PubKey {
-        id: 0,
+        id: 5001,
         proxy: Some(ep_id),
-        pubkey: "SERVER_PUBKEY_DUMMY".to_string(),
+        pubkey: "SERVER_PUBKEY_DUMMY_2".to_string(),
     };
     let endpoint = Endpoint {
         id: ep_id,

@@ -11,22 +11,22 @@ async fn test_crud() {
     let client = client.client();
 
     let key_one = PubKey {
-        id: 1,
+        id: 1001,
         proxy: None,
         pubkey: "key_one".to_string(),
     };
 
     key_one.create(client).await.unwrap();
 
-    let key = PubKey::get(1i16, client).await.unwrap();
+    let key = PubKey::get(1001i16, client).await.unwrap();
     assert!(key.is_some());
     let key_two = PubKey {
-        id: 2,
+        id: 2001,
         proxy: None,
         pubkey: "key_two".to_string(),
     };
     let key_three = PubKey {
-        id: 3,
+        id: 3001,
         proxy: None,
         pubkey: "key_three".to_string(),
     };
@@ -36,6 +36,8 @@ async fn test_crud() {
     let comp = [&key_one, &key_two, &key_three];
     let all = PubKey::all(client).await.unwrap();
 
+    dbg!(&comp);
+    dbg!(&all);
     assert!(comp.iter().all(|pk| all.contains(pk)));
 
     key_one.delete(client).await.unwrap();
