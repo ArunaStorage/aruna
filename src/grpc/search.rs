@@ -2,7 +2,7 @@ use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::KeyValues;
 use crate::database::enums::DataClass;
 use crate::{auth::permission_handler::PermissionHandler, database::enums::DbPermissionLevel};
-use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::generic_resource::{self, Resource};
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
     services::v2::{
@@ -72,13 +72,16 @@ impl SearchService for SearchServiceImpl {
             "Query search failed"
         );
 
-        // Convert search in proto resources
-        let proto_resources: Vec<GenericResource> = objects
-            .into_iter()
-            .map(|od| GenericResource {
-                resource: Some(od.into()),
+        // Convert search to proto resources
+        let mut proto_resources = vec![];
+        for hit in objects {
+            proto_resources.push(GenericResource {
+                resource: Some(tonic_internal!(
+                    Resource::try_from(hit),
+                    "Search result to proto conversion failed"
+                )),
             })
-            .collect();
+        }
 
         // last_index? Offset or offset+hits length?
         let last_index = inner_request.offset + proto_resources.len() as i64;
@@ -142,6 +145,7 @@ impl SearchService for SearchServiceImpl {
              .0
             .into_iter()
             .filter(|kv| kv.key.contains("app.aruna-storage"))
+            .filter(|kv| kv.key.contains("private"))
             .collect::<Vec<_>>();
 
         object_plus.object.key_values = Json(KeyValues(stripped_labels));
