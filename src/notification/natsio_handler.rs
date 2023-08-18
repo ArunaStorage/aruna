@@ -267,7 +267,9 @@ impl NatsIoHandler {
                 Some(consumer_id.to_string())
             },
             deliver_policy: delivery_policy,
-            idle_heartbeat: Duration::from_secs(60), // 60 seconds heartbeat
+            // Remove consumer after 30 days idle. 
+            // Still in discussion if this is the right way.
+            //inactive_threshold: Duration::from_secs(2592000),
             ..Default::default()
         };
 
@@ -359,6 +361,21 @@ impl NatsIoHandler {
             )
             .await?
         }
+
+        Ok(())
+    }
+
+    /// Just acknowledges the message with the raw subject which was directly provided by Nats.
+    ///
+    /// ## Arguments:
+    /// * `reply_subject` - A valid Nats.io provided replay subject
+    ///
+    /// ## Returns:
+    /// * `anyhow::Result<()>` - An empty Ok() response signals success; Error else.
+    pub async fn acknowledge_raw(&self, reply_subject: String) -> anyhow::Result<()> {
+        self.jetstream_context
+            .publish(reply_subject, "".into())
+            .await?;
 
         Ok(())
     }
