@@ -267,7 +267,7 @@ impl NatsIoHandler {
                 Some(consumer_id.to_string())
             },
             deliver_policy: delivery_policy,
-            // Remove consumer after 30 days idle. 
+            // Remove consumer after 30 days idle.
             // Still in discussion if this is the right way.
             //inactive_threshold: Duration::from_secs(2592000),
             ..Default::default()
@@ -372,9 +372,9 @@ impl NatsIoHandler {
     ///
     /// ## Returns:
     /// * `anyhow::Result<()>` - An empty Ok() response signals success; Error else.
-    pub async fn acknowledge_raw(&self, reply_subject: String) -> anyhow::Result<()> {
+    pub async fn acknowledge_raw(&self, reply_subject: &str) -> anyhow::Result<()> {
         self.jetstream_context
-            .publish(reply_subject, "".into())
+            .publish(reply_subject.to_string(), "".into())
             .await?;
 
         Ok(())

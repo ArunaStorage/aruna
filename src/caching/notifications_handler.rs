@@ -73,14 +73,17 @@ impl NotificationHandler {
                     .await
                     {
                         Ok(_) => {
-                            natsio_handler
-                                .acknowledge_raw(nats_message.reply.clone().unwrap())
-                                .await?;
+                            match &nats_message.reply {
+                                Some(reply_subject) => {
+                                    natsio_handler.acknowledge_raw(reply_subject).await?;
 
-                            log::info!("Cache update and acknowledgement successful.")
+                                    log::info!("Cache update and acknowledgement successful.")
+                                }
+                                None => todo!(),
+                            };
                         }
                         Err(err) => {
-                            // For now just log the error. 
+                            // For now just log the error.
                             // Nats re-delivers not acknowledged messages every 30s.
                             log::warn!("Cache update failed: {err}")
                         }
