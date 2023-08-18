@@ -24,7 +24,7 @@ use aruna_server::{
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
-    search::meilisearch_client::MeilisearchClient,
+    search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
     utils::mailclient::MailClient,
 };
 use simple_logger::SimpleLogger;
@@ -94,6 +94,11 @@ pub async fn main() -> Result<()> {
         Some(&dotenvy::var("MEILISEARCH_API_KEY")?),
     )?;
     let meilisearch_arc = Arc::new(meilisearch_client);
+
+    // Create index if not exists on startup
+    meilisearch_arc
+        .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+        .await?;
 
     // init MailClient
     let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {

@@ -6,7 +6,7 @@ use aruna_rust_api::api::storage::models::v2::{
     KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
 };
 use diesel_ulid::DieselUlid;
-use meilisearch_sdk::{task_info::TaskInfo, Client};
+use meilisearch_sdk::{indexes::Index, task_info::TaskInfo, Client};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -344,12 +344,53 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn create_index(
+    pub async fn get_or_create_index(
         &self,
         index_name: &str,
         primary_key: Option<&str>, // Has to be unique index document attribute, so most likely 'id'
-    ) -> anyhow::Result<TaskInfo> {
-        Ok(self.client.create_index(index_name, primary_key).await?)
+    ) -> anyhow::Result<Index> {
+        Ok(if let Ok(index) = self.client.get_index(index_name).await {
+            index
+        } else {
+            // Create index in Meilisearch server
+            let index = if let Ok(index) = self
+                .client
+                .create_index(index_name, primary_key)
+                .await?
+                .wait_for_completion(&self.client, None, None)
+                .await?
+                .try_make_index(&self.client)
+            {
+                index
+            } else {
+                bail!("Index creation failed.")
+            };
+
+            // Set the filterable attributes of the index
+            index
+                .set_filterable_attributes([
+                    "object_type",      // > 2
+                    "object_type_name", // IN [PROJECT, DATASET]
+                    "resource_status",  // Jo
+                    "size",
+                    "labels.key",
+                    "labels.value",
+                    "labels.variant",
+                    "dataclass",
+                    "created_at",
+                ])
+                .await?;
+
+            // Set the sortable attributes of the index
+            index
+                .set_sortable_attributes(["size", "object_type", "created_at"])
+                .await?;
+
+            //ToDo: Exclude fields from search?
+            //index.set_searchable_attributes(&[]).await?;
+
+            index
+        })
     }
 
     ///ToDo: Rust Doc
@@ -357,6 +398,7 @@ impl MeilisearchClient {
         &self,
         index_name: &str,
     ) -> anyhow::Result<Vec<T>> {
+        // Empty search to get all documents in index
         let result = self
             .client
             .index(index_name)
