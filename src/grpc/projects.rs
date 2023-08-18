@@ -66,16 +66,19 @@ impl ProjectService for ProjectServiceImpl {
         self.cache.add_object(object_with_rel.clone());
 
         // Add or update project in search index
-        if let Err(err) = self
-            .search_client
-            .add_or_update_stuff::<ObjectDocument>(
-                &[ObjectDocument::from(object_with_rel.object.clone())],
-                MeilisearchIndexes::OBJECT,
-            )
-            .await
-        {
-            log::warn!("Search index update failed: {}", err)
-        }
+        let search_clone = self.search_client.clone();
+        let inner_object_clone = object_with_rel.object.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    &[ObjectDocument::from(inner_object_clone)],
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
 
         // Create and return gRPC response
         let response = CreateProjectResponse {
