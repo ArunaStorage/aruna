@@ -58,6 +58,7 @@ impl PermissionHandler {
                     //Case 2: FetchInfo
                     //  - Only get functions -> DbPermissionLevel::READ in contexts
                     for ctx in &ctxs {
+                        dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::Activated | ContextVariant::GlobalProxy => {}
                             ContextVariant::Resource((_, perm))

@@ -10,6 +10,22 @@ pub enum PubKeyEnum {
     Server((String, DecodingKey)), // Server((Key String, DecodingKey)) + ArunaServer ID ?
 }
 
+impl PubKeyEnum {
+    pub fn get_key_string(&self) -> String {
+        match self {
+            PubKeyEnum::DataProxy((k, _, _)) => k.to_string(),
+            PubKeyEnum::Server((k, _)) => k.to_string(),
+        }
+    }
+
+    pub fn get_name(&self) -> String {
+        match self {
+            PubKeyEnum::DataProxy((_, _, n)) => n.to_string(),
+            PubKeyEnum::Server((_, _)) => "".to_string(),
+        }
+    }
+}
+
 impl TryFrom<PubKey> for PubKeyEnum {
     type Error = anyhow::Error;
     fn try_from(pk: PubKey) -> Result<Self> {

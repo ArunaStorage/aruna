@@ -278,7 +278,7 @@ impl TokenHandler {
             .skip(1)
             .next()
             .ok_or_else(|| anyhow!("Invalid token"))?;
-        let decoded = general_purpose::STANDARD.decode(split)?;
+        let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
         match claims.iss.as_str() {

@@ -313,7 +313,7 @@ impl UserService for UserServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error"
         );
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer
                 .check_permissions(
                     &token,
@@ -322,13 +322,17 @@ impl UserService for UserServiceImpl {
                             DieselUlid::from_str(&request.get_ref().user_id),
                             "Invalid user_id"
                         ),
-                        DbPermissionLevel::ADMIN
+                        DbPermissionLevel::READ
                     )]
                 )
                 .await,
             "Unauthorized"
         );
-        let user = self.cache.get_user(&user_id);
+        let user_ulid = tonic_invalid!(
+            DieselUlid::from_str(&request.get_ref().user_id),
+            "Invalid user_id"
+        );
+        let user = self.cache.get_user(&user_ulid);
         let response = GetUserRedactedResponse {
             user: user.map(|user| user.into_redacted()),
         };
@@ -483,6 +487,15 @@ impl UserService for UserServiceImpl {
             ),
             "Token signing failed"
         );
+
+        tonic_internal!(
+            self.database_handler
+                .add_endpoint_to_user(user_id, endpoint.id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        //self.cache.u
 
         // Request S3 credentials from Dataproxy
         let mut endpoint_host_url: String = "".to_string();

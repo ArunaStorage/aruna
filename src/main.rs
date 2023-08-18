@@ -9,7 +9,9 @@ use aruna_rust_api::api::{
         endpoint_service_server::EndpointServiceServer, object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
         relations_service_server::RelationsServiceServer,
-        search_service_server::SearchServiceServer, user_service_server::UserServiceServer,
+        search_service_server::SearchServiceServer,
+        storage_status_service_server::StorageStatusServiceServer,
+        user_service_server::UserServiceServer,
     },
 };
 use aruna_server::{
@@ -18,9 +20,10 @@ use aruna_server::{
     database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
     grpc::{
         collections::CollectionServiceImpl, datasets::DatasetServiceImpl,
-        endpoints::EndpointServiceImpl, notification::NotificationServiceImpl,
-        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
-        search::SearchServiceImpl, users::UserServiceImpl,
+        endpoints::EndpointServiceImpl, info::StorageStatusServiceImpl,
+        notification::NotificationServiceImpl, object::ObjectServiceImpl,
+        projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
+        users::UserServiceImpl,
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
@@ -191,6 +194,14 @@ pub async fn main() -> Result<()> {
                     auth_arc.clone(),
                     cache_arc.clone(),
                     meilisearch_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(StorageStatusServiceServer::new(
+                StorageStatusServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
                 )
                 .await,
             ));

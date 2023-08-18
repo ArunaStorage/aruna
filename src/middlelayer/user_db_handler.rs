@@ -5,6 +5,7 @@ use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
@@ -79,5 +80,18 @@ impl DatabaseHandler {
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
         Ok(user)
+    }
+
+    pub async fn add_endpoint_to_user(
+        &self,
+        user_id: DieselUlid,
+        endpoint_id: DieselUlid,
+    ) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let user = User::add_trusted_endpoint(&client, &user_id, &endpoint_id).await?;
+
+        self.natsio_handler
+            .register_user_event(user, EventVariant::Updated)
+            .await
     }
 }

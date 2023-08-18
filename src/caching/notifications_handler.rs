@@ -49,7 +49,7 @@ impl NotificationHandler {
         let mut messages = pull_consumer.messages().await?;
         let cache_clone = cache.clone();
         let database_clone = database.clone();
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = messages.next().await {
                     // Deserialize messages in gRPC definitions
