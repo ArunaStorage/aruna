@@ -115,7 +115,7 @@ impl BufferedS3Sink {
         log::debug!(
             "Uploaded part: {:?}, number:{}, size: {}",
             self.upload_id,
-            pnummer,
+            pnumber,
             expected_len
         );
 

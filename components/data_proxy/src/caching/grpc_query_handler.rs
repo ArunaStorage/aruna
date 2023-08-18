@@ -30,8 +30,7 @@ use aruna_rust_api::api::{
     storage::services::v2::{
         collection_service_client::CollectionServiceClient,
         dataset_service_client::DatasetServiceClient,
-        endpoint_service_client::EndpointServiceClient,
-        object_service_client::ObjectServiceClient,
+        endpoint_service_client::EndpointServiceClient, object_service_client::ObjectServiceClient,
         project_service_client::ProjectServiceClient,
         storage_status_service_client::StorageStatusServiceClient,
         user_service_client::UserServiceClient,
@@ -74,8 +73,7 @@ impl GrpcQueryHandler {
 
         let project_service = ProjectServiceClient::new(channel.clone());
 
-        let collection_service =
-            CollectionServiceClient::new(channel.clone());
+        let collection_service = CollectionServiceClient::new(channel.clone());
 
         let dataset_service = DatasetServiceClient::new(channel.clone());
 
@@ -83,14 +81,11 @@ impl GrpcQueryHandler {
 
         let user_service = UserServiceClient::new(channel.clone());
 
-        let _endpoint_service =
-            EndpointServiceClient::new(channel.clone());
+        let _endpoint_service = EndpointServiceClient::new(channel.clone());
 
-        let storage_status_service =
-            StorageStatusServiceClient::new(channel.clone());
+        let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
-        let event_notification_service =
-            EventNotificationServiceClient::new(channel);
+        let event_notification_service = EventNotificationServiceClient::new(channel);
 
         let long_lived_token = cache
             .auth

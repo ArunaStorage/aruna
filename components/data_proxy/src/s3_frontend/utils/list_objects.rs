@@ -1,11 +1,16 @@
-use std::collections::BTreeMap;
-use ahash::RandomState;
-use aruna_rust_api::api::storage::models::v2::DataClass;
-use dashmap::DashMap;
-use dashmap::mapref::multiple::RefMulti;
-use diesel_ulid::DieselUlid;
-use crate::caching::cache::{ResourceIds, ResourceString};
+use crate::caching::cache::Cache;
 use crate::structs::{Object, ObjectLocation};
+use crate::structs::{ResourceIds, ResourceString};
+use ahash::RandomState;
+use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::DataClass;
+use base64::engine::general_purpose;
+use base64::Engine;
+use dashmap::DashMap;
+use diesel_ulid::DieselUlid;
+use s3s::s3_error;
+use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct Contents {
@@ -28,21 +33,21 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     }
 }
 
-pub fn filter_list_objects(map: &DashMap<ResourceString, ResourceIds, RandomState>, root: &str) -> BTreeMap<String, DieselUlid> {
-    map.iter().filter_map(|e|
-    match e.key().clone() {
-        ResourceString::Collection(temp_root, collection) if temp_root == root => {
-            Some(([temp_root, collection].join("/"), e.value().into()))
-        }
-        ResourceString::Dataset(temp_root, collection, dataset) if temp_root == root => {
-            Some((
+/// Creates a filtered and ordered BTreeMap for ListObjectsV2
+pub fn filter_list_objects(
+    map: &DashMap<ResourceString, ResourceIds, RandomState>,
+    root: &str,
+) -> BTreeMap<String, DieselUlid> {
+    map.iter()
+        .filter_map(|e| match e.key().clone() {
+            ResourceString::Collection(temp_root, collection) if temp_root == root => {
+                Some(([temp_root, collection].join("/"), e.value().into()))
+            }
+            ResourceString::Dataset(temp_root, collection, dataset) if temp_root == root => Some((
                 [temp_root, collection.unwrap_or("".to_string()), dataset].join("/"),
                 e.value().into(),
-            ))
-        }
-        ResourceString::Object(temp_root, collection, dataset, object)
-        if temp_root == root =>
-            {
+            )),
+            ResourceString::Object(temp_root, collection, dataset, object) if temp_root == root => {
                 Some((
                     [
                         temp_root,
@@ -50,13 +55,143 @@ pub fn filter_list_objects(map: &DashMap<ResourceString, ResourceIds, RandomStat
                         dataset.unwrap_or("".to_string()),
                         object,
                     ]
-                        .join("/"),
+                    .join("/"),
                     e.value().into(),
                 ))
             }
-        ResourceString::Project(temp_root) if temp_root == root => {
-            Some((temp_root, e.value().into()))
+            ResourceString::Project(temp_root) if temp_root == root => {
+                Some((temp_root, e.value().into()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+pub fn list_response(
+    sorted: BTreeMap<String, DieselUlid>,
+    cache: &Arc<Cache>,
+    delimiter: &Option<String>,
+    prefix: &Option<String>,
+    start_after: &String,
+    max_keys: usize,
+) -> Result<(HashSet<Contents>, HashSet<String>, Option<String>)> {
+    let mut keys: HashSet<Contents> = HashSet::default();
+    let mut common_prefixes: HashSet<String> = HashSet::default();
+    let mut new_continuation_token: Option<String> = None;
+
+    match (delimiter.clone(), prefix.clone()) {
+        (Some(delimiter), Some(prefix)) => {
+            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                if let Some(split) = path.strip_prefix(&prefix) {
+                    if let Some((sub_prefix, _)) = split.split_once(&delimiter) {
+                        // If Some split -> common prefixes
+                        if idx == max_keys + 1 {
+                            new_continuation_token =
+                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            break;
+                        }
+                        common_prefixes
+                            .insert([prefix.to_string(), sub_prefix.to_string()].join(""));
+                    } else {
+                        let entry: Contents = (
+                            path,
+                            cache
+                                .resources
+                                .get(id)
+                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                                .value(),
+                        )
+                            .into();
+                        if idx == max_keys + 1 {
+                            new_continuation_token =
+                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                            break;
+                        }
+                        keys.insert(entry);
+                    };
+                } else {
+                    continue;
+                };
+                if idx == max_keys {
+                    if idx == max_keys + 1 {
+                        new_continuation_token =
+                            Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                    }
+                    break;
+                }
+            }
         }
-        _ => None,
-    }).collect()
+        (Some(delimiter), None) => {
+            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                if let Some((pre, _)) = path.split_once(&delimiter) {
+                    // If Some split -> common prefixes
+                    if idx == max_keys + 1 {
+                        new_continuation_token =
+                            Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        break;
+                    }
+                    common_prefixes.insert(pre.to_string());
+                } else {
+                    // If None split -> Entry
+                    let entry: Contents = (
+                        path,
+                        cache
+                            .resources
+                            .get(id)
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                            .value(),
+                    )
+                        .into();
+                    if idx == max_keys + 1 {
+                        new_continuation_token =
+                            Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                        break;
+                    }
+                    keys.insert(entry);
+                };
+            }
+        }
+        (None, Some(prefix)) => {
+            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                let entry: Contents = if path.strip_prefix(&prefix).is_some() {
+                    (
+                        path,
+                        cache
+                            .resources
+                            .get(id)
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                            .value(),
+                    )
+                        .into()
+                } else {
+                    continue;
+                };
+                if idx == max_keys + 1 {
+                    new_continuation_token = Some(general_purpose::STANDARD_NO_PAD.encode(path));
+                    break;
+                }
+                keys.insert(entry.clone());
+            }
+        }
+
+        (None, None) => {
+            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+                let entry: Contents = (
+                    path,
+                    cache
+                        .resources
+                        .get(id)
+                        .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
+                        .value(),
+                )
+                    .into();
+                if idx == max_keys + 1 {
+                    new_continuation_token =
+                        Some(general_purpose::STANDARD_NO_PAD.encode(entry.key));
+                    break;
+                }
+                keys.insert(entry.clone());
+            }
+        }
+    }
+    Ok((keys, common_prefixes, new_continuation_token))
 }

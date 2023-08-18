@@ -1,11 +1,12 @@
 use crate::caching::cache::Cache;
-use crate::structs::{ResourceIds, ResourceString};
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::CheckAccessResult;
+use crate::structs::{ResourceIds, ResourceString};
 
 use crate::structs::Object as ProxyObject;
 
-use ahash::{HashSet};
+use crate::s3_frontend::utils::list_objects::{filter_list_objects, list_response, Contents};
+use ahash::HashSet;
 use anyhow::Result;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -16,11 +17,9 @@ use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::s3_frontend::utils::list_objects::{Contents, filter_list_objects};
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -49,9 +48,7 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<CreateBucketInput>,
     ) -> S3Result<S3Response<CreateBucketOutput>> {
-        let data = req
-            .extensions
-            .get::<CheckAccessResult>().cloned();
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
 
         let mut new_object = ProxyObject::from(req.input);
 
@@ -689,21 +686,35 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
+
         // TODO: Special bucket
         let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
-            DieselUlid::from_str(&req.input.key).map_err(|_| s3_error!(NoSuchKey, "No object found"))?
+            DieselUlid::from_str(&req.input.key)
+                .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
         } else {
-        match req.extensions.get::<Option<(ResourceIds, String, Option<String>)>>().cloned().flatten() {
-            Some((ids, _, _)) => match ids {
-                ResourceIds::Project(id) => Ok(id),
-                ResourceIds::Collection(_, id) => Ok(id),
-                ResourceIds::Dataset(_, _, id) => Ok(id),
-                ResourceIds::Object(_, _, _, id) => Ok(id),
-            },
-            None => Err(s3_error!(NoSuchKey, "No object found")),
-        }?};
-        let (object, location) = self.cache.resources.get(&id).ok_or_else(||s3_error!(NoSuchKey, "No object found"))?.clone();
-        let location = location.ok_or_else(||s3_error!(NoSuchUpload, "Object not stored in this DataProxy"))?;
+            match req
+                .extensions
+                .get::<Option<(ResourceIds, String, Option<String>)>>()
+                .cloned()
+                .flatten()
+            {
+                Some((ids, _, _)) => match ids {
+                    ResourceIds::Project(id) => Ok(id),
+                    ResourceIds::Collection(_, id) => Ok(id),
+                    ResourceIds::Dataset(_, _, id) => Ok(id),
+                    ResourceIds::Object(_, _, _, id) => Ok(id),
+                },
+                None => Err(s3_error!(NoSuchKey, "No object found")),
+            }?
+        };
+        let (object, location) = self
+            .cache
+            .resources
+            .get(&id)
+            .ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?
+            .clone();
+        let location = location
+            .ok_or_else(|| s3_error!(NoSuchUpload, "Object not stored in this DataProxy"))?;
         let checksum_sha256 = object.hashes.get("SHA256").map(ChecksumSHA256::from);
 
         Ok(S3Response::new(HeadObjectOutput {
@@ -756,10 +767,7 @@ impl S3 for ArunaS3Service {
         let delimiter = req.input.delimiter;
         let prefix = req.input.prefix;
 
-        let sorted = filter_list_objects(&self
-            .cache
-            .paths
-            , root);
+        let sorted = filter_list_objects(&self.cache.paths, root);
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
@@ -776,126 +784,16 @@ impl S3 for ArunaS3Service {
             _ => 1000usize,
         };
 
-        let mut keys: HashSet<Contents> = HashSet::default();
-        let mut common_prefixes: HashSet<String> = HashSet::default();
-        let mut new_continuation_token: Option<String> = None;
+        let (keys, common_prefixes, new_continuation_token) = list_response(
+            sorted,
+            &self.cache,
+            &delimiter,
+            &prefix,
+            &start_after,
+            max_keys,
+        )
+        .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
 
-        match (delimiter.clone(), prefix.clone()) {
-            (Some(delimiter), Some(prefix)) => {
-                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
-                    if let Some(split) = path.strip_prefix(&prefix) {
-                        if let Some((sub_prefix, _)) = split.split_once(&delimiter) {
-                            // If Some split -> common prefixes
-                            if idx == max_keys + 1 {
-                                new_continuation_token =
-                                    Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                                break;
-                            }
-                            common_prefixes
-                                .insert([prefix.to_string(), sub_prefix.to_string()].join(""));
-                        } else {
-                            let entry: Contents = (
-                                path,
-                                self.cache
-                                    .resources
-                                    .get(id)
-                                    .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                                    .value(),
-                            )
-                                .into();
-                            if idx == max_keys + 1 {
-                                new_continuation_token =
-                                    Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                                break;
-                            }
-                            keys.insert(entry);
-                        };
-                    } else {
-                        continue;
-                    };
-                    if idx == max_keys {
-                        if idx == max_keys + 1 {
-                            new_continuation_token =
-                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                        }
-                        break;
-                    }
-                }
-            }
-            (Some(delimiter), None) => {
-                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
-                    if let Some((pre, _)) = path.split_once(&delimiter) {
-                        // If Some split -> common prefixes
-                        if idx == max_keys + 1 {
-                            new_continuation_token =
-                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                            break;
-                        }
-                        common_prefixes.insert(pre.to_string());
-                    } else {
-                        // If None split -> Entry
-                        let entry: Contents = (
-                            path,
-                            self.cache
-                                .resources
-                                .get(id)
-                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                                .value(),
-                        )
-                            .into();
-                        if idx == max_keys + 1 {
-                            new_continuation_token =
-                                Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                            break;
-                        }
-                        keys.insert(entry);
-                    };
-                }
-            }
-            (None, Some(prefix)) => {
-                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
-                    let entry: Contents = if path.strip_prefix(&prefix).is_some() {
-                        (
-                            path,
-                            self.cache
-                                .resources
-                                .get(id)
-                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                                .value(),
-                        )
-                            .into()
-                    } else {
-                        continue;
-                    };
-                    if idx == max_keys + 1 {
-                        new_continuation_token =
-                            Some(general_purpose::STANDARD_NO_PAD.encode(path));
-                        break;
-                    }
-                    keys.insert(entry.clone());
-                }
-            }
-
-            (None, None) => {
-                for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
-                    let entry: Contents = (
-                        path,
-                        self.cache
-                            .resources
-                            .get(id)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                            .value(),
-                    )
-                        .into();
-                    if idx == max_keys + 1 {
-                        new_continuation_token =
-                            Some(general_purpose::STANDARD_NO_PAD.encode(entry.key));
-                        break;
-                    }
-                    keys.insert(entry.clone());
-                }
-            }
-        }
         let key_count = keys.len() as i32;
         let common_prefixes = Some(
             common_prefixes
@@ -931,285 +829,7 @@ impl S3 for ArunaS3Service {
             prefix,
             start_after: Some(start_after),
         };
-        log::debug!("{:?}",&result);
+        log::debug!("{:?}", &result);
         Ok(S3Response::new(result))
-    }
-    #[tracing::instrument]
-    async fn put_object(
-        &self,
-        _req: S3Request<PutObjectInput>,
-    ) -> S3Result<S3Response<PutObjectOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // if _req.input.content_length == 0 {
-        //     return Err(s3_error!(
-        //         MissingContentLength,
-        //         "Missing or invalid (0) content-length"
-        //     ));
-        // }
-
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(_req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&_req.input.bucket, &_req.input.key, _req.input.content_length)
-        //     .await?;
-        // anotif.validate_hashes(_req.input.content_md5, _req.input.checksum_sha256)?;
-        // anotif.get_encryption_key().await?;
-
-        // let hash = anotif.get_sha256();
-
-        // let exists = match hash {
-        //     Some(h) => {
-        //         if !h.is_empty() && h.len() == 32 {
-        //             self.backend
-        //                 .head_object(ArunaLocation {
-        //                     bucket: format!("{}-{}", &self.endpoint_id.to_lowercase(), &h[0..2]),
-        //                     path: h[2..].to_string(),
-        //                     ..Default::default()
-        //                 })
-        //                 .await
-        //                 .is_ok()
-        //         } else {
-        //             false
-        //         }
-        //     }
-        //     None => false,
-        // };
-
-        // let (location, is_temp) = anotif.get_location(exists)?;
-
-        // let mut md5_hash = Md5::new();
-        // let mut sha256_hash = Sha256::new();
-        // let mut final_md5 = String::new();
-        // let mut final_sha256 = String::new();
-        // let mut size_counter = 0;
-        // // If the object exists and the signatures match -> Skip the download
-
-        // if !exists {
-        //     match _req.input.body {
-        //         Some(data) => {
-        //             // MD5 Stream
-        //             let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-        //             // Sha256 stream
-        //             let shaed_stream =
-        //                 md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
-
-        //             let sized_stream = shaed_stream.inspect_ok(|by| size_counter += by.len());
-
-        //             let mut awr = ArunaStreamReadWriter::new_with_sink(
-        //                 sized_stream,
-        //                 BufferedS3Sink::new(
-        //                     self.backend.clone(),
-        //                     location.clone(),
-        //                     None,
-        //                     None,
-        //                     false,
-        //                     None,
-        //                 )
-        //                 .0,
-        //             );
-
-        //             if location.is_compressed {
-        //                 awr = awr.add_transformer(ZstdEnc::new(true));
-        //                 if _req.input.content_length > 5242880 + 80 * 28 {
-        //                     awr = awr.add_transformer(FooterGenerator::new(None))
-        //                 }
-        //             }
-
-        //             if location.is_encrypted {
-        //                 awr = awr.add_transformer(
-        //                     ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
-        //                         log::error!("{}", e);
-        //                         s3_error!(
-        //                             InternalError,
-        //                             "Internal data transformer encryption error"
-        //                         )
-        //                     })?,
-        //                 );
-        //             }
-
-        //             awr.process().await.map_err(|e| {
-        //                 log::error!("{}", e);
-        //                 s3_error!(InternalError, "Internal data transformer processing error")
-        //             })?;
-
-        //             if size_counter as i64 != _req.input.content_length {
-        //                 self.backend.delete_object(location).await.map_err(|e| {
-        //                     log::error!(
-        //                         "PUT: Unable to delete object, after wrong content_len: {}",
-        //                         e
-        //                     );
-        //                     s3_error!(InternalError, "PUT: Unable to delete object")
-        //                 })?;
-        //                 return Err(s3_error!(
-        //                     UnexpectedContent,
-        //                     "Content length does not match"
-        //                 ));
-        //             }
-        //         }
-        //         None => {
-        //             return Err(s3_error!(
-        //                 InvalidObjectState,
-        //                 "Request body / data is required, use ArunaAPI for empty objects"
-        //             ))
-        //         }
-        //     }
-
-        //     final_md5 = format!("{:x}", md5_hash.finalize());
-        //     final_sha256 = format!("{:x}", sha256_hash.finalize());
-
-        //     let hashes_is_ok = anotif.test_final_hashes(&final_md5, &final_sha256)?;
-
-        //     if !hashes_is_ok {
-        //         self.backend.delete_object(location).await.map_err(|e| {
-        //             log::error!("PUT: Unable to delete object, after wrong hash: {}", e);
-        //             s3_error!(InternalError, "PUT: Unable to delete object")
-        //         })?;
-        //         return Err(s3_error!(InvalidDigest, "Invalid hash digest"));
-        //     };
-        //     if is_temp {
-        //         let (object_id, collection_id) = anotif.get_col_obj()?;
-        //         self.data_handler
-        //             .clone()
-        //             .move_encode(
-        //                 location.clone(),
-        //                 create_location_from_hash(
-        //                     &final_sha256,
-        //                     &object_id,
-        //                     &collection_id,
-        //                     self.data_handler.settings.encrypting,
-        //                     self.data_handler.settings.compressing,
-        //                     location.encryption_key.clone(),
-        //                     self.data_handler.settings.endpoint_id.to_string(),
-        //                     exists,
-        //                 )
-        //                 .0,
-        //                 object_id,
-        //                 collection_id,
-        //                 Some(vec![
-        //                     Hash {
-        //                         alg: Hashalgorithm::Md5 as i32,
-        //                         hash: final_md5.clone(),
-        //                     },
-        //                     Hash {
-        //                         alg: Hashalgorithm::Sha256 as i32,
-        //                         hash: final_sha256.clone(),
-        //                     },
-        //                 ]),
-        //                 format!("s3://{}/{}", &_req.input.bucket, &_req.input.key),
-        //             )
-        //             .await
-        //             .map_err(|e| {
-        //                 log::error!("InternalError: {}", e);
-        //                 s3_error!(InternalError, "Internal data mover error")
-        //             })?
-        //     }
-        // }
-
-        // if !is_temp {
-        //     let (object_id, collection_id) = anotif.get_col_obj()?;
-        //     self.data_handler
-        //         .internal_notifier_service
-        //         .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-        //         .finalize_object(FinalizeObjectRequest {
-        //             object_id,
-        //             collection_id,
-        //             location: Some(location),
-        //             content_length: _req.input.content_length,
-        //             hashes: vec![
-        //                 Hash {
-        //                     alg: Hashalgorithm::Md5 as i32,
-        //                     hash: final_md5,
-        //                 },
-        //                 Hash {
-        //                     alg: Hashalgorithm::Sha256 as i32,
-        //                     hash: final_sha256.to_string(),
-        //                 },
-        //             ],
-        //         })
-        //         .await
-        //         .map_err(|e| {
-        //             log::error!("{}", e);
-        //             s3_error!(InternalError, "Internal aruna error")
-        //         })?;
-        // }
-
-        // let (object_id, _) = anotif.get_col_obj()?;
-        // let output = PutObjectOutput {
-        //     e_tag: Some(format!("-{}", object_id)),
-        //     checksum_sha256: Some(final_sha256),
-        //     ..Default::default()
-        // };
-        // Ok(output)
-    }
-    #[tracing::instrument]
-    async fn upload_part(
-        &self,
-        _req: S3Request<UploadPartInput>,
-    ) -> S3Result<S3Response<UploadPartOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // if _req.input.content_length == 0 {
-        //     return Err(s3_error!(
-        //         MissingContentLength,
-        //         "Missing or invalid (0) content-length"
-        //     ));
-        // }
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(_req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&_req.input.bucket, &_req.input.key, 0)
-        //     .await?;
-
-        // anotif.get_encryption_key().await?;
-
-        // let (object_id, collection_id) = anotif.get_col_obj()?;
-        // let etag;
-
-        // match _req.input.body {
-        //     Some(data) => {
-        //         let (sink, recv) = BufferedS3Sink::new(
-        //             self.backend.clone(),
-        //             ArunaLocation {
-        //                 bucket: format!("{}-temp", &self.endpoint_id.to_lowercase()),
-        //                 path: format!("{}/{}", collection_id, object_id),
-        //                 ..Default::default()
-        //             },
-        //             Some(_req.input.upload_id),
-        //             Some(_req.input.part_number),
-        //             true,
-        //             None,
-        //         );
-        //         let mut awr = ArunaStreamReadWriter::new_with_sink(data.into_stream(), sink);
-
-        //         if self.data_handler.settings.encrypting {
-        //             awr = awr.add_transformer(
-        //                 ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
-        //                     log::error!("{}", e);
-        //                     s3_error!(InternalError, "Internal data transformer encryption error")
-        //                 })?,
-        //             );
-        //         }
-
-        //         awr.process().await.map_err(|e| {
-        //             log::error!("Processing error: {}", e);
-        //             s3_error!(InternalError, "Internal data transformer processing error")
-        //         })?;
-
-        //         etag = recv
-        //             .try_recv()
-        //             .map_err(|_| s3_error!(InternalError, "Unable to get etag"))?;
-        //     }
-        //     _ => return Err(s3_error!(InvalidPart, "MultiPart cannot be empty")),
-        // };
-
-        // Ok(UploadPartOutput {
-        //     e_tag: Some(format!("-{}", etag)),
-        //     ..Default::default()
-        // })
     }
 }

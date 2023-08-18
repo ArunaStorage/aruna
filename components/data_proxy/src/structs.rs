@@ -17,12 +17,11 @@ use http::Method;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
+use std::slice::Iter;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-use std::slice::Iter;
-use crate::caching::cache::ResourceIds;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DbPermissionLevel {
@@ -512,30 +511,15 @@ impl TryFrom<GrpcObject> for Object {
 
 impl From<&ResourceIds> for DieselUlid {
     fn from(value: &ResourceIds) -> Self {
-       match value {
-           ResourceIds::Project(id) => *id,
-           ResourceIds::Collection(_, id) => *id,
-           ResourceIds::Dataset(_, _,id) => *id,
-           ResourceIds::Object(_,_,_,id) => *id,
-       }
+        match value {
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
+        }
     }
 }
 
-fn relations_from_iter(iter: Iter<aruna_rust_api::api::storage::models::v2::Relation>) -> Result<HashSet<DieselUlid>> {
-    iter.filter_map(|x: &aruna_rust_api::api::storage::models::v2::Relation| -> Option<Result<DieselUlid>> {
-        if let Some(Relation::Internal(var)) = &x.relation {
-            if var.defined_variant() == InternalRelationVariant::BelongsTo
-                && var.direction() == RelationDirection::Outbound {
-                let id = DieselUlid::from_str(&var.resource_id).map_err(|_|anyhow!("Decoding error"));
-                Some(id)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }).collect::<Result<HashSet<DieselUlid>>>()
-}
 impl From<Object> for CreateProjectRequest {
     fn from(value: Object) -> Self {
         CreateProjectRequest {
@@ -606,7 +590,7 @@ impl From<Object> for CreateObjectRequest {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ResourceString {
     Project(String),
     Collection(String, String),
@@ -616,27 +600,33 @@ pub enum ResourceString {
 
 impl PartialOrd for ResourceString {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ResourceString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self {
             ResourceString::Project(_) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Collection(_, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Dataset(_, _, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Equal),
-                _ => Some(std::cmp::Ordering::Greater),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
             },
             ResourceString::Object(_, _, _, _) => match other {
-                ResourceString::Project(_) => Some(std::cmp::Ordering::Less),
-                ResourceString::Collection(_, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Dataset(_, _, _) => Some(std::cmp::Ordering::Less),
-                ResourceString::Object(_, _, _, _) => Some(std::cmp::Ordering::Equal),
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Less,
+                ResourceString::Object(_, _, _, _) => std::cmp::Ordering::Equal,
             },
         }
     }
@@ -656,7 +646,7 @@ pub struct Missing {
 // s3://foo/bar/baz
 
 impl ResourceStrings {
-    pub fn permutate(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
+    pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
         let mut orig = Vec::new();
         let mut permutations = Vec::new();
 

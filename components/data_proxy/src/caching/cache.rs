@@ -175,12 +175,10 @@ impl Cache {
             .ok_or_else(|| anyhow!("Resource not found"))?
             .clone();
         match variant {
-            ObjectType::PROJECT => {
-                Ok(vec![(
-                    ResourceString::Project(initial_res.name),
-                    ResourceIds::Project(initial_res.id),
-                )])
-            }
+            ObjectType::PROJECT => Ok(vec![(
+                ResourceString::Project(initial_res.name),
+                ResourceIds::Project(initial_res.id),
+            )]),
             ObjectType::COLLECTION => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {

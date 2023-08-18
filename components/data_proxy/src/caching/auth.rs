@@ -79,14 +79,8 @@ impl Serialize for Intent {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(
-            format!(
-                "{}_{:?}",
-                self.target,
-                self.action.clone() as u8
-            )
-            .as_str(),
-        )
+        serializer
+            .serialize_str(format!("{}_{:?}", self.target, self.action.clone() as u8).as_str())
     }
 }
 
@@ -208,7 +202,7 @@ impl AuthHandler {
         let res_strings = ResourceStrings::try_from(path)?;
 
         let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
-            res_strings.permutate()
+            res_strings.permute()
         } else {
             (res_strings.0, vec![])
         };
