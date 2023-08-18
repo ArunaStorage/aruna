@@ -70,8 +70,8 @@ impl GrpcQueryHandler {
         cache: Arc<Cache>,
         endpoint_id: String,
     ) -> Result<Self> {
-        let tls_config = ClientTlsConfig::new();
-        let endpoint = Channel::from_shared(server.into())?.tls_config(tls_config)?;
+        //let tls_config = ClientTlsConfig::new();
+        let endpoint = Channel::from_shared(server.into())?;
         let channel = endpoint.connect().await?;
 
         let project_service = project_service_client::ProjectServiceClient::new(channel.clone());
@@ -102,7 +102,7 @@ impl GrpcQueryHandler {
             .ok_or_else(|| anyhow!("No auth found"))?
             .sign_notification_token()?;
 
-        Ok(GrpcQueryHandler {
+        let handler = GrpcQueryHandler {
             project_service,
             collection_service,
             dataset_service,
@@ -114,7 +114,17 @@ impl GrpcQueryHandler {
             cache,
             endpoint_id,
             long_lived_token,
-        })
+        };
+
+        let pks = handler
+            .get_pubkeys()
+            .await?
+            .into_iter()
+            .map(PubKey::from)
+            .collect();
+        handler.cache.set_pubkeys(pks).await?;
+
+        Ok(handler)
     }
 }
 
@@ -127,7 +137,7 @@ impl GrpcQueryHandler {
 
         req.metadata_mut().append(
             AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token))?,
         );
 
         let user = self

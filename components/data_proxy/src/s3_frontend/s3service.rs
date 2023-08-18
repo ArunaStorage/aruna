@@ -163,8 +163,8 @@ impl S3 for ArunaS3Service {
 
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
-        let mut final_md5 = String::new();
-        let mut final_sha256 = String::new();
+        let final_md5 = String::new();
+        let final_sha256 = String::new();
         let mut size_counter = 0;
         // If the object exists and the signatures match -> Skip the download
 

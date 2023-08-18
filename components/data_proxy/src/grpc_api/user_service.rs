@@ -6,18 +6,18 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 };
 use std::sync::Arc;
 
-pub struct DataProxyUserService {
+pub struct DataproxyUserServiceImpl {
     pub cache: Arc<Cache>,
 }
 
-impl DataProxyUserService {
+impl DataproxyUserServiceImpl {
     pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
 }
 
 #[tonic::async_trait]
-impl DataproxyUserService for DataProxyUserService {
+impl DataproxyUserService for DataproxyUserServiceImpl {
     /// GetCredentials
     ///
     /// Status: BETA

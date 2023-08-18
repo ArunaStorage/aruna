@@ -41,7 +41,7 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
-        let persistence = if with_persistence {
+        let persistence = if !with_persistence {
             RwLock::new(None)
         } else {
             RwLock::new(Some(Database::new().await?))
@@ -55,6 +55,9 @@ impl Cache {
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
+        let auth_handler =
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+        cache.set_auth(auth_handler).await;
         if let Some(url) = notifications_url {
             let notication_handler: Arc<GrpcQueryHandler> =
                 Arc::new(GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await?);
@@ -69,10 +72,6 @@ impl Cache {
 
             cache.set_notifications(notication_handler).await
         };
-
-        let auth_handler =
-            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
-        cache.set_auth(auth_handler).await;
         Ok(cache)
     }
 
@@ -145,7 +144,7 @@ impl Cache {
         for pk in pks.into_iter() {
             let dec_key = DecodingKey::from_ed_pem(
                 format!(
-                    "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+                    "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
                     pk.key
                 )
                 .as_bytes(),
