@@ -146,7 +146,7 @@ impl AuthHandler {
         let token = decode::<ArunaTokenClaims>(
             token,
             dec_key,
-            &Validation::new(jsonwebtoken::Algorithm::EdDSA),
+            &Validation::new(Algorithm::EdDSA),
         )?;
         Ok(token.claims)
     }

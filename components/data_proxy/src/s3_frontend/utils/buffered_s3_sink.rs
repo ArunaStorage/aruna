@@ -145,7 +145,7 @@ impl BufferedS3Sink {
 impl Transformer for BufferedS3Sink {
     async fn process_bytes(
         &mut self,
-        buf: &mut bytes::BytesMut,
+        buf: &mut BytesMut,
         finished: bool,
         _: bool,
     ) -> Result<bool> {

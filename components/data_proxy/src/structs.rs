@@ -17,7 +17,7 @@ use http::Method;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
-use std::slice::Iter;
+
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,

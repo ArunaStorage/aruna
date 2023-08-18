@@ -1,13 +1,21 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::structs::CheckAccessResult;
+use crate::structs::{CheckAccessResult};
 use crate::structs::{ResourceIds, ResourceString};
 
 use crate::structs::Object as ProxyObject;
 
-use crate::s3_frontend::utils::list_objects::{filter_list_objects, list_response, Contents};
-use ahash::HashSet;
+use crate::s3_frontend::utils::list_objects::{filter_list_objects, list_response};
+use crate::s3_frontend::utils::ranges::{calculate_content_length_from_range, calculate_ranges};
+
 use anyhow::Result;
+use aruna_file::helpers::footer_parser::FooterParser;
+use aruna_file::streamreadwrite::ArunaStreamReadWriter;
+use aruna_file::transformer::ReadWriter;
+use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
+use aruna_file::transformers::decrypt::ChaCha20Dec;
+use aruna_file::transformers::filter::Filter;
+use aruna_file::transformers::zstd_decomp::ZstdDec;
 use base64::engine::general_purpose;
 use base64::Engine;
 use diesel_ulid::DieselUlid;
@@ -20,6 +28,7 @@ use s3s::S3;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
+use futures_util::TryStreamExt;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -312,7 +321,7 @@ impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn create_multipart_upload(
         &self,
-        req: S3Request<CreateMultipartUploadInput>,
+        _req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
         return Err(s3_error!(NotImplemented, "Not implemented yet"));
         // let mut anotif = ArunaNotifier::new(
@@ -476,7 +485,159 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
+        let CheckAccessResult {
+            object: ProxyObject { id, .. },
+            ..
+        } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+        let cache_result = self
+            .cache
+            .resources
+            .get(&id)
+            .ok_or_else(|| s3_error!(NoSuchKey, "Object not found"))?;
+        let (_, location) = cache_result.value();
+        let location =
+            location.as_ref().ok_or_else(|| s3_error!(InternalError, "Object location not found"))?.clone();
+        let content_length = location.raw_content_len;
+        let encryption_key = location.clone().encryption_key.map(|k| k.as_bytes().to_vec());
+
+        let (sender, receiver) = async_channel::bounded(10);
+
+        // TODO: Ranges
+        // Holt sich block mit 128 kb chunks (letzte 2)
+        let footer_parser: Option<FooterParser> = if content_length > 5242880 + 80 * 28 {
+            let (footer_sender, footer_receiver) = async_channel::unbounded();
+            let parser = match encryption_key.clone() {
+                Some(key) => {
+                    self.backend
+                        .get_object(
+                            location.clone(),
+                            Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                            // "-" bedeutet die letzten (2) chunks
+                            // wenn encrypted + 28 als zusatzinfo (16 bytes nonce, 12 bytes checksum)
+                            // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
+                            footer_sender,
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Unable to get encryption_footer")
+                        })?;
+                    let mut output = Vec::with_capacity(130_000);
+                    // Stream holt sich receiver chunks und packt die in den vec
+                    let mut arsw =
+                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+
+                    // Prozessiert chunks und steckt alles in output
+                    arsw.process().await.map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to get footer")
+                    })?;
+                    drop(arsw);
+
+                    match output.try_into() {
+                        Ok(i) => match FooterParser::from_encrypted(&i, &key) {
+                            Ok(p) => Some(p),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    }
+                }
+                None => {
+                    self.backend
+                        .get_object(
+                            location.clone(),
+                            Some(format!("bytes=-{}", 65536 * 2)),
+                            // wenn nicht encrypted ohne die 28
+                            footer_sender,
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Unable to get compression footer")
+                        })?;
+                    let mut output = Vec::with_capacity(130_000);
+                    let mut arsw =
+                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+                    // Prozessiert chunks und steckt alles in output
+                    arsw.process().await.map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to get footer")
+                    })?;
+                    drop(arsw);
+
+                    match output.try_into() {
+                        Ok(i) => Some(FooterParser::new(&i)),
+                        Err(_) => None,
+                    }
+                }
+            };
+            parser
+        } else {
+            None
+        };
+
+        // Needed for final part
+        let (query_ranges, filter_ranges) =
+            calculate_ranges(req.input.range, content_length as u64, footer_parser)
+                .map_err(|_| s3_error!(InternalError, "Error while parsing ranges"))?;
+        let calc_content_len = match filter_ranges {
+            Some(r) => calculate_content_length_from_range(r),
+            None => content_length,
+        };
+        let cloned_key = encryption_key.clone();
+
+        // Spawn get_object
+        let backend = self.backend.clone();
+        tokio::spawn(async move { backend.get_object(location.clone(), query_ranges, sender).await });
+        let (final_send, final_rcv) = async_channel::bounded(10);
+
+        // Spawn final part
+        tokio::spawn(async move {
+            let mut asrw =
+                ArunaStreamReadWriter::new_with_sink(receiver, AsyncSenderSink::new(final_send));
+
+            if let Some(r) = filter_ranges {
+                asrw = asrw.add_transformer(Filter::new(r));
+            };
+
+            asrw.add_transformer(ChaCha20Dec::new(cloned_key).map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?)
+            .add_transformer(ZstdDec::new())
+            .process()
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Internal notifier error")
+            })?;
+
+            match 1 {
+                1 => Ok(()),
+                _ => Err(s3_error!(InternalError, "Internal notifier error")),
+            }
+        });
+
+        let body =
+            Some(StreamingBlob::wrap(final_rcv.map_err(|_| {
+                s3_error!(InternalError, "Internal processing error")
+            })));
+
+        Ok(S3Response::new(GetObjectOutput {
+            body,
+            content_length: calc_content_len,
+            last_modified: None,
+            e_tag: Some(id.to_string()),
+            version_id: None,
+            ..Default::default()
+        }))
+        //S3Response::new(GetObjectOutput{
+        //    ..Default::default()
+        //});
 
         // // Get the credentials
         // dbg!(req.credentials.clone());
@@ -686,7 +847,6 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-
         // TODO: Special bucket
         let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
             DieselUlid::from_str(&req.input.key)
@@ -803,7 +963,7 @@ impl S3 for ArunaS3Service {
         );
         let contents = Some(
             keys.into_iter()
-                .map(|e| s3s::dto::Object {
+                .map(|e| Object {
                     checksum_algorithm: None,
                     e_tag: Some(e.etag.to_string()),
                     key: Some(e.key),
