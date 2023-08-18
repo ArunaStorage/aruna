@@ -179,20 +179,22 @@ impl Cache {
             ObjectType::COLLECTION => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        res.push((
-                            ResourceString::Collection(
-                                other1.name.to_string(),
-                                initial_res.name.clone(),
-                            ),
-                            ResourceIds::Collection(other1.id, initial_res.id),
-                        ));
+                    if let Some(childs) = &initial_res.children {
+                        if childs.contains(&(&elem.value().0).into()) {
+                            let other1 = self
+                                .resources
+                                .get(elem.key())
+                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                .0
+                                .clone();
+                            res.push((
+                                ResourceString::Collection(
+                                    other1.name.to_string(),
+                                    initial_res.name.clone(),
+                                ),
+                                ResourceIds::Collection(other1.id, initial_res.id),
+                            ));
+                        }
                     }
                 }
                 Ok(res)
@@ -200,45 +202,49 @@ impl Cache {
             ObjectType::DATASET => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        if elem.value().0.object_type == ObjectType::PROJECT {
-                            res.push((
-                                ResourceString::Dataset(
-                                    other1.name.to_string(),
-                                    None,
-                                    initial_res.name.clone(),
-                                ),
-                                ResourceIds::Dataset(other1.id, None, initial_res.id),
-                            ));
-                        } else {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key())
-                                    && elem2.value().0.object_type == ObjectType::COLLECTION
-                                {
-                                    let other2 = self
-                                        .resources
-                                        .get(elem2.key())
-                                        .ok_or_else(|| anyhow!("Resource not found"))?
-                                        .0
-                                        .clone();
-                                    res.push((
-                                        ResourceString::Dataset(
-                                            other2.name.to_string(),
-                                            Some(other1.name.to_string()),
-                                            initial_res.name.clone(),
-                                        ),
-                                        ResourceIds::Dataset(
-                                            other2.id,
-                                            Some(other1.id),
-                                            initial_res.id,
-                                        ),
-                                    ));
+                    if let Some(childs) = &initial_res.children {
+                        if childs.contains(&(&elem.value().0).into()) {
+                            let other1 = self
+                                .resources
+                                .get(elem.key())
+                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                .0
+                                .clone();
+                            if elem.value().0.object_type == ObjectType::PROJECT {
+                                res.push((
+                                    ResourceString::Dataset(
+                                        other1.name.to_string(),
+                                        None,
+                                        initial_res.name.clone(),
+                                    ),
+                                    ResourceIds::Dataset(other1.id, None, initial_res.id),
+                                ));
+                            } else {
+                                for elem2 in self.resources.iter() {
+                                    if let Some(childs2) = &elem.0.children {
+                                        if childs2.contains(&(&elem2.value().0).into())
+                                            && elem2.value().0.object_type == ObjectType::COLLECTION
+                                        {
+                                            let other2 = self
+                                                .resources
+                                                .get(elem2.key())
+                                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                                .0
+                                                .clone();
+                                            res.push((
+                                                ResourceString::Dataset(
+                                                    other2.name.to_string(),
+                                                    Some(other1.name.to_string()),
+                                                    initial_res.name.clone(),
+                                                ),
+                                                ResourceIds::Dataset(
+                                                    other2.id,
+                                                    Some(other1.id),
+                                                    initial_res.id,
+                                                ),
+                                            ));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -249,81 +255,94 @@ impl Cache {
             ObjectType::OBJECT => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        if elem.value().0.object_type == ObjectType::PROJECT {
-                            res.push((
-                                ResourceString::Object(
-                                    other1.name.to_string(),
-                                    None,
-                                    None,
-                                    initial_res.name.clone(),
-                                ),
-                                ResourceIds::Object(other1.id, None, None, initial_res.id),
-                            ));
-                        } else if elem.value().0.object_type == ObjectType::COLLECTION {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key())
-                                    && elem2.value().0.object_type == ObjectType::COLLECTION
-                                {
-                                    let other2 = self
-                                        .resources
-                                        .get(elem2.key())
-                                        .ok_or_else(|| anyhow!("Resource not found"))?
-                                        .0
-                                        .clone();
-                                    res.push((
-                                        ResourceString::Object(
-                                            other2.name.to_string(),
-                                            Some(other1.name.to_string()),
-                                            None,
-                                            initial_res.name.clone(),
-                                        ),
-                                        ResourceIds::Object(
-                                            other2.id,
-                                            Some(other1.id),
-                                            None,
-                                            initial_res.id,
-                                        ),
-                                    ));
-                                }
-                            }
-                        } else {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key()) {
-                                    for elem3 in self.resources.iter() {
-                                        if elem2.value().0.children.contains(elem3.key()) {
+                    if let Some(childs) = &initial_res.children {
+                        if childs.contains(&(&elem.value().0).into()) {
+                            let other1 = self
+                                .resources
+                                .get(elem.key())
+                                .ok_or_else(|| anyhow!("Resource not found"))?
+                                .0
+                                .clone();
+                            if elem.value().0.object_type == ObjectType::PROJECT {
+                                res.push((
+                                    ResourceString::Object(
+                                        other1.name.to_string(),
+                                        None,
+                                        None,
+                                        initial_res.name.clone(),
+                                    ),
+                                    ResourceIds::Object(other1.id, None, None, initial_res.id),
+                                ));
+                            } else if elem.value().0.object_type == ObjectType::COLLECTION {
+                                for elem2 in self.resources.iter() {
+                                    if let Some(childs2) = &elem.value().0.children {
+                                        if childs2.contains(&(&elem2.value().0).into())
+                                            && elem2.value().0.object_type == ObjectType::COLLECTION
+                                        {
                                             let other2 = self
                                                 .resources
                                                 .get(elem2.key())
                                                 .ok_or_else(|| anyhow!("Resource not found"))?
                                                 .0
                                                 .clone();
-                                            let other3 = self
-                                                .resources
-                                                .get(elem3.key())
-                                                .ok_or_else(|| anyhow!("Resource not found"))?
-                                                .0
-                                                .clone();
                                             res.push((
                                                 ResourceString::Object(
-                                                    other3.name.to_string(),
-                                                    Some(other2.name.to_string()),
+                                                    other2.name.to_string(),
                                                     Some(other1.name.to_string()),
+                                                    None,
                                                     initial_res.name.clone(),
                                                 ),
                                                 ResourceIds::Object(
-                                                    other3.id,
-                                                    Some(other2.id),
+                                                    other2.id,
                                                     Some(other1.id),
+                                                    None,
                                                     initial_res.id,
                                                 ),
                                             ));
+                                        }
+                                    }
+                                }
+                            } else {
+                                for elem2 in self.resources.iter() {
+                                    if let Some(childs2) = &elem.value().0.children {
+                                        if childs2.contains(&(&elem2.value().0).into()) {
+                                            for elem3 in self.resources.iter() {
+                                                if let Some(childs3) = &elem2.value().0.children {
+                                                    if childs3.contains(&(&elem3.value().0).into())
+                                                    {
+                                                        let other2 = self
+                                                            .resources
+                                                            .get(elem2.key())
+                                                            .ok_or_else(|| {
+                                                                anyhow!("Resource not found")
+                                                            })?
+                                                            .0
+                                                            .clone();
+                                                        let other3 = self
+                                                            .resources
+                                                            .get(elem3.key())
+                                                            .ok_or_else(|| {
+                                                                anyhow!("Resource not found")
+                                                            })?
+                                                            .0
+                                                            .clone();
+                                                        res.push((
+                                                            ResourceString::Object(
+                                                                other3.name.to_string(),
+                                                                Some(other2.name.to_string()),
+                                                                Some(other1.name.to_string()),
+                                                                initial_res.name.clone(),
+                                                            ),
+                                                            ResourceIds::Object(
+                                                                other3.id,
+                                                                Some(other2.id),
+                                                                Some(other1.id),
+                                                                initial_res.id,
+                                                            ),
+                                                        ));
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }

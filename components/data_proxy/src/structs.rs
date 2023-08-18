@@ -7,6 +7,9 @@ use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
 };
+use aruna_rust_api::api::storage::services::v2::create_collection_request;
+use aruna_rust_api::api::storage::services::v2::create_dataset_request;
+use aruna_rust_api::api::storage::services::v2::create_object_request;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
@@ -15,7 +18,6 @@ use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
-use s3s::dto::PutObjectInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -60,6 +62,14 @@ pub enum ObjectType {
     OBJECT,
 }
 
+#[derive(Hash, Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord)]
+pub enum TypedRelation {
+    Project(DieselUlid),
+    Collection(DieselUlid),
+    Dataset(DieselUlid),
+    Object(DieselUlid),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectLocation {
     pub id: DieselUlid,
@@ -81,8 +91,8 @@ pub struct Object {
     pub object_type: ObjectType,
     pub hashes: HashMap<String, String>,
     pub dynamic: bool,
-    pub children: HashSet<DieselUlid>,
-    pub parents: HashSet<DieselUlid>,
+    pub children: Option<HashSet<TypedRelation>>,
+    pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
 }
 
@@ -105,6 +115,102 @@ impl From<Pubkey> for PubKey {
             id: value.id,
             key: value.key,
             is_proxy: value.location.contains("proxy"),
+        }
+    }
+}
+
+impl TypedRelation {
+    fn get_id(&self) -> DieselUlid {
+        match self {
+            TypedRelation::Project(i)
+            | TypedRelation::Collection(i)
+            | TypedRelation::Dataset(i)
+            | TypedRelation::Object(i) => i.clone(),
+        }
+    }
+}
+
+impl From<&Object> for TypedRelation {
+    fn from(value: &Object) -> Self {
+        match value.object_type {
+            ObjectType::PROJECT => TypedRelation::Project(value.id),
+            ObjectType::COLLECTION => TypedRelation::Collection(value.id),
+            ObjectType::DATASET => TypedRelation::Dataset(value.id),
+            ObjectType::OBJECT => TypedRelation::Object(value.id),
+        }
+    }
+}
+
+impl TryFrom<&Relation> for TypedRelation {
+    type Error = anyhow::Error;
+    fn try_from(value: &Relation) -> Result<Self> {
+        match value {
+            Relation::External(_) => return Err(anyhow!("Invalid External rel")),
+            Relation::Internal(int) => {
+                let resource_id = DieselUlid::from_str(&int.resource_id)?;
+
+                match int.resource_variant() {
+                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Unspecified => {
+                        return Err(anyhow!("Invalid target"))
+                    }
+                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
+                        Ok(Self::Project(resource_id))
+                    }
+                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
+                        Ok(Self::Collection(resource_id))
+                    }
+                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
+                        Ok(Self::Dataset(resource_id))
+                    }
+                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
+                        Ok(Self::Object(resource_id))
+                    }
+                }
+            }
+        }
+    }
+}
+impl TryInto<create_collection_request::Parent> for TypedRelation {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<create_collection_request::Parent> {
+        match self {
+            TypedRelation::Project(i) => {
+                Ok(create_collection_request::Parent::ProjectId(i.to_string()))
+            }
+            _ => Err(anyhow!("Invalid ")),
+        }
+    }
+}
+
+impl TryInto<create_dataset_request::Parent> for TypedRelation {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<create_dataset_request::Parent> {
+        match self {
+            TypedRelation::Project(i) => {
+                Ok(create_dataset_request::Parent::ProjectId(i.to_string()))
+            }
+            TypedRelation::Collection(i) => {
+                Ok(create_dataset_request::Parent::CollectionId(i.to_string()))
+            }
+            _ => Err(anyhow!("Invalid ")),
+        }
+    }
+}
+
+impl TryInto<create_object_request::Parent> for TypedRelation {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<create_object_request::Parent> {
+        match self {
+            TypedRelation::Project(i) => {
+                Ok(create_object_request::Parent::ProjectId(i.to_string()))
+            }
+            TypedRelation::Collection(i) => {
+                Ok(create_object_request::Parent::CollectionId(i.to_string()))
+            }
+            TypedRelation::Dataset(i) => {
+                Ok(create_object_request::Parent::DatasetId(i.to_string()))
+            }
+            _ => Err(anyhow!("Invalid ")),
         }
     }
 }
@@ -224,7 +330,7 @@ impl From<PermissionLevel> for DbPermissionLevel {
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Project) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
+        let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
             .iter()
             .filter_map(|x| {
@@ -234,22 +340,10 @@ impl TryFrom<Project> for Object {
                             if var.defined_variant() == InternalRelationVariant::BelongsTo {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, true))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, true))
                                     }
                                     RelationDirection::Outbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, false))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, false))
                                     }
                                     _ => None,
                                 }
@@ -263,19 +357,16 @@ impl TryFrom<Project> for Object {
                     None
                 }
             })
-            .partition(|e| match e {
-                Ok((_, inbound)) => *inbound,
-                _ => false,
-            });
+            .partition(|(_, e)| *e);
 
         let inbounds = inbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
         let outbounds = outbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -286,8 +377,8 @@ impl TryFrom<Project> for Object {
             object_type: ObjectType::PROJECT,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            parents: inbounds,
-            children: outbounds,
+            parents: Some(inbounds),
+            children: Some(outbounds),
             synced: false,
         })
     }
@@ -296,7 +387,7 @@ impl TryFrom<Project> for Object {
 impl TryFrom<Collection> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
+        let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
             .iter()
             .filter_map(|x| {
@@ -306,22 +397,10 @@ impl TryFrom<Collection> for Object {
                             if var.defined_variant() == InternalRelationVariant::BelongsTo {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, true))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, true))
                                     }
                                     RelationDirection::Outbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, false))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, false))
                                     }
                                     _ => None,
                                 }
@@ -335,19 +414,16 @@ impl TryFrom<Collection> for Object {
                     None
                 }
             })
-            .partition(|e| match e {
-                Ok((_, inbound)) => *inbound,
-                _ => false,
-            });
+            .partition(|(_, e)| *e);
 
         let inbounds = inbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
         let outbounds = outbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -358,8 +434,8 @@ impl TryFrom<Collection> for Object {
             object_type: ObjectType::COLLECTION,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            parents: inbounds,
-            children: outbounds,
+            parents: Some(inbounds),
+            children: Some(outbounds),
             synced: false,
         })
     }
@@ -368,7 +444,7 @@ impl TryFrom<Collection> for Object {
 impl TryFrom<Dataset> for Object {
     type Error = anyhow::Error;
     fn try_from(value: Dataset) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
+        let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
             .iter()
             .filter_map(|x| {
@@ -378,22 +454,10 @@ impl TryFrom<Dataset> for Object {
                             if var.defined_variant() == InternalRelationVariant::BelongsTo {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, true))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, true))
                                     }
                                     RelationDirection::Outbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, false))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, false))
                                     }
                                     _ => None,
                                 }
@@ -407,19 +471,16 @@ impl TryFrom<Dataset> for Object {
                     None
                 }
             })
-            .partition(|e| match e {
-                Ok((_, inbound)) => *inbound,
-                _ => false,
-            });
+            .partition(|(_, e)| *e);
 
         let inbounds = inbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
         let outbounds = outbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -430,8 +491,8 @@ impl TryFrom<Dataset> for Object {
             object_type: ObjectType::DATASET,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            parents: inbounds,
-            children: outbounds,
+            parents: Some(inbounds),
+            children: Some(outbounds),
             synced: false,
         })
     }
@@ -440,7 +501,7 @@ impl TryFrom<Dataset> for Object {
 impl TryFrom<GrpcObject> for Object {
     type Error = anyhow::Error;
     fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<Result<_>>, Vec<Result<_>>) = value
+        let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
             .iter()
             .filter_map(|x| {
@@ -450,22 +511,10 @@ impl TryFrom<GrpcObject> for Object {
                             if var.defined_variant() == InternalRelationVariant::BelongsTo {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, true))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, true))
                                     }
                                     RelationDirection::Outbound => {
-                                        match DieselUlid::from_str(&var.resource_id) {
-                                            Ok(id) => Some(Ok((id, false))),
-                                            Err(e) => {
-                                                println!("Error: {}", e);
-                                                Some(Err(anyhow!("Invalid ULID")))
-                                            }
-                                        }
+                                        Some((TypedRelation::try_from(rel).ok()?, false))
                                     }
                                     _ => None,
                                 }
@@ -479,19 +528,16 @@ impl TryFrom<GrpcObject> for Object {
                     None
                 }
             })
-            .partition(|e| match e {
-                Ok((_, inbound)) => *inbound,
-                _ => false,
-            });
+            .partition(|(_, e)| *e);
 
         let inbounds = inbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
         let outbounds = outbound
             .into_iter()
-            .map(|e| e.map(|(id, _)| id))
-            .collect::<Result<HashSet<DieselUlid>>>()?;
+            .map(|(id, _)| id)
+            .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -502,8 +548,8 @@ impl TryFrom<GrpcObject> for Object {
             object_type: ObjectType::OBJECT,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
-            parents: inbounds,
-            children: outbounds,
+            parents: Some(inbounds),
+            children: Some(outbounds),
             synced: false,
         })
     }
@@ -529,7 +575,11 @@ impl From<Object> for CreateCollectionRequest {
             key_values: vec![],
             external_relations: vec![],
             data_class: value.data_class.into(),
-            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(x.to_string())),
+            parent: value
+                .parents
+                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
+                .flatten()
+                .flatten(),
         }
     }
 }
@@ -542,7 +592,11 @@ impl From<Object> for CreateDatasetRequest {
             key_values: vec![],
             external_relations: vec![],
             data_class: value.data_class.into(),
-            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::ProjectId(x.to_string())),
+            parent: value
+                .parents
+                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
+                .flatten()
+                .flatten(),
         }
     }
 }
@@ -558,8 +612,8 @@ impl From<CreateBucketInput> for Object {
             object_type: ObjectType::PROJECT,
             hashes: HashMap::default(),
             dynamic: false,
-            parents: HashSet::default(),
-            children: HashSet::default(),
+            parents: None,
+            children: None,
             synced: false,
         }
     }
@@ -573,7 +627,11 @@ impl From<Object> for CreateObjectRequest {
             key_values: vec![],
             external_relations: vec![],
             data_class: value.data_class.into(),
-            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_object_request::Parent::ProjectId(x.to_string())),
+            parent: value
+                .parents
+                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
+                .flatten()
+                .flatten(),
             hashes: vec![],
         }
     }
@@ -858,6 +916,29 @@ impl ResourceIds {
             ResourceIds::Collection(_, id) => *id,
             ResourceIds::Dataset(_, _, id) => *id,
             ResourceIds::Object(_, _, _, id) => *id,
+        }
+    }
+
+    pub fn get_typed_parent(&self) -> Option<TypedRelation> {
+        match self {
+            ResourceIds::Project(_) => None,
+            ResourceIds::Collection(p, _) => Some(TypedRelation::Project(p.clone())),
+            ResourceIds::Dataset(p, c, _) => {
+                if let Some(c) = c {
+                    Some(TypedRelation::Collection(c.clone()))
+                } else {
+                    Some(TypedRelation::Project(p.clone()))
+                }
+            }
+            ResourceIds::Object(p, c, d, _) => {
+                if let Some(d) = d {
+                    Some(TypedRelation::Dataset(d.clone()))
+                } else if let Some(c) = c {
+                    Some(TypedRelation::Collection(c.clone()))
+                } else {
+                    Some(TypedRelation::Project(p.clone()))
+                }
+            }
         }
     }
 

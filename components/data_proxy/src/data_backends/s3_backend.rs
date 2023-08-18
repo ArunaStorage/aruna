@@ -15,6 +15,7 @@ use aws_sdk_s3::{
 };
 use diesel_ulid::DieselUlid;
 use rand::distributions::Alphanumeric;
+use rand::distributions::DistString;
 use rand::thread_rng;
 use rand::Rng;
 use tokio_stream::StreamExt;
@@ -229,6 +230,7 @@ impl StorageBackend for S3Backend {
     async fn initialize_location(
         &self,
         _obj: &Object,
+        expected_size: Option<i64>,
         ex_bucket: Option<String>,
     ) -> Result<ObjectLocation> {
         let key: String = thread_rng()
@@ -237,6 +239,9 @@ impl StorageBackend for S3Backend {
             .map(char::from)
             .collect();
 
+        // TODO: READ setting and set this based on settings
+        let encryption_key: String = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+
         Ok(ObjectLocation {
             id: DieselUlid::generate(),
             bucket: match ex_bucket {
@@ -244,9 +249,9 @@ impl StorageBackend for S3Backend {
                 None => self.get_random_bucket(),
             },
             key,
-            encryption_key: None,
-            compressed: false,
-            raw_content_len: 0,
+            encryption_key: Some(encryption_key),
+            compressed: true,
+            raw_content_len: expected_size.unwrap_or_default(),
             disk_content_len: 0,
         })
     }

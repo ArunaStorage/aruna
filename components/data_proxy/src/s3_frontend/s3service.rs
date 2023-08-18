@@ -1,11 +1,13 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::CheckAccessResult;
-
 use crate::structs::Object as ProxyObject;
 use crate::structs::ResourceIds;
-
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::{
+    relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
+    PermissionLevel, Project, RelationDirection, Status,
+};
 use diesel_ulid::DieselUlid;
 use s3s::dto::*;
 use s3s::s3_error;
@@ -13,6 +15,7 @@ use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -123,21 +126,30 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
-        todo!();
+        let missing_object_name = missing_resources
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-        // let new_object = ProxyObject {
-        //     id: DieselUlid::generate(),
-        //     name: ,
-        //     key_values: vec![],
-        //     object_status: Status::Inializing,
-        //     data_class: DataClass::Private,
-        //     object_type: (),
-        //     hashes: (),
-        //     dynamic: (),
-        //     children: (),
-        //     parents: (),
-        //     synced: (),
-        // };
+        let new_object = ProxyObject {
+            id: DieselUlid::generate(),
+            name: missing_object_name,
+            key_values: vec![],
+            object_status: Status::Initializing,
+            data_class: DataClass::Private,
+            object_type: crate::structs::ObjectType::OBJECT,
+            hashes: HashMap::default(),
+            dynamic: false,
+            children: None,
+            parents: None, // TODO this is not yet known and must be edited befor submitting !
+            synced: false,
+        };
+
+        self.backend
+            .initialize_location(&new_object, req.input.content_length, None)
+            .await;
+
+        todo!();
 
         //self.backend.initialize_location(obj, req.input.bucket);
 
