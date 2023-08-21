@@ -26,17 +26,14 @@ use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use aruna_rust_api::api::{
-    notification::services::v2::event_notification_service_client::{
-        self, EventNotificationServiceClient,
-    },
+    notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
-        collection_service_client::{self, CollectionServiceClient},
-        dataset_service_client::{self, DatasetServiceClient},
-        endpoint_service_client::{self, EndpointServiceClient},
-        object_service_client::{self, ObjectServiceClient},
-        project_service_client::{self, ProjectServiceClient},
-        storage_status_service_client::{self, StorageStatusServiceClient},
-        user_service_client::{self, UserServiceClient},
+        collection_service_client::CollectionServiceClient,
+        dataset_service_client::DatasetServiceClient,
+        endpoint_service_client::EndpointServiceClient, object_service_client::ObjectServiceClient,
+        project_service_client::ProjectServiceClient,
+        storage_status_service_client::StorageStatusServiceClient,
+        user_service_client::UserServiceClient,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -74,25 +71,21 @@ impl GrpcQueryHandler {
         let endpoint = Channel::from_shared(server.into())?;
         let channel = endpoint.connect().await?;
 
-        let project_service = project_service_client::ProjectServiceClient::new(channel.clone());
+        let project_service = ProjectServiceClient::new(channel.clone());
 
-        let collection_service =
-            collection_service_client::CollectionServiceClient::new(channel.clone());
+        let collection_service = CollectionServiceClient::new(channel.clone());
 
-        let dataset_service = dataset_service_client::DatasetServiceClient::new(channel.clone());
+        let dataset_service = DatasetServiceClient::new(channel.clone());
 
-        let object_service = object_service_client::ObjectServiceClient::new(channel.clone());
+        let object_service = ObjectServiceClient::new(channel.clone());
 
-        let user_service = user_service_client::UserServiceClient::new(channel.clone());
+        let user_service = UserServiceClient::new(channel.clone());
 
-        let _endpoint_service =
-            endpoint_service_client::EndpointServiceClient::new(channel.clone());
+        let _endpoint_service = EndpointServiceClient::new(channel.clone());
 
-        let storage_status_service =
-            storage_status_service_client::StorageStatusServiceClient::new(channel.clone());
+        let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
-        let event_notification_service =
-            event_notification_service_client::EventNotificationServiceClient::new(channel);
+        let event_notification_service = EventNotificationServiceClient::new(channel);
 
         let long_lived_token = cache
             .auth

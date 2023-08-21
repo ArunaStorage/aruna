@@ -27,7 +27,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn get_credentials(
         &self,
         request: tonic::Request<GetCredentialsRequest>,
-    ) -> std::result::Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = get_token_from_md(request.metadata())
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
@@ -75,7 +75,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn push_replica(
         &self,
         _request: tonic::Request<PushReplicaRequest>,
-    ) -> std::result::Result<tonic::Response<PushReplicaResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<PushReplicaResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
@@ -87,7 +87,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn pull_replica(
         &self,
         _request: tonic::Request<PullReplicaRequest>,
-    ) -> std::result::Result<tonic::Response<PullReplicaResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<PullReplicaResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
@@ -99,7 +99,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn replication_status(
         &self,
         _request: tonic::Request<ReplicationStatusRequest>,
-    ) -> std::result::Result<tonic::Response<ReplicationStatusResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<ReplicationStatusResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 }

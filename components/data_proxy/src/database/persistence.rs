@@ -78,7 +78,7 @@ where
             })
             .collect::<Result<Vec<Self>>>()?)
     }
-    async fn get<'a>(id: &'a X, client: &Client) -> Result<Self>
+    async fn get(id: &X, client: &Client) -> Result<Self>
     where
         Self: WithGenericBytes<X>,
     {
@@ -94,7 +94,7 @@ where
             Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
         }
     }
-    async fn delete<'a>(id: &'a X, client: &Client) -> Result<()> {
+    async fn delete(id: &X, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await?;
         client.execute(&prepared, &[&id]).await?;

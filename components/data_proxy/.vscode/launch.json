@@ -18,7 +18,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/aos_data_proxy",
             "args": [],
-            "cwd": "${workspaceRoot}",
+            "cwd": "${workspaceRoot}"
         }
     ]
 }

@@ -20,6 +20,7 @@ use http::Method;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
+
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -555,6 +556,17 @@ impl TryFrom<GrpcObject> for Object {
     }
 }
 
+impl From<&ResourceIds> for DieselUlid {
+    fn from(value: &ResourceIds) -> Self {
+        match value {
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
+        }
+    }
+}
+
 impl From<Object> for CreateProjectRequest {
     fn from(value: Object) -> Self {
         CreateProjectRequest {
@@ -701,7 +713,7 @@ pub struct Missing {
 // s3://foo/bar/baz
 
 impl ResourceStrings {
-    pub fn permutate(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
+    pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
         let mut orig = Vec::new();
         let mut permutations = Vec::new();
 

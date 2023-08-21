@@ -146,7 +146,7 @@ impl AuthHandler {
         let token = decode::<ArunaTokenClaims>(
             token,
             dec_key,
-            &Validation::new(jsonwebtoken::Algorithm::EdDSA),
+            &Validation::new(Algorithm::EdDSA),
         )?;
         Ok(token.claims)
     }
@@ -248,7 +248,7 @@ impl AuthHandler {
         let res_strings = ResourceStrings::try_from(path)?;
 
         let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
-            res_strings.permutate()
+            res_strings.permute()
         } else {
             (res_strings.0, vec![])
         };
