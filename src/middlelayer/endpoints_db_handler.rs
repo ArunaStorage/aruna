@@ -18,21 +18,23 @@ impl DatabaseHandler {
         pubkey.id = idx + 1;
         endpoint.create(transaction_client).await?;
         pubkey.create(transaction_client).await?;
+        transaction.commit().await?;
 
-        //ToDo: Notifications
-        //  - Endpoint created
-        //  - PubKey created
+        // Emit announcement notifications
         let announcements = vec![
             AnnouncementVariant::NewDataProxyId(endpoint.id.to_string()),
             AnnouncementVariant::NewPubkey(true),
         ];
 
-        // Emit announcement notifications
         for ann in announcements {
-            self.natsio_handler.register_announcement_event(ann).await?;
+            if let Err(err) = self.natsio_handler.register_announcement_event(ann).await {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                //transaction.rollback().await?;
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
         }
 
-        transaction.commit().await?;
         Ok((endpoint, pubkey))
     }
 
@@ -50,16 +52,23 @@ impl DatabaseHandler {
         let endpoints = Endpoint::all(client.client()).await?;
         Ok(endpoints)
     }
-    
+
     pub async fn delete_endpoint(&self, request: DeleteEP) -> Result<()> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
         Endpoint::delete_by_id(&id, client.client()).await?;
 
         // Emit announcement notification
-        self.natsio_handler
+        if let Err(err) = self
+            .natsio_handler
             .register_announcement_event(AnnouncementVariant::RemoveDataProxyId(id.to_string()))
-            .await?;
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
 
         Ok(())
     }

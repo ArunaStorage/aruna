@@ -98,7 +98,7 @@ impl DatabaseHandler {
                 // Log error, rollback transaction and return
                 log::error!("{}", err);
                 //transaction.rollback().await?;
-                //return Err(anyhow::anyhow!("Notification emission failed"));
+                return Err(anyhow::anyhow!("Notification emission failed"));
             }
         }
 
