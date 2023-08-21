@@ -1,3 +1,4 @@
+pub mod authorization;
 pub mod collections;
 pub mod datasets;
 pub mod endpoints;

@@ -197,17 +197,17 @@ impl User {
     pub async fn add_user_permission(
         client: &Client,
         user_id: &DieselUlid,
-        user_perm: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>>,
-    ) -> Result<()> {
+        user_perm: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
+    ) -> Result<User> {
         let query = "UPDATE users
         SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
-        WHERE id = $2;";
+        WHERE id = $2 RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&Json(user_perm), user_id])
+        let row = client
+            .query_one(&prepared, &[&Json(user_perm), user_id])
             .await?;
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     pub async fn remove_user_permission(
