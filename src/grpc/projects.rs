@@ -49,15 +49,17 @@ impl ProjectService for ProjectServiceImpl {
 
         let ctx = Context::default();
 
-        let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+        let (user_id, _, is_dataproxy) = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![ctx])
+                .await,
             "Unauthorized"
         );
 
         // Create project in database
         let object_with_rel = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id)
+                .create_resource(request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );

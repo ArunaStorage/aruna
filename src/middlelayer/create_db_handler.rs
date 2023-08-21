@@ -4,13 +4,15 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
-use crate::database::enums::ObjectType;
-use ahash::RandomState;
+use crate::database::dsls::object_dsl::{Hierarchy, Object, ObjectWithRelations};
+use crate::database::dsls::user_dsl::User;
+use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
+use ahash::{HashMap, RandomState};
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_types::Json;
 
 impl DatabaseHandler {
@@ -18,26 +20,68 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
+        is_dataproxy: bool,
     ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
+        let mut object = request.into_new_db_object(user_id)?;
+
+        // let parent = if let Some(parent) = request.get_parent() {
+        //     let check_existing =
+        //         Object::get_object_with_relations(&parent.get_id()?, &client).await?;
+        //     let (existing_ulid, exists) =
+
+        //     if true
+        //     {
+        //         if is_dataproxy {
+        //             let existing = Object::get_object_with_relations()
+        //         } else {
+        //             return Err(anyhow!("Object exists"));
+        //         }
+        //     }
+        // };
+
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let mut object = request.into_new_db_object(user_id)?;
-        object.create(transaction_client).await?;
+        let create_result = object.create(transaction_client).await;
+
+        if is_dataproxy && create_result.is_err() {
+            // TODO: return conflicting object
+            let owr = ObjectWithRelations {
+                object,
+                inbound: Json(DashMap::default()),
+                // TODO: get
+                inbound_belongs_to: Json(DashMap::default()),
+                outbound: Json(DashMap::default()),
+                outbound_belongs_to: Json(DashMap::default()),
+            };
+            return Err(anyhow!("Conflicting value")); // Placeholder
+        }
 
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
-                ObjectType::PROJECT => DashMap::default(),
+                ObjectType::PROJECT => {
+                    let perms = HashMap::from_iter([(
+                        object.id.clone(),
+                        ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                    )]);
+                    User::add_user_permission(transaction_client, &user_id, perms).await?;
+                    DashMap::default()
+                }
                 _ => {
                     let parent = request
                         .get_parent()
                         .ok_or_else(|| anyhow!("No parent provided"))?;
+                    let parent_with_relations =
+                        Object::get_object_with_relations(&parent.get_id()?, transaction_client)
+                            .await?;
                     let mut ir = InternalRelation {
                         id: DieselUlid::generate(),
                         origin_pid: parent.get_id()?,
                         origin_type: parent.get_type(),
+                        origin_name: parent_with_relations.object.name,
                         target_pid: object.id,
                         target_type: object.object_type,
+                        target_name: object.name.clone(),
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
                     ir.create(transaction_client).await?;
@@ -81,5 +125,8 @@ impl DatabaseHandler {
             transaction.commit().await?;
             Ok(object_with_rel)
         }
+    }
+    async fn exists(parent: ObjectWithRelations, name: String) -> (Option<DieselUlid>, bool) {
+        todo!()
     }
 }
