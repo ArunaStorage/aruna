@@ -247,7 +247,18 @@ impl Object {
         Ok(())
     }
 
+    ///ToDo: Rust Doc
     pub async fn fetch_object_hierarchies(&self, client: &Client) -> Result<Vec<Hierarchy>> {
+        // Return the obvious case before unnecessary query
+        if self.object_type == ObjectType::PROJECT {
+            return Ok(vec![Hierarchy {
+                project_id: self.id.to_string(),
+                collection_id: None,
+                dataset_id: None,
+                object_id: None,
+            }]);
+        }
+
         let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
         WITH RECURSIVE paths AS (
             SELECT ir.*
@@ -268,6 +279,34 @@ impl Object {
 
         // Extract paths from list of internal relations
         extract_paths_from_graph(&self.id, relations)
+    }
+
+    /// Warning:
+    ///   This function produces an empty vector for root Objects i.e. ObjectType::PROJECT.
+    pub async fn fetch_object_hierarchies_by_id(
+        object_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<Hierarchy>> {
+        let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+        WITH RECURSIVE paths AS (
+            SELECT ir.*
+              FROM internal_relations ir WHERE ir.target_pid = $1 
+            UNION 
+            SELECT ir2.*
+              FROM paths, internal_relations ir2 WHERE ir2.target_pid = paths.origin_pid 
+        ) SELECT * FROM paths;";
+
+        // Execute query and convert rows to InternalRelations
+        let prepared = client.prepare(query).await?;
+        let relations = client
+            .query(&prepared, &[&object_id])
+            .await?
+            .iter()
+            .map(InternalRelation::from_row)
+            .collect::<Vec<_>>();
+
+        // Extract paths from list of internal relations
+        extract_paths_from_graph(&object_id, relations)
     }
 
     pub async fn get_object_with_relations(

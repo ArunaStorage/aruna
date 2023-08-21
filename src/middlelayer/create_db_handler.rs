@@ -4,7 +4,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::ObjectType;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -51,16 +51,7 @@ impl DatabaseHandler {
         transaction.commit().await?;
 
         // Fetch all object paths for the notification subjects
-        let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
-            vec![Hierarchy {
-                project_id: object.id.to_string(),
-                collection_id: None,
-                dataset_id: None,
-                object_id: None,
-            }]
-        } else {
-            object.fetch_object_hierarchies(&client).await?
-        };
+        let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
 
         // Create DTO which combines the object and its internal relations
         let object_with_rel = ObjectWithRelations {
