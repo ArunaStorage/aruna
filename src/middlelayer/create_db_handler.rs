@@ -19,12 +19,16 @@ impl DatabaseHandler {
         request: CreateRequest,
         user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
+        // Init transaction
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+
+        // Create object in database
         let object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
+        // Create internal relation in database
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => DashMap::default(),
@@ -45,7 +49,7 @@ impl DatabaseHandler {
                 }
             };
 
-        // Fetch all object paths
+        // Fetch all object paths for the notification subjects
         let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
             vec![Hierarchy {
                 project_id: object.id.to_string(),
@@ -66,7 +70,7 @@ impl DatabaseHandler {
             outbound_belongs_to: Json(DashMap::default()),
         };
 
-        // Try to emit object created notification
+        // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler
             .register_resource_event(&object_with_rel, object_hierarchies, EventVariant::Created)
