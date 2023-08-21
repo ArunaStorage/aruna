@@ -7,12 +7,11 @@ use crate::database::dsls::internal_relation_dsl::{
 use crate::database::dsls::object_dsl::{Hierarchy, Object, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
-use ahash::{HashMap, RandomState};
+use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use itertools::Itertools;
 use postgres_types::Json;
 
 impl DatabaseHandler {
@@ -21,7 +20,7 @@ impl DatabaseHandler {
         request: CreateRequest,
         user_id: DieselUlid,
         is_dataproxy: bool,
-    ) -> Result<ObjectWithRelations> {
+    ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
         let mut object = request.into_new_db_object(user_id)?;
@@ -43,6 +42,7 @@ impl DatabaseHandler {
 
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+        let mut user = None;
 
         // Create object in database
         let mut object = request.into_new_db_object(user_id)?;
@@ -66,12 +66,15 @@ impl DatabaseHandler {
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => {
-                    self.add_permission_to_user(
-                        user_id,
-                        object.id,
-                        ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
-                    )
-                    .await?;
+                    user = Some(
+                        self.add_permission_to_user(
+                            user_id,
+                            object.id,
+                            ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                        )
+                        .await?,
+                    );
+
                     DashMap::default()
                 }
                 _ => {
@@ -129,7 +132,7 @@ impl DatabaseHandler {
         } else {
             // Commit transaction and return
             //transaction.commit().await?;
-            Ok(object_with_rel)
+            Ok((object_with_rel, user))
         }
     }
     async fn exists(parent: ObjectWithRelations, name: String) -> (Option<DieselUlid>, bool) {

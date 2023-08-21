@@ -60,7 +60,7 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = tonic_internal!(
+        let (dataset, _) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
                 .await,

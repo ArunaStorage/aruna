@@ -61,7 +61,7 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = tonic_internal!(
+        let (collection, _) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
                 .await,

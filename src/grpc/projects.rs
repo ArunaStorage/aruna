@@ -58,7 +58,7 @@ impl ProjectService for ProjectServiceImpl {
         // Create project in database
         let request = CreateRequest::Project(inner_request);
 
-        let project = tonic_internal!(
+        let (project, user) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
                 .await,
@@ -67,6 +67,9 @@ impl ProjectService for ProjectServiceImpl {
 
         // Update local cache
         self.cache.add_object(project.clone());
+        if let Some(user) = user {
+            self.cache.update_user(&user.id.clone(), user);
+        }
 
         // Add or update project in search index
         grpc_utils::update_search_index(

@@ -56,7 +56,7 @@ impl ObjectService for ObjectServiceImpl {
             "Unauthorized"
         );
 
-        let object_plus = tonic_internal!(
+        let (object_plus, _) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
                 .await,
