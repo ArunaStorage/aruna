@@ -143,11 +143,7 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
-        let token = decode::<ArunaTokenClaims>(
-            token,
-            dec_key,
-            &Validation::new(Algorithm::EdDSA),
-        )?;
+        let token = decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA))?;
         Ok(token.claims)
     }
 
@@ -165,29 +161,48 @@ impl AuthHandler {
                     .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
                     .ok_or_else(|| anyhow!("Unknown user"))?;
 
-                let get_object = self
-                    .cache
-                    .get_res_by_res_string(crate::structs::ResourceString::Project(b.to_string()))
-                    .ok_or_else(|| anyhow!("Unknown object"))?;
+                let token_id = if user.user_id.to_string() == user.access_key {
+                    None
+                } else {
+                    Some(user.access_key.clone())
+                };
 
-                let obj = &self
-                    .cache
-                    .resources
-                    .get(&get_object.get_id())
-                    .ok_or_else(|| anyhow!("Unknown object"))?
-                    .0;
+                return Ok(CheckAccessResult {
+                    user_id: Some(user.user_id.to_string()),
+                    token_id: token_id,
+                    resource_ids: None,
+                    missing_resources: Some(Missing {
+                        p: Some(b.to_string()),
+                        c: None,
+                        d: None,
+                        o: None,
+                    }),
+                    object: None,
+                });
 
-                for (res, perm) in user.permissions {
-                    if get_object.check_if_in(res) && perm >= db_perm_from_method {
-                        return Ok(CheckAccessResult::new(
-                            Some(user.user_id.to_string()),
-                            Some(user.access_key),
-                            Some(get_object),
-                            None,
-                            Some(obj.clone()),
-                        ));
-                    }
-                }
+                // let get_object = self
+                //     .cache
+                //     .get_res_by_res_string(crate::structs::ResourceString::Project(b.to_string()))
+                //     .ok_or_else(|| anyhow!("Unknown object"))?;
+
+                // let obj = &self
+                //     .cache
+                //     .resources
+                //     .get(&get_object.get_id())
+                //     .ok_or_else(|| anyhow!("Unknown object"))?
+                //     .0;
+
+                // for (res, perm) in user.permissions {
+                //     if get_object.check_if_in(res) && perm >= db_perm_from_method {
+                //         return Ok(CheckAccessResult::new(
+                //             Some(user.user_id.to_string()),
+                //             Some(user.access_key),
+                //             Some(get_object),
+                //             None,
+                //             Some(obj.clone()),
+                //         ));
+                //     }
+                // }
             } else {
                 let user = self
                     .cache

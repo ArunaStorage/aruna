@@ -85,9 +85,13 @@ async fn main() -> Result<()> {
     })
     .map_err(|e| anyhow!("an error occured {e}"));
 
-    let s3_server =
-        s3_frontend::s3server::S3Server::new("0.0.0.0:8000", hostname, storage_backend, cache)
-            .await?;
+    let s3_server = s3_frontend::s3server::S3Server::new(
+        &hostname,
+        hostname.to_string(),
+        storage_backend,
+        cache,
+    )
+    .await?;
 
     match try_join!(s3_server.run(), grpc_server_handle) {
         Ok(_) => Ok(()),

@@ -31,7 +31,10 @@ impl S3Auth for AuthProvider {
                 let result = auth
                     .check_access(cx.credentials(), cx.method(), cx.s3_path())
                     .await
-                    .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+                    .map_err(|e| {
+                        log::error!("Error on check_access: {}", e);
+                        s3_error!(AccessDenied, "Access denied")
+                    })?;
 
                 cx.extensions_mut().insert(result);
                 Ok(())

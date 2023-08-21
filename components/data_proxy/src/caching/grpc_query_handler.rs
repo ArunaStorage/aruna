@@ -435,6 +435,8 @@ impl GrpcQueryHandler {
         while let Some(m) = inner_stream.message().await? {
             let mut acks = Vec::new();
             for message in m.messages {
+                log::debug!("Received message: {:?}", message);
+
                 if let Ok(Some(r)) = self.process_message(message).await {
                     acks.push(r)
                 }
