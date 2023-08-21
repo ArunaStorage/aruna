@@ -280,7 +280,7 @@ impl NatsIoHandler {
             .await?;
 
         // Return consumer id
-        return Ok((consumer_id, consumer_config));
+        Ok((consumer_id, consumer_config))
     }
 
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
@@ -304,7 +304,7 @@ impl NatsIoHandler {
 
         // Add individual endpoint subjects
         for endpoint_ulid in &object.object.endpoints.0 {
-            subjects.push(generate_endpoint_subject(&endpoint_ulid.key()))
+            subjects.push(generate_endpoint_subject(endpoint_ulid.key()))
         }
 
         // Create message payload
@@ -346,7 +346,7 @@ impl NatsIoHandler {
 
         // Add individual endpoint subjects
         for trusted_endpoint in &user.attributes.0.trusted_endpoints {
-            subjects.push(generate_endpoint_subject(&trusted_endpoint.key()))
+            subjects.push(generate_endpoint_subject(trusted_endpoint.key()))
         }
 
         // Emit user event messages

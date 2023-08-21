@@ -19,7 +19,7 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
-        is_dataproxy: bool,
+        _is_dataproxy: bool,
     ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
@@ -79,7 +79,7 @@ impl DatabaseHandler {
                     let parent = request
                         .get_parent()
                         .ok_or_else(|| anyhow!("No parent provided"))?;
-                    let parent_with_relations =
+                    let _parent_with_relations =
                         Object::get_object_with_relations(&parent.get_id()?, transaction_client)
                             .await?;
                     let mut ir = InternalRelation {
@@ -124,7 +124,7 @@ impl DatabaseHandler {
             Ok((object_with_rel, user))
         }
     }
-    async fn exists(parent: ObjectWithRelations, name: String) -> (Option<DieselUlid>, bool) {
+    async fn exists(_parent: ObjectWithRelations, _name: String) -> (Option<DieselUlid>, bool) {
         todo!()
     }
 }

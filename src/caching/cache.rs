@@ -72,7 +72,9 @@ impl Cache {
     }
 
     pub fn check_lock(&self) {
-        while self.lock.load(std::sync::atomic::Ordering::Relaxed) {}
+        while self.lock.load(std::sync::atomic::Ordering::Relaxed) {
+            std::hint::spin_loop()
+        }
     }
 
     pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {

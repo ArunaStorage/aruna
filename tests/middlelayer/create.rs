@@ -28,7 +28,7 @@ async fn create_project() {
         external_relations: vec![],
         data_class: 1,
     });
-    let proj = db_handler
+    let (proj, _) = db_handler
         .create_resource(request, user.id, false)
         .await
         .unwrap();
@@ -69,7 +69,7 @@ async fn create_collection() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler
+    let (parent, _) = db_handler
         .create_resource(parent, user.id, false)
         .await
         .unwrap();
@@ -83,7 +83,7 @@ async fn create_collection() {
         data_class: 1,
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
     });
-    let coll = db_handler
+    let (coll, _) = db_handler
         .create_resource(request, user.id, false)
         .await
         .unwrap();
@@ -123,7 +123,7 @@ async fn create_dataset() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler
+    let (parent, _) = db_handler
         .create_resource(parent, user.id, false)
         .await
         .unwrap();
@@ -137,7 +137,7 @@ async fn create_dataset() {
         data_class: 1,
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
     });
-    let ds = db_handler
+    let (ds, _) = db_handler
         .create_resource(request, user.id, false)
         .await
         .unwrap();
@@ -177,7 +177,7 @@ async fn create_object() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler
+    let (parent, _) = db_handler
         .create_resource(parent, user.id, false)
         .await
         .unwrap();
@@ -192,7 +192,7 @@ async fn create_object() {
         hashes: vec![],
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
     });
-    let obj = db_handler
+    let (obj, _) = db_handler
         .create_resource(request, user.id, false)
         .await
         .unwrap();

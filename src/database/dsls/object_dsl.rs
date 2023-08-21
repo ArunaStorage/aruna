@@ -306,7 +306,7 @@ impl Object {
             .collect::<Vec<_>>();
 
         // Extract paths from list of internal relations
-        extract_paths_from_graph(&object_id, relations)
+        extract_paths_from_graph(object_id, relations)
     }
 
     pub async fn get_object_with_relations(

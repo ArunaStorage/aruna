@@ -32,10 +32,10 @@ impl DatabaseHandler {
                 .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
         }
         labels_to_add.internal.iter().for_each(|internal| {
-            affected_objects.insert(DieselUlid::from(internal.id));
+            affected_objects.insert(internal.id);
         });
         labels_to_remove.internal.iter().for_each(|internal| {
-            affected_objects.insert(DieselUlid::from(internal.id));
+            affected_objects.insert(internal.id);
         });
 
         // Transaction

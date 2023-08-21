@@ -152,7 +152,7 @@ async fn process_resource_event(
                             object_plus.clone().try_into()?;
                         let proto_checksum = checksum_resource(proto_resource.clone())?;
 
-                        if !(proto_checksum == resource.checksum) {
+                        if proto_checksum != resource.checksum {
                             // Update updated object in cache and search index
                             cache.update_object(&resource_ulid, object_plus);
 
@@ -220,7 +220,7 @@ async fn process_user_event(
                     let proto_user = ApiUser::from(user.clone());
                     let proto_checksum = checksum_user(&proto_user)?;
 
-                    if !(proto_checksum == user_event.checksum) {
+                    if proto_checksum != user_event.checksum {
                         cache.update_user(&user_ulid, user);
                     }
                 } else {

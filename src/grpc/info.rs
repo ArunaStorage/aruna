@@ -46,7 +46,7 @@ impl StorageStatusService for StorageStatusServiceImpl {
             .pubkeys
             .iter()
             .map(|pk| Pubkey {
-                id: pk.key().clone(),
+                id: *pk.key(),
                 key: pk.value().get_key_string(),
                 location: pk.value().get_name(),
             })

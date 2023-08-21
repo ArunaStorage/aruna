@@ -27,7 +27,7 @@ impl DatabaseHandler {
         let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
         token_map.insert(token_ulid, &token);
         User::add_user_token(client, user_id, token_map).await?;
-        let user = User::get(*user_id, &client)
+        let user = User::get(*user_id, client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
 

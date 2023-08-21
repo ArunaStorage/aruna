@@ -64,7 +64,7 @@ impl DatabaseHandler {
                 .collect();
 
         // Fetch all object paths for the notification subjects
-        for (_, object_plus) in &objects_plus {
+        for object_plus in objects_plus.values() {
             let object_hierarchies = clone.fetch_object_hierarchies(&client).await?;
 
             // Try to emit object created notification(s)
@@ -79,8 +79,8 @@ impl DatabaseHandler {
             }
         }
 
-        Ok(objects_plus
+        objects_plus
             .remove(&new_id)
-            .ok_or_else(|| anyhow!("Object disappeared into the void"))?)
+            .ok_or_else(|| anyhow!("Object disappeared into the void"))
     }
 }

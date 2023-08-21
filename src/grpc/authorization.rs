@@ -85,7 +85,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// This gets resource specific user authorizations
     async fn get_authorizations(
         &self,
-        request: tonic::Request<GetAuthorizationsRequest>,
+        _request: tonic::Request<GetAuthorizationsRequest>,
     ) -> std::result::Result<tonic::Response<GetAuthorizationsResponse>, tonic::Status> {
         todo!()
     }
@@ -97,7 +97,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// specific resource
     async fn delete_authorization(
         &self,
-        request: tonic::Request<DeleteAuthorizationRequest>,
+        _request: tonic::Request<DeleteAuthorizationRequest>,
     ) -> std::result::Result<tonic::Response<DeleteAuthorizationResponse>, tonic::Status> {
         todo!()
     }
@@ -109,7 +109,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// specific resource
     async fn update_authorizations(
         &self,
-        request: tonic::Request<UpdateAuthorizationsRequest>,
+        _request: tonic::Request<UpdateAuthorizationsRequest>,
     ) -> std::result::Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
         todo!()
     }

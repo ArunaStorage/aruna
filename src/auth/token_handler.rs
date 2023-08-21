@@ -275,8 +275,7 @@ impl TokenHandler {
     )> {
         let split = token
             .split('.')
-            .skip(1)
-            .next()
+            .nth(1)
             .ok_or_else(|| anyhow!("Invalid token"))?;
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
@@ -387,9 +386,7 @@ impl TokenHandler {
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::FetchInfo => {
-                            return Ok((sub_id, None, vec![], true, Some(intent.action)));
-                        }
+                        Action::FetchInfo => Ok((sub_id, None, vec![], true, Some(intent.action))),
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
                             // Fetch user from cache
@@ -414,9 +411,7 @@ impl TokenHandler {
                     bail!("Missing intent in Dataproxy signed token")
                 }
             }
-            PubKeyEnum::Server(_) => {
-                return Err(anyhow::anyhow!("Token not signed from Dataproxy"))
-            }
+            PubKeyEnum::Server(_) => Err(anyhow::anyhow!("Token not signed from Dataproxy")),
         }
     }
 
