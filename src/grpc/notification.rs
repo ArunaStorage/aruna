@@ -16,6 +16,7 @@ use aruna_rust_api::api::notification::services::v2::{
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use diesel_ulid::DieselUlid;
+use futures::StreamExt;
 use std::str::FromStr;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -299,7 +300,6 @@ impl EventNotificationService for NotificationServiceImpl {
             DieselUlid::from_str(&inner_request.stream_consumer),
             "Invalid consumer id format"
         );
-        let batch_size = inner_request.batch_size;
 
         // Extract token from request metadata
         let token = tonic_auth!(
@@ -349,43 +349,30 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Create multi-producer single-consumer channel
         let (tx, rx) = mpsc::channel(4);
-        let handler = tonic_internal!(
-            self.natsio_handler
-                .create_event_stream_handler(inner_request.stream_consumer)
-                .await,
-            "Event stream handler creation failed"
-        );
 
+        let pull_consumer = tonic_internal!(
+            self.natsio_handler
+                .get_pull_consumer(consumer_id.to_string())
+                .await,
+            "Fetching consumer failed"
+        );
+        let mut message_stream = tonic_internal!(
+            pull_consumer.messages().await,
+            "Message stream creation failed"
+        );
         // Send messages in batches if present
-        //ToDo: Push Consumer ...? Create ephemeral in EventStreamHndler
         let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
             loop {
-                let nats_messages = match handler.get_event_consumer_messages(batch_size).await {
-                    Ok(msgs) => msgs,
-                    Err(err) => {
-                        return Err::<Self::GetEventMessageBatchStreamStream, Status>(
-                            Status::aborted(format!("Stream consumer message fetch failed: {err}")),
-                        )
-                    }
-                };
-
-                let mut proto_messages = Vec::new();
-                // Conversion from Nats.io to api::EventMessage
-                for nats_message in nats_messages.into_iter() {
+                if let Some(Ok(nats_message)) = message_stream.next().await {
                     // Convert Nats.io message to proto message
                     let event_message =
                         convert_nats_message_to_proto(nats_message, &cloned_reply_signing_secret)?;
 
-                    // Push complete message to vector
-                    proto_messages.push(event_message)
-                }
-
-                // Send messages in stream if present
-                if !proto_messages.is_empty() {
+                    // Send message through stream
                     match tx
                         .send(Ok(GetEventMessageBatchStreamResponse {
-                            messages: proto_messages,
+                            messages: vec![event_message],
                         }))
                         .await
                     {
@@ -393,7 +380,9 @@ impl EventNotificationService for NotificationServiceImpl {
                             log::info!("Successfully send stream response")
                         }
                         Err(err) => {
-                            return Err(Status::internal(format!("failed to send response: {err}")))
+                            return Err::<GetEventMessageBatchResponse, Status>(Status::internal(
+                                format!("Failed to send response: {err}"),
+                            ))
                         }
                     };
                 }
