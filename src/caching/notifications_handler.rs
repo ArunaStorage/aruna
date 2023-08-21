@@ -13,6 +13,7 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::{
     database::{
         connection::Database,
@@ -36,6 +37,7 @@ impl NotificationHandler {
         database: Arc<Database>,
         cache: Arc<Cache>,
         natsio_handler: Arc<NatsIoHandler>,
+        search_client: Arc<MeilisearchClient>,
     ) -> anyhow::Result<Self> {
         // Create standard pull consumer to fetch all notifications
         let (some1, _) = natsio_handler
@@ -69,6 +71,7 @@ impl NotificationHandler {
                         msg_variant,
                         cache_clone.clone(),
                         database_clone.clone(),
+                        search_client.clone(),
                     )
                     .await
                     {
@@ -101,10 +104,11 @@ impl NotificationHandler {
         message: MessageVariant,
         cache: Arc<Cache>,
         database: Arc<Database>,
+        search_client: Arc<MeilisearchClient>,
     ) -> anyhow::Result<()> {
         match message {
             MessageVariant::ResourceEvent(event) => {
-                process_resource_event(event, cache, database).await?
+                process_resource_event(event, cache, database, search_client).await?
             }
             MessageVariant::UserEvent(event) => {
                 process_user_event(event, cache, database).await?;
@@ -124,6 +128,7 @@ async fn process_resource_event(
     resource_event: ResourceEvent,
     cache: Arc<Cache>,
     database: Arc<Database>,
+    search_client: Arc<MeilisearchClient>,
 ) -> anyhow::Result<()> {
     if let Some(resource) = resource_event.resource {
         // Extract resource id
@@ -131,6 +136,7 @@ async fn process_resource_event(
 
         // Process cache
         if let Some(variant) = EventVariant::from_i32(resource_event.event_variant) {
+            // Update resource cache
             match variant {
                 EventVariant::Unspecified => bail!("Unspecified event variant not allowed"),
                 EventVariant::Created | EventVariant::Updated => {
@@ -138,11 +144,19 @@ async fn process_resource_event(
                         // Convert to proto and compare checksum
                         let proto_resource: generic_resource::Resource =
                             object_plus.clone().try_into()?;
-                        let proto_checksum = checksum_resource(proto_resource)?;
+                        let proto_checksum = checksum_resource(proto_resource.clone())?;
 
                         if !(proto_checksum == resource.checksum) {
-                            // Things that should not happen with a 'Created' event ...
+                            // Update updated object in cache and search index
                             cache.update_object(&resource_ulid, object_plus);
+
+                            // Update resource search index
+                            search_client
+                                .add_or_update_stuff(
+                                    &[ObjectDocument::try_from(proto_resource)?],
+                                    MeilisearchIndexes::OBJECT,
+                                )
+                                .await?;
                         }
                     } else {
                         // Fetch object with relations from database and put into cache
@@ -150,6 +164,15 @@ async fn process_resource_event(
                         let object_plus =
                             Object::get_object_with_relations(&resource_ulid, &client).await?;
 
+                        // Update resource search index
+                        search_client
+                            .add_or_update_stuff(
+                                &[ObjectDocument::from(object_plus.object.clone())],
+                                MeilisearchIndexes::OBJECT,
+                            )
+                            .await?;
+
+                        // Add to cache
                         cache.object_cache.insert(resource_ulid, object_plus);
                     }
                 }
