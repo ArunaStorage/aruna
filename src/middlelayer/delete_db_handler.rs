@@ -62,7 +62,7 @@ impl DatabaseHandler {
 
             if let Err(err) = self
                 .natsio_handler
-                .register_resource_event(object_plus, hierarchies, EventVariant::Updated)
+                .register_resource_event(object_plus, hierarchies, EventVariant::Deleted)
                 .await
             {
                 // Log error, rollback transaction and return
