@@ -4,7 +4,10 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::relations_request_types::ModifyRelations;
+use crate::search::meilisearch_client::MeilisearchClient;
+use crate::search::meilisearch_client::ObjectDocument;
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
@@ -15,7 +18,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::Result;
 
-crate::impl_grpc_server!(RelationsServiceImpl);
+crate::impl_grpc_server!(RelationsServiceImpl, search_client: Arc<MeilisearchClient>);
 
 #[tonic::async_trait]
 impl RelationsService for RelationsServiceImpl {
@@ -60,6 +63,13 @@ impl RelationsService for RelationsServiceImpl {
         );
 
         self.cache.update_object(&object.object.id, object.clone());
+
+        // Add or update object in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+        .await;
 
         return_with_log!(ModifyRelationsResponse {});
     }

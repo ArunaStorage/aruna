@@ -8,8 +8,9 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::UpdateObject;
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -24,7 +25,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
-crate::impl_grpc_server!(ObjectServiceImpl);
+crate::impl_grpc_server!(ObjectServiceImpl, search_client: Arc<MeilisearchClient>);
 
 #[tonic::async_trait]
 impl ObjectService for ObjectServiceImpl {
@@ -55,17 +56,24 @@ impl ObjectService for ObjectServiceImpl {
             "Unauthorized"
         );
 
-        let object_with_rel = tonic_internal!(
+        let object_plus = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        self.cache.add_object(object_with_rel.clone());
+        self.cache.add_object(object_plus.clone());
+
+        // Add or update object in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object_plus.object.clone())],
+        )
+        .await;
 
         let generic_object: generic_resource::Resource =
-            tonic_invalid!(object_with_rel.try_into(), "Invalid object");
+            tonic_invalid!(object_plus.try_into(), "Invalid object");
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
@@ -243,6 +251,7 @@ impl ObjectService for ObjectServiceImpl {
         //     object: Some(grpc_object),
         // }))
     }
+
     async fn update_object(
         &self,
         request: Request<UpdateObjectRequest>,
@@ -271,6 +280,13 @@ impl ObjectService for ObjectServiceImpl {
         );
 
         self.cache.update_object(&object.object.id, object.clone());
+
+        // Add or update object in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+        .await;
 
         let object: generic_resource::Resource =
             tonic_internal!(object.try_into(), "Object conversion error");
@@ -308,6 +324,13 @@ impl ObjectService for ObjectServiceImpl {
         );
         self.cache.add_object(new.clone());
 
+        // Add or update object in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(new.object.clone())],
+        )
+        .await;
+
         let converted: generic_resource::Resource =
             tonic_internal!(new.try_into(), "Conversion error");
         let response = CloneObjectResponse {
@@ -342,14 +365,20 @@ impl ObjectService for ObjectServiceImpl {
             "Internal database error"
         );
 
+        let mut search_update: Vec<ObjectDocument> = vec![];
         for o in updates {
             self.cache.remove_object(&o.object.id);
+            search_update.push(ObjectDocument::from(o.object))
         }
+
+        // Add or update object(s) in search index
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let response = DeleteObjectResponse {};
 
         return_with_log!(response);
     }
+
     async fn get_object(
         &self,
         request: Request<GetObjectRequest>,
@@ -389,6 +418,7 @@ impl ObjectService for ObjectServiceImpl {
 
         return_with_log!(response);
     }
+
     async fn get_objects(
         &self,
         request: Request<GetObjectsRequest>,

@@ -1,7 +1,8 @@
-use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::grpc::users::UserServiceImpl;
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
+use crate::{auth::structs::Context, search::meilisearch_client::ObjectDocument};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, Collection, Dataset, Object, Project, User,
 };
@@ -136,4 +137,23 @@ pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Re
         .ok_or_else(|| Status::not_found("Resource not found"))?;
     owr.try_into()
         .map_err(|_| Status::internal("Conversion error"))
+}
+
+/// Updates the resource search index in a concurrent thread.
+pub async fn update_search_index(
+    search_client: &Arc<MeilisearchClient>,
+    index_updates: Vec<ObjectDocument>,
+) {
+    let client_clone = search_client.clone();
+    tokio::spawn(async move {
+        if let Err(err) = client_clone
+            .add_or_update_stuff::<ObjectDocument>(
+                index_updates.as_slice(),
+                MeilisearchIndexes::OBJECT,
+            )
+            .await
+        {
+            log::warn!("Search index update failed: {}", err)
+        }
+    });
 }

@@ -27,7 +27,7 @@ use aruna_server::{
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
-    search::meilisearch_client::MeilisearchClient,
+    search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
     utils::mailclient::MailClient,
 };
 use diesel_ulid::DieselUlid;
@@ -101,6 +101,11 @@ pub async fn main() -> Result<()> {
     )?;
     let meilisearch_arc = Arc::new(meilisearch_client);
 
+    // Create index if not exists on startup
+    meilisearch_arc
+        .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+        .await?;
+
     // init MailClient
     let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
         Some(MailClient::new()?)
@@ -156,6 +161,7 @@ pub async fn main() -> Result<()> {
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))
@@ -164,18 +170,25 @@ pub async fn main() -> Result<()> {
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))
             .add_service(ObjectServiceServer::new(
-                ObjectServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
-                    .await,
+                ObjectServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    meilisearch_arc.clone(),
+                )
+                .await,
             ))
             .add_service(RelationsServiceServer::new(
                 RelationsServiceImpl::new(
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))

@@ -80,10 +80,10 @@ pub enum ObjectMapping<T> {
 )]
 pub enum ObjectType {
     #[default]
-    PROJECT,
-    COLLECTION,
-    DATASET,
-    OBJECT,
+    PROJECT = 0,
+    COLLECTION = 1,
+    DATASET = 2,
+    OBJECT = 3,
 }
 impl ObjectType {
     pub fn get_type() -> Type {

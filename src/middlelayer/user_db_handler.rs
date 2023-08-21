@@ -35,8 +35,22 @@ impl DatabaseHandler {
             active: false,
         };
         user.create(client.client()).await?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Created)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok((user_id, user))
     }
+
     pub async fn deactivate_user(&self, request: DeactivateUser) -> Result<(DieselUlid, User)> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
@@ -44,8 +58,22 @@ impl DatabaseHandler {
         let user = User::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok((id, user))
     }
+
     pub async fn activate_user(&self, request: ActivateUser) -> Result<(DieselUlid, User)> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
@@ -53,6 +81,19 @@ impl DatabaseHandler {
         let user = User::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok((id, user))
     }
     pub async fn update_display_name(
@@ -66,6 +107,19 @@ impl DatabaseHandler {
         let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok(user)
     }
     pub async fn update_email(
@@ -79,6 +133,19 @@ impl DatabaseHandler {
         let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok(user)
     }
 
@@ -90,8 +157,18 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let user = User::add_trusted_endpoint(&client, &user_id, &endpoint_id).await?;
 
-        self.natsio_handler
-            .register_user_event(user, EventVariant::Updated)
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
             .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        Ok(())
     }
 }
