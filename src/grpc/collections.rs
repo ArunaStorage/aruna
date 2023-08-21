@@ -70,7 +70,7 @@ impl CollectionService for CollectionServiceImpl {
 
         self.cache.add_object(collection.clone());
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
             .await;
 
@@ -189,7 +189,7 @@ impl CollectionService for CollectionServiceImpl {
             search_update.push(ObjectDocument::from(o.object))
         }
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(search_update).await;
 
         let response = DeleteCollectionResponse {};
@@ -224,7 +224,7 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
             .await;
 
@@ -264,7 +264,7 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
             .await;
 
@@ -304,7 +304,7 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
             .await;
 
@@ -343,7 +343,7 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
             .await;
 
@@ -387,7 +387,7 @@ impl CollectionService for CollectionServiceImpl {
             search_update.push(ObjectDocument::from(resource.object))
         }
 
-        // Add or update project in search index
+        // Add or update collection in search index
         self.add_or_update_search(search_update).await;
 
         let collection: generic_resource::Resource = tonic_internal!(
@@ -407,7 +407,7 @@ impl CollectionService for CollectionServiceImpl {
 
 impl CollectionServiceImpl {
     async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update project in search index
+        // Add or update collection in search index
         let search_clone = self.search_client.clone();
         tokio::spawn(async move {
             if let Err(err) = search_clone

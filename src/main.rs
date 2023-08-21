@@ -161,6 +161,7 @@ pub async fn main() -> Result<()> {
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))
@@ -169,12 +170,18 @@ pub async fn main() -> Result<()> {
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))
             .add_service(ObjectServiceServer::new(
-                ObjectServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
-                    .await,
+                ObjectServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                    meilisearch_arc.clone(),
+                )
+                .await,
             ))
             .add_service(RelationsServiceServer::new(
                 RelationsServiceImpl::new(

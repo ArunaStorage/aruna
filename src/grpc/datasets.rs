@@ -69,7 +69,7 @@ impl DatasetService for DatasetServiceImpl {
 
         self.cache.add_object(dataset.clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
             .await;
 
@@ -188,7 +188,7 @@ impl DatasetService for DatasetServiceImpl {
             search_update.push(ObjectDocument::from(o.object))
         }
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(search_update).await;
 
         let response = DeleteDatasetResponse {};
@@ -224,7 +224,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
             .await;
 
@@ -264,7 +264,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
             .await;
 
@@ -303,7 +303,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
             .await;
 
@@ -343,7 +343,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
             .await;
 
@@ -384,7 +384,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset[0].object.id, dataset[0].clone());
 
-        // Add or update project in search index
+        // Add or update dataset in search index
         self.add_or_update_search(vec![ObjectDocument::from(dataset[0].object.clone())])
             .await;
 
@@ -405,7 +405,7 @@ impl DatasetService for DatasetServiceImpl {
 
 impl DatasetServiceImpl {
     async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update project in search index
+        // Add or update dataset in search index
         let search_clone = self.search_client.clone();
         tokio::spawn(async move {
             if let Err(err) = search_clone
