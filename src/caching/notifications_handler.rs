@@ -52,6 +52,8 @@ impl NotificationHandler {
         tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = messages.next().await {
+                    log_received!(&nats_message);
+
                     // Deserialize messages in gRPC definitions
                     let msg_variant = match serde_json::from_slice(
                         nats_message.message.payload.to_vec().as_slice(),
@@ -63,12 +65,29 @@ impl NotificationHandler {
                     };
 
                     // Update cache depending on message variant
-                    NotificationHandler::update_server_cache(
+                    match NotificationHandler::update_server_cache(
                         msg_variant,
                         cache_clone.clone(),
                         database_clone.clone(),
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(_) => {
+                            match &nats_message.reply {
+                                Some(reply_subject) => {
+                                    natsio_handler.acknowledge_raw(reply_subject).await?;
+
+                                    log::info!("Cache update and acknowledgement successful.")
+                                }
+                                None => todo!(),
+                            };
+                        }
+                        Err(err) => {
+                            // For now just log the error.
+                            // Nats re-delivers not acknowledged messages every 30s.
+                            log::warn!("Cache update failed: {err}")
+                        }
+                    }
                 }
             }
         });

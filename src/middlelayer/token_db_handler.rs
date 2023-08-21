@@ -4,6 +4,7 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken};
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
@@ -26,6 +27,21 @@ impl DatabaseHandler {
         let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
         token_map.insert(token_ulid, &token);
         User::add_user_token(client, user_id, token_map).await?;
+        let user = User::get(*user_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
 
         // Return token_id and token
         Ok((token_ulid, token))
@@ -38,6 +54,19 @@ impl DatabaseHandler {
         let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok(user)
     }
     pub async fn delete_all_tokens(&self, user_id: DieselUlid) -> Result<User> {
@@ -46,6 +75,19 @@ impl DatabaseHandler {
         let user = User::get(user_id, &client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
         Ok(user)
     }
 }

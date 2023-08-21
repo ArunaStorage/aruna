@@ -1,11 +1,12 @@
 use std::{fmt::Display, str::FromStr};
 
+use anyhow::bail;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource::Resource, Collection, Dataset, KeyValue as ApiKeyValue,
     KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
 };
 use diesel_ulid::DieselUlid;
-use meilisearch_sdk::{task_info::TaskInfo, Client};
+use meilisearch_sdk::{indexes::Index, task_info::TaskInfo, Client};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -38,7 +39,7 @@ impl Display for MeilisearchIndexes {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObjectDocument {
     pub id: DieselUlid,
-    pub resource_type: ObjectType,
+    pub resource_type: u8, // 256 should be enough
     pub resource_status: ObjectStatus,
     pub name: String,
     pub description: String,
@@ -46,24 +47,25 @@ pub struct ObjectDocument {
     pub labels: Vec<KeyValue>, // Without specific internal labels
     pub dataclass: DataClass,
     pub created_at: i64, // Converted to UNIX timestamp for filtering/sorting
-    pub created_by: DieselUlid, // Should be the user name or something like that
+    pub dynamic: bool,   // Just for the lulz
 }
 
 // Conversion from database model Object into ObjectDocument
 impl From<DbObject> for ObjectDocument {
     fn from(db_object: DbObject) -> Self {
-        // Remove internal/unimportant labels
+        // Remove internal/private/unimportant labels
         let filtered_labels = db_object
             .key_values
             .0
              .0
             .into_iter()
             .filter(|kv| !kv.key.starts_with("app.aruna-storage"))
+            .filter(|kv| !kv.key.starts_with("private"))
             .collect::<Vec<_>>();
 
         ObjectDocument {
             id: db_object.id,
-            resource_type: db_object.object_type,
+            resource_type: db_object.object_type as u8,
             resource_status: db_object.object_status,
             name: db_object.name,
             description: db_object.description,
@@ -71,20 +73,23 @@ impl From<DbObject> for ObjectDocument {
             labels: filtered_labels,
             dataclass: db_object.data_class,
             created_at: db_object.created_at.unwrap_or_default().timestamp(),
-            created_by: db_object.created_by,
+            dynamic: db_object.dynamic,
         }
     }
 }
 
 // Conversion from ObjectDocument into generic API resource.
-impl From<ObjectDocument> for Resource {
-    fn from(val: ObjectDocument) -> Self {
-        match val.resource_type {
-            ObjectType::PROJECT => Resource::Project(val.into()),
-            ObjectType::COLLECTION => Resource::Collection(val.into()),
-            ObjectType::DATASET => Resource::Dataset(val.into()),
-            ObjectType::OBJECT => Resource::Object(val.into()),
-        }
+impl TryFrom<ObjectDocument> for Resource {
+    type Error = anyhow::Error;
+
+    fn try_from(val: ObjectDocument) -> Result<Self, Self::Error> {
+        Ok(match val.resource_type {
+            0 => Resource::Project(val.into()),    // ObjectType::PROJECT
+            1 => Resource::Collection(val.into()), // ObjectType::COLLECTION
+            2 => Resource::Dataset(val.into()),    // ObjectType::DATASET
+            3 => Resource::Object(val.into()),     // ObjectType::OBJECT
+            _ => bail!("Invalid resource type"),
+        })
     }
 }
 // Conversion from generic API resource into ObjectDocument.
@@ -116,9 +121,9 @@ impl From<ObjectDocument> for Project {
                 seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: object_document.created_by.to_string(),
+            created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
-            dynamic: false, // Meaningful information?
+            dynamic: object_document.dynamic,
         }
     }
 }
@@ -130,7 +135,7 @@ impl TryFrom<Project> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
-            resource_type: ObjectType::PROJECT,
+            resource_type: ObjectType::PROJECT as u8,
             resource_status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
@@ -142,7 +147,7 @@ impl TryFrom<Project> for ObjectDocument {
             labels: convert_proto_to_key_value(project.key_values)?,
             dataclass: DataClass::try_from(project.data_class)?,
             created_at: project.created_at.unwrap_or_default().seconds,
-            created_by: DieselUlid::from_str(&project.created_by)?,
+            dynamic: project.dynamic,
         })
     }
 }
@@ -162,9 +167,9 @@ impl From<ObjectDocument> for Collection {
                 seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: object_document.created_by.to_string(),
+            created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
-            dynamic: false, // Needed information?
+            dynamic: object_document.dynamic,
         }
     }
 }
@@ -176,7 +181,7 @@ impl TryFrom<Collection> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
-            resource_type: ObjectType::COLLECTION,
+            resource_type: ObjectType::COLLECTION as u8,
             resource_status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
@@ -188,7 +193,7 @@ impl TryFrom<Collection> for ObjectDocument {
             labels: convert_proto_to_key_value(collection.key_values)?,
             dataclass: DataClass::try_from(collection.data_class)?,
             created_at: collection.created_at.unwrap_or_default().seconds,
-            created_by: DieselUlid::from_str(&collection.created_by)?,
+            dynamic: collection.dynamic,
         })
     }
 }
@@ -208,9 +213,9 @@ impl From<ObjectDocument> for Dataset {
                 seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: object_document.created_by.to_string(),
+            created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
-            dynamic: false, // Needed information?
+            dynamic: object_document.dynamic,
         }
     }
 }
@@ -222,7 +227,7 @@ impl TryFrom<Dataset> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
-            resource_type: ObjectType::DATASET,
+            resource_type: ObjectType::DATASET as u8,
             resource_status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
@@ -234,7 +239,7 @@ impl TryFrom<Dataset> for ObjectDocument {
             labels: convert_proto_to_key_value(dataset.key_values)?,
             dataclass: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
-            created_by: DieselUlid::from_str(&dataset.created_by)?,
+            dynamic: dataset.dynamic,
         })
     }
 }
@@ -254,9 +259,9 @@ impl From<ObjectDocument> for Object {
                 seconds: object_document.created_at,
                 nanos: 0,
             }),
-            created_by: object_document.created_by.to_string(),
+            created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
-            dynamic: false, // Needed information?
+            dynamic: false, // Objects are alywas persistent
             hashes: vec![],
         }
     }
@@ -269,7 +274,7 @@ impl TryFrom<Object> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&object.id)?,
-            resource_type: ObjectType::OBJECT,
+            resource_type: ObjectType::OBJECT as u8,
             resource_status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
@@ -277,7 +282,7 @@ impl TryFrom<Object> for ObjectDocument {
             labels: convert_proto_to_key_value(object.key_values)?,
             dataclass: DataClass::try_from(object.data_class)?,
             created_at: object.created_at.unwrap_or_default().seconds,
-            created_by: DieselUlid::from_str(&object.created_by)?,
+            dynamic: object.dynamic,
         })
     }
 }
@@ -339,12 +344,53 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn create_index(
+    pub async fn get_or_create_index(
         &self,
         index_name: &str,
         primary_key: Option<&str>, // Has to be unique index document attribute, so most likely 'id'
-    ) -> anyhow::Result<TaskInfo> {
-        Ok(self.client.create_index(index_name, primary_key).await?)
+    ) -> anyhow::Result<Index> {
+        Ok(if let Ok(index) = self.client.get_index(index_name).await {
+            index
+        } else {
+            // Create index in Meilisearch server
+            let index = if let Ok(index) = self
+                .client
+                .create_index(index_name, primary_key)
+                .await?
+                .wait_for_completion(&self.client, None, None)
+                .await?
+                .try_make_index(&self.client)
+            {
+                index
+            } else {
+                bail!("Index creation failed.")
+            };
+
+            // Set the filterable attributes of the index
+            index
+                .set_filterable_attributes([
+                    "object_type",      // > 2
+                    "object_type_name", // IN [PROJECT, DATASET]
+                    "resource_status",  // Jo
+                    "size",
+                    "labels.key",
+                    "labels.value",
+                    "labels.variant",
+                    "dataclass",
+                    "created_at",
+                ])
+                .await?;
+
+            // Set the sortable attributes of the index
+            index
+                .set_sortable_attributes(["size", "object_type", "created_at"])
+                .await?;
+
+            //ToDo: Exclude fields from search?
+            //index.set_searchable_attributes(&[]).await?;
+
+            index
+        })
     }
 
     ///ToDo: Rust Doc
@@ -352,6 +398,7 @@ impl MeilisearchClient {
         &self,
         index_name: &str,
     ) -> anyhow::Result<Vec<T>> {
+        // Empty search to get all documents in index
         let result = self
             .client
             .index(index_name)

@@ -22,6 +22,7 @@ impl DatabaseHandler {
         user_id: DieselUlid,
         is_dataproxy: bool,
     ) -> Result<ObjectWithRelations> {
+        // Init transaction
         let mut client = self.database.get_client().await?;
         let mut object = request.into_new_db_object(user_id)?;
 
@@ -42,6 +43,10 @@ impl DatabaseHandler {
 
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+
+        // Create object in database
+        let mut object = request.into_new_db_object(user_id)?;
+        object.create(transaction_client).await?;
         let create_result = object.create(transaction_client).await;
 
         if is_dataproxy && create_result.is_err() {
@@ -57,6 +62,7 @@ impl DatabaseHandler {
             return Err(anyhow!("Conflicting value")); // Placeholder
         }
 
+        // Create internal relation in database
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => {
@@ -87,8 +93,9 @@ impl DatabaseHandler {
                     DashMap::from_iter([(parent.get_id()?, ir)])
                 }
             };
+        transaction.commit().await?;
 
-        // Fetch all object paths
+        // Fetch all object paths for the notification subjects
         let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
             vec![Hierarchy {
                 project_id: object.id.to_string(),
@@ -97,7 +104,7 @@ impl DatabaseHandler {
                 object_id: None,
             }]
         } else {
-            object.fetch_object_hierarchies(transaction_client).await?
+            object.fetch_object_hierarchies(&client).await?
         };
 
         // Create DTO which combines the object and its internal relations
@@ -109,7 +116,7 @@ impl DatabaseHandler {
             outbound_belongs_to: Json(DashMap::default()),
         };
 
-        // Try to emit object created notification
+        // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler
             .register_resource_event(&object_with_rel, object_hierarchies, EventVariant::Created)
@@ -117,11 +124,11 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
             // Commit transaction and return
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_with_rel)
         }
     }

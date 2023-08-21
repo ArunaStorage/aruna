@@ -8,9 +8,9 @@ use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
-use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::delete_request_types::DeleteRequest;
@@ -39,16 +39,19 @@ impl ProjectService for ProjectServiceImpl {
     ) -> Result<Response<CreateProjectResponse>> {
         log_received!(&request);
 
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
         // Extract token from request and check permissions
         let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
+            get_token_from_md(&request_metadata),
             "Token authentication error"
         );
 
-        let request = CreateRequest::Project(request.into_inner());
-
-        let ctx = Context::default();
-
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()])
+                .await,
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![ctx])
@@ -57,7 +60,9 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         // Create project in database
-        let object_with_rel = tonic_internal!(
+        let request = CreateRequest::Project(inner_request);
+
+        let project = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
                 .await,
@@ -65,23 +70,18 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         // Update local cache
-        self.cache.add_object(object_with_rel.clone());
+        self.cache.add_object(project.clone());
 
         // Add or update project in search index
-        if let Err(err) = self
-            .search_client
-            .add_or_update_stuff::<ObjectDocument>(
-                &[ObjectDocument::from(object_with_rel.object.clone())],
-                MeilisearchIndexes::OBJECT,
-            )
-            .await
-        {
-            log::warn!("Search index update failed: {}", err)
-        }
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         // Create and return gRPC response
         let response = CreateProjectResponse {
-            project: Some(generic_resource::Resource::from(object_with_rel).into_inner()?),
+            project: Some(generic_resource::Resource::from(project).into_inner()?),
         };
 
         return_with_log!(response);
@@ -159,6 +159,7 @@ impl ProjectService for ProjectServiceImpl {
 
         return_with_log!(response);
     }
+
     async fn delete_project(
         &self,
         request: Request<DeleteProjectRequest>,
@@ -185,12 +186,18 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error"
         );
 
+        let mut search_update: Vec<ObjectDocument> = vec![];
         for o in updates {
-            self.cache.remove_object(&o.object.id)
+            self.cache.remove_object(&o.object.id);
+            search_update.push(ObjectDocument::from(o.object))
         }
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         return_with_log!(DeleteProjectResponse {});
     }
+
     async fn update_project_name(
         &self,
         request: Request<UpdateProjectNameRequest>,
@@ -217,6 +224,14 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectNameResponse {
@@ -224,6 +239,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_description(
         &self,
         request: Request<UpdateProjectDescriptionRequest>,
@@ -250,6 +266,14 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
 
@@ -258,6 +282,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_key_values(
         &self,
         request: Request<UpdateProjectKeyValuesRequest>,
@@ -284,6 +309,14 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
 
@@ -292,6 +325,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_data_class(
         &self,
         request: Request<UpdateProjectDataClassRequest>,
@@ -318,6 +352,14 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectDataClassResponse {
@@ -325,6 +367,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn archive_project(
         &self,
         request: Request<ArchiveProjectRequest>,
@@ -349,10 +392,17 @@ impl ProjectService for ProjectServiceImpl {
             self.database_handler.snapshot(request).await,
             "Internal database error."
         );
-        for resource in &resources {
+
+        let mut search_update: Vec<ObjectDocument> = vec![];
+        for resource in resources {
             self.cache
                 .update_object(&resource.object.id, resource.clone());
+            search_update.push(ObjectDocument::from(resource.object))
         }
+
+        // Add or update project in search index
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
+
         let project: generic_resource::Resource = tonic_internal!(
             self.cache
                 .get_object(&old_id)

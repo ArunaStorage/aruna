@@ -6,31 +6,54 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
+        // Extract parameter from request
+        let dataclass = request.get_dataclass()?;
+        let id = request.get_id()?;
+
+        // Init transaction
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let dataclass = request.get_dataclass()?;
-        let id = request.get_id()?;
-        let old_class: i32 = Object::get(id, transaction_client)
+
+        // Update object in database
+        let old_object = Object::get(id, transaction_client)
             .await?
-            .ok_or(anyhow!("Resource not found."))?
-            .data_class
-            .into();
-        if old_class < dataclass.clone().into() {
+            .ok_or(anyhow!("Resource not found."))?;
+
+        if old_object.data_class < dataclass {
             return Err(anyhow!("Dataclasses can only be relaxed."));
         }
+
         Object::update_dataclass(id, dataclass, transaction_client).await?;
         transaction.commit().await?;
-        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
 
-        Ok(object_with_relations)
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?; // Why not just modify the original object?
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
+
     pub async fn update_name(&self, request: NameUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
@@ -39,9 +62,28 @@ impl DatabaseHandler {
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
         transaction.commit().await?;
-        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
-        Ok(object_with_relations)
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
+
     pub async fn update_description(
         &self,
         request: DescriptionUpdate,
@@ -53,9 +95,28 @@ impl DatabaseHandler {
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
         transaction.commit().await?;
-        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
-        Ok(object_with_relations)
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
+
     pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
@@ -83,9 +144,28 @@ impl DatabaseHandler {
             ));
         }
         transaction.commit().await?;
-        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
-        Ok(object_with_relations)
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
+
     pub async fn update_grpc_object(
         &self,
         request: UpdateObjectRequest,
@@ -131,7 +211,7 @@ impl DatabaseHandler {
                 let mut relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            transaction.commit().await?;
+
             (id, true)
         } else {
             // Update in place
@@ -158,10 +238,29 @@ impl DatabaseHandler {
                 let mut relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            transaction.commit().await?;
+
             (id, false)
         };
-        let object_with_relations = Object::get_object_with_relations(&id, &client).await?;
-        Ok((object_with_relations, flag))
+        transaction.commit().await?;
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok((object_plus, flag))
+        }
     }
 }
