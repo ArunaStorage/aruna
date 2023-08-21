@@ -8,9 +8,9 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::update_request_types::UpdateObject;
-use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -66,8 +66,11 @@ impl ObjectService for ObjectServiceImpl {
         self.cache.add_object(object_plus.clone());
 
         // Add or update object in search index
-        self.add_or_update_search(vec![ObjectDocument::from(object_plus.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object_plus.object.clone())],
+        )
+        .await;
 
         let generic_object: generic_resource::Resource =
             tonic_invalid!(object_plus.try_into(), "Invalid object");
@@ -279,8 +282,11 @@ impl ObjectService for ObjectServiceImpl {
         self.cache.update_object(&object.object.id, object.clone());
 
         // Add or update object in search index
-        self.add_or_update_search(vec![ObjectDocument::from(object.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+        .await;
 
         let object: generic_resource::Resource =
             tonic_internal!(object.try_into(), "Object conversion error");
@@ -319,8 +325,11 @@ impl ObjectService for ObjectServiceImpl {
         self.cache.add_object(new.clone());
 
         // Add or update object in search index
-        self.add_or_update_search(vec![ObjectDocument::from(new.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(new.object.clone())],
+        )
+        .await;
 
         let converted: generic_resource::Resource =
             tonic_internal!(new.try_into(), "Conversion error");
@@ -363,7 +372,7 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         // Add or update object(s) in search index
-        self.add_or_update_search(search_update).await;
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let response = DeleteObjectResponse {};
 
@@ -441,23 +450,5 @@ impl ObjectService for ObjectServiceImpl {
         let response = GetObjectsResponse { objects: res? };
 
         return_with_log!(response);
-    }
-}
-
-impl ObjectServiceImpl {
-    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update project in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    index_updates.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
     }
 }

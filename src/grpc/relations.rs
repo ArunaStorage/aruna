@@ -5,9 +5,9 @@ use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::relations_request_types::ModifyRelations;
 use crate::search::meilisearch_client::MeilisearchClient;
-use crate::search::meilisearch_client::MeilisearchIndexes;
 use crate::search::meilisearch_client::ObjectDocument;
 use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
@@ -65,8 +65,11 @@ impl RelationsService for RelationsServiceImpl {
         self.cache.update_object(&object.object.id, object.clone());
 
         // Add or update object in search index
-        self.add_or_update_search(vec![ObjectDocument::from(object.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+        .await;
 
         return_with_log!(ModifyRelationsResponse {});
     }
@@ -98,23 +101,5 @@ impl RelationsService for RelationsServiceImpl {
         let graph = tonic_invalid!(self.cache.get_hierarchy(&id), "Invalid id");
         let result = GetHierarchyResponse { graph: Some(graph) };
         return_with_log!(result);
-    }
-}
-
-impl RelationsServiceImpl {
-    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update project in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    index_updates.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
     }
 }

@@ -10,9 +10,9 @@ use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
-use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -71,8 +71,11 @@ impl CollectionService for CollectionServiceImpl {
         self.cache.add_object(collection.clone());
 
         // Add or update collection in search index
-        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
 
         let generic_collection: generic_resource::Resource =
             tonic_invalid!(collection.try_into(), "Invalid collection");
@@ -190,7 +193,7 @@ impl CollectionService for CollectionServiceImpl {
         }
 
         // Add or update collection in search index
-        self.add_or_update_search(search_update).await;
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let response = DeleteCollectionResponse {};
 
@@ -225,8 +228,11 @@ impl CollectionService for CollectionServiceImpl {
             .update_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -265,8 +271,11 @@ impl CollectionService for CollectionServiceImpl {
             .update_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -305,8 +314,11 @@ impl CollectionService for CollectionServiceImpl {
             .update_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -344,8 +356,11 @@ impl CollectionService for CollectionServiceImpl {
             .update_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -388,7 +403,7 @@ impl CollectionService for CollectionServiceImpl {
         }
 
         // Add or update collection in search index
-        self.add_or_update_search(search_update).await;
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let collection: generic_resource::Resource = tonic_internal!(
             self.cache
@@ -402,23 +417,5 @@ impl CollectionService for CollectionServiceImpl {
             collection: Some(collection.into_inner()?),
         };
         return_with_log!(response);
-    }
-}
-
-impl CollectionServiceImpl {
-    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    index_updates.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
     }
 }

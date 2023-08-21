@@ -8,9 +8,9 @@ use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
-use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::delete_request_types::DeleteRequest;
@@ -69,8 +69,11 @@ impl ProjectService for ProjectServiceImpl {
         self.cache.add_object(project.clone());
 
         // Add or update project in search index
-        self.add_or_update_search(vec![ObjectDocument::from(project.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         // Create and return gRPC response
         let response = CreateProjectResponse {
@@ -186,7 +189,7 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update project in search index
-        self.add_or_update_search(search_update).await;
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         return_with_log!(DeleteProjectResponse {});
     }
@@ -219,8 +222,11 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        self.add_or_update_search(vec![ObjectDocument::from(project.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
@@ -258,8 +264,11 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        self.add_or_update_search(vec![ObjectDocument::from(project.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
@@ -298,8 +307,11 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        self.add_or_update_search(vec![ObjectDocument::from(project.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
@@ -338,8 +350,11 @@ impl ProjectService for ProjectServiceImpl {
             .update_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        self.add_or_update_search(vec![ObjectDocument::from(project.object.clone())])
-            .await;
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
 
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
@@ -382,7 +397,7 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update project in search index
-        self.add_or_update_search(search_update).await;
+        grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let project: generic_resource::Resource = tonic_internal!(
             self.cache
@@ -395,23 +410,5 @@ impl ProjectService for ProjectServiceImpl {
             project: Some(project.into_inner()?),
         };
         return_with_log!(response);
-    }
-}
-
-impl ProjectServiceImpl {
-    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
-        // Add or update project in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    index_updates.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
     }
 }
