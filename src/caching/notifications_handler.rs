@@ -75,22 +75,28 @@ impl NotificationHandler {
                     )
                     .await
                     {
-                        Ok(_) => {
-                            match &nats_message.reply {
-                                Some(reply_subject) => {
-                                    natsio_handler.acknowledge_raw(reply_subject).await?;
-
-                                    log::info!("Cache update and acknowledgement successful.")
-                                }
-                                None => todo!(),
-                            };
-                        }
-                        Err(err) => {
-                            // For now just log the error.
-                            // Nats re-delivers not acknowledged messages every 30s.
-                            log::warn!("Cache update failed: {err}")
-                        }
+                        Ok(_) => log::info!("NotificationHandler cache update successful"),
+                        Err(err) => log::error!("NotificationHandler cache update failed: {err}"),
                     }
+
+                    // Acknowlege received message in every case becaue the only way cache update can fail is through the database query.
+                    //   We have to trust that messages will only be sent if all database operations have been
+                    //   successful in advance and the database has a consistent status in relation to the message being sent.
+                    //   This means that in case of an error, the message does not represent the current state of the database,
+                    //   but is faulty or the database itself is not accessible.
+                    match &nats_message.reply {
+                        Some(reply_subject) => {
+                            match natsio_handler.acknowledge_raw(reply_subject).await {
+                                Ok(_) => log::info!(
+                                    "NotificationHandler message acknowledgement successful"
+                                ),
+                                Err(err) => log::info!(
+                                    "NotificationHandler message acknowledgement failed: {err}"
+                                ),
+                            }
+                        }
+                        None => log::error!("Nats message "),
+                    };
                 }
             }
         });
