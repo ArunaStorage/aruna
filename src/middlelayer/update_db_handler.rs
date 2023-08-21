@@ -149,7 +149,7 @@ impl DatabaseHandler {
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
-        
+
         // Fetch hierarchies and object relations for notifications
         let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
 
@@ -246,7 +246,7 @@ impl DatabaseHandler {
                 let mut relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
-            
+
             (id, false)
         };
 

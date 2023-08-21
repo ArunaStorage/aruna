@@ -3,6 +3,7 @@ use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::{database::dsls::object_dsl::Object, middlelayer::delete_request_types::DeleteRequest};
 use anyhow::Result;
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
@@ -40,10 +41,30 @@ impl DatabaseHandler {
                 vec![id]
             }
         };
-        transaction.commit().await?;
 
-        let client = self.database.get_client().await?;
-        let result = Object::get_objects_with_relations(&resources, &client).await?;
-        Ok(result)
+        // Fetch hierarchies and object relations for notifications
+        let objects_plus =
+            Object::get_objects_with_relations(&resources, &transaction_client).await?;
+
+        for object_plus in &objects_plus {
+            let hierarchies = object_plus
+                .object
+                .fetch_object_hierarchies(transaction_client)
+                .await?;
+
+            if let Err(err) = self
+                .natsio_handler
+                .register_resource_event(object_plus, hierarchies, EventVariant::Updated)
+                .await
+            {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                transaction.rollback().await?;
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+        }
+
+        transaction.commit().await?;
+        Ok(objects_plus)
     }
 }
