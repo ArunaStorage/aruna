@@ -64,6 +64,7 @@ impl DatabaseHandler {
                         object.id,
                         ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
                     )]);
+
                     User::add_user_permission(transaction_client, &user_id, perms).await?;
                     DashMap::default()
                 }
