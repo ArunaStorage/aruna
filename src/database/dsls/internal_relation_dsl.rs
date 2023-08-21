@@ -29,9 +29,11 @@ pub struct InternalRelation {
     pub id: DieselUlid,
     pub origin_pid: DieselUlid,
     pub origin_type: ObjectType,
+    pub origin_name: String,
     pub relation_name: String,
     pub target_pid: DieselUlid,
     pub target_type: ObjectType,
+    pub target_name: String,
 }
 
 pub const INTERNAL_RELATION_VARIANT_BELONGS_TO: &str = "BELONGS_TO";
@@ -43,8 +45,8 @@ pub const INTERNAL_RELATION_VARIANT_POLICY: &str = "POLICY";
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type) VALUES (
-            $1, $2, $3, $4, $5, $6
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, origin_name, relation_name, target_pid, target_type, target_name) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8
         );";
 
         let prepared = client.prepare(query).await?;
@@ -56,9 +58,11 @@ impl CrudDb for InternalRelation {
                     &self.id,
                     &self.origin_pid,
                     &self.origin_type,
+                    &self.origin_name,
                     &self.relation_name,
                     &self.target_pid,
                     &self.target_type,
+                    &self.target_name,
                 ],
             )
             .await?;
@@ -111,7 +115,7 @@ impl InternalRelation {
         Ok(())
     }
     pub async fn batch_create(relations: &Vec<InternalRelation>, client: &Client) -> Result<()> {
-        let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type)\
+        let query = "COPY internal_relations (id, origin_pid, origin_type, origin_name, relation_name, target_pid, target_type, target_name)\
         FROM STDIN BINARY;";
         let sink: CopyInSink<_> = client.copy_in(query).await?;
         let writer = BinaryCopyInWriter::new(
@@ -121,8 +125,10 @@ impl InternalRelation {
                 Type::UUID,
                 ObjectType::get_type(),
                 Type::VARCHAR,
+                Type::VARCHAR,
                 Type::UUID,
                 ObjectType::get_type(),
+                Type::VARCHAR,
             ],
         );
         pin_mut!(writer);
@@ -133,9 +139,11 @@ impl InternalRelation {
                     &relation.id,
                     &relation.origin_pid,
                     &relation.origin_type,
+                    &relation.origin_name,
                     &relation.relation_name,
                     &relation.target_pid,
                     &relation.target_type,
+                    &relation.target_name,
                 ])
                 .await?;
         }
@@ -163,9 +171,11 @@ impl InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: *replace,
             origin_type: self.origin_type,
+            origin_name: self.origin_name.clone(),
             relation_name: self.relation_name.clone(),
             target_pid: self.target_pid,
             target_type: self.target_type,
+            target_name: self.target_name.clone(),
         }
     }
     pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
