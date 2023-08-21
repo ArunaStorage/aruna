@@ -10,6 +10,7 @@ use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
@@ -27,7 +28,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
-crate::impl_grpc_server!(DatasetServiceImpl);
+crate::impl_grpc_server!(DatasetServiceImpl, search_client: Arc<MeilisearchClient>);
 
 #[tonic::async_trait]
 impl DatasetService for DatasetServiceImpl {
@@ -59,17 +60,21 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let object_with_rel = tonic_internal!(
+        let dataset = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        self.cache.add_object(object_with_rel.clone());
+        self.cache.add_object(dataset.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
+            .await;
 
         let generic_dataset: generic_resource::Resource =
-            tonic_invalid!(object_with_rel.try_into(), "Invalid dataset");
+            tonic_invalid!(dataset.try_into(), "Invalid dataset");
 
         let response = CreateDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -177,9 +182,14 @@ impl DatasetService for DatasetServiceImpl {
             "Internal database error"
         );
 
+        let mut search_update: Vec<ObjectDocument> = vec![];
         for o in updates {
             self.cache.remove_object(&o.object.id);
+            search_update.push(ObjectDocument::from(o.object))
         }
+
+        // Add or update project in search index
+        self.add_or_update_search(search_update).await;
 
         let response = DeleteDatasetResponse {};
 
@@ -213,6 +223,11 @@ impl DatasetService for DatasetServiceImpl {
         );
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
+            .await;
+
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
@@ -248,6 +263,11 @@ impl DatasetService for DatasetServiceImpl {
         );
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
+            .await;
+
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
@@ -282,6 +302,11 @@ impl DatasetService for DatasetServiceImpl {
         );
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
+            .await;
+
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
@@ -317,6 +342,11 @@ impl DatasetService for DatasetServiceImpl {
         );
         self.cache
             .update_object(&dataset.object.id, dataset.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset.object.clone())])
+            .await;
+
         let dataset: generic_resource::Resource =
             tonic_internal!(dataset.try_into(), "Dataset conversion error");
 
@@ -354,6 +384,10 @@ impl DatasetService for DatasetServiceImpl {
         self.cache
             .update_object(&dataset[0].object.id, dataset[0].clone());
 
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(dataset[0].object.clone())])
+            .await;
+
         let dataset: generic_resource::Resource = tonic_internal!(
             self.cache
                 .get_object(&new_id)
@@ -366,5 +400,23 @@ impl DatasetService for DatasetServiceImpl {
             dataset: Some(dataset.into_inner()?),
         };
         return_with_log!(response);
+    }
+}
+
+impl DatasetServiceImpl {
+    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    index_updates.as_slice(),
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
     }
 }
