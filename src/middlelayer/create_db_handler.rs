@@ -48,6 +48,7 @@ impl DatabaseHandler {
                     DashMap::from_iter([(parent.get_id()?, ir)])
                 }
             };
+        transaction.commit().await?;
 
         // Fetch all object paths for the notification subjects
         let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
@@ -58,7 +59,7 @@ impl DatabaseHandler {
                 object_id: None,
             }]
         } else {
-            object.fetch_object_hierarchies(transaction_client).await?
+            object.fetch_object_hierarchies(&client).await?
         };
 
         // Create DTO which combines the object and its internal relations
@@ -78,11 +79,11 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
             // Commit transaction and return
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_with_rel)
         }
     }

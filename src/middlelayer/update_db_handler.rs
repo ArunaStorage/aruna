@@ -32,13 +32,11 @@ impl DatabaseHandler {
         }
 
         Object::update_dataclass(id, dataclass, transaction_client).await?;
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
-        let hierarchies = old_object
-            .fetch_object_hierarchies(transaction_client)
-            .await?;
-
-        let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let object_plus = Object::get_object_with_relations(&id, &client).await?; // Why not just modify the original object?
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
@@ -48,10 +46,10 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_plus)
         }
     }
@@ -63,14 +61,12 @@ impl DatabaseHandler {
         let name = request.get_name();
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
 
-        let hierarchies = object_plus
-            .object
-            .fetch_object_hierarchies(transaction_client)
-            .await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
@@ -80,10 +76,10 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_plus)
         }
     }
@@ -98,14 +94,12 @@ impl DatabaseHandler {
         let description = request.get_description();
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
 
-        let hierarchies = object_plus
-            .object
-            .fetch_object_hierarchies(transaction_client)
-            .await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
@@ -115,10 +109,10 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_plus)
         }
     }
@@ -149,14 +143,12 @@ impl DatabaseHandler {
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
 
-        let hierarchies = object_plus
-            .object
-            .fetch_object_hierarchies(transaction_client)
-            .await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
@@ -166,10 +158,10 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok(object_plus)
         }
     }
@@ -249,14 +241,12 @@ impl DatabaseHandler {
 
             (id, false)
         };
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &transaction_client).await?;
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
 
-        let hierarchies = object_plus
-            .object
-            .fetch_object_hierarchies(transaction_client)
-            .await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
@@ -266,10 +256,10 @@ impl DatabaseHandler {
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
-            transaction.rollback().await?;
+            //transaction.rollback().await?;
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
-            transaction.commit().await?;
+            //transaction.commit().await?;
             Ok((object_plus, flag))
         }
     }

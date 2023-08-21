@@ -1,5 +1,6 @@
 use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_VERSION;
-use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
+use crate::database::enums::ObjectType;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::{database::dsls::object_dsl::Object, middlelayer::delete_request_types::DeleteRequest};
 use anyhow::Result;
@@ -42,15 +43,22 @@ impl DatabaseHandler {
             }
         };
 
+        transaction.commit().await?;
+
         // Fetch hierarchies and object relations for notifications
-        let objects_plus =
-            Object::get_objects_with_relations(&resources, &transaction_client).await?;
+        let objects_plus = Object::get_objects_with_relations(&resources, &client).await?;
 
         for object_plus in &objects_plus {
-            let hierarchies = object_plus
-                .object
-                .fetch_object_hierarchies(transaction_client)
-                .await?;
+            let hierarchies = if object_plus.object.object_type == ObjectType::PROJECT {
+                vec![Hierarchy {
+                    project_id: object_plus.object.id.to_string(),
+                    collection_id: None,
+                    dataset_id: None,
+                    object_id: None,
+                }]
+            } else {
+                object_plus.object.fetch_object_hierarchies(&client).await?
+            };
 
             if let Err(err) = self
                 .natsio_handler
@@ -59,12 +67,12 @@ impl DatabaseHandler {
             {
                 // Log error, rollback transaction and return
                 log::error!("{}", err);
-                transaction.rollback().await?;
+                //transaction.rollback().await?;
                 return Err(anyhow::anyhow!("Notification emission failed"));
             }
         }
 
-        transaction.commit().await?;
+        //transaction.commit().await?;
         Ok(objects_plus)
     }
 }
