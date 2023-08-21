@@ -123,7 +123,7 @@ impl EventNotificationService for NotificationServiceImpl {
         };
 
         // Create stream consumer in database
-        let stream_consumer = StreamConsumer {
+        let mut stream_consumer = StreamConsumer {
             id: consumer_id,
             user_id: if is_proxy { None } else { Some(user_id) },
             config: postgres_types::Json(consumer_config),

@@ -16,7 +16,7 @@ impl PrimaryKey for String {}
 
 #[async_trait::async_trait]
 pub trait CrudDb: Sized {
-    async fn create(&self, client: &Client) -> Result<()>;
+    async fn create(&mut self, client: &Client) -> Result<()>;
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>>;
     async fn all(client: &Client) -> Result<Vec<Self>>;
     async fn delete(&self, client: &Client) -> Result<()>;

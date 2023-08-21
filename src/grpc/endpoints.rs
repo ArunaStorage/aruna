@@ -1,23 +1,23 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::caching::structs::PubKey;
+use crate::caching::structs::PubKeyEnum;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::storage::models::v2::Endpoint;
 use aruna_rust_api::api::storage::services::v2::endpoint_service_server::EndpointService;
 use aruna_rust_api::api::storage::services::v2::{
-    CreateEndpointRequest, CreateEndpointResponse, DeleteEndpointRequest, DeleteEndpointResponse,
-    FullSyncEndpointRequest, FullSyncEndpointResponse, GetDefaultEndpointRequest,
-    GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse, GetEndpointsRequest,
-    GetEndpointsResponse,
+    get_endpoint_request, CreateEndpointRequest, CreateEndpointResponse, DeleteEndpointRequest,
+    DeleteEndpointResponse, FullSyncEndpointRequest, FullSyncEndpointResponse,
+    GetDefaultEndpointRequest, GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse,
+    GetEndpointsRequest, GetEndpointsResponse,
 };
 use jsonwebtoken::DecodingKey;
 use std::sync::Arc;
 use tonic::{Request, Response, Result, Status};
 
-crate::impl_grpc_server!(EndpointServiceImpl);
+crate::impl_grpc_server!(EndpointServiceImpl, default_endpoint: String);
 
 #[tonic::async_trait]
 impl EndpointService for EndpointServiceImpl {
@@ -38,18 +38,30 @@ impl EndpointService for EndpointServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
+
+        let key = if request.0.pubkey.starts_with("-----BEGIN PUBLIC KEY-----") {
+            tonic_invalid!(
+                DecodingKey::from_ed_pem(request.0.pubkey.as_bytes()),
+                "Invalid pubkey"
+            )
+        } else {
+            let public_pem = format!(
+                "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                &request.0.pubkey
+            );
+            tonic_invalid!(
+                DecodingKey::from_ed_pem(public_pem.as_bytes()),
+                "Invalid pubkey"
+            )
+        };
+
         let (ep, pk) = tonic_invalid!(
             self.database_handler.create_endpoint(request).await,
             "Invalid create endpoint request"
         );
 
-        let test = tonic_invalid!(
-            DecodingKey::from_ed_components(&pk.pubkey),
-            "Invalid pubkey"
-        );
-
         self.cache
-            .add_pubkey(pk.id as i32, PubKey::DataProxy((pk.pubkey, test, ep.id)));
+            .add_pubkey(pk.id as i32, PubKeyEnum::DataProxy((pk.pubkey, key, ep.id)));
 
         let result = CreateEndpointResponse {
             endpoint: Some(tonic_internal!(ep.try_into(), "Endpoint conversion error")),
@@ -162,7 +174,13 @@ impl EndpointService for EndpointServiceImpl {
         );
 
         let default = tonic_internal!(
-            self.database_handler.get_default_endpoint().await,
+            self.database_handler
+                .get_endpoint(GetEP(GetEndpointRequest {
+                    endpoint: Some(get_endpoint_request::Endpoint::EndpointId(
+                        self.default_endpoint.to_string()
+                    ))
+                }))
+                .await,
             "Default endpoint not found"
         );
         let response = GetDefaultEndpointResponse {

@@ -25,7 +25,7 @@ async fn create_stream_consumer() {
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
-    let stream_consumer = StreamConsumer {
+    let mut stream_consumer = StreamConsumer {
         id: DieselUlid::generate(),
         user_id: None,
         config: postgres_types::Json(Config {
@@ -59,7 +59,7 @@ async fn get_stream_consumer() {
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
-    let stream_consumer = StreamConsumer {
+    let mut stream_consumer = StreamConsumer {
         id: DieselUlid::generate(),
         user_id: None,
         config: postgres_types::Json(Config {
@@ -91,7 +91,7 @@ async fn delete_stream_consumer() {
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
-    let stream_consumer = StreamConsumer {
+    let mut stream_consumer = StreamConsumer {
         id: DieselUlid::generate(),
         user_id: None,
         config: postgres_types::Json(Config {
@@ -138,7 +138,7 @@ async fn notification_test() {
     let client = db.get_client().await.unwrap();
 
     // Create random user
-    let user = common::test_utils::new_user(vec![]);
+    let mut user = common::test_utils::new_user(vec![]);
     let random_user_id = user.id;
     user.create(&client).await.unwrap();
 

@@ -25,7 +25,7 @@ async fn test_archive() {
         ObjectMapping::OBJECT(DieselUlid::generate()),
     ];
 
-    let user = test_utils::new_user(ulids.clone());
+    let mut user = test_utils::new_user(ulids.clone());
     let mut objects = Vec::new();
     for u in &ulids {
         match u {
@@ -73,7 +73,7 @@ async fn test_snapshot_collection() {
     let d2_id = DieselUlid::generate();
     let o1_id = DieselUlid::generate();
     let o2_id = DieselUlid::generate();
-    let user = test_utils::new_user(vec![
+    let mut user = test_utils::new_user(vec![
         ObjectMapping::COLLECTION(collection_id),
         ObjectMapping::DATASET(d1_id),
         ObjectMapping::DATASET(d2_id),
@@ -132,7 +132,7 @@ async fn test_snapshot_dataset() {
     let dataset_id = DieselUlid::generate();
     let o1_id = DieselUlid::generate();
     let o2_id = DieselUlid::generate();
-    let user = test_utils::new_user(vec![
+    let mut user = test_utils::new_user(vec![
         ObjectMapping::DATASET(dataset_id),
         ObjectMapping::OBJECT(o1_id),
         ObjectMapping::OBJECT(o2_id),

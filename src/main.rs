@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use aruna_rust_api::api::{
@@ -9,24 +9,28 @@ use aruna_rust_api::api::{
         endpoint_service_server::EndpointServiceServer, object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
         relations_service_server::RelationsServiceServer,
-        search_service_server::SearchServiceServer, user_service_server::UserServiceServer,
+        search_service_server::SearchServiceServer,
+        storage_status_service_server::StorageStatusServiceServer,
+        user_service_server::UserServiceServer,
     },
 };
 use aruna_server::{
     auth::{permission_handler::PermissionHandler, token_handler::TokenHandler},
     caching::{cache::Cache, notifications_handler::NotificationHandler},
-    database::{self, dsls::endpoint_dsl::Endpoint},
+    database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
     grpc::{
         collections::CollectionServiceImpl, datasets::DatasetServiceImpl,
-        endpoints::EndpointServiceImpl, notification::NotificationServiceImpl,
-        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
-        search::SearchServiceImpl, users::UserServiceImpl,
+        endpoints::EndpointServiceImpl, info::StorageStatusServiceImpl,
+        notification::NotificationServiceImpl, object::ObjectServiceImpl,
+        projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
+        users::UserServiceImpl,
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
     utils::mailclient::MailClient,
 };
+use diesel_ulid::DieselUlid;
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
@@ -55,6 +59,7 @@ pub async fn main() -> Result<()> {
     // Init cache
     let cache = Cache::new();
     let cache_arc = Arc::new(cache);
+    cache_arc.sync_cache(db_arc.clone()).await?;
 
     // Init TokenHandler
     let token_handler = TokenHandler::new(
@@ -84,6 +89,7 @@ pub async fn main() -> Result<()> {
         natsio_handler: natsio_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
+    dbg!("Bin hier!");
 
     // NotificationHandler
     let _ = NotificationHandler::new(db_arc.clone(), cache_arc.clone(), natsio_arc.clone()).await?;
@@ -107,14 +113,29 @@ pub async fn main() -> Result<()> {
         None
     };
 
+    let default_endpoint = dotenvy::var("DEFAULT_DATAPROXY_ULID")?;
+
     // Init server builder
     let mut builder = Server::builder().add_service(EndpointServiceServer::new(
-        EndpointServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone()).await,
+        EndpointServiceImpl::new(
+            db_handler_arc.clone(),
+            auth_arc.clone(),
+            cache_arc.clone(),
+            default_endpoint.to_string(),
+        )
+        .await,
     ));
 
     // Check default endpoint -> Only endpoint service available
     let client = db_arc.get_client().await?;
-    if Endpoint::get_default(&client).await?.is_some() {
+
+    dbg!(&default_endpoint.is_empty());
+
+    if !&default_endpoint.is_empty()
+        && Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
+            .await?
+            .is_some()
+    {
         // Add other services
         builder = builder
             .add_service(UserServiceServer::new(
@@ -178,6 +199,14 @@ pub async fn main() -> Result<()> {
                     auth_arc.clone(),
                     cache_arc.clone(),
                     meilisearch_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(StorageStatusServiceServer::new(
+                StorageStatusServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
                 )
                 .await,
             ));

@@ -16,7 +16,7 @@ pub struct ExternalUserId {
 #[async_trait::async_trait]
 impl CrudDb for ExternalUserId {
     //ToDo: Rust Doc
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO external_user_ids 
         (id, external_id, user_id, idp_id) 
       VALUES 

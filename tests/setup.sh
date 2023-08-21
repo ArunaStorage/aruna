@@ -37,5 +37,9 @@ psql "postgres://yugabyte@localhost:5433" -c 'CREATE DATABASE test'
 
 # Import schema (script has to be called from project root)
 psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/src/database/schema.sql
-# Add relation types for testing
-psql "postgres://yugabyte@localhost:5433/test" -c "INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY') "
+
+# Add initial data (script has to be called from project root)
+psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/tests/common/initial_data.sql
+
+
+$Runtime run -d --name fake-keycloak -p 8999:80 -v "$(pwd)/tests/common/keycloak/:/usr/local/apache2/htdocs/" httpd:2.4

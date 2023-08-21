@@ -48,15 +48,14 @@ impl UserService for UserServiceImpl {
             "Token authentication error"
         );
         let request = RegisterUser(request.into_inner());
-        let ctx = Context::self_ctx(); //TODO: Implementation of empty ctx for user registration
-        let _external_id = tonic_auth!(
-            //TODO: Get external_id from token
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+        let external_id = tonic_auth!(
+            self.authorizer.check_unregistered_oidc(&token).await,
             "Unauthorized"
         );
         let (user_id, new_user) = tonic_internal!(
-            // TODO: Add Some(external_id) from token
-            self.database_handler.register_user(request, None).await,
+            self.database_handler
+                .register_user(request, external_id)
+                .await,
             "Internal register user error"
         );
         self.cache.add_user(user_id, new_user);
@@ -314,21 +313,26 @@ impl UserService for UserServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error"
         );
-        let request = GetUser::GetUserRedacted(request.into_inner());
-        let user_id = match tonic_invalid!(request.get_user(), "Invalid user id") {
-            (Some(id), ctx) => {
-                tonic_auth!(
-                    self.authorizer.check_permissions(&token, vec![ctx]).await,
-                    "Unauthorized"
-                );
-                id
-            }
-            (None, ctx) => tonic_auth!(
-                self.authorizer.check_permissions(&token, vec![ctx]).await,
-                "Unauthorized"
-            ),
-        };
-        let user = self.cache.get_user(&user_id);
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::user_ctx(
+                        tonic_invalid!(
+                            DieselUlid::from_str(&request.get_ref().user_id),
+                            "Invalid user_id"
+                        ),
+                        DbPermissionLevel::READ
+                    )]
+                )
+                .await,
+            "Unauthorized"
+        );
+        let user_ulid = tonic_invalid!(
+            DieselUlid::from_str(&request.get_ref().user_id),
+            "Invalid user_id"
+        );
+        let user = self.cache.get_user(&user_ulid);
         let response = GetUserRedactedResponse {
             user: user.map(|user| user.into_redacted()),
         };
@@ -483,6 +487,15 @@ impl UserService for UserServiceImpl {
             ),
             "Token signing failed"
         );
+
+        tonic_internal!(
+            self.database_handler
+                .add_endpoint_to_user(user_id, endpoint.id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        //self.cache.u
 
         // Request S3 credentials from Dataproxy
         let mut endpoint_host_url: String = "".to_string();

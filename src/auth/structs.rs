@@ -11,6 +11,7 @@ pub enum ContextVariant {
     Activated,
     Resource((DieselUlid, DbPermissionLevel)),
     User((DieselUlid, DbPermissionLevel)),
+    SelfUser, // True: Registered, False: Unregistered
     GlobalProxy,
     GlobalAdmin,
 }
@@ -48,7 +49,7 @@ impl Context {
 
     pub fn self_ctx() -> Self {
         Self {
-            variant: ContextVariant::User((DieselUlid::default(), DbPermissionLevel::ADMIN)),
+            variant: ContextVariant::SelfUser,
             allow_service_account: false,
             is_self: true,
         }

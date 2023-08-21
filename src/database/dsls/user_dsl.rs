@@ -54,7 +54,7 @@ pub struct CustomAttributes {
 #[async_trait::async_trait]
 impl CrudDb for User {
     //ToDo: Rust Doc
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
           (id, display_name, external_id, email, attributes, active) 
         VALUES 
@@ -275,6 +275,25 @@ impl User {
         client.execute(&prepared, &[user_id]).await?;
         Ok(())
     }
+
+    //ToDo: Rust Doc
+    pub async fn add_trusted_endpoint(
+        client: &Client,
+        user_id: &DieselUlid,
+        endpoint_id: &DieselUlid,
+    ) -> Result<User> {
+        let query = "UPDATE users
+                SET attributes = jsonb_set(attributes, '{trusted_endpoints}', attributes->'trusted_endpoints' || $1::jsonb, true) 
+                WHERE id = $2 RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let map: DashMap<DieselUlid, Empty, RandomState> =
+            DashMap::from_iter([(endpoint_id.to_owned(), Empty {})]);
+        let row = client.query_one(&prepared, &[&Json(map), user_id]).await?;
+        Ok(User::from_row(&row))
+    }
+
+    //TODO: Remove dataproxy
 }
 
 impl Display for UserAttributes {

@@ -20,7 +20,7 @@ async fn fetch_object_paths() {
     let client = db.get_client().await.unwrap();
 
     // Create random user
-    let user = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
     let random_user_id = user.id;
     user.create(&client).await.unwrap();
 
@@ -132,10 +132,10 @@ async fn create_object() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
@@ -168,7 +168,7 @@ async fn get_object_with_relations_test() {
         })
         .collect::<Vec<_>>();
 
-    let user = test_utils::new_user(object_id_map);
+    let mut user = test_utils::new_user(object_id_map);
     user.create(&client).await.unwrap();
 
     let create_dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
@@ -296,10 +296,10 @@ async fn test_keyvals() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(&client).await.unwrap();
 
-    let create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(&client).await.unwrap();
 
     let kv = KeyValue {
@@ -364,10 +364,10 @@ async fn test_external_relations() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(client).await.unwrap();
     let url = ExternalRelation {
         identifier: "test.test/abc".to_string(),
@@ -437,7 +437,7 @@ async fn test_updates() {
     let col_id = DieselUlid::generate();
     let proj_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
     let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
@@ -499,7 +499,7 @@ async fn test_delete() {
     for _ in 1..5 {
         obj_ids.push(DieselUlid::generate());
     }
-    let user = test_utils::new_user(
+    let mut user = test_utils::new_user(
         obj_ids
             .iter()
             .map(|id| ObjectMapping::OBJECT(*id))
@@ -550,7 +550,7 @@ async fn archive_test() {
         })
         .collect::<Vec<_>>();
     let archive = object_vec.clone();
-    let user = test_utils::new_user(object_mapping);
+    let mut user = test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
     let create_dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);

@@ -23,10 +23,10 @@ async fn test_external_relations() {
 
     let obj_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(obj_id)]);
     user.create(client).await.unwrap();
 
-    let create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_object.create(client).await.unwrap();
     let url = ExternalRelation {
         identifier: "test.test/abc".to_string(),
@@ -110,7 +110,7 @@ async fn get_object_with_relations_test() {
             | ObjectMapping::OBJECT(id) => *id,
         })
         .collect::<Vec<_>>();
-    let user = test_utils::new_user(object_mapping);
+    let mut user = test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
     let create_dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
@@ -239,7 +239,7 @@ async fn delete_relations() {
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![
+    let mut user = test_utils::new_user(vec![
         ObjectMapping::OBJECT(object_id),
         ObjectMapping::DATASET(dataset_id),
     ]);
@@ -315,7 +315,7 @@ async fn get_by() {
     let dataset_id = DieselUlid::generate();
     let object_id = DieselUlid::generate();
 
-    let user = test_utils::new_user(vec![
+    let mut user = test_utils::new_user(vec![
         ObjectMapping::OBJECT(object_id),
         ObjectMapping::DATASET(dataset_id),
     ]);

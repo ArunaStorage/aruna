@@ -136,7 +136,7 @@ impl DatabaseHandler {
         {
             let id = DieselUlid::generate();
             // Create new object
-            let create_object = Object {
+            let mut create_object = Object {
                 id,
                 content_len: old.content_len,
                 count: 1,
@@ -156,7 +156,7 @@ impl DatabaseHandler {
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
-                let relation = UpdateObject::add_parent_relation(id, p)?;
+                let mut relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
             transaction.commit().await?;
@@ -183,7 +183,7 @@ impl DatabaseHandler {
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {
-                let relation = UpdateObject::add_parent_relation(id, p)?;
+                let mut relation = UpdateObject::add_parent_relation(id, p)?;
                 relation.create(transaction_client).await?;
             }
             transaction.commit().await?;

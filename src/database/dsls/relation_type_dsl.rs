@@ -10,7 +10,7 @@ pub struct RelationType {
 
 #[async_trait::async_trait]
 impl CrudDb for RelationType {
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO relation_types (relation_name) VALUES ($1);";
         let prepared = client.prepare(query).await?;
         client.query(&prepared, &[&self.relation_name]).await?;

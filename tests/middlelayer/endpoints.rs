@@ -15,10 +15,10 @@ async fn test_create_ep() {
     // init
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
-    let pk = PubKey {
+    let mut pk = PubKey {
         id: 0,
         proxy: None,
-        pubkey: "SERVER_PUBKEY_DUMMY".to_string(),
+        pubkey: "SERVER_PUBKEY_DUMMY_1".to_string(),
     };
     pk.create(&client).await.unwrap();
 
@@ -35,7 +35,6 @@ async fn test_create_ep() {
     assert_eq!(ep.name, "endpoint_test".to_string());
     assert_eq!(ep.endpoint_variant, EndpointVariant::PERSISTENT);
     assert!(ep.is_public);
-    assert!(!ep.is_default);
     assert!(ep.host_config.0 .0.is_empty());
     assert!(pk.proxy.is_some());
     assert_eq!(pk.pubkey, "test".to_string());
@@ -47,19 +46,18 @@ async fn test_get_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep_id = DieselUlid::generate();
-    let pk = PubKey {
-        id: 0,
+    let mut pk = PubKey {
+        id: 5001,
         proxy: Some(ep_id),
-        pubkey: "SERVER_PUBKEY_DUMMY".to_string(),
+        pubkey: "SERVER_PUBKEY_DUMMY_2".to_string(),
     };
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep_id,
         name: "get_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
         status: EndpointStatus::INITIALIZING,
     };
     endpoint.create(&client).await.unwrap();
@@ -102,8 +100,7 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     let endpoint_two = Endpoint {
         id: ep_two,
@@ -112,8 +109,7 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     let endpoint_three = Endpoint {
         id: ep_three,
@@ -122,11 +118,10 @@ async fn test_get_all() {
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
-    let eps = [&endpoint_one, &endpoint_two, &endpoint_three];
-    for ep in eps {
+    let mut eps = [endpoint_one, endpoint_two, endpoint_three];
+    for ep in eps.iter_mut() {
         ep.create(&client).await.unwrap();
     }
     // test
@@ -143,15 +138,14 @@ async fn test_delete_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep,
         name: "delete_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: false,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(&client).await.unwrap();
 
@@ -168,20 +162,14 @@ async fn test_get_default_ep() {
     let db_handler = init_handler().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
-    let endpoint = Endpoint {
+    let mut endpoint = Endpoint {
         id: ep,
         name: "default_test".to_string(),
         host_config: Json(HostConfigs(Vec::new())),
         endpoint_variant: EndpointVariant::PERSISTENT,
         documentation_object: None,
         is_public: false,
-        is_default: true,
-        status: EndpointStatus::INITIALIZING,
+        status: EndpointStatus::AVAILABLE,
     };
     endpoint.create(&client).await.unwrap();
-
-    // test
-    let default = db_handler.get_default_endpoint().await.unwrap();
-    assert_eq!(endpoint, default);
-    endpoint.delete(&client).await.unwrap();
 }

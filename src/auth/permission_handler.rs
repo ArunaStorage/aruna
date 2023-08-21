@@ -3,6 +3,7 @@ use super::{
     token_handler::{Action, TokenHandler},
 };
 use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
+use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -57,6 +58,7 @@ impl PermissionHandler {
                     //Case 2: FetchInfo
                     //  - Only get functions -> DbPermissionLevel::READ in contexts
                     for ctx in &ctxs {
+                        dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::Activated | ContextVariant::GlobalProxy => {}
                             ContextVariant::Resource((_, perm))
@@ -67,7 +69,7 @@ impl PermissionHandler {
                                     ));
                                 }
                             }
-                            ContextVariant::GlobalAdmin => {
+                            _ => {
                                 return Err(tonic::Status::permission_denied(
                                     "Only get functions allowed",
                                 ))
@@ -108,5 +110,9 @@ impl PermissionHandler {
     ) -> Result<DieselUlid, tonic::Status> {
         let (user_id, _, _) = self.check_permissions_verbose(token, ctxs).await?;
         Ok(user_id)
+    }
+
+    pub async fn check_unregistered_oidc(&self, token: &str) -> Result<String> {
+        Ok(self.token_handler.process_oidc_token(token).await?.sub)
     }
 }

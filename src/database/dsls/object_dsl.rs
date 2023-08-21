@@ -100,15 +100,15 @@ pub struct ObjectWithRelations {
 
 #[async_trait::async_trait]
 impl CrudDb for Object {
-    async fn create(&self, client: &Client) -> Result<()> {
+    async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-        );";
+        ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
 
-        client
-            .query(
+        let row = client
+            .query_one(
                 &prepared,
                 &[
                     &self.id,
@@ -129,6 +129,8 @@ impl CrudDb for Object {
                 ],
             )
             .await?;
+
+        *self = Object::from_row(&row);
         Ok(())
     }
 
@@ -613,6 +615,21 @@ impl PartialEq for ObjectWithRelations {
     }
 }
 impl Eq for ObjectWithRelations {}
+
+pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<ObjectWithRelations>> {
+    let query = "SELECT o.*,
+        COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+        COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+        COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+        FROM objects o
+        LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+        GROUP BY o.id;";
+    let prepared = client.prepare(query).await?;
+    let row = client.query(&prepared, &[]).await?;
+
+    Ok(row.iter().map(ObjectWithRelations::from_row).collect())
+}
 
 impl ObjectWithRelations {
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {

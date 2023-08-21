@@ -12,7 +12,7 @@ impl DatabaseHandler {
         let idx = PubKey::get_max_id(&client).await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (endpoint, mut pubkey) = request.build_endpoint()?;
+        let (mut endpoint, mut pubkey) = request.build_endpoint()?;
         pubkey.id = idx + 1;
         endpoint.create(transaction_client).await?;
         pubkey.create(transaction_client).await?;
@@ -37,12 +37,5 @@ impl DatabaseHandler {
         let id = request.get_id()?;
         Endpoint::delete_by_id(&id, client.client()).await?;
         Ok(())
-    }
-    pub async fn get_default_endpoint(&self) -> Result<Endpoint> {
-        let client = self.database.get_client().await?;
-        let endpoint = Endpoint::get_default(client.client())
-            .await?
-            .ok_or_else(|| anyhow!("No default endpoint set"))?;
-        Ok(endpoint)
     }
 }

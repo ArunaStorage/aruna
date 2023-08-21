@@ -25,7 +25,7 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
 
         // Create object in database
-        let object = request.into_new_db_object(user_id)?;
+        let mut object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
         // Create internal relation in database
@@ -36,7 +36,7 @@ impl DatabaseHandler {
                     let parent = request
                         .get_parent()
                         .ok_or_else(|| anyhow!("No parent provided"))?;
-                    let ir = InternalRelation {
+                    let mut ir = InternalRelation {
                         id: DieselUlid::generate(),
                         origin_pid: parent.get_id()?,
                         origin_type: parent.get_type(),
