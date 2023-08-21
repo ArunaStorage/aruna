@@ -66,12 +66,12 @@ impl DatabaseHandler {
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
                 ObjectType::PROJECT => {
-                    let perms = HashMap::from_iter([(
+                    self.add_permission_to_user(
+                        user_id,
                         object.id,
                         ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
-                    )]);
-
-                    User::add_user_permission(transaction_client, &user_id, perms).await?;
+                    )
+                    .await?;
                     DashMap::default()
                 }
                 _ => {
