@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use aruna_rust_api::api::notification::services::v2::anouncement_event::EventVariant as AnnouncementVariant;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::{
-    EventVariant, Reply, Resource, ResourceEvent, UserEvent,
+    AnouncementEvent, EventVariant, Reply, Resource, ResourceEvent, UserEvent,
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
@@ -22,9 +23,9 @@ use crate::utils::grpc_utils::{checksum_resource, checksum_user};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
-    generate_announcement_subject, generate_endpoint_subject, generate_resource_message_subjects,
-    generate_resource_subject, generate_user_message_subject, generate_user_subject,
-    validate_reply_msg,
+    generate_announcement_message_subject, generate_announcement_subject,
+    generate_endpoint_subject, generate_resource_message_subjects, generate_resource_subject,
+    generate_user_message_subject, generate_user_subject, validate_reply_msg,
 };
 
 // ----- Constants used for notifications -------------------- //
@@ -331,7 +332,7 @@ impl NatsIoHandler {
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
     pub async fn register_user_event(
         &self,
-        user: User,
+        user: &User,
         event_variant: EventVariant,
     ) -> anyhow::Result<()> {
         // Calculate user checksum
@@ -361,6 +362,27 @@ impl NatsIoHandler {
             )
             .await?
         }
+
+        Ok(())
+    }
+
+    /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
+    pub async fn register_announcement_event(
+        &self,
+        announcement_type: AnnouncementVariant,
+    ) -> anyhow::Result<()> {
+        // Generate announcement message subject
+        let subject = generate_announcement_message_subject(&announcement_type);
+
+        // Emit message
+        self.register_event(
+            MessageVariant::AnnouncementEvent(AnouncementEvent {
+                reply: None,
+                event_variant: Some(announcement_type),
+            }),
+            subject,
+        )
+        .await?;
 
         Ok(())
     }
