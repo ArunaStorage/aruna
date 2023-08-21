@@ -1,4 +1,5 @@
-use crate::data_backends::storage_backend::{Location, PartETag, StorageBackend};
+use crate::data_backends::storage_backend::StorageBackend;
+use crate::structs::{ObjectLocation, PartETag};
 use anyhow::{anyhow, Result};
 use aruna_file::transformer::{Sink, Transformer};
 use async_channel::{Receiver, Sender};
@@ -8,7 +9,7 @@ use std::sync::Arc;
 pub struct BufferedS3Sink {
     backend: Arc<Box<dyn StorageBackend>>,
     buffer: BytesMut,
-    target_location: Location,
+    target_location: ObjectLocation,
     upload_id: Option<String>,
     part_number: Option<i32>,
     only_parts: bool,
@@ -22,7 +23,7 @@ impl Sink for BufferedS3Sink {}
 impl BufferedS3Sink {
     pub fn new(
         backend: Arc<Box<dyn StorageBackend>>,
-        target_location: Location,
+        target_location: ObjectLocation,
         upload_id: Option<String>,
         part_number: Option<i32>,
         only_parts: bool,
@@ -89,7 +90,7 @@ impl BufferedS3Sink {
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
-        let pnummer = self
+        let pnumber = self
             .part_number
             .ok_or_else(|| anyhow!("PartNumber expected"))?;
 
@@ -103,18 +104,18 @@ impl BufferedS3Sink {
 
         let tag = tokio::spawn(async move {
             backend_clone
-                .upload_multi_object(receiver, location_clone, up_id, expected_len, pnummer)
+                .upload_multi_object(receiver, location_clone, up_id, expected_len, pnumber)
                 .await
         })
         .await??;
         self.sender.send(tag.etag.to_string()).await?;
         self.tags.push(tag);
-        self.part_number = Some(pnummer + 1);
+        self.part_number = Some(pnumber + 1);
 
         log::debug!(
             "Uploaded part: {:?}, number:{}, size: {}",
             self.upload_id,
-            pnummer,
+            pnumber,
             expected_len
         );
 
@@ -144,7 +145,7 @@ impl BufferedS3Sink {
 impl Transformer for BufferedS3Sink {
     async fn process_bytes(
         &mut self,
-        buf: &mut bytes::BytesMut,
+        buf: &mut BytesMut,
         finished: bool,
         _: bool,
     ) -> Result<bool> {

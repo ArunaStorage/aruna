@@ -27,7 +27,7 @@ impl DataproxyService for ProxyService {
     async fn request_replication(
         &self,
         _request: tonic::Request<RequestReplicationRequest>,
-    ) -> std::result::Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
     /// InitReplication
@@ -38,7 +38,7 @@ impl DataproxyService for ProxyService {
     async fn init_replication(
         &self,
         _request: tonic::Request<InitReplicationRequest>,
-    ) -> std::result::Result<tonic::Response<InitReplicationResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<InitReplicationResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 }

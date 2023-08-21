@@ -8,11 +8,16 @@ use aruna_rust_api::api::storage::models::v2::{
     PermissionLevel, Project, RelationDirection, Status,
 };
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
+use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use s3s::dto::CreateBucketInput;
+use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
+
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -504,6 +509,17 @@ impl TryFrom<GrpcObject> for Object {
     }
 }
 
+impl From<&ResourceIds> for DieselUlid {
+    fn from(value: &ResourceIds) -> Self {
+        match value {
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
+        }
+    }
+}
+
 impl From<Object> for CreateProjectRequest {
     fn from(value: Object) -> Self {
         CreateProjectRequest {
@@ -525,6 +541,392 @@ impl From<Object> for CreateCollectionRequest {
             external_relations: vec![],
             data_class: value.data_class.into(),
             parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(x.to_string())),
+        }
+    }
+}
+
+impl From<Object> for CreateDatasetRequest {
+    fn from(value: Object) -> Self {
+        CreateDatasetRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::ProjectId(x.to_string())),
+        }
+    }
+}
+
+impl From<CreateBucketInput> for Object {
+    fn from(value: CreateBucketInput) -> Self {
+        Object {
+            id: DieselUlid::generate(),
+            name: value.bucket,
+            key_values: vec![],
+            object_status: Status::Available,
+            data_class: DataClass::Private,
+            object_type: ObjectType::PROJECT,
+            hashes: HashMap::default(),
+            dynamic: false,
+            parents: HashSet::default(),
+            children: HashSet::default(),
+            synced: false,
+        }
+    }
+}
+
+impl From<Object> for CreateObjectRequest {
+    fn from(value: Object) -> Self {
+        CreateObjectRequest {
+            name: value.name,
+            description: "".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: value.data_class.into(),
+            parent: value.parents.iter().next().map(|x| aruna_rust_api::api::storage::services::v2::create_object_request::Parent::ProjectId(x.to_string())),
+            hashes: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum ResourceString {
+    Project(String),
+    Collection(String, String),
+    Dataset(String, Option<String>, String),
+    Object(String, Option<String>, Option<String>, String),
+}
+
+impl PartialOrd for ResourceString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ResourceString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self {
+            ResourceString::Project(_) => match other {
+                ResourceString::Project(_) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
+            },
+            ResourceString::Collection(_, _) => match other {
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
+            },
+            ResourceString::Dataset(_, _, _) => match other {
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Equal,
+                _ => std::cmp::Ordering::Greater,
+            },
+            ResourceString::Object(_, _, _, _) => match other {
+                ResourceString::Project(_) => std::cmp::Ordering::Less,
+                ResourceString::Collection(_, _) => std::cmp::Ordering::Less,
+                ResourceString::Dataset(_, _, _) => std::cmp::Ordering::Less,
+                ResourceString::Object(_, _, _, _) => std::cmp::Ordering::Equal,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub struct ResourceStrings(pub Vec<ResourceString>);
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Missing {
+    pub p: Option<String>,
+    pub c: Option<String>,
+    pub d: Option<String>,
+    pub o: Option<String>,
+}
+
+// s3://foo/bar/baz
+
+impl ResourceStrings {
+    pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
+        let mut orig = Vec::new();
+        let mut permutations = Vec::new();
+
+        for x in self.0.drain(..) {
+            match x {
+                ResourceString::Project(p) => {
+                    orig.push(ResourceString::Project(p.clone()));
+                }
+                ResourceString::Collection(p, c) => {
+                    orig.push(ResourceString::Collection(p.clone(), c.clone()));
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            c: Some(c.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+                ResourceString::Dataset(p, c, d) => {
+                    orig.push(ResourceString::Dataset(p.clone(), c.clone(), d.clone()));
+                    if let Some(c) = c {
+                        permutations.push((
+                            ResourceString::Collection(p.clone(), c.clone()),
+                            Missing {
+                                d: Some(d.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                c: Some(c.clone()),
+                                d: Some(d.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            d: Some(d.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+                ResourceString::Object(p, c, d, o) => {
+                    orig.push(ResourceString::Object(
+                        p.clone(),
+                        c.clone(),
+                        d.clone(),
+                        o.clone(),
+                    ));
+                    if let Some(c) = &c {
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                c: Some(c.clone()),
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        permutations.push((
+                            ResourceString::Collection(p.clone(), c.clone()),
+                            Missing {
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        if let Some(d) = &d {
+                            permutations.push((
+                                ResourceString::Project(p.clone()),
+                                Missing {
+                                    c: Some(c.clone()),
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+
+                            permutations.push((
+                                ResourceString::Collection(p.clone(), c.clone()),
+                                Missing {
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+
+                            permutations.push((
+                                ResourceString::Dataset(p.clone(), Some(c.clone()), d.clone()),
+                                Missing {
+                                    c: Some(c.clone()),
+                                    d: Some(d.clone()),
+                                    o: Some(o.clone()),
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                    } else if let Some(d) = &d {
+                        permutations.push((
+                            ResourceString::Project(p.clone()),
+                            Missing {
+                                d: Some(d.clone()),
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+
+                        permutations.push((
+                            ResourceString::Dataset(p.clone(), None, d.clone()),
+                            Missing {
+                                o: Some(o.clone()),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                    permutations.push((
+                        ResourceString::Project(p.clone()),
+                        Missing {
+                            o: Some(o.clone()),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
+        }
+
+        (orig, permutations)
+    }
+}
+
+impl TryFrom<&S3Path> for ResourceStrings {
+    type Error = anyhow::Error;
+    fn try_from(value: &S3Path) -> Result<Self> {
+        if let Some((b, k)) = value.as_object() {
+            let mut results = Vec::new();
+
+            // s3://foo/bar
+
+            let pathvec = k.split('/').collect::<Vec<&str>>();
+            match pathvec.len() {
+                0 => {
+                    results.push(ResourceString::Project(b.to_string()));
+                }
+                1 => {
+                    results.push(ResourceString::Collection(
+                        b.to_string(),
+                        pathvec[0].to_string(),
+                    ));
+                    results.push(ResourceString::Dataset(
+                        b.to_string(),
+                        None,
+                        pathvec[0].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        None,
+                        pathvec[0].to_string(),
+                    ));
+                }
+                2 => {
+                    results.push(ResourceString::Dataset(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        pathvec[1].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        None,
+                        pathvec[1].to_string(),
+                    ));
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        Some(pathvec[0].to_string()),
+                        pathvec[1].to_string(),
+                    ));
+                }
+                3 => {
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        Some(pathvec[0].to_string()),
+                        Some(pathvec[1].to_string()),
+                        pathvec[2].to_string(),
+                    ));
+                }
+                _ => {
+                    results.push(ResourceString::Object(
+                        b.to_string(),
+                        None,
+                        None,
+                        k.to_string(),
+                    ));
+                }
+            }
+            Ok(ResourceStrings(results))
+        } else {
+            Err(anyhow!("Invalid path"))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub enum ResourceIds {
+    Project(DieselUlid),
+    Collection(DieselUlid, DieselUlid),
+    Dataset(DieselUlid, Option<DieselUlid>, DieselUlid),
+    Object(
+        DieselUlid,
+        Option<DieselUlid>,
+        Option<DieselUlid>,
+        DieselUlid,
+    ),
+}
+
+impl PartialEq<DieselUlid> for ResourceIds {
+    fn eq(&self, other: &DieselUlid) -> bool {
+        match self {
+            ResourceIds::Project(id) => id == other,
+            ResourceIds::Collection(_, id) => id == other,
+            ResourceIds::Dataset(_, _, id) => id == other,
+            ResourceIds::Object(_, _, _, id) => id == other,
+        }
+    }
+}
+
+impl ResourceIds {
+    pub fn get_id(&self) -> DieselUlid {
+        match self {
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(_, id) => *id,
+            ResourceIds::Dataset(_, _, id) => *id,
+            ResourceIds::Object(_, _, _, id) => *id,
+        }
+    }
+
+    pub fn check_if_in(&self, id: DieselUlid) -> bool {
+        match self {
+            ResourceIds::Project(pid) => pid == &id,
+            ResourceIds::Collection(pid, cid) => pid == &id || cid == &id,
+            ResourceIds::Dataset(pid, cid, did) => {
+                pid == &id || cid.unwrap_or_default() == id || did == &id
+            }
+            ResourceIds::Object(pid, cid, did, oid) => {
+                pid == &id
+                    || cid.unwrap_or_default() == id
+                    || did.unwrap_or_default() == id
+                    || oid == &id
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CheckAccessResult {
+    pub resource_ids: ResourceIds,
+    pub missing_resources: Option<Missing>,
+    pub user_id: String,
+    pub token_id: Option<String>,
+    pub object: Object,
+}
+
+impl CheckAccessResult {
+    pub fn new(
+        resource_ids: ResourceIds,
+        missing_resources: Option<Missing>,
+        user_id: String,
+        token_id: Option<String>,
+        object: Object,
+    ) -> Self {
+        Self {
+            resource_ids,
+            missing_resources,
+            user_id,
+            token_id,
+            object,
         }
     }
 }

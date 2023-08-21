@@ -35,7 +35,7 @@ impl S3Backend {
             .endpoint_url(&s3_endpoint)
             .build();
 
-        let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
+        let s3_client = Client::from_conf(s3_config);
 
         let handler = S3Backend {
             s3_client,
@@ -85,7 +85,7 @@ impl StorageBackend for S3Backend {
 
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
-    // The chunks are then transfered into the sender.
+    // The chunks are then transferred into the sender.
     async fn get_object(
         &self,
         location: ObjectLocation,
@@ -179,7 +179,7 @@ impl StorageBackend for S3Backend {
     ) -> Result<()> {
         let mut completed_parts = Vec::new();
         for etag in parts {
-            let part_number = i32::try_from(etag.part_number)?;
+            let part_number = etag.part_number;
 
             let completed_part = CompletedPart::builder()
                 .e_tag(etag.etag.replace('-', ""))

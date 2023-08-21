@@ -1,7 +1,7 @@
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::{FooterParser, Range as ArunaRange};
 use s3s::dto::Range as S3Range;
-use s3s::dto::Range::{Normal, Suffix};
+use s3s::dto::Range::{Int, Suffix};
 
 pub fn calculate_ranges(
     input_range: Option<S3Range>,
@@ -36,7 +36,7 @@ pub fn calculate_content_length_from_range(range: ArunaRange) -> i64 {
 
 pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> ArunaRange {
     match range_string {
-        Normal { first, last } => match last {
+        Int { first, last } => match last {
             Some(val) => ArunaRange {
                 from: first,
                 to: val,
@@ -46,8 +46,8 @@ pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> A
                 to: content_length,
             },
         },
-        Suffix { last } => ArunaRange {
-            from: content_length - last,
+        Suffix { length } => ArunaRange {
+            from: content_length - length,
             to: content_length,
         },
     }
