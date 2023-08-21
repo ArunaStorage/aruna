@@ -10,7 +10,7 @@ use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
-use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument, MeilisearchIndexes};
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
@@ -61,32 +61,21 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let object_with_rel = tonic_internal!(
+        let collection = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
                 .await,
             "Internal database error"
         );
 
-        self.cache.add_object(object_with_rel.clone());
+        self.cache.add_object(collection.clone());
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        let inner_object_clone = object_with_rel.object.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    &[ObjectDocument::from(inner_object_clone)],
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
+            .await;
 
         let generic_collection: generic_resource::Resource =
-            tonic_invalid!(object_with_rel.try_into(), "Invalid collection");
+            tonic_invalid!(collection.try_into(), "Invalid collection");
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
@@ -200,19 +189,8 @@ impl CollectionService for CollectionServiceImpl {
             search_update.push(ObjectDocument::from(o.object))
         }
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    search_update.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(search_update).await;
 
         let response = DeleteCollectionResponse {};
 
@@ -245,6 +223,11 @@ impl CollectionService for CollectionServiceImpl {
         );
         self.cache
             .update_object(&collection.object.id, collection.clone());
+
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
+            .await;
+
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
 
@@ -281,20 +264,9 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        let inner_object_clone = collection.object.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    &[ObjectDocument::from(inner_object_clone)],
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
+            .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -332,20 +304,9 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        let inner_object_clone = collection.object.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    &[ObjectDocument::from(inner_object_clone)],
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
+            .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -382,20 +343,9 @@ impl CollectionService for CollectionServiceImpl {
         self.cache
             .update_object(&collection.object.id, collection.clone());
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        let inner_object_clone = collection.object.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    &[ObjectDocument::from(inner_object_clone)],
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(vec![ObjectDocument::from(collection.object.clone())])
+            .await;
 
         let collection: generic_resource::Resource =
             tonic_internal!(collection.try_into(), "Collection conversion error");
@@ -437,19 +387,8 @@ impl CollectionService for CollectionServiceImpl {
             search_update.push(ObjectDocument::from(resource.object))
         }
 
-        // Add or update collection in search index
-        let search_clone = self.search_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = search_clone
-                .add_or_update_stuff::<ObjectDocument>(
-                    search_update.as_slice(),
-                    MeilisearchIndexes::OBJECT,
-                )
-                .await
-            {
-                log::warn!("Search index update failed: {}", err)
-            }
-        });
+        // Add or update project in search index
+        self.add_or_update_search(search_update).await;
 
         let collection: generic_resource::Resource = tonic_internal!(
             self.cache
@@ -463,5 +402,23 @@ impl CollectionService for CollectionServiceImpl {
             collection: Some(collection.into_inner()?),
         };
         return_with_log!(response);
+    }
+}
+
+impl CollectionServiceImpl {
+    async fn add_or_update_search(&self, index_updates: Vec<ObjectDocument>) {
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    index_updates.as_slice(),
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
     }
 }
