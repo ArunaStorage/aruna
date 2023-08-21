@@ -23,7 +23,6 @@ impl DatabaseHandler {
     ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
-        let mut object = request.into_new_db_object(user_id)?;
 
         // let parent = if let Some(parent) = request.get_parent() {
         //     let check_existing =
@@ -47,20 +46,19 @@ impl DatabaseHandler {
         // Create object in database
         let mut object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
-        let create_result = object.create(transaction_client).await;
 
-        if is_dataproxy && create_result.is_err() {
-            // TODO: return conflicting object
-            let owr = ObjectWithRelations {
-                object,
-                inbound: Json(DashMap::default()),
-                // TODO: get
-                inbound_belongs_to: Json(DashMap::default()),
-                outbound: Json(DashMap::default()),
-                outbound_belongs_to: Json(DashMap::default()),
-            };
-            return Err(anyhow!("Conflicting value")); // Placeholder
-        }
+        // if is_dataproxy && create_result.is_err() {
+        //     // TODO: return conflicting object
+        //     let owr = ObjectWithRelations {
+        //         object,
+        //         inbound: Json(DashMap::default()),
+        //         // TODO: get
+        //         inbound_belongs_to: Json(DashMap::default()),
+        //         outbound: Json(DashMap::default()),
+        //         outbound_belongs_to: Json(DashMap::default()),
+        //     };
+        //     return Err(anyhow!("Conflicting value")); // Placeholder
+        // }
 
         // Create internal relation in database
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
