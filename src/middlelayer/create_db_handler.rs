@@ -78,10 +78,8 @@ impl DatabaseHandler {
                         id: DieselUlid::generate(),
                         origin_pid: parent.get_id()?,
                         origin_type: parent.get_type(),
-                        origin_name: parent_with_relations.object.name,
                         target_pid: object.id,
                         target_type: object.object_type,
-                        target_name: object.name.clone(),
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                     };
                     ir.create(transaction_client).await?;
