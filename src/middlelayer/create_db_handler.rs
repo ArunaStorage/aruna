@@ -61,7 +61,7 @@ impl DatabaseHandler {
             match request.get_type() {
                 ObjectType::PROJECT => {
                     let perms = HashMap::from_iter([(
-                        object.id.clone(),
+                        object.id,
                         ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
                     )]);
                     User::add_user_permission(transaction_client, &user_id, perms).await?;
