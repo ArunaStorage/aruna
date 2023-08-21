@@ -91,15 +91,21 @@ pub async fn main() -> Result<()> {
     let db_handler_arc = Arc::new(database_handler);
     dbg!("Bin hier!");
 
-    // NotificationHandler
-    let _ = NotificationHandler::new(db_arc.clone(), cache_arc.clone(), natsio_arc.clone()).await?;
-
     // MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(
         &dotenvy::var("MEILISEARCH_HOST")?,
         Some(&dotenvy::var("MEILISEARCH_API_KEY")?),
     )?;
     let meilisearch_arc = Arc::new(meilisearch_client);
+
+    // NotificationHandler
+    let _ = NotificationHandler::new(
+        db_arc.clone(),
+        cache_arc.clone(),
+        natsio_arc.clone(),
+        meilisearch_arc.clone(),
+    )
+    .await?;
 
     // Create index if not exists on startup
     meilisearch_arc
