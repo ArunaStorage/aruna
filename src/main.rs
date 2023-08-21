@@ -188,6 +188,7 @@ pub async fn main() -> Result<()> {
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
+                    meilisearch_arc.clone(),
                 )
                 .await,
             ))
