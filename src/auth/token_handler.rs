@@ -151,7 +151,7 @@ impl TokenHandler {
         oidc_realminfo: String,
         encode_secret: String,
         decode_secret: String,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
