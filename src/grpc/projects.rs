@@ -39,22 +39,25 @@ impl ProjectService for ProjectServiceImpl {
     ) -> Result<Response<CreateProjectResponse>> {
         log_received!(&request);
 
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
         // Extract token from request and check permissions
         let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
+            get_token_from_md(&request_metadata),
             "Token authentication error"
         );
 
-        let request = CreateRequest::Project(request.into_inner());
-
-        let ctx = Context::default();
-
         let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            self.authorizer
+                .check_permissions(&token, vec![Context::default()])
+                .await,
             "Unauthorized"
         );
 
         // Create project in database
+        let request = CreateRequest::Project(inner_request);
+
         let object_with_rel = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id)
@@ -160,6 +163,7 @@ impl ProjectService for ProjectServiceImpl {
 
         return_with_log!(response);
     }
+    
     async fn delete_project(
         &self,
         request: Request<DeleteProjectRequest>,
@@ -186,12 +190,29 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error"
         );
 
-        for o in updates {
-            self.cache.remove_object(&o.object.id)
+        let mut search_update: Vec<ObjectDocument> = vec![];
+            for o in updates {
+            self.cache.remove_object(&o.object.id);
+            search_update.push(ObjectDocument::from(o.object))
         }
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    search_update.as_slice(),
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
 
         return_with_log!(DeleteProjectResponse {});
     }
+
     async fn update_project_name(
         &self,
         request: Request<UpdateProjectNameRequest>,
@@ -218,6 +239,22 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        let inner_object_clone = project.object.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    &[ObjectDocument::from(inner_object_clone)],
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectNameResponse {
@@ -225,6 +262,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_description(
         &self,
         request: Request<UpdateProjectDescriptionRequest>,
@@ -251,6 +289,22 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        let inner_object_clone = project.object.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    &[ObjectDocument::from(inner_object_clone)],
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
 
@@ -259,6 +313,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_key_values(
         &self,
         request: Request<UpdateProjectKeyValuesRequest>,
@@ -285,6 +340,23 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        let inner_object_clone = project.object.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    &[ObjectDocument::from(inner_object_clone)],
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
+
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
 
@@ -293,6 +365,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_project_data_class(
         &self,
         request: Request<UpdateProjectDataClassRequest>,
@@ -319,6 +392,22 @@ impl ProjectService for ProjectServiceImpl {
         );
         self.cache
             .update_object(&project.object.id, project.clone());
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        let inner_object_clone = project.object.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    &[ObjectDocument::from(inner_object_clone)],
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
+
         let project: generic_resource::Resource =
             tonic_internal!(project.try_into(), "Project conversion error");
         let response = UpdateProjectDataClassResponse {
@@ -326,6 +415,7 @@ impl ProjectService for ProjectServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn archive_project(
         &self,
         request: Request<ArchiveProjectRequest>,
@@ -350,10 +440,29 @@ impl ProjectService for ProjectServiceImpl {
             self.database_handler.snapshot(request).await,
             "Internal database error."
         );
-        for resource in &resources {
+
+        let mut search_update: Vec<ObjectDocument> = vec![];
+        for resource in resources {
             self.cache
                 .update_object(&resource.object.id, resource.clone());
+            search_update.push(ObjectDocument::from(resource.object))
         }
+
+        // Add or update project in search index
+        let search_clone = self.search_client.clone();
+        tokio::spawn(async move {
+            if let Err(err) = search_clone
+                .add_or_update_stuff::<ObjectDocument>(
+                    search_update.as_slice(),
+                    MeilisearchIndexes::OBJECT,
+                )
+                .await
+            {
+                log::warn!("Search index update failed: {}", err)
+            }
+        });
+
+
         let project: generic_resource::Resource = tonic_internal!(
             self.cache
                 .get_object(&old_id)
