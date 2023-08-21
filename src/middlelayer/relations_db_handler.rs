@@ -1,11 +1,18 @@
+use std::str::FromStr;
+
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::object_dsl::Hierarchy;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::enums::ObjectType;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::relations_request_types::{
     ModifyRelations, RelationsToAdd, RelationsToModify, RelationsToRemove,
 };
+use ahash::HashSet;
 use anyhow::Result;
+use aruna_rust_api::api::notification::services::v2::EventVariant;
+use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
     pub async fn modify_relations(
@@ -14,6 +21,26 @@ impl DatabaseHandler {
         labels_to_add: RelationsToAdd,
         labels_to_remove: RelationsToRemove,
     ) -> Result<ObjectWithRelations> {
+        // Collect all affected ids before transaction
+        let mut affected_objects: HashSet<diesel_ulid::DieselUlid> = HashSet::default();
+        affected_objects.insert(resource.id);
+
+        for ext in &labels_to_add.external {
+            affected_objects
+                .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
+        }
+        for ext in &labels_to_remove.external {
+            affected_objects
+                .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
+        }
+        labels_to_add.internal.iter().for_each(|internal| {
+            affected_objects.insert(DieselUlid::from(internal.id));
+        });
+        labels_to_remove.internal.iter().for_each(|internal| {
+            affected_objects.insert(DieselUlid::from(internal.id));
+        });
+
+        // Transaction
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -45,9 +72,40 @@ impl DatabaseHandler {
             .await?;
         }
         transaction.commit().await?;
+
+        // Try to emit object updated notification(s)
+        let affected_ids = Vec::from_iter(affected_objects);
+
+        let objects_plus = Object::get_objects_with_relations(&affected_ids, &client).await?;
+
+        for object_plus in &objects_plus {
+            let hierarchies = if object_plus.object.object_type == ObjectType::PROJECT {
+                vec![Hierarchy {
+                    project_id: object_plus.object.id.to_string(),
+                    collection_id: None,
+                    dataset_id: None,
+                    object_id: None,
+                }]
+            } else {
+                object_plus.object.fetch_object_hierarchies(&client).await?
+            };
+
+            if let Err(err) = self
+                .natsio_handler
+                .register_resource_event(object_plus, hierarchies, EventVariant::Updated)
+                .await
+            {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                //transaction.rollback().await?;
+                //return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+        }
+
         let object = Object::get_object_with_relations(&resource.id, &client).await?;
         Ok(object)
     }
+
     pub async fn get_resource(
         &self,
         request: ModifyRelations,
