@@ -129,8 +129,6 @@ pub async fn main() -> Result<()> {
     // Check default endpoint -> Only endpoint service available
     let client = db_arc.get_client().await?;
 
-    dbg!(&default_endpoint.is_empty());
-
     if !&default_endpoint.is_empty()
         && Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
             .await?
