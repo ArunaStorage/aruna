@@ -3,6 +3,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
@@ -649,6 +650,28 @@ impl From<Object> for CreateObjectRequest {
     }
 }
 
+impl Object {
+    pub fn get_hashes(&self) -> Vec<Hash> {
+        self.hashes
+            .iter()
+            .map(|(k, v)| {
+                let alg = if k == "MD5" {
+                    2
+                } else if k == "SHA256" {
+                    1
+                } else {
+                    0
+                };
+
+                Hash {
+                    alg,
+                    hash: v.to_string(),
+                }
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ResourceString {
     Project(String),
@@ -928,6 +951,42 @@ impl ResourceIds {
             ResourceIds::Collection(_, id) => *id,
             ResourceIds::Dataset(_, _, id) => *id,
             ResourceIds::Object(_, _, _, id) => *id,
+        }
+    }
+
+    pub fn get_project(&self) -> DieselUlid {
+        match self {
+            ResourceIds::Project(id) => *id,
+            ResourceIds::Collection(id, _) => *id,
+            ResourceIds::Dataset(id, _, _) => *id,
+            ResourceIds::Object(id, _, _, _) => *id,
+        }
+    }
+
+    pub fn get_collection(&self) -> Option<DieselUlid> {
+        match self {
+            ResourceIds::Project(_) => None,
+            ResourceIds::Collection(_, id) => Some(*id),
+            ResourceIds::Dataset(_, id, _) => *id,
+            ResourceIds::Object(_, id, _, _) => *id,
+        }
+    }
+
+    pub fn get_dataset(&self) -> Option<DieselUlid> {
+        match self {
+            ResourceIds::Project(_) => None,
+            ResourceIds::Collection(_, _) => None,
+            ResourceIds::Dataset(_, _, id) => Some(*id),
+            ResourceIds::Object(_, _, id, _) => *id,
+        }
+    }
+
+    pub fn get_object(&self) -> Option<DieselUlid> {
+        match self {
+            ResourceIds::Project(_) => None,
+            ResourceIds::Collection(_, _) => None,
+            ResourceIds::Dataset(_, _, _) => None,
+            ResourceIds::Object(_, _, _, id) => Some(*id),
         }
     }
 

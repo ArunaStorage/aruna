@@ -1,4 +1,5 @@
 use crate::structs::Object as DPObject;
+use crate::structs::ObjectLocation;
 use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -14,10 +15,15 @@ use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
+use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
+use aruna_rust_api::api::storage::services::v2::FinishObjectStagingRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
@@ -177,7 +183,11 @@ impl GrpcQueryHandler {
             .project
             .ok_or(anyhow!("unknown project"))?;
 
-        DPObject::try_from(response)
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
     }
 
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
@@ -218,6 +228,30 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown collection"))
     }
 
+    pub async fn create_collection(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateCollectionRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .collection_service
+            .clone()
+            .create_collection(req)
+            .await?
+            .into_inner()
+            .collection
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
     async fn get_dataset(&self, id: &DieselUlid, _checksum: String) -> Result<Dataset> {
         let mut req = Request::new(GetDatasetRequest {
             dataset_id: id.to_string(),
@@ -237,6 +271,30 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown dataset"))
     }
 
+    pub async fn create_dataset(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateDatasetRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .dataset_service
+            .clone()
+            .create_dataset(req)
+            .await?
+            .into_inner()
+            .dataset
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
     async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
         let mut req = Request::new(GetObjectRequest {
             object_id: id.to_string(),
@@ -254,6 +312,105 @@ impl GrpcQueryHandler {
             .into_inner()
             .object
             .ok_or(anyhow!("unknown object"))
+    }
+
+    pub async fn create_object(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateObjectRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
+    pub async fn finish_object(
+        &self,
+        object_id: DieselUlid,
+        content_len: i64,
+        hashes: Vec<Hash>,
+        token: &str,
+    ) -> Result<DPObject> {
+        let mut req = Request::new(FinishObjectStagingRequest {
+            object_id: object_id.to_string(),
+            content_len,
+            hashes,
+            completed_parts: vec![],
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
+    pub async fn create_and_finish(
+        &self,
+        object: DPObject,
+        loc: ObjectLocation,
+        token: &str,
+    ) -> Result<DPObject> {
+        let mut req = Request::new(CreateObjectRequest::from(object.clone()));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        self.object_service.clone().create_object(req).await?;
+
+        let mut req = Request::new(FinishObjectStagingRequest {
+            object_id: object.id.to_string(),
+            content_len: loc.raw_content_len,
+            hashes: object.get_hashes(),
+            completed_parts: vec![],
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+        let object = DPObject::try_from(response)?;
+        self.cache.upsert_object(object.clone(), None).await?;
+        Ok(object)
     }
 
     pub async fn create_notifications_channel(&self) -> Result<()> {
