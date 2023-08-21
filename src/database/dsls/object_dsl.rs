@@ -632,6 +632,15 @@ pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<Objec
 }
 
 impl ObjectWithRelations {
+    pub fn into_object_mapping<T>(&self, mapping: T) -> ObjectMapping<T> {
+        match self.object.object_type {
+            ObjectType::PROJECT => ObjectMapping::PROJECT(mapping),
+            ObjectType::COLLECTION => ObjectMapping::COLLECTION(mapping),
+            ObjectType::DATASET => ObjectMapping::DATASET(mapping),
+            ObjectType::OBJECT => ObjectMapping::OBJECT(mapping),
+        }
+    }
+
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
         Self {
             object: Object {

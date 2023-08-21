@@ -1,19 +1,10 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::delete_request_types::DeleteRequest;
-use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
-};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
-use anyhow::anyhow;
-use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::authorization_service_server::AuthorizationService;
-use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,
     DeleteAuthorizationResponse, GetAuthorizationsRequest, GetAuthorizationsResponse,
@@ -42,20 +33,50 @@ impl AuthorizationService for AuthorizationServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error"
         );
+
+        let user_id = DieselUlid::from_str(&request.get_ref().user_id)
+            .map_err(|_| tonic::Status::invalid_argument("Invalid ulid"))?;
+        let resource_id = DieselUlid::from_str(&request.get_ref().resource_id)
+            .map_err(|_| tonic::Status::invalid_argument("Invalid ulid"))?;
+
         let ctx = Context::res_ctx(
-            tonic_invalid!(
-                DieselUlid::from_str(&request.get_ref().resource_id),
-                "Invalid ulid"
-            ),
+            resource_id,
             crate::database::enums::DbPermissionLevel::ADMIN,
             false,
         );
-        let user_id = tonic_auth!(
+
+        tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        return_with_log!(response);
+        let obj = self
+            .cache
+            .get_object(&resource_id)
+            .ok_or_else(|| tonic::Status::not_found("Resource not found"))?;
+
+        let user = tonic_internal!(
+            self.database_handler
+                .add_permission_to_user(
+                    user_id,
+                    resource_id,
+                    obj.into_object_mapping(tonic_invalid!(
+                        DbPermissionLevel::try_from(request.get_ref().permission_level),
+                        "Invalid permission level"
+                    ))
+                )
+                .await,
+            "Internal error"
+        );
+
+        let resp = CreateAuthorizationResponse {
+            resource_id: resource_id.to_string(),
+            user_id: user_id.to_string(),
+            user_name: user.display_name,
+            permission_level: request.into_inner().permission_level,
+        };
+
+        return_with_log!(resp);
     }
     /// GetAuthorization
     ///
