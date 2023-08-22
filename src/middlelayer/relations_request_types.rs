@@ -1,4 +1,5 @@
 use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, ObjectWithRelations};
 use crate::database::enums::DbPermissionLevel;
@@ -8,6 +9,7 @@ use aruna_rust_api::api::storage::models::v2::{relation, Relation};
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct ModifyRelations(pub ModifyRelationsRequest);
 
@@ -33,7 +35,11 @@ impl ModifyRelations {
     pub fn get_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(&self.0.resource_id)?)
     }
-    pub fn get_labels(&self, resource: ObjectWithRelations) -> Result<RelationsToModify> {
+    pub fn get_labels(
+        &self,
+        resource: ObjectWithRelations,
+        cache: Arc<Cache>,
+    ) -> Result<RelationsToModify> {
         let resource_id = resource.object.id;
         let resource_variant = resource.object.object_type;
 
@@ -47,12 +53,14 @@ impl ModifyRelations {
                 &self.0.add_relations,
                 resource_id,
                 resource_variant,
+                cache.clone(),
             )?;
         let (external_rm_relations, temp_rm_int_relations, mut removed_to_check) =
             ModifyRelations::convert_relations(
                 &self.0.remove_relations,
                 resource_id,
                 resource_variant,
+                cache,
             )?;
         let mut existing = Vec::from_iter(resource.outbound.0.into_iter().map(|r| r.1));
         existing.append(&mut Vec::from_iter(
@@ -84,6 +92,7 @@ impl ModifyRelations {
         api_relations: &Vec<Relation>,
         resource_id: DieselUlid,
         resource_variant: ObjectType,
+        cache: Arc<Cache>,
     ) -> Result<(Vec<ExternalRelation>, Vec<InternalRelation>, Vec<Context>)> {
         let mut external_relations: Vec<ExternalRelation> = Vec::new();
         let mut internal_relations: Vec<InternalRelation> = Vec::new();
@@ -102,7 +111,11 @@ impl ModifyRelations {
                         ));
                         internal_relations
                             // Try into generates a new ULID, so rm via ID does not work
-                            .push((internal, (resource_id, resource_variant)).try_into()?);
+                            .push(InternalRelation::from_api(
+                                internal,
+                                resource_id,
+                                cache.clone(),
+                            )?);
                     }
                 }
             }

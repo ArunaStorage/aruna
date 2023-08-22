@@ -141,6 +141,7 @@ impl SnapshotRequest {
             relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
             target_pid: dataset.object.id,
             target_type: ObjectType::DATASET,
+            target_name: dataset.object.name.to_string(),
         };
         relations.push(version);
         relations.append(&mut belongs_to);
@@ -165,6 +166,7 @@ impl SnapshotRequest {
             relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
             target_pid: collection.object.id,
             target_type: ObjectType::COLLECTION,
+            target_name: collection.object.name.to_string(),
         };
         relations.push(version);
         for r in collection.outbound_belongs_to.0 {
@@ -188,6 +190,7 @@ impl SnapshotRequest {
                     relation_name: r.1.relation_name,
                     target_pid: r.1.target_pid,
                     target_type: r.1.target_type,
+                    target_name: r.1.target_name,
                 }
             };
             let mut outbound = d.outbound.0.into_iter().map(new_cloned_relation).collect();

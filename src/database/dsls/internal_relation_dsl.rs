@@ -32,6 +32,7 @@ pub struct InternalRelation {
     pub relation_name: String,
     pub target_pid: DieselUlid,
     pub target_type: ObjectType,
+    pub target_name: String,
 }
 
 pub const INTERNAL_RELATION_VARIANT_BELONGS_TO: &str = "BELONGS_TO";
@@ -166,6 +167,7 @@ impl InternalRelation {
             relation_name: self.relation_name.clone(),
             target_pid: self.target_pid,
             target_type: self.target_type,
+            target_name: self.target_name.clone(),
         }
     }
     pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {

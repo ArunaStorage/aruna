@@ -89,6 +89,7 @@ impl DatabaseHandler {
                         target_pid: object.id,
                         target_type: object.object_type,
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                        target_name: object.name.to_string(),
                     };
                     ir.create(transaction_client).await?;
                     DashMap::from_iter([(parent.get_id()?, ir)])

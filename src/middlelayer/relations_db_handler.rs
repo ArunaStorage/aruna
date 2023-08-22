@@ -1,5 +1,7 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
+use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -98,10 +100,14 @@ impl DatabaseHandler {
     pub async fn get_resource(
         &self,
         request: ModifyRelations,
+        cache: Arc<Cache>,
     ) -> Result<(Object, RelationsToModify)> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
         let resource = Object::get_object_with_relations(&id, &client).await?;
-        Ok((resource.object.clone(), request.get_labels(resource)?))
+        Ok((
+            resource.object.clone(),
+            request.get_labels(resource, cache)?,
+        ))
     }
 }
