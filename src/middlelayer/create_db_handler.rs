@@ -39,12 +39,14 @@ impl DatabaseHandler {
         //     }
         // };
 
+        //let endpoint_id =
+
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let mut user = None;
 
         // Create object in database
-        let mut object = request.into_new_db_object(user_id)?;
+        let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
         object.create(transaction_client).await?;
 
         // if is_dataproxy && create_result.is_err() {

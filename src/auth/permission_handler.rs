@@ -45,6 +45,7 @@ impl PermissionHandler {
                     //Case 1: Impersonate
                     //  - Check if provided contexts are proxy/activated/resource only
                     for ctx in &ctxs {
+                        dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::Activated
                             | ContextVariant::GlobalProxy

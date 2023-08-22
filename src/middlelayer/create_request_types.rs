@@ -137,7 +137,19 @@ impl CreateRequest {
         }
     }
 
-    pub fn into_new_db_object(&self, user_id: DieselUlid) -> Result<Object> {
+    pub fn get_endpoint(&self) -> Result<DieselUlid> {
+        // FIXME: Please daddy fix me !
+        match self {
+            CreateRequest::Project(req) => Ok(DieselUlid::from_str(&req.preferred_endpoint)?),
+            _ => todo!(),
+        }
+    }
+
+    pub fn into_new_db_object(
+        &self,
+        user_id: DieselUlid,
+        endpoint_id: DieselUlid,
+    ) -> Result<Object> {
         // Conversions
         let id = DieselUlid::generate();
         let key_values: KeyValues = self.get_key_values().try_into()?;
@@ -164,7 +176,7 @@ impl CreateRequest {
             external_relations: Json(external_relations),
             hashes: Json(hashes),
             dynamic: self.is_dynamic(),
-            endpoints: Json(DashMap::default()),
+            endpoints: Json(DashMap::from_iter([(endpoint_id, true)])),
         })
     }
 }
