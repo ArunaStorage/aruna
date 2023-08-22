@@ -458,11 +458,20 @@ impl GrpcQueryHandler {
                 log::debug!("Received message: {:?}", message);
 
                 if let Ok(Some(r)) = self.process_message(message).await {
+                    let mut resp =
+                        Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
+
+                    resp.metadata_mut().append(
+                        AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+                        AsciiMetadataValue::try_from(format!(
+                            "Bearer {}",
+                            self.long_lived_token.as_str()
+                        ))?,
+                    );
+
                     self.event_notification_service
                         .clone()
-                        .acknowledge_message_batch(Request::new(AcknowledgeMessageBatchRequest {
-                            replies: vec![r],
-                        }))
+                        .acknowledge_message_batch(resp)
                         .await?;
                 }
             }
