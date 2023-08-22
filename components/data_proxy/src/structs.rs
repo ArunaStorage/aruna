@@ -576,6 +576,7 @@ impl From<Object> for CreateProjectRequest {
             key_values: vec![],
             external_relations: vec![],
             data_class: value.data_class.into(),
+            preferred_endpoint: "".to_string(),
         }
     }
 }

@@ -9,7 +9,7 @@ use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequ
 use aruna_rust_api::api::notification::services::v2::AnouncementEvent;
 use aruna_rust_api::api::notification::services::v2::EventMessage;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use aruna_rust_api::api::notification::services::v2::GetEventMessageBatchStreamRequest;
+use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamRequest;
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
@@ -47,7 +47,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
-use tonic::transport::{Channel, ClientTlsConfig};
+use tonic::transport::Channel;
 use tonic::Request;
 
 use super::cache::Cache;
@@ -414,9 +414,8 @@ impl GrpcQueryHandler {
     }
 
     pub async fn create_notifications_channel(&self) -> Result<()> {
-        let mut req = Request::new(GetEventMessageBatchStreamRequest {
+        let mut req = Request::new(GetEventMessageStreamRequest {
             stream_consumer: self.endpoint_id.to_string(),
-            batch_size: 10,
         });
 
         req.metadata_mut().append(
@@ -427,26 +426,24 @@ impl GrpcQueryHandler {
         let stream = self
             .event_notification_service
             .clone()
-            .get_event_message_batch_stream(req)
+            .get_event_message_stream(req)
             .await?;
 
         let mut inner_stream = stream.into_inner();
 
         while let Some(m) = inner_stream.message().await? {
-            let mut acks = Vec::new();
-            for message in m.messages {
+            if let Some(message) = m.messages {
                 log::debug!("Received message: {:?}", message);
 
                 if let Ok(Some(r)) = self.process_message(message).await {
-                    acks.push(r)
+                    self.event_notification_service
+                        .clone()
+                        .acknowledge_message_batch(Request::new(AcknowledgeMessageBatchRequest {
+                            replies: vec![r],
+                        }))
+                        .await?;
                 }
             }
-            self.event_notification_service
-                .clone()
-                .acknowledge_message_batch(Request::new(AcknowledgeMessageBatchRequest {
-                    replies: acks,
-                }))
-                .await?;
         }
         Err(anyhow!("Stream was closed by sender"))
     }
@@ -503,7 +500,7 @@ impl GrpcQueryHandler {
 
                 self.cache.remove_user(uid).await?;
             }
-            EventVariant::Unspecified => (),
+            _ => (),
         }
 
         Ok(message.reply)

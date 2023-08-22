@@ -8,7 +8,7 @@ version = "1.0.0"
 [dependencies]
 anyhow = "1.0.75"
 aruna-file = "0.2.0-rc.14"
-aruna-rust-api = "2.0.0-alpha.8"
+aruna-rust-api = "2.0.0-alpha.10"
 async-channel = "1.9.0"
 async-stream = "0.3.5"
 async-trait = "0.1.73"
