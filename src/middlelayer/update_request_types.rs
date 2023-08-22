@@ -176,6 +176,7 @@ impl UpdateObject {
     pub fn add_parent_relation(
         object_id: DieselUlid,
         parent: UpdateParent,
+        name: String,
     ) -> Result<InternalRelation> {
         let (parent_id, parent_type) = match parent {
             UpdateParent::ProjectId(p) => (DieselUlid::from_str(&p)?, ObjectType::PROJECT),
@@ -189,6 +190,7 @@ impl UpdateObject {
             relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
             target_pid: object_id,
             target_type: ObjectType::OBJECT,
+            target_name: name,
         })
     }
 }

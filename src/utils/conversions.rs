@@ -1,3 +1,4 @@
+use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -23,8 +24,8 @@ use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
-    Token, User as ApiUser, UserAttributes,
+    generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
+    Status, Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -38,6 +39,7 @@ use aruna_rust_api::api::storage::services::v2::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
+use std::sync::Arc;
 use tonic::metadata::MetadataMap;
 
 pub fn type_name_of<T>(_: T) -> &'static str {
@@ -392,6 +394,13 @@ impl From<DBUser> for ApiUser {
                 tokens: api_tokens,
                 custom_attributes: api_custom_attributes,
                 personal_permissions: api_permissions,
+                trusted_endpoints: db_user
+                    .attributes
+                    .0
+                    .trusted_endpoints
+                    .iter()
+                    .map(|e| e.key().to_string())
+                    .collect(),
             }),
         }
     }
@@ -527,6 +536,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::COLLECTION => generic_resource::Resource::Collection(GRPCCollection {
                 id: object_with_relations.object.id.to_string(),
@@ -540,6 +559,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::DATASET => generic_resource::Resource::Dataset(GRPCDataset {
                 id: object_with_relations.object.id.to_string(),
@@ -553,6 +582,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::OBJECT => generic_resource::Resource::Object(GRPCObject {
                 id: object_with_relations.object.id.to_string(),
@@ -567,6 +606,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
         }
     }
@@ -644,6 +693,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
             id: object.id.to_string(),
@@ -657,6 +715,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
             id: object.id.to_string(),
@@ -670,6 +737,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
             id: object.id.to_string(),
@@ -684,6 +760,15 @@ pub fn from_db_object(
             status: object.object_status.into(),
             dynamic: object.dynamic,
             hashes: object.hashes.0.into(),
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
     }
 }
@@ -714,65 +799,138 @@ impl From<create_object_request::Parent> for Parent {
         }
     }
 }
-// This looks stupid, but is actually really helpful when converting relations
-impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType))> for InternalRelation {
-    type Error = anyhow::Error;
-    fn try_from(
-        internal: (&APIInternalRelation, (DieselUlid, ObjectType)),
-    ) -> Result<InternalRelation> {
-        let (internal, (object_id, object_type)) = internal;
-        let (origin_pid, origin_type, target_pid, target_type) = match internal.direction {
-            0 => return Err(anyhow!("Undefined direction")),
-            1 => (
-                DieselUlid::from_str(&internal.resource_id)?,
-                internal.resource_variant.try_into()?,
-                object_id,
-                object_type,
-            ),
-            2 => (
-                object_id,
-                object_type,
-                DieselUlid::from_str(&internal.resource_id)?,
-                internal.resource_variant.try_into()?,
-            ),
 
-            _ => return Err(anyhow!("Internal relation direction conversion error")),
-        };
-        match internal.defined_variant {
-            0 => Err(anyhow!("Undefined internal relation variant")),
-            i if i > 0 && i < 6 => {
-                let relation_name = match i {
-                    1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
-                    2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
-                    3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
-                    4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
-                    5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
-                    _ => return Err(anyhow!("Undefined internal relation variant")),
-                };
+impl InternalRelation {
+    pub fn from_api(
+        api_rel: &APIInternalRelation,
+        related: DieselUlid,
+        cache: Arc<Cache>,
+    ) -> Result<Self> {
+        match api_rel.direction() {
+            aruna_rust_api::api::storage::models::v2::RelationDirection::Inbound => {
+                let self_obj = cache
+                    .get_object(&related)
+                    .ok_or_else(|| anyhow!("self_obj not found"))?;
+                let other_obj = cache
+                    .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
+                    .ok_or_else(|| anyhow!("other_obj not found"))?;
+
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
-                    origin_pid,
-                    origin_type,
-                    target_pid,
-                    target_type,
-                    relation_name,
+                    origin_pid: other_obj.object.id,
+                    origin_type: other_obj.object.object_type,
+                    relation_name: api_rel
+                        .defined_variant
+                        .into_relation_name(api_rel.custom_variant.clone())?,
+                    target_pid: self_obj.object.id,
+                    target_type: self_obj.object.object_type,
+                    target_name: self_obj.object.name,
                 })
             }
-            6 => {
-                let relation_name = internal
-                    .clone()
-                    .custom_variant
-                    .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
+            aruna_rust_api::api::storage::models::v2::RelationDirection::Outbound => {
+                let other_obj = cache
+                    .get_object(&related)
+                    .ok_or_else(|| anyhow!("self_obj not found"))?;
+                let self_obj = cache
+                    .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
+                    .ok_or_else(|| anyhow!("other_obj not found"))?;
+
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
-                    origin_pid,
-                    origin_type,
-                    relation_name,
-                    target_pid,
-                    target_type,
+                    origin_pid: other_obj.object.id,
+                    origin_type: other_obj.object.object_type,
+                    relation_name: api_rel
+                        .defined_variant
+                        .into_relation_name(api_rel.custom_variant.clone())?,
+                    target_pid: self_obj.object.id,
+                    target_type: self_obj.object.object_type,
+                    target_name: self_obj.object.name,
                 })
             }
-            _ => Err(anyhow!("Relation type not found")),
+            _ => bail!("Invalid direction"),
+        }
+    }
+}
+
+// // This looks stupid, but is actually really helpful when converting relations
+// impl TryFrom<(&APIInternalRelation, (DieselUlid, ObjectType, String))> for InternalRelation {
+//     type Error = anyhow::Error;
+//     fn try_from(
+//         internal: (&APIInternalRelation, (DieselUlid, ObjectType)),
+//     ) -> Result<InternalRelation> {
+//         let (internal, (object_id, object_type)) = internal;
+//         let (origin_pid, origin_type, target_pid, target_type) = match internal.direction {
+//             0 => return Err(anyhow!("Undefined direction")),
+//             1 => (
+//                 DieselUlid::from_str(&internal.resource_id)?,
+//                 internal.resource_variant.try_into()?,
+//                 object_id,
+//                 object_type,
+//             ),
+//             2 => (
+//                 object_id,
+//                 object_type,
+//                 DieselUlid::from_str(&internal.resource_id)?,
+//                 internal.resource_variant.try_into()?,
+//             ),
+
+//             _ => return Err(anyhow!("Internal relation direction conversion error")),
+//         };
+//         match internal.defined_variant {
+//             0 => Err(anyhow!("Undefined internal relation variant")),
+//             i if i > 0 && i < 6 => {
+//                 let relation_name = match i {
+//                     1 => INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+//                     2 => INTERNAL_RELATION_VARIANT_ORIGIN.to_string(),
+//                     3 => INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+//                     4 => INTERNAL_RELATION_VARIANT_METADATA.to_string(),
+//                     5 => INTERNAL_RELATION_VARIANT_POLICY.to_string(),
+//                     _ => return Err(anyhow!("Undefined internal relation variant")),
+//                 };
+//                 Ok(InternalRelation {
+//                     id: DieselUlid::generate(),
+//                     origin_pid,
+//                     origin_type,
+//                     target_pid,
+//                     target_type,
+//                     relation_name,
+//                     target_name: "".to_string(),
+//                 })
+//             }
+//             6 => {
+//                 let relation_name = internal
+//                     .clone()
+//                     .custom_variant
+//                     .ok_or_else(|| anyhow!("Custom relation variant not found"))?;
+//                 Ok(InternalRelation {
+//                     id: DieselUlid::generate(),
+//                     origin_pid,
+//                     origin_type,
+//                     relation_name,
+//                     target_pid,
+//                     target_type,
+//                     target_name: "".to_string(),
+//                 })
+//             }
+//             _ => Err(anyhow!("Relation type not found")),
+//         }
+//     }
+// }
+
+pub trait IntoRelationName {
+    fn into_relation_name(&self, name: Option<String>) -> Result<String>;
+}
+
+impl IntoRelationName for i32 {
+    fn into_relation_name(&self, name: Option<String>) -> Result<String> {
+        match self {
+            1 => Ok(INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string()),
+            2 => Ok(INTERNAL_RELATION_VARIANT_ORIGIN.to_string()),
+            3 => Ok(INTERNAL_RELATION_VARIANT_VERSION.to_string()),
+            4 => Ok(INTERNAL_RELATION_VARIANT_METADATA.to_string()),
+            5 => Ok(INTERNAL_RELATION_VARIANT_POLICY.to_string()),
+            6 => Ok(name.ok_or_else(|| anyhow!("Custom relation variant not found"))?),
+            _ => bail!("Invalid relation variant"),
         }
     }
 }
@@ -843,6 +1001,11 @@ impl From<DBUserAttributes> for UserAttributes {
                 .map(|c| c.into())
                 .collect(),
             personal_permissions,
+            trusted_endpoints: attr
+                .trusted_endpoints
+                .iter()
+                .map(|e| e.key().to_string())
+                .collect(),
         }
     }
 }

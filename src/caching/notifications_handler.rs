@@ -188,6 +188,9 @@ async fn process_resource_event(
                 EventVariant::Deleted => {
                     unimplemented!("Delete from cache or set status to 'Deleted'?")
                 }
+                EventVariant::Snapshotted => {
+                    unimplemented!("Delete from cache or set status to 'Snapshotted'?")
+                }
             }
         } else {
             // Return error if variant is None
@@ -235,6 +238,9 @@ async fn process_user_event(
             }
             EventVariant::Available => unimplemented!("Set user activated?"),
             EventVariant::Deleted => cache.remove_user(&user_ulid),
+            EventVariant::Snapshotted => {
+                unimplemented!("Delete from cache or set status to 'Snapshotted'?")
+            }
         }
     } else {
         // Return error if variant is None

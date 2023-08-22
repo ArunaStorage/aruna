@@ -6,8 +6,8 @@ use crate::database::{
 };
 use crate::utils::database_utils::create_multi_query;
 use ahash::RandomState;
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::{anyhow, bail};
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -278,7 +278,7 @@ impl Object {
             .collect::<Vec<_>>();
 
         // Extract paths from list of internal relations
-        extract_paths_from_graph(&self.id, relations)
+        extract_paths_from_graph(relations)
     }
 
     /// Warning:
@@ -306,7 +306,7 @@ impl Object {
             .collect::<Vec<_>>();
 
         // Extract paths from list of internal relations
-        extract_paths_from_graph(object_id, relations)
+        extract_paths_from_graph(relations)
     }
 
     pub async fn get_object_with_relations(
@@ -749,7 +749,7 @@ impl ObjectWithRelations {
 }
 
 /* ----- Object path traversal ----- */
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Hierarchy {
     pub project_id: String,
     pub collection_id: Option<String>,
@@ -783,101 +783,170 @@ pub fn convert_paths_to_hierarchies(
     hierarchies
 }
 
-pub fn extract_paths_from_graph(
-    root_id: &DieselUlid,
-    edge_list: Vec<InternalRelation>,
-) -> Result<Vec<Hierarchy>> {
-    // Helper struct for minimalistic graph creation
-    #[derive(Debug)]
-    struct Node {
-        pub object_id: DieselUlid,
-        pub object_type: ObjectType,
-        pub parents: Vec<DieselUlid>,
-    }
-    impl Node {
-        fn add_to_parent(&mut self, id: DieselUlid) {
-            self.parents.push(id)
+pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<Hierarchy>> {
+    let mut children_map: HashMap<
+        DieselUlid,
+        HashSet<ObjectMapping<DieselUlid>, RandomState>,
+        RandomState,
+    > = HashMap::default();
+    let mut projects: HashSet<DieselUlid, RandomState> = HashSet::default();
+
+    for edge in edge_list {
+        children_map
+            .entry(edge.origin_pid)
+            .or_insert(HashSet::default())
+            .insert(edge.into_target_object_mapping());
+
+        if edge.origin_type == ObjectType::PROJECT {
+            projects.insert(edge.origin_pid);
         }
     }
 
-    // Create/update graph nodes from list of edges
-    let mut nodes: HashMap<DieselUlid, Node> = HashMap::new();
-    for edge in &edge_list {
-        // Create origin if not exists
-        if nodes.get(&edge.origin_pid).is_none() {
-            nodes.insert(
-                edge.origin_pid,
-                Node {
-                    object_id: edge.origin_pid,
-                    object_type: edge.origin_type,
-                    parents: vec![],
-                },
-            );
-        }
+    let mut queue: VecDeque<(Hierarchy, DieselUlid)> = VecDeque::new();
+    let mut results: Vec<Hierarchy> = vec![];
 
-        // Create target node if not exists; update parents else
-        if let Some(node) = nodes.get_mut(&edge.target_pid) {
-            node.add_to_parent(edge.origin_pid)
-        } else {
-            nodes.insert(
-                edge.target_pid,
-                Node {
-                    object_id: edge.target_pid,
-                    object_type: edge.target_type,
-                    parents: vec![edge.origin_pid],
-                },
-            );
-        }
+    for project in projects {
+        queue.push_back((
+            Hierarchy {
+                project_id: project.to_string(),
+                collection_id: None,
+                dataset_id: None,
+                object_id: None,
+            },
+            project,
+        ))
     }
 
-    // Fetch root node for traversal start point
-    let root_node = nodes
-        .get(root_id)
-        .ok_or_else(|| anyhow::anyhow!("Root doesn't exist"))?;
+    while let Some((hierarchy, last_node)) = queue.pop_front() {
+        match children_map.get(&last_node) {
+            Some(children) => {
+                for child in children {
+                    let mut mut_hierarchy = hierarchy.clone();
+                    match child {
+                        ObjectMapping::PROJECT(_) => {
+                            bail!("Project cannot be child of other resources")
+                        }
+                        ObjectMapping::COLLECTION(collection_id) => {
+                            mut_hierarchy.collection_id = Some(collection_id.to_string());
+                            queue.push_back((mut_hierarchy, *collection_id))
+                        }
+                        ObjectMapping::DATASET(dataset_id) => {
+                            mut_hierarchy.dataset_id = Some(dataset_id.to_string());
+                            queue.push_back((mut_hierarchy, *dataset_id))
+                        }
+                        ObjectMapping::OBJECT(object_id) => {
+                            if children_map.get(&object_id).is_some() {
+                                queue.push_back((mut_hierarchy.clone(), *object_id))
+                            }
 
-    // Traverse nodes and collect paths
-    let mut complete_paths = Vec::new();
-    let mut current_path = Vec::new();
-    let mut split_indexes = Vec::new();
-    let mut queue = VecDeque::new();
-    queue.push_front(root_node);
-
-    while let Some(current_node) = queue.pop_front() {
-        // Add current object to back of hierarchy
-        current_path.push(match current_node.object_type {
-            ObjectType::PROJECT => ObjectMapping::PROJECT(current_node.object_id),
-            ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_node.object_id),
-            ObjectType::DATASET => ObjectMapping::DATASET(current_node.object_id),
-            ObjectType::OBJECT => ObjectMapping::OBJECT(current_node.object_id),
-        });
-
-        // Check if current object is a project
-        if current_node.object_type == ObjectType::PROJECT {
-            // Save finished hierarchy
-            complete_paths.push(current_path.clone());
-
-            // Truncate current hierarchy back to last path split
-            if let Some(index) = split_indexes.pop() {
-                current_path.truncate(index) //
-            }
-        } else {
-            // Add parents to the front of the queue for DFS
-            for parent_id in &current_node.parents {
-                let parent = nodes
-                    .get(parent_id)
-                    .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
-
-                queue.push_front(parent);
-            }
-
-            // Save index n times for hierarchy cleanup if more than 1 parent
-            if current_node.parents.len() > 1 {
-                for _ in 0..(current_node.parents.len() - 1) {
-                    split_indexes.push(current_path.len())
+                            mut_hierarchy.object_id = Some(object_id.to_string());
+                            results.push(mut_hierarchy)
+                        }
+                    }
                 }
             }
+            None => results.push(hierarchy),
         }
     }
 
-    Ok(convert_paths_to_hierarchies(complete_paths))
+    Ok(results)
 }
+
+// pub fn extract_paths_from_graph(
+//     root_id: &DieselUlid,
+//     edge_list: Vec<InternalRelation>,
+// ) -> Result<Vec<Hierarchy>> {
+//     // Helper struct for minimalistic graph creation
+//     #[derive(Debug)]
+//     struct Node {
+//         pub object_id: DieselUlid,
+//         pub object_type: ObjectType,
+//         pub parents: Vec<DieselUlid>,
+//     }
+//     impl Node {
+//         fn add_to_parent(&mut self, id: DieselUlid) {
+//             self.parents.push(id)
+//         }
+//     }
+
+//     // Create/update graph nodes from list of edges
+//     let mut nodes: HashMap<DieselUlid, Node> = HashMap::new();
+//     for edge in &edge_list {
+//         // Create origin if not exists
+//         if nodes.get(&edge.origin_pid).is_none() {
+//             nodes.insert(
+//                 edge.origin_pid,
+//                 Node {
+//                     object_id: edge.origin_pid,
+//                     object_type: edge.origin_type,
+//                     parents: vec![],
+//                 },
+//             );
+//         }
+
+//         // Create target node if not exists; update parents else
+//         if let Some(node) = nodes.get_mut(&edge.target_pid) {
+//             node.add_to_parent(edge.origin_pid)
+//         } else {
+//             nodes.insert(
+//                 edge.target_pid,
+//                 Node {
+//                     object_id: edge.target_pid,
+//                     object_type: edge.target_type,
+//                     parents: vec![edge.origin_pid],
+//                 },
+//             );
+//         }
+//     }
+
+//     // Fetch root node for traversal start point
+//     let root_node = nodes
+//         .get(root_id)
+//         .ok_or_else(|| anyhow::anyhow!("Root doesn't exist"))?;
+
+//     // Traverse nodes and collect paths
+//     let mut complete_paths = Vec::new();
+//     let mut current_path = Vec::new();
+//     let mut split_indexes = Vec::new();
+//     let mut queue = VecDeque::new();
+//     queue.push_front(root_node);
+
+//     while let Some(current_node) = queue.pop_front() {
+//         // Add current object to back of hierarchy
+//         current_path.push(match current_node.object_type {
+//             ObjectType::PROJECT => ObjectMapping::PROJECT(current_node.object_id),
+//             ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_node.object_id),
+//             ObjectType::DATASET => ObjectMapping::DATASET(current_node.object_id),
+//             ObjectType::OBJECT => ObjectMapping::OBJECT(current_node.object_id),
+//         });
+
+//         // Check if current object is a project
+//         if current_node.object_type == ObjectType::PROJECT {
+//             // Save finished hierarchy
+//             complete_paths.push(current_path.clone());
+
+//             // Truncate current hierarchy back to last path split
+//             if let Some(index) = split_indexes.pop() {
+//                 current_path.truncate(index) //
+//             }
+//         } else {
+//             // Add parents to the front of the queue for DFS
+//             for parent_id in &current_node.parents {
+//                 let parent = nodes
+//                     .get(parent_id)
+//                     .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
+
+//                 queue.push_front(parent);
+//             }
+
+//             // Save index n times for hierarchy cleanup if more than 1 parent
+//             if current_node.parents.len() > 1 {
+//                 for _ in 0..(current_node.parents.len() - 1) {
+//                     split_indexes.push(current_path.len())
+//                 }
+//             }
+//         }
+//     }
+
+//     Ok(convert_paths_to_hierarchies(complete_paths))
+// }

@@ -39,12 +39,14 @@ impl DatabaseHandler {
         //     }
         // };
 
+        //let endpoint_id =
+
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let mut user = None;
 
         // Create object in database
-        let mut object = request.into_new_db_object(user_id)?;
+        let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
         object.create(transaction_client).await?;
 
         // if is_dataproxy && create_result.is_err() {
@@ -89,6 +91,7 @@ impl DatabaseHandler {
                         target_pid: object.id,
                         target_type: object.object_type,
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                        target_name: object.name.to_string(),
                     };
                     ir.create(transaction_client).await?;
                     DashMap::from_iter([(parent.get_id()?, ir)])
@@ -123,8 +126,5 @@ impl DatabaseHandler {
             //transaction.commit().await?;
             Ok((object_with_rel, user))
         }
-    }
-    async fn exists(_parent: ObjectWithRelations, _name: String) -> (Option<DieselUlid>, bool) {
-        todo!()
     }
 }

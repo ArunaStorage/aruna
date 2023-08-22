@@ -45,7 +45,7 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
     Object {
         id: object_id,
         revision_number: 0,
-        name: "a".to_string(),
+        name: object_id.to_string(),
         description: "b".to_string(),
         count: 1,
         created_at: None,
@@ -71,6 +71,7 @@ pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelati
         target_pid: target.id,
         target_type: target.object_type,
         relation_name: "BELONGS_TO".to_string(),
+        target_name: target.name.to_string(),
     }
 }
 

@@ -45,6 +45,7 @@ impl DatabaseHandler {
             relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
             target_pid: new_id,
             target_type: ObjectType::OBJECT,
+            target_name: clone.name.to_string(),
         };
 
         // Create object and relation in transaction

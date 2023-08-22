@@ -325,18 +325,12 @@ async fn get_by() {
     let create_collection = test_utils::new_object(user.id, dataset_id, ObjectType::COLLECTION);
 
     let relation_one = test_utils::new_internal_relation(&create_project, &create_collection);
-    let relation_two = test_utils::new_internal_relation(&create_project, &create_collection);
-    let relation_three = test_utils::new_internal_relation(&create_project, &create_collection);
 
-    let rel_vec = vec![
-        relation_one.clone(),
-        relation_two.clone(),
-        relation_three.clone(),
-    ];
+    let rel_vec = vec![relation_one.clone()];
     Object::batch_create(&vec![create_project, create_collection], client)
         .await
         .unwrap();
-    InternalRelation::batch_create(&vec![relation_one, relation_two, relation_three], client)
+    InternalRelation::batch_create(&vec![relation_one], client)
         .await
         .unwrap();
 

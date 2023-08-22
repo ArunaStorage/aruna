@@ -1,18 +1,24 @@
+use std::sync::Arc;
+
 use crate::common::{init_db::init_handler, test_utils};
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::ExternalRelation as APIExternalRelation;
 use aruna_rust_api::api::storage::models::v2::InternalRelation as APIInternalRelation;
 use aruna_rust_api::api::storage::models::v2::Relation;
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
+use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_METADATA,
 };
+use aruna_server::database::dsls::object_dsl::ObjectWithRelations;
 use aruna_server::database::dsls::object_dsl::{DefinedVariant, ExternalRelation, Object};
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::middlelayer::relations_request_types::ModifyRelations;
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
+use postgres_types::Json;
 
 #[tokio::test]
 async fn test_modify() {
@@ -39,6 +45,7 @@ async fn test_modify() {
         relation_name: INTERNAL_RELATION_VARIANT_METADATA.to_string(),
         target_pid: target,
         target_type: ObjectType::OBJECT,
+        target_name: objects[1].name.to_string(),
     };
     InternalRelation::batch_create(&vec![belongs_to, other], &client)
         .await
@@ -75,7 +82,19 @@ async fn test_modify() {
         add_relations: vec![rel_mod_one, rel_mod_two],
         remove_relations: vec![rel_del_one],
     });
-    let (obj, mod_lab) = db_handler.get_resource(request).await.unwrap();
+
+    let cache = Arc::new(Cache::new());
+    for obj in objects {
+        cache.add_object(ObjectWithRelations {
+            object: obj.clone(),
+            inbound: Json(DashMap::default()),
+            inbound_belongs_to: Json(DashMap::default()),
+            outbound: Json(DashMap::default()),
+            outbound_belongs_to: Json(DashMap::default()),
+        });
+    }
+
+    let (obj, mod_lab) = db_handler.get_resource(request, cache).await.unwrap();
     let owr = db_handler
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await

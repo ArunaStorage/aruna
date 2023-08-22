@@ -208,7 +208,8 @@ impl DatabaseHandler {
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
-                let mut relation = UpdateObject::add_parent_relation(id, p)?;
+                let mut relation =
+                    UpdateObject::add_parent_relation(id, p, create_object.name.to_string())?;
                 relation.create(transaction_client).await?;
             }
 
@@ -235,7 +236,8 @@ impl DatabaseHandler {
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {
-                let mut relation = UpdateObject::add_parent_relation(id, p)?;
+                let mut relation =
+                    UpdateObject::add_parent_relation(id, p, update_object.name.to_string())?;
                 relation.create(transaction_client).await?;
             }
 

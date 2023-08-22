@@ -1,5 +1,4 @@
-use std::str::FromStr;
-
+use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -10,31 +9,22 @@ use crate::middlelayer::relations_request_types::{
 use ahash::HashSet;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use diesel_ulid::DieselUlid;
+use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn modify_relations(
         &self,
         resource: Object,
-        labels_to_add: RelationsToAdd,
-        labels_to_remove: RelationsToRemove,
+        relations_add: RelationsToAdd,
+        relations_remove: RelationsToRemove,
     ) -> Result<ObjectWithRelations> {
         // Collect all affected ids before transaction
         let mut affected_objects: HashSet<diesel_ulid::DieselUlid> = HashSet::default();
         affected_objects.insert(resource.id);
-
-        for ext in &labels_to_add.external {
-            affected_objects
-                .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
-        }
-        for ext in &labels_to_remove.external {
-            affected_objects
-                .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
-        }
-        labels_to_add.internal.iter().for_each(|internal| {
+        relations_add.internal.iter().for_each(|internal| {
             affected_objects.insert(internal.id);
         });
-        labels_to_remove.internal.iter().for_each(|internal| {
+        relations_remove.internal.iter().for_each(|internal| {
             affected_objects.insert(internal.id);
         });
 
@@ -42,29 +32,29 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        if !labels_to_add.external.is_empty() {
+        if !relations_add.external.is_empty() {
             Object::add_external_relations(
                 &resource.id,
                 transaction_client,
-                labels_to_add.external,
+                relations_add.external,
             )
             .await?;
         }
-        if !labels_to_add.internal.is_empty() {
-            InternalRelation::batch_create(&labels_to_add.internal, transaction_client).await?;
+        if !relations_add.internal.is_empty() {
+            InternalRelation::batch_create(&relations_add.internal, transaction_client).await?;
         }
-        if !labels_to_remove.external.is_empty() {
+        if !relations_remove.external.is_empty() {
             Object::remove_external_relation(
                 &resource.id,
                 transaction_client,
-                labels_to_remove.external,
+                relations_remove.external,
             )
             .await?;
         }
-        if !labels_to_remove.internal.is_empty() {
+        if !relations_remove.internal.is_empty() {
             InternalRelation::batch_delete(
                 // This does not work because the conversion cannot guess diesel ulids
-                &labels_to_remove.internal.iter().map(|r| r.id).collect(),
+                &relations_remove.internal.iter().map(|r| r.id).collect(),
                 transaction_client,
             )
             .await?;
@@ -98,10 +88,14 @@ impl DatabaseHandler {
     pub async fn get_resource(
         &self,
         request: ModifyRelations,
+        cache: Arc<Cache>,
     ) -> Result<(Object, RelationsToModify)> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
         let resource = Object::get_object_with_relations(&id, &client).await?;
-        Ok((resource.object.clone(), request.get_labels(resource)?))
+        Ok((
+            resource.object.clone(),
+            request.get_labels(resource, cache)?,
+        ))
     }
 }

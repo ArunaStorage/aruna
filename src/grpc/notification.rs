@@ -11,7 +11,7 @@ use aruna_rust_api::api::notification::services::v2::{
     AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse, CreateStreamConsumerRequest,
     CreateStreamConsumerResponse, DeleteStreamConsumerRequest, DeleteStreamConsumerResponse,
     EventMessage, GetEventMessageBatchRequest, GetEventMessageBatchResponse,
-    GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse, ResourceTarget,
+    GetEventMessageStreamRequest, GetEventMessageStreamResponse, ResourceTarget,
 };
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
@@ -280,14 +280,14 @@ impl EventNotificationService for NotificationServiceImpl {
     }
 
     ///ToDo: Rust Doc
-    type GetEventMessageBatchStreamStream =
-        ReceiverStream<Result<GetEventMessageBatchStreamResponse, Status>>;
+    type GetEventMessageStreamStream =
+        ReceiverStream<Result<GetEventMessageStreamResponse, Status>>;
 
     ///ToDo: Rust Doc
-    async fn get_event_message_batch_stream(
+    async fn get_event_message_stream(
         &self,
-        request: tonic::Request<GetEventMessageBatchStreamRequest>,
-    ) -> Result<Response<Self::GetEventMessageBatchStreamStream>, Status> {
+        request: tonic::Request<GetEventMessageStreamRequest>,
+    ) -> Result<Response<Self::GetEventMessageStreamStream>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchStreamRequest.");
         log::debug!("{:?}", &request);
@@ -365,14 +365,16 @@ impl EventNotificationService for NotificationServiceImpl {
         tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = message_stream.next().await {
+                    log::debug!("Sending message to client: {}", nats_message.subject);
+
                     // Convert Nats.io message to proto message
                     let event_message =
                         convert_nats_message_to_proto(nats_message, &cloned_reply_signing_secret)?;
 
                     // Send message through stream
                     match tx
-                        .send(Ok(GetEventMessageBatchStreamResponse {
-                            messages: vec![event_message],
+                        .send(Ok(GetEventMessageStreamResponse {
+                            messages: Some(event_message),
                         }))
                         .await
                     {
@@ -391,7 +393,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Create gRPC response
         let grpc_response: Response<
-            ReceiverStream<std::result::Result<GetEventMessageBatchStreamResponse, Status>>,
+            ReceiverStream<std::result::Result<GetEventMessageStreamResponse, Status>>,
         > = Response::new(ReceiverStream::new(rx));
 
         // Log some stuff and return response
@@ -665,7 +667,7 @@ impl TryInto<Context> for EventType {
                 DbPermissionLevel::READ,
             )),
             EventType::Announcement(_) => Ok(Context::default()),
-            EventType::All => Ok(Context::admin()),
+            EventType::All => Ok(Context::proxy()),
         }
     }
 }

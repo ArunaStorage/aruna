@@ -156,7 +156,7 @@ impl DatabaseHandler {
         &self,
         user_id: DieselUlid,
         endpoint_id: DieselUlid,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let client = self.database.get_client().await?;
         let user = User::add_trusted_endpoint(&client, &user_id, &endpoint_id).await?;
 
@@ -172,7 +172,7 @@ impl DatabaseHandler {
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
 
-        Ok(())
+        Ok(user)
     }
 
     pub async fn add_permission_to_user(
