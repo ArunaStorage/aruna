@@ -246,7 +246,7 @@ impl StorageBackend for S3Backend {
             id: DieselUlid::generate(),
             bucket: match ex_bucket {
                 Some(bucket) => bucket,
-                None => self.get_random_bucket(),
+                None => self.get_random_bucket().to_ascii_lowercase(),
             },
             key,
             encryption_key: Some(encryption_key),

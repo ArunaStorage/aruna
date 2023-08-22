@@ -44,7 +44,6 @@ use aruna_rust_api::api::{
         user_service_client::UserServiceClient,
     },
 };
-use bincode::de;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;

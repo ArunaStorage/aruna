@@ -295,7 +295,7 @@ impl S3 for ArunaS3Service {
                         handler
                             .create_dataset(dataset, &token)
                             .await
-                            .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                            .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
                     }
                 }
                 Some(id)
@@ -326,7 +326,7 @@ impl S3 for ArunaS3Service {
                     handler
                         .create_and_finish(new_object.clone(), location, &token)
                         .await
-                        .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                        .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
             }
         }

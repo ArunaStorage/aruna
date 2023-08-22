@@ -241,9 +241,15 @@ impl AuthHandler {
 
             for (res, perm) in user.permissions {
                 if ids.check_if_in(res) && perm >= db_perm_from_method {
+                    let token_id = if user.user_id.to_string() == user.access_key {
+                        None
+                    } else {
+                        Some(user.access_key.clone())
+                    };
+
                     return Ok(CheckAccessResult::new(
                         Some(user.user_id.to_string()),
-                        Some(user.access_key),
+                        token_id,
                         Some(ids),
                         missing,
                         Some(obj),
