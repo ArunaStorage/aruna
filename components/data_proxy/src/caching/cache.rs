@@ -68,6 +68,7 @@ impl Cache {
                     .clone()
                     .create_notifications_channel()
                     .await
+                    .unwrap()
             });
 
             cache.set_notifications(notication_handler).await

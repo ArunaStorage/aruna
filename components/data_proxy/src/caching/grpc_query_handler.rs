@@ -4,9 +4,11 @@ use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
+use aruna_rust_api::api::notification::services::v2::create_stream_consumer_request::Target;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequest;
 use aruna_rust_api::api::notification::services::v2::AnouncementEvent;
+use aruna_rust_api::api::notification::services::v2::CreateStreamConsumerRequest;
 use aruna_rust_api::api::notification::services::v2::EventMessage;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamRequest;
@@ -42,6 +44,7 @@ use aruna_rust_api::api::{
         user_service_client::UserServiceClient,
     },
 };
+use bincode::de;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -414,8 +417,27 @@ impl GrpcQueryHandler {
     }
 
     pub async fn create_notifications_channel(&self) -> Result<()> {
+        let mut req = Request::new(CreateStreamConsumerRequest {
+            include_subresources: true,
+            target: Some(Target::All(true)),
+            ..Default::default()
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+
+        let consumer = self
+            .event_notification_service
+            .clone()
+            .create_stream_consumer(req)
+            .await?
+            .into_inner()
+            .stream_consumer;
+
         let mut req = Request::new(GetEventMessageStreamRequest {
-            stream_consumer: self.endpoint_id.to_string(),
+            stream_consumer: consumer,
         });
 
         req.metadata_mut().append(
