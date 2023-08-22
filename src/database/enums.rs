@@ -55,7 +55,7 @@ impl DataClass {
         )
     }
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
+#[derive(Hash, Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
 pub enum ObjectMapping<T> {
     PROJECT(T),
     COLLECTION(T),

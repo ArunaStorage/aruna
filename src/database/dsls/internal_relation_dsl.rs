@@ -1,4 +1,5 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
+use crate::database::enums::ObjectMapping;
 use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
@@ -184,5 +185,23 @@ impl InternalRelation {
         let prepared = client.prepare(&query).await?;
         client.execute(&prepared, &inserts).await?;
         Ok(())
+    }
+
+    pub fn into_origin_object_mapping(&self) -> ObjectMapping<DieselUlid> {
+        match self.origin_type {
+            ObjectType::PROJECT => ObjectMapping::PROJECT(self.origin_pid),
+            ObjectType::COLLECTION => ObjectMapping::COLLECTION(self.origin_pid),
+            ObjectType::DATASET => ObjectMapping::DATASET(self.origin_pid),
+            ObjectType::OBJECT => ObjectMapping::OBJECT(self.origin_pid),
+        }
+    }
+
+    pub fn into_target_object_mapping(&self) -> ObjectMapping<DieselUlid> {
+        match self.target_type {
+            ObjectType::PROJECT => ObjectMapping::PROJECT(self.target_pid),
+            ObjectType::COLLECTION => ObjectMapping::COLLECTION(self.target_pid),
+            ObjectType::DATASET => ObjectMapping::DATASET(self.target_pid),
+            ObjectType::OBJECT => ObjectMapping::OBJECT(self.target_pid),
+        }
     }
 }
