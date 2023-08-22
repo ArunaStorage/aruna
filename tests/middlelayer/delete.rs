@@ -4,7 +4,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::internal_relation_dsl::{
-    InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
+    InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_VERSION,
 };
 use aruna_server::database::dsls::object_dsl::Object;
 use aruna_server::database::enums::{ObjectStatus, ObjectType};
@@ -104,42 +104,62 @@ async fn delete_object() {
     // create user + objects
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
-    let object = DieselUlid::generate();
-    let object_v1 = DieselUlid::generate();
-    let object_v2 = DieselUlid::generate();
+    let object_id = DieselUlid::generate();
+    let object_v1_id = DieselUlid::generate();
+    let object_v2_id = DieselUlid::generate();
     let mut objects: Vec<Object> = Vec::new();
-    for o in [object, object_v1, object_v2] {
+
+    for o in [object_id, object_v1_id, object_v2_id] {
         objects.push(test_utils::new_object(user.id, o, ObjectType::OBJECT));
     }
+    let proj_id = DieselUlid::generate();
+    objects.push(test_utils::new_object(
+        user.id,
+        proj_id,
+        ObjectType::PROJECT,
+    ));
+
+    let proj_relations = InternalRelation {
+        id: DieselUlid::generate(),
+        origin_pid: proj_id,
+        origin_type: ObjectType::PROJECT,
+        relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+        target_pid: object_id,
+        target_type: ObjectType::OBJECT,
+        target_name: objects[0].name.to_string(),
+    };
+
     let relation_one = InternalRelation {
         id: DieselUlid::generate(),
-        origin_pid: object_v1,
+        origin_pid: object_v1_id,
         origin_type: ObjectType::OBJECT,
         relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
-        target_pid: object,
+        target_pid: object_id,
         target_type: ObjectType::OBJECT,
+        target_name: objects[0].name.to_string(),
     };
     let relation_two = InternalRelation {
         id: DieselUlid::generate(),
-        origin_pid: object_v2,
+        origin_pid: object_v2_id,
         origin_type: ObjectType::OBJECT,
         relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
-        target_pid: object,
+        target_pid: object_id,
         target_type: ObjectType::OBJECT,
+        target_name: objects[1].name.to_string(),
     };
     Object::batch_create(&objects, client).await.unwrap();
-    InternalRelation::batch_create(&vec![relation_one, relation_two], client)
+    InternalRelation::batch_create(&vec![proj_relations, relation_one, relation_two], client)
         .await
         .unwrap();
 
     // Test request
     let delete_request = DeleteRequest::Object(DeleteObjectRequest {
-        object_id: object.to_string(),
+        object_id: object_id.to_string(),
         with_revisions: true,
     });
     db_handler.delete_resource(delete_request).await.unwrap();
     assert_eq!(
-        Object::get(object, client)
+        Object::get(object_id, client)
             .await
             .unwrap()
             .unwrap()
@@ -147,7 +167,7 @@ async fn delete_object() {
         ObjectStatus::DELETED
     );
     assert_eq!(
-        Object::get(object_v1, client)
+        Object::get(object_v1_id, client)
             .await
             .unwrap()
             .unwrap()
@@ -155,7 +175,7 @@ async fn delete_object() {
         ObjectStatus::DELETED
     );
     assert_eq!(
-        Object::get(object_v2, client)
+        Object::get(object_v2_id, client)
             .await
             .unwrap()
             .unwrap()

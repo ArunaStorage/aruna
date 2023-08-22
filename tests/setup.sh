@@ -17,7 +17,8 @@ $Runtime run -d --name nats-js-server --rm -p 4222:4222 -p 8222:8222 nats:latest
 $Runtime run -d --rm -p 7700:7700 -e MEILI_MASTER_KEY='MASTER_KEY' getmeili/meilisearch:latest
 
 # Start yugabyte container
-$Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:latest bin/yugabyted start --daemon=false
+$Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:latest bin/yugabyted start\
+ --tserver_flags="enable_wait_queues=true,enable_deadlock_detection=true,yb_enable_read_committed_isolation=true" --daemon=false
 
 until [ "${Runtime} inspect -f {{.State.Running}} yugabyte"=="true" ]; do
     echo "Waiting for container startup ..."

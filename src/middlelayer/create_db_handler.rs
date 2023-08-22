@@ -125,7 +125,4 @@ impl DatabaseHandler {
             Ok((object_with_rel, user))
         }
     }
-    async fn exists(_parent: ObjectWithRelations, _name: String) -> (Option<DieselUlid>, bool) {
-        todo!()
-    }
 }
