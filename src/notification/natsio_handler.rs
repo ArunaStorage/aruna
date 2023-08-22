@@ -30,7 +30,12 @@ use super::utils::{
 
 // ----- Constants used for notifications -------------------- //
 pub const STREAM_NAME: &str = "AOS_STREAM";
-pub const STREAM_SUBJECTS: [&str; 3] = ["AOS.RESOURCE.>", "AOS.USER.>", "AOS.ANNOUNCEMENT.>"];
+pub const STREAM_SUBJECTS: [&str; 4] = [
+    "AOS.RESOURCE.>",
+    "AOS.USER.>",
+    "AOS.ANNOUNCEMENT.>",
+    "AOS.ENDPOINT.>",
+];
 // ----------------------------------------------------------- //
 
 pub struct NatsIoHandler {

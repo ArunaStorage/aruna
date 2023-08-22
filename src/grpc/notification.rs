@@ -365,6 +365,8 @@ impl EventNotificationService for NotificationServiceImpl {
         tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = message_stream.next().await {
+                    log::debug!("Sending message to client: {}", nats_message.subject);
+
                     // Convert Nats.io message to proto message
                     let event_message =
                         convert_nats_message_to_proto(nats_message, &cloned_reply_signing_secret)?;
@@ -665,7 +667,7 @@ impl TryInto<Context> for EventType {
                 DbPermissionLevel::READ,
             )),
             EventType::Announcement(_) => Ok(Context::default()),
-            EventType::All => Ok(Context::admin()),
+            EventType::All => Ok(Context::proxy()),
         }
     }
 }

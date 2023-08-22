@@ -488,14 +488,14 @@ impl UserService for UserServiceImpl {
             "Token signing failed"
         );
 
-        tonic_internal!(
+        let user = tonic_internal!(
             self.database_handler
                 .add_endpoint_to_user(user_id, endpoint.id)
                 .await,
             "Failed to add endpoint to user"
         );
 
-        //self.cache.u
+        self.cache.update_user(&user_id, user);
 
         // Request S3 credentials from Dataproxy
         let mut endpoint_host_url: String = "".to_string();
