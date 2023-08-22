@@ -13,6 +13,7 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 
+use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::{
     database::{
         connection::Database,
@@ -36,6 +37,7 @@ impl NotificationHandler {
         database: Arc<Database>,
         cache: Arc<Cache>,
         natsio_handler: Arc<NatsIoHandler>,
+        search_client: Arc<MeilisearchClient>,
     ) -> anyhow::Result<Self> {
         // Create standard pull consumer to fetch all notifications
         let (some1, _) = natsio_handler
@@ -69,25 +71,32 @@ impl NotificationHandler {
                         msg_variant,
                         cache_clone.clone(),
                         database_clone.clone(),
+                        search_client.clone(),
                     )
                     .await
                     {
-                        Ok(_) => {
-                            match &nats_message.reply {
-                                Some(reply_subject) => {
-                                    natsio_handler.acknowledge_raw(reply_subject).await?;
-
-                                    log::info!("Cache update and acknowledgement successful.")
-                                }
-                                None => todo!(),
-                            };
-                        }
-                        Err(err) => {
-                            // For now just log the error.
-                            // Nats re-delivers not acknowledged messages every 30s.
-                            log::warn!("Cache update failed: {err}")
-                        }
+                        Ok(_) => log::info!("NotificationHandler cache update successful"),
+                        Err(err) => log::error!("NotificationHandler cache update failed: {err}"),
                     }
+
+                    // Acknowlege received message in every case becaue the only way cache update can fail is through the database query.
+                    //   We have to trust that messages will only be sent if all database operations have been
+                    //   successful in advance and the database has a consistent status in relation to the message being sent.
+                    //   This means that in case of an error, the message does not represent the current state of the database,
+                    //   but is faulty or the database itself is not accessible.
+                    match &nats_message.reply {
+                        Some(reply_subject) => {
+                            match natsio_handler.acknowledge_raw(reply_subject).await {
+                                Ok(_) => log::info!(
+                                    "NotificationHandler message acknowledgement successful"
+                                ),
+                                Err(err) => log::info!(
+                                    "NotificationHandler message acknowledgement failed: {err}"
+                                ),
+                            }
+                        }
+                        None => log::error!("Nats message "),
+                    };
                 }
             }
         });
@@ -101,10 +110,11 @@ impl NotificationHandler {
         message: MessageVariant,
         cache: Arc<Cache>,
         database: Arc<Database>,
+        search_client: Arc<MeilisearchClient>,
     ) -> anyhow::Result<()> {
         match message {
             MessageVariant::ResourceEvent(event) => {
-                process_resource_event(event, cache, database).await?
+                process_resource_event(event, cache, database, search_client).await?
             }
             MessageVariant::UserEvent(event) => {
                 process_user_event(event, cache, database).await?;
@@ -124,6 +134,7 @@ async fn process_resource_event(
     resource_event: ResourceEvent,
     cache: Arc<Cache>,
     database: Arc<Database>,
+    search_client: Arc<MeilisearchClient>,
 ) -> anyhow::Result<()> {
     if let Some(resource) = resource_event.resource {
         // Extract resource id
@@ -131,6 +142,7 @@ async fn process_resource_event(
 
         // Process cache
         if let Some(variant) = EventVariant::from_i32(resource_event.event_variant) {
+            // Update resource cache
             match variant {
                 EventVariant::Unspecified => bail!("Unspecified event variant not allowed"),
                 EventVariant::Created | EventVariant::Updated => {
@@ -138,11 +150,19 @@ async fn process_resource_event(
                         // Convert to proto and compare checksum
                         let proto_resource: generic_resource::Resource =
                             object_plus.clone().try_into()?;
-                        let proto_checksum = checksum_resource(proto_resource)?;
+                        let proto_checksum = checksum_resource(proto_resource.clone())?;
 
-                        if !(proto_checksum == resource.checksum) {
-                            // Things that should not happen with a 'Created' event ...
+                        if proto_checksum != resource.checksum {
+                            // Update updated object in cache and search index
                             cache.update_object(&resource_ulid, object_plus);
+
+                            // Update resource search index
+                            search_client
+                                .add_or_update_stuff(
+                                    &[ObjectDocument::try_from(proto_resource)?],
+                                    MeilisearchIndexes::OBJECT,
+                                )
+                                .await?;
                         }
                     } else {
                         // Fetch object with relations from database and put into cache
@@ -150,6 +170,15 @@ async fn process_resource_event(
                         let object_plus =
                             Object::get_object_with_relations(&resource_ulid, &client).await?;
 
+                        // Update resource search index
+                        search_client
+                            .add_or_update_stuff(
+                                &[ObjectDocument::from(object_plus.object.clone())],
+                                MeilisearchIndexes::OBJECT,
+                            )
+                            .await?;
+
+                        // Add to cache
                         cache.object_cache.insert(resource_ulid, object_plus);
                     }
                 }
@@ -191,7 +220,7 @@ async fn process_user_event(
                     let proto_user = ApiUser::from(user.clone());
                     let proto_checksum = checksum_user(&proto_user)?;
 
-                    if !(proto_checksum == user_event.checksum) {
+                    if proto_checksum != user_event.checksum {
                         cache.update_user(&user_ulid, user);
                     }
                 } else {

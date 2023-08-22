@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use crate::database::crud::CrudDb;
 use crate::database::dsls::user_dsl::{User, UserAttributes};
+use crate::database::enums::{DbPermissionLevel, ObjectMapping};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
@@ -170,5 +173,35 @@ impl DatabaseHandler {
         }
 
         Ok(())
+    }
+
+    pub async fn add_permission_to_user(
+        &self,
+        user_id: DieselUlid,
+        resource_id: DieselUlid,
+        perm_level: ObjectMapping<DbPermissionLevel>,
+    ) -> Result<User> {
+        let client = self.database.get_client().await?;
+
+        let user = User::add_user_permission(
+            &client,
+            &user_id,
+            HashMap::from_iter([(resource_id, perm_level)]),
+        )
+        .await?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        Ok(user)
     }
 }

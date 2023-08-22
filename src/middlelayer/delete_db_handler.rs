@@ -1,6 +1,5 @@
 use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_VERSION;
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
-use crate::database::enums::ObjectType;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::{database::dsls::object_dsl::Object, middlelayer::delete_request_types::DeleteRequest};
 use anyhow::Result;
@@ -49,16 +48,7 @@ impl DatabaseHandler {
         let objects_plus = Object::get_objects_with_relations(&resources, &client).await?;
 
         for object_plus in &objects_plus {
-            let hierarchies = if object_plus.object.object_type == ObjectType::PROJECT {
-                vec![Hierarchy {
-                    project_id: object_plus.object.id.to_string(),
-                    collection_id: None,
-                    dataset_id: None,
-                    object_id: None,
-                }]
-            } else {
-                object_plus.object.fetch_object_hierarchies(&client).await?
-            };
+            let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
             if let Err(err) = self
                 .natsio_handler

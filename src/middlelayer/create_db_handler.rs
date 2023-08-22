@@ -4,8 +4,9 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
-use crate::database::enums::ObjectType;
+use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
+use crate::database::dsls::user_dsl::User;
+use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
@@ -18,24 +19,69 @@ impl DatabaseHandler {
         &self,
         request: CreateRequest,
         user_id: DieselUlid,
-    ) -> Result<ObjectWithRelations> {
+        _is_dataproxy: bool,
+    ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
+
+        // let parent = if let Some(parent) = request.get_parent() {
+        //     let check_existing =
+        //         Object::get_object_with_relations(&parent.get_id()?, &client).await?;
+        //     let (existing_ulid, exists) =
+
+        //     if true
+        //     {
+        //         if is_dataproxy {
+        //             let existing = Object::get_object_with_relations()
+        //         } else {
+        //             return Err(anyhow!("Object exists"));
+        //         }
+        //     }
+        // };
+
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+        let mut user = None;
 
         // Create object in database
         let mut object = request.into_new_db_object(user_id)?;
         object.create(transaction_client).await?;
 
+        // if is_dataproxy && create_result.is_err() {
+        //     // TODO: return conflicting object
+        //     let owr = ObjectWithRelations {
+        //         object,
+        //         inbound: Json(DashMap::default()),
+        //         // TODO: get
+        //         inbound_belongs_to: Json(DashMap::default()),
+        //         outbound: Json(DashMap::default()),
+        //         outbound_belongs_to: Json(DashMap::default()),
+        //     };
+        //     return Err(anyhow!("Conflicting value")); // Placeholder
+        // }
+
         // Create internal relation in database
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
             match request.get_type() {
-                ObjectType::PROJECT => DashMap::default(),
+                ObjectType::PROJECT => {
+                    user = Some(
+                        self.add_permission_to_user(
+                            user_id,
+                            object.id,
+                            ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                        )
+                        .await?,
+                    );
+
+                    DashMap::default()
+                }
                 _ => {
                     let parent = request
                         .get_parent()
                         .ok_or_else(|| anyhow!("No parent provided"))?;
+                    let _parent_with_relations =
+                        Object::get_object_with_relations(&parent.get_id()?, transaction_client)
+                            .await?;
                     let mut ir = InternalRelation {
                         id: DieselUlid::generate(),
                         origin_pid: parent.get_id()?,
@@ -51,16 +97,7 @@ impl DatabaseHandler {
         transaction.commit().await?;
 
         // Fetch all object paths for the notification subjects
-        let object_hierarchies = if let ObjectType::PROJECT = object.object_type {
-            vec![Hierarchy {
-                project_id: object.id.to_string(),
-                collection_id: None,
-                dataset_id: None,
-                object_id: None,
-            }]
-        } else {
-            object.fetch_object_hierarchies(&client).await?
-        };
+        let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
 
         // Create DTO which combines the object and its internal relations
         let object_with_rel = ObjectWithRelations {
@@ -84,7 +121,10 @@ impl DatabaseHandler {
         } else {
             // Commit transaction and return
             //transaction.commit().await?;
-            Ok(object_with_rel)
+            Ok((object_with_rel, user))
         }
+    }
+    async fn exists(_parent: ObjectWithRelations, _name: String) -> (Option<DieselUlid>, bool) {
+        todo!()
     }
 }

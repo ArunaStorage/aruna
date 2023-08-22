@@ -28,7 +28,10 @@ async fn create_project() {
         external_relations: vec![],
         data_class: 1,
     });
-    let proj = db_handler.create_resource(request, user.id).await.unwrap();
+    let (proj, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
 
     assert_eq!(proj.object.created_by, user.id);
     assert_eq!(proj.object.object_type, ObjectType::PROJECT);
@@ -66,7 +69,10 @@ async fn create_collection() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+    let (parent, _) = db_handler
+        .create_resource(parent, user.id, false)
+        .await
+        .unwrap();
 
     // test requests
     let request = CreateRequest::Collection(CreateCollectionRequest {
@@ -77,7 +83,10 @@ async fn create_collection() {
         data_class: 1,
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
     });
-    let coll = db_handler.create_resource(request, user.id).await.unwrap();
+    let (coll, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
 
     assert_eq!(coll.object.created_by, user.id);
     assert_eq!(coll.object.object_type, ObjectType::COLLECTION);
@@ -114,7 +123,10 @@ async fn create_dataset() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+    let (parent, _) = db_handler
+        .create_resource(parent, user.id, false)
+        .await
+        .unwrap();
 
     // test requests
     let request = CreateRequest::Dataset(CreateDatasetRequest {
@@ -125,7 +137,10 @@ async fn create_dataset() {
         data_class: 1,
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
     });
-    let ds = db_handler.create_resource(request, user.id).await.unwrap();
+    let (ds, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
 
     assert_eq!(ds.object.created_by, user.id);
     assert_eq!(ds.object.object_type, ObjectType::DATASET);
@@ -162,7 +177,10 @@ async fn create_object() {
         external_relations: vec![],
         data_class: 1,
     });
-    let parent = db_handler.create_resource(parent, user.id).await.unwrap();
+    let (parent, _) = db_handler
+        .create_resource(parent, user.id, false)
+        .await
+        .unwrap();
 
     // test requests
     let request = CreateRequest::Object(CreateObjectRequest {
@@ -174,7 +192,10 @@ async fn create_object() {
         hashes: vec![],
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
     });
-    let obj = db_handler.create_resource(request, user.id).await.unwrap();
+    let (obj, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
 
     assert_eq!(obj.object.created_by, user.id);
     assert_eq!(obj.object.object_type, ObjectType::OBJECT);

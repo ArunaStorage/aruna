@@ -1,10 +1,8 @@
 use std::str::FromStr;
 
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::object_dsl::Hierarchy;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
-use crate::database::enums::ObjectType;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::relations_request_types::{
     ModifyRelations, RelationsToAdd, RelationsToModify, RelationsToRemove,
@@ -34,10 +32,10 @@ impl DatabaseHandler {
                 .insert(DieselUlid::from_str(&ext.identifier).map_err(|e| anyhow::anyhow!(e))?);
         }
         labels_to_add.internal.iter().for_each(|internal| {
-            affected_objects.insert(DieselUlid::from(internal.id));
+            affected_objects.insert(internal.id);
         });
         labels_to_remove.internal.iter().for_each(|internal| {
-            affected_objects.insert(DieselUlid::from(internal.id));
+            affected_objects.insert(internal.id);
         });
 
         // Transaction
@@ -79,16 +77,7 @@ impl DatabaseHandler {
         let objects_plus = Object::get_objects_with_relations(&affected_ids, &client).await?;
 
         for object_plus in &objects_plus {
-            let hierarchies = if object_plus.object.object_type == ObjectType::PROJECT {
-                vec![Hierarchy {
-                    project_id: object_plus.object.id.to_string(),
-                    collection_id: None,
-                    dataset_id: None,
-                    object_id: None,
-                }]
-            } else {
-                object_plus.object.fetch_object_hierarchies(&client).await?
-            };
+            let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
             if let Err(err) = self
                 .natsio_handler

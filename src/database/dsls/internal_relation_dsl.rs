@@ -43,7 +43,7 @@ pub const INTERNAL_RELATION_VARIANT_POLICY: &str = "POLICY";
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type) VALUES (
+        let query = "INSERT INTO internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, ) VALUES (
             $1, $2, $3, $4, $5, $6
         );";
 

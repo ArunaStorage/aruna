@@ -144,11 +144,18 @@ pub async fn update_search_index(
     search_client: &Arc<MeilisearchClient>,
     index_updates: Vec<ObjectDocument>,
 ) {
+    // Remove confidential objects
+    let final_updates = index_updates
+        .into_iter()
+        .filter(|od| od.resource_type < 3)
+        .collect::<Vec<_>>();
+
+    // Update remaining objects in search index
     let client_clone = search_client.clone();
     tokio::spawn(async move {
         if let Err(err) = client_clone
             .add_or_update_stuff::<ObjectDocument>(
-                index_updates.as_slice(),
+                final_updates.as_slice(),
                 MeilisearchIndexes::OBJECT,
             )
             .await

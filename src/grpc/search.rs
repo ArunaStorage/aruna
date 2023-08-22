@@ -32,7 +32,7 @@ impl SearchService for SearchServiceImpl {
     async fn search_resources(
         &self,
         request: tonic::Request<SearchResourcesRequest>,
-    ) -> Result<tonic::Response<SearchResourcesResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<SearchResourcesResponse>, Status> {
         log_received!(&request);
 
         // Consumer gRPC request into its parts
@@ -53,9 +53,7 @@ impl SearchService for SearchServiceImpl {
 
         // Check if: 0 < limit <= 100
         if inner_request.limit <= 0 || inner_request.limit > 100 {
-            return Err(tonic::Status::invalid_argument(
-                "Limit must be between 1 and 100",
-            ));
+            return Err(Status::invalid_argument("Limit must be between 1 and 100"));
         }
 
         // Search meilisearch index
@@ -100,7 +98,7 @@ impl SearchService for SearchServiceImpl {
     async fn get_public_resource(
         &self,
         request: tonic::Request<GetPublicResourceRequest>,
-    ) -> Result<tonic::Response<GetPublicResourceResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<GetPublicResourceResponse>, Status> {
         log_received!(&request);
 
         // Consumer gRPC request into its parts
@@ -129,7 +127,7 @@ impl SearchService for SearchServiceImpl {
         let mut object_plus = self
             .cache
             .get_object(&resource_ulid)
-            .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
+            .ok_or_else(|| Status::not_found("Object not found"))?;
 
         // Check if object metadata is publicly available
         match object_plus.object.data_class {
