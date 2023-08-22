@@ -27,6 +27,7 @@ async fn create_project() {
         key_values: vec![],
         external_relations: vec![],
         data_class: 1,
+        preferred_endpoint: "".to_string(),
     });
     let (proj, _) = db_handler
         .create_resource(request, user.id, false)
@@ -68,6 +69,7 @@ async fn create_collection() {
         key_values: vec![],
         external_relations: vec![],
         data_class: 1,
+        preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false)
@@ -122,6 +124,7 @@ async fn create_dataset() {
         key_values: vec![],
         external_relations: vec![],
         data_class: 1,
+        preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false)
@@ -176,6 +179,7 @@ async fn create_object() {
         key_values: vec![],
         external_relations: vec![],
         data_class: 1,
+        preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false)

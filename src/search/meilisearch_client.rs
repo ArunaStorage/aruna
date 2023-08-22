@@ -124,6 +124,7 @@ impl From<ObjectDocument> for Project {
             created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: object_document.dynamic,
+            endpoints: vec![],
         }
     }
 }
@@ -170,6 +171,7 @@ impl From<ObjectDocument> for Collection {
             created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: object_document.dynamic,
+            endpoints: vec![],
         }
     }
 }
@@ -216,6 +218,7 @@ impl From<ObjectDocument> for Dataset {
             created_by: "".to_string(),
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: object_document.dynamic,
+            endpoints: vec![],
         }
     }
 }
@@ -263,6 +266,7 @@ impl From<ObjectDocument> for Object {
             status: Into::<ApiStatus>::into(object_document.resource_status) as i32,
             dynamic: false, // Objects are alywas persistent
             hashes: vec![],
+            endpoints: vec![],
         }
     }
 }

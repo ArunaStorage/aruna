@@ -311,7 +311,6 @@ impl NatsIoHandler {
         let message_variant = MessageVariant::ResourceEvent(ResourceEvent {
             resource: Some(Resource {
                 resource_id: object.object.id.to_string(),
-                associated_id: "deprecated".to_string(), //ToDo: Will be removed with the next API version release
                 persistent_resource_id: object.object.dynamic,
                 checksum: resource_checksum,
                 resource_variant: ResourceVariant::from(object.object.object_type) as i32,

@@ -23,7 +23,7 @@ impl DatabaseHandler {
         // Emit announcement notifications
         let announcements = vec![
             AnnouncementVariant::NewDataProxyId(endpoint.id.to_string()),
-            AnnouncementVariant::NewPubkey(true),
+            AnnouncementVariant::NewPubkey(pubkey.id as i32),
         ];
 
         for ann in announcements {

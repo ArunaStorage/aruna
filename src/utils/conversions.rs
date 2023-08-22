@@ -24,8 +24,8 @@ use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, CustomAttributes, Permission, PermissionLevel, ResourceVariant, Status,
-    Token, User as ApiUser, UserAttributes,
+    generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
+    Status, Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -394,6 +394,13 @@ impl From<DBUser> for ApiUser {
                 tokens: api_tokens,
                 custom_attributes: api_custom_attributes,
                 personal_permissions: api_permissions,
+                trusted_endpoints: db_user
+                    .attributes
+                    .0
+                    .trusted_endpoints
+                    .iter()
+                    .map(|e| e.key().to_string())
+                    .collect(),
             }),
         }
     }
@@ -529,6 +536,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::COLLECTION => generic_resource::Resource::Collection(GRPCCollection {
                 id: object_with_relations.object.id.to_string(),
@@ -542,6 +559,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::DATASET => generic_resource::Resource::Dataset(GRPCDataset {
                 id: object_with_relations.object.id.to_string(),
@@ -555,6 +582,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
             ObjectType::OBJECT => generic_resource::Resource::Object(GRPCObject {
                 id: object_with_relations.object.id.to_string(),
@@ -569,6 +606,16 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                 key_values: object_with_relations.object.key_values.0.into(),
                 status: object_with_relations.object.object_status.into(),
                 relations,
+                endpoints: object_with_relations
+                    .object
+                    .endpoints
+                    .0
+                    .iter()
+                    .map(|e| DataEndpoint {
+                        id: e.key().to_string(),
+                        full_synced: e.value().clone(),
+                    })
+                    .collect(),
             }),
         }
     }
@@ -646,6 +693,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
             id: object.id.to_string(),
@@ -659,6 +715,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
             id: object.id.to_string(),
@@ -672,6 +737,15 @@ pub fn from_db_object(
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
             id: object.id.to_string(),
@@ -686,6 +760,15 @@ pub fn from_db_object(
             status: object.object_status.into(),
             dynamic: object.dynamic,
             hashes: object.hashes.0.into(),
+            endpoints: object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    full_synced: e.value().clone(),
+                })
+                .collect(),
         })),
     }
 }
@@ -918,6 +1001,11 @@ impl From<DBUserAttributes> for UserAttributes {
                 .map(|c| c.into())
                 .collect(),
             personal_permissions,
+            trusted_endpoints: attr
+                .trusted_endpoints
+                .iter()
+                .map(|e| e.key().to_string())
+                .collect(),
         }
     }
 }

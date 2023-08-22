@@ -11,7 +11,7 @@ use aruna_rust_api::api::notification::services::v2::{
     AcknowledgeMessageBatchRequest, AcknowledgeMessageBatchResponse, CreateStreamConsumerRequest,
     CreateStreamConsumerResponse, DeleteStreamConsumerRequest, DeleteStreamConsumerResponse,
     EventMessage, GetEventMessageBatchRequest, GetEventMessageBatchResponse,
-    GetEventMessageBatchStreamRequest, GetEventMessageBatchStreamResponse, ResourceTarget,
+    GetEventMessageStreamRequest, GetEventMessageStreamResponse, ResourceTarget,
 };
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
@@ -280,14 +280,14 @@ impl EventNotificationService for NotificationServiceImpl {
     }
 
     ///ToDo: Rust Doc
-    type GetEventMessageBatchStreamStream =
-        ReceiverStream<Result<GetEventMessageBatchStreamResponse, Status>>;
+    type GetEventMessageStreamStream =
+        ReceiverStream<Result<GetEventMessageStreamResponse, Status>>;
 
     ///ToDo: Rust Doc
-    async fn get_event_message_batch_stream(
+    async fn get_event_message_stream(
         &self,
-        request: tonic::Request<GetEventMessageBatchStreamRequest>,
-    ) -> Result<Response<Self::GetEventMessageBatchStreamStream>, Status> {
+        request: tonic::Request<GetEventMessageStreamRequest>,
+    ) -> Result<Response<Self::GetEventMessageStreamStream>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchStreamRequest.");
         log::debug!("{:?}", &request);
@@ -371,8 +371,8 @@ impl EventNotificationService for NotificationServiceImpl {
 
                     // Send message through stream
                     match tx
-                        .send(Ok(GetEventMessageBatchStreamResponse {
-                            messages: vec![event_message],
+                        .send(Ok(GetEventMessageStreamResponse {
+                            messages: Some(event_message),
                         }))
                         .await
                     {
@@ -391,7 +391,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Create gRPC response
         let grpc_response: Response<
-            ReceiverStream<std::result::Result<GetEventMessageBatchStreamResponse, Status>>,
+            ReceiverStream<std::result::Result<GetEventMessageStreamResponse, Status>>,
         > = Response::new(ReceiverStream::new(rx));
 
         // Log some stuff and return response
