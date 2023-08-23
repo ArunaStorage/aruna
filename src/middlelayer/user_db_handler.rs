@@ -229,4 +229,31 @@ impl DatabaseHandler {
 
         Ok(user)
     }
+
+    pub async fn update_permission_from_user(
+        &self,
+        user_id: DieselUlid,
+        resource_id: DieselUlid,
+        permission: ObjectMapping<DbPermissionLevel>,
+    ) -> Result<User> {
+        let client = self.database.get_client().await?;
+
+        // Remove permission for specific resource from user
+        let user =
+            User::update_user_permission(&client, &user_id, &resource_id, permission).await?;
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        Ok(user)
+    }
 }

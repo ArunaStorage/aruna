@@ -155,7 +155,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
 
         let user_id = tonic_invalid!(
             DieselUlid::from_str(&inner_request.user_id),
-            "Invalid resource id format"
+            "Invalid user id format"
         );
 
         // Check permissions to fetch authorizations
@@ -192,8 +192,62 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// specific resource
     async fn update_authorizations(
         &self,
-        _request: tonic::Request<UpdateAuthorizationsRequest>,
+        request: tonic::Request<UpdateAuthorizationsRequest>,
     ) -> Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Validate request parameter
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        let user_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.user_id),
+            "Invalid user id format"
+        );
+
+        let permission_level: DbPermissionLevel = tonic_invalid!(
+            inner_request.permission_level.try_into(),
+            "Invalid permission level"
+        );
+
+        // Check permissions to fetch authorizations
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Fetch object from cache to determine type
+        let permission = self
+            .cache
+            .get_object(&resource_id)
+            .ok_or_else(|| tonic::Status::not_found("Object does not exist"))?
+            .into_object_mapping::<DbPermissionLevel>(permission_level);
+
+        // Remove resource permission from user
+        let user = tonic_internal!(
+            self.database_handler
+                .update_permission_from_user(user_id, resource_id, permission)
+                .await,
+            "Permission removal failed"
+        );
+
+        // Update local cache
+        self.cache.update_user(&user.id.clone(), user);
+
+        // Return found authorizations
+        let response = UpdateAuthorizationsResponse {
+            user_permission: None,
+        };
+        return_with_log!(response);
     }
 }

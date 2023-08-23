@@ -228,6 +228,27 @@ impl User {
         Ok(User::from_row(&row))
     }
 
+    pub async fn update_user_permission(
+        client: &Client,
+        user_id: &DieselUlid,
+        resource_id: &DieselUlid,
+        user_perm: ObjectMapping<DbPermissionLevel>,
+    ) -> Result<User> {
+        let query = "UPDATE users 
+        SET attributes = jsonb_set(attributes, ARRAY['permissions', $1::TEXT], $2::jsonb, true) 
+        WHERE id = $3
+        RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client
+            .query_one(
+                &prepared,
+                &[&resource_id.to_string(), &Json(user_perm), &user_id],
+            )
+            .await?;
+        Ok(User::from_row(&row))
+    }
+
     //ToDo: Rust Doc
     pub async fn add_user_token(
         client: &Client,
