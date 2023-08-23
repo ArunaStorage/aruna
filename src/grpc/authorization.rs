@@ -27,7 +27,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     async fn create_authorization(
         &self,
         request: tonic::Request<CreateAuthorizationRequest>,
-    ) -> std::result::Result<tonic::Response<CreateAuthorizationResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<CreateAuthorizationResponse>, tonic::Status> {
         log_received!(&request);
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
@@ -39,11 +39,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
         let resource_id = DieselUlid::from_str(&request.get_ref().resource_id)
             .map_err(|_| tonic::Status::invalid_argument("Invalid ulid"))?;
 
-        let ctx = Context::res_ctx(
-            resource_id,
-            crate::database::enums::DbPermissionLevel::ADMIN,
-            false,
-        );
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -86,7 +82,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     async fn get_authorizations(
         &self,
         _request: tonic::Request<GetAuthorizationsRequest>,
-    ) -> std::result::Result<tonic::Response<GetAuthorizationsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<GetAuthorizationsResponse>, tonic::Status> {
         todo!()
     }
     /// DeleteAuthorization
@@ -98,7 +94,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     async fn delete_authorization(
         &self,
         _request: tonic::Request<DeleteAuthorizationRequest>,
-    ) -> std::result::Result<tonic::Response<DeleteAuthorizationResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<DeleteAuthorizationResponse>, tonic::Status> {
         todo!()
     }
     /// UpdateAuthorization
@@ -110,7 +106,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
     async fn update_authorizations(
         &self,
         _request: tonic::Request<UpdateAuthorizationsRequest>,
-    ) -> std::result::Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
         todo!()
     }
 }

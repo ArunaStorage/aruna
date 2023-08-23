@@ -40,7 +40,7 @@ impl PermissionHandler {
             // Add Dataproxy context
             ctxs.push(Context::proxy());
 
-            if let Some(action) = proxy_action {
+            return if let Some(action) = proxy_action {
                 if action == Action::Impersonate {
                     //Case 1: Impersonate
                     //  - Check if provided contexts are proxy/activated/resource only
@@ -81,15 +81,15 @@ impl PermissionHandler {
                 }
 
                 if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
-                    return Ok((main_id, associated_id, true));
+                    Ok((main_id, associated_id, true))
                 } else {
-                    return Err(tonic::Status::unauthenticated(
+                    Err(tonic::Status::unauthenticated(
                         "Invalid proxy authentication",
-                    ));
+                    ))
                 }
             } else {
-                return Err(tonic::Status::internal("Missing intent action"));
-            }
+                Err(tonic::Status::internal("Missing intent action"))
+            };
         }
 
         // Check permissions for standard ArunaServer user token

@@ -157,6 +157,7 @@ pub async fn main() -> Result<()> {
                     auth_arc.clone(),
                     cache_arc.clone(),
                     meilisearch_arc.clone(),
+                    default_endpoint.clone(),
                 )
                 .await,
             ))

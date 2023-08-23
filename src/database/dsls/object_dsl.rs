@@ -549,6 +549,31 @@ impl Object {
         writer.finish().await?;
         Ok(())
     }
+
+    pub async fn check_existing_projects(
+        name: String,
+        client: &Client,
+    ) -> Result<Option<ObjectWithRelations>> {
+        let query = "WITH o AS ( 
+            SELECT * FROM objects
+            WHERE name = $1 AND object_type = 'PROJECT'
+        )
+        SELECT o.*,
+            COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
+            COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
+            COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
+            COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
+            FROM objects o
+            LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
+            WHERE o.name = $1 
+            GROUP BY o.id;";
+        let prepared = client.prepare(&query).await?;
+        let result: Option<ObjectWithRelations> = client
+            .query_opt(&prepared, &[&name])
+            .await?
+            .map(|r| ObjectWithRelations::from_row(&r));
+        Ok(result)
+    }
 }
 
 impl PartialEq for Object {

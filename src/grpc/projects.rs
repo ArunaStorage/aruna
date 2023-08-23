@@ -29,7 +29,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
 
-crate::impl_grpc_server!(ProjectServiceImpl, search_client: Arc<MeilisearchClient>);
+crate::impl_grpc_server!(ProjectServiceImpl, search_client: Arc<MeilisearchClient>, default_endpoint: String);
 
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {
@@ -56,11 +56,11 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         // Create project in database
-        let request = CreateRequest::Project(inner_request);
+        let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
 
         let (project, user) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy)
+                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
                 .await,
             "Internal database error"
         );
