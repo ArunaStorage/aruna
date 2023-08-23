@@ -5,14 +5,18 @@ use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as
 use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateDatasetRequest, CreateObjectRequest, CreateProjectRequest,
 };
+use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn create_project() {
     // init
     let db_handler = init_db::init_handler().await;
+
+    let cache = Arc::new(Cache::new());
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -30,7 +34,7 @@ async fn create_project() {
         preferred_endpoint: "".to_string(),
     });
     let (proj, _) = db_handler
-        .create_resource(request, user.id, false)
+        .create_resource(request, user.id, false, cache)
         .await
         .unwrap();
 
@@ -57,6 +61,7 @@ async fn create_collection() {
     // init
     let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
+    let cache = Arc::new(Cache::new());
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -72,9 +77,10 @@ async fn create_collection() {
         preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false)
+        .create_resource(parent, user.id, false, cache.clone())
         .await
         .unwrap();
+    cache.add_object(parent.clone());
 
     // test requests
     let request = CreateRequest::Collection(CreateCollectionRequest {
@@ -86,7 +92,7 @@ async fn create_collection() {
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
     });
     let (coll, _) = db_handler
-        .create_resource(request, user.id, false)
+        .create_resource(request, user.id, false, cache.clone())
         .await
         .unwrap();
 
@@ -113,6 +119,7 @@ async fn create_dataset() {
     // init
     let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
+    let cache = Arc::new(Cache::new());
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -127,9 +134,10 @@ async fn create_dataset() {
         preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false)
+        .create_resource(parent, user.id, false, cache.clone())
         .await
         .unwrap();
+    cache.add_object(parent.clone());
 
     // test requests
     let request = CreateRequest::Dataset(CreateDatasetRequest {
@@ -141,7 +149,7 @@ async fn create_dataset() {
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
     });
     let (ds, _) = db_handler
-        .create_resource(request, user.id, false)
+        .create_resource(request, user.id, false, cache)
         .await
         .unwrap();
 
@@ -168,6 +176,7 @@ async fn create_object() {
     // init
     let db_handler = init_db::init_handler().await;
     let client = &db_handler.database.get_client().await.unwrap();
+    let cache = Arc::new(Cache::new());
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -182,9 +191,10 @@ async fn create_object() {
         preferred_endpoint: "".to_string(),
     });
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false)
+        .create_resource(parent, user.id, false, cache.clone())
         .await
         .unwrap();
+    cache.add_object(parent.clone());
 
     // test requests
     let request = CreateRequest::Object(CreateObjectRequest {
@@ -197,7 +207,7 @@ async fn create_object() {
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
     });
     let (obj, _) = db_handler
-        .create_resource(request, user.id, false)
+        .create_resource(request, user.id, false, cache)
         .await
         .unwrap();
 

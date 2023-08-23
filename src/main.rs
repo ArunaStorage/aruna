@@ -136,7 +136,7 @@ pub async fn main() -> Result<()> {
     let client = db_arc.get_client().await?;
 
     if !&default_endpoint.is_empty()
-        && &Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
+        && Endpoint::get(DieselUlid::from_str(&default_endpoint)?, &client)
             .await?
             .is_some()
     {
