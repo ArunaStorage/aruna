@@ -38,6 +38,7 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use super::data_handler::DataHandler;
 use super::utils::buffered_s3_sink::BufferedS3Sink;
 use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
@@ -602,7 +603,7 @@ impl S3 for ArunaS3Service {
 
         // If the object exists and the signatures match -> Skip the download
 
-        let location = if let Some((_, Some(loc))) = object {
+        let mut location = if let Some((_, Some(loc))) = object {
             loc
         } else {
             return Err(s3_error!(InvalidArgument, "Object not initialized"));
@@ -636,7 +637,9 @@ impl S3 for ArunaS3Service {
                 etag_parts,
                 location
                     .upload_id
-                    .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?,
+                    .as_ref()
+                    .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
+                    .to_string(),
             )
             .await
             .map_err(|e| {
@@ -649,10 +652,17 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
 
+        let hashes = DataHandler::finalize_location(self.backend.clone(), &mut location)
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to finalize location")
+            })?;
+
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 handler
-                    .finish_object(location.id, todo!(), todo!(), &token)
+                    .finish_object(location.id, location.raw_content_len, hashes, &token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
             }
