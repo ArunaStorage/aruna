@@ -1,15 +1,17 @@
 use super::update_request_types::UpdateObject;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::{KeyValueVariant, Object, ObjectWithRelations};
+use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
+use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, UpdateObjectRequest};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::str::FromStr;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -264,5 +266,23 @@ impl DatabaseHandler {
             //transaction.commit().await?;
             Ok((object_plus, flag))
         }
+    }
+    pub async fn finish_object(
+        &self,
+        request: FinishObjectStagingRequest,
+    ) -> Result<ObjectWithRelations> {
+        let client = self.database.get_client().await?;
+        let id = DieselUlid::from_str(&request.object_id)?;
+        let hashes = if request.hashes.is_empty() {
+            None
+        } else {
+            Some(request.hashes.try_into()?)
+        };
+        let content_len = request.content_len;
+        Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
+            .await?;
+
+        // TODO: Database request finish_object_staging() should return ObjectWithRelations
+        Object::get_object_with_relations(&id, &client).await
     }
 }
