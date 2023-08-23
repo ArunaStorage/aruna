@@ -390,7 +390,17 @@ impl GrpcQueryHandler {
             AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
         );
 
-        self.object_service.clone().create_object(req).await?;
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await?
+            .into_inner();
+
+        let object: DPObject = response
+            .object
+            .ok_or(anyhow!("unknown project"))?
+            .try_into()?;
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: object.id.to_string(),
