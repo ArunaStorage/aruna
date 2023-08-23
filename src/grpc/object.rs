@@ -58,7 +58,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let (object_plus, _) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy)
+                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
                 .await,
             "Internal database error"
         );

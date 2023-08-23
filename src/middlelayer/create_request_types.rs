@@ -1,7 +1,9 @@
 use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
-use anyhow::Result;
+use ahash::RandomState;
+use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -13,9 +15,10 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub enum CreateRequest {
-    Project(CreateProjectRequest),
+    Project(CreateProjectRequest, String),
     Collection(CreateCollectionRequest),
     Dataset(CreateDatasetRequest),
     Object(CreateObjectRequest),
@@ -56,7 +59,7 @@ impl Parent {
 impl CreateRequest {
     pub fn get_name(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.name.to_string(),
+            CreateRequest::Project(request, _) => request.name.to_string(),
             CreateRequest::Collection(request) => request.name.to_string(),
             CreateRequest::Dataset(request) => request.name.to_string(),
             CreateRequest::Object(request) => request.name.to_string(),
@@ -65,7 +68,7 @@ impl CreateRequest {
 
     pub fn get_description(&self) -> String {
         match self {
-            CreateRequest::Project(request) => request.description.to_string(),
+            CreateRequest::Project(request, _) => request.description.to_string(),
             CreateRequest::Collection(request) => request.description.to_string(),
             CreateRequest::Dataset(request) => request.description.to_string(),
             CreateRequest::Object(request) => request.description.to_string(),
@@ -74,7 +77,7 @@ impl CreateRequest {
 
     pub fn get_key_values(&self) -> &Vec<KeyValue> {
         match self {
-            CreateRequest::Project(request) => &request.key_values,
+            CreateRequest::Project(request, _) => &request.key_values,
             CreateRequest::Collection(request) => &request.key_values,
             CreateRequest::Dataset(request) => &request.key_values,
             CreateRequest::Object(request) => &request.key_values,
@@ -83,7 +86,7 @@ impl CreateRequest {
 
     pub fn get_external_relations(&self) -> &Vec<ExternalRelation> {
         match self {
-            CreateRequest::Project(request) => &request.external_relations,
+            CreateRequest::Project(request, _) => &request.external_relations,
             CreateRequest::Collection(request) => &request.external_relations,
             CreateRequest::Dataset(request) => &request.external_relations,
             CreateRequest::Object(request) => &request.external_relations,
@@ -92,7 +95,7 @@ impl CreateRequest {
 
     pub fn get_data_class(&self) -> i32 {
         match self {
-            CreateRequest::Project(request) => request.data_class,
+            CreateRequest::Project(request, _) => request.data_class,
             CreateRequest::Collection(request) => request.data_class,
             CreateRequest::Dataset(request) => request.data_class,
             CreateRequest::Object(request) => request.data_class,
@@ -108,7 +111,7 @@ impl CreateRequest {
 
     pub fn get_type(&self) -> ObjectType {
         match self {
-            CreateRequest::Project(_) => ObjectType::PROJECT,
+            CreateRequest::Project(..) => ObjectType::PROJECT,
             CreateRequest::Collection(_) => ObjectType::COLLECTION,
             CreateRequest::Dataset(_) => ObjectType::DATASET,
             CreateRequest::Object(_) => ObjectType::OBJECT,
@@ -121,7 +124,7 @@ impl CreateRequest {
 
     pub fn get_status(&self) -> ObjectStatus {
         match self {
-            CreateRequest::Project(_)
+            CreateRequest::Project(..)
             | CreateRequest::Collection(_)
             | CreateRequest::Dataset(_) => ObjectStatus::AVAILABLE,
             CreateRequest::Object(_) => ObjectStatus::INITIALIZING,
@@ -130,18 +133,48 @@ impl CreateRequest {
 
     pub fn get_parent(&self) -> Option<Parent> {
         match self {
-            CreateRequest::Project(_) => None,
+            CreateRequest::Project(..) => None,
             CreateRequest::Collection(request) => Some(request.parent.clone()?.into()),
             CreateRequest::Dataset(request) => Some(request.parent.clone()?.into()),
             CreateRequest::Object(request) => Some(request.parent.clone()?.into()),
         }
     }
 
-    pub fn get_endpoint(&self) -> Result<DieselUlid> {
-        // FIXME: Please daddy fix me !
+    pub fn get_endpoint(
+        &self,
+        cache: Arc<Cache>,
+    ) -> Result<DashMap<DieselUlid, bool, RandomState>> {
+        dbg!("Get endpoints");
         match self {
-            CreateRequest::Project(req) => Ok(DieselUlid::from_str(&req.preferred_endpoint)?),
-            _ => todo!(),
+            CreateRequest::Project(req, default_endpoint) => {
+                if req.preferred_endpoint.is_empty() {
+                    // Quick and dirty
+                    Ok(DashMap::from_iter([(
+                        DieselUlid::from_str(default_endpoint)?,
+                        true, // is true, because at least one full sync endpoint is needed for projects
+                    )]))
+                } else {
+                    Ok(DashMap::from_iter([(
+                        DieselUlid::from_str(&req.preferred_endpoint)?,
+                        true, // is true, because at least one full sync endpoint is needed for projects
+                    )]))
+                }
+            }
+            _ => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent found"))?;
+                let parent = cache
+                    .get_object(&parent.get_id()?)
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                Ok(parent
+                    .object
+                    .endpoints
+                    .0
+                    .into_iter()
+                    .filter(|(_, full_sync)| *full_sync)
+                    .collect())
+            }
         }
     }
 

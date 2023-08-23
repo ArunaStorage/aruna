@@ -22,7 +22,7 @@ impl StorageStatusService for StorageStatusServiceImpl {
     async fn get_storage_version(
         &self,
         _request: tonic::Request<GetStorageVersionRequest>,
-    ) -> std::result::Result<tonic::Response<GetStorageVersionResponse>, tonic::Status> {
+    ) -> Result<Response<GetStorageVersionResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Nothing to see here!"))
     }
     /// GetStorageStatus
@@ -33,14 +33,14 @@ impl StorageStatusService for StorageStatusServiceImpl {
     async fn get_storage_status(
         &self,
         _request: tonic::Request<GetStorageStatusRequest>,
-    ) -> std::result::Result<tonic::Response<GetStorageStatusResponse>, tonic::Status> {
+    ) -> Result<Response<GetStorageStatusResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Nothing to see here!"))
     }
 
     async fn get_pubkeys(
         &self,
         _request: tonic::Request<GetPubkeysRequest>,
-    ) -> std::result::Result<tonic::Response<GetPubkeysResponse>, tonic::Status> {
+    ) -> Result<Response<GetPubkeysResponse>, tonic::Status> {
         let pubkeys = self
             .cache
             .pubkeys
