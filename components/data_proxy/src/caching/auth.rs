@@ -283,6 +283,9 @@ impl AuthHandler {
         res_strings.sort();
         alt.sort();
 
+        log::debug!("Res strings: {:?}", &res_strings);
+        log::debug!("Cacher res: {:#?}", self.cache.resources);
+        log::debug!("Cache paths: {:#?}", self.cache.paths);
         for res in res_strings {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
                 let cache_obj = self
