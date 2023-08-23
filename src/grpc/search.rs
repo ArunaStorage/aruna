@@ -2,7 +2,7 @@ use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::KeyValues;
 use crate::database::enums::DataClass;
 use crate::{auth::permission_handler::PermissionHandler, database::enums::DbPermissionLevel};
-use aruna_rust_api::api::storage::models::v2::generic_resource::{self, Resource};
+use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
     services::v2::{
@@ -150,8 +150,7 @@ impl SearchService for SearchServiceImpl {
         object_plus.object.endpoints = Json(DashMap::default());
 
         // Convert to proto resource
-        let generic_object: generic_resource::Resource =
-            tonic_invalid!(object_plus.try_into(), "Invalid object");
+        let generic_object: Resource = tonic_invalid!(object_plus.try_into(), "Invalid object");
 
         // Create response and return with log
         let response = GetPublicResourceResponse {
