@@ -185,8 +185,8 @@ impl S3 for ArunaS3Service {
 
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
-        let final_md5 = String::new();
-        let final_sha256 = String::new();
+        let mut final_md5 = String::new();
+        let mut final_sha256 = String::new();
         let mut size_counter = 0;
         // If the object exists and the signatures match -> Skip the download
 
@@ -312,6 +312,9 @@ impl S3 for ArunaS3Service {
                     res_ids.get_project(),
                 )]));
             }
+
+            final_md5 = format!("{:x}", md5_hash.finalize());
+            final_sha256 = format!("{:x}", sha256_hash.finalize());
 
             new_object.hashes = vec![
                 ("MD5".to_string(), final_md5.clone()),
