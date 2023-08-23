@@ -26,7 +26,6 @@ async fn search_test() {
 
     // Generate random index objects
     let index_documents = (0..10)
-        .into_iter()
         .map(|_| generate_random_object_document())
         .collect::<Vec<_>>();
 
@@ -41,21 +40,11 @@ async fn search_test() {
 
     // List index for and check if index contains all created documents
     let all_documents = meilisearch_client.list_index("objects").await.unwrap();
-/* 
-    for doc in &index_documents {
-        if !(all_documents.contains(doc)) {
-            dbg!(all_documents.len());
-            dbg!(doc);
-        }
 
-        assert!(all_documents.contains(doc))
-    }
-*/
-    
-       index_documents
-           .iter()
-           .for_each(|doc| assert!(all_documents.contains(doc)));
-    
+    index_documents
+        .iter()
+        .for_each(|doc| assert!(all_documents.contains(doc)));
+
     // Query some specific stuff without filter/sorting
     let mut specific_document = index_documents.first().unwrap().to_owned();
     let document_id = specific_document.id.to_string();
