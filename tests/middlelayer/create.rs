@@ -10,8 +10,18 @@ use aruna_server::database::crud::CrudDb;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use std::sync::Arc;
 
+fn random_name() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect()
+}
 #[tokio::test]
 async fn create_project() {
     // init
@@ -24,19 +34,20 @@ async fn create_project() {
         .await
         .unwrap();
     // Default endpoint:
-    let default_endpoint = DieselUlid::generate().to_string();
+    let default_endpoint = DieselUlid::generate();
+    let project_name = random_name();
 
     // test requests
     let request = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: project_name.clone(),
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        default_endpoint,
+        default_endpoint.to_string(),
     );
     let (proj, _) = db_handler
         .create_resource(request, user.id, false, cache)
@@ -45,7 +56,7 @@ async fn create_project() {
 
     assert_eq!(proj.object.created_by, user.id);
     assert_eq!(proj.object.object_type, ObjectType::PROJECT);
-    assert_eq!(proj.object.name, "project".to_string());
+    assert_eq!(proj.object.name, project_name);
     assert_eq!(proj.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(proj.object.data_class, DataClass::PUBLIC);
     assert_eq!(proj.object.description, "test".to_string());
@@ -55,7 +66,12 @@ async fn create_project() {
     assert!(proj.object.hashes.0 .0.is_empty());
     assert!(proj.object.key_values.0 .0.is_empty());
     assert!(proj.object.external_relations.0 .0.is_empty());
-    //assert!(proj.object.endpoints.0.is_empty());
+    assert!(proj
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(proj.inbound.0.is_empty());
     assert!(proj.inbound_belongs_to.0.is_empty());
     assert!(proj.outbound.0.is_empty());
@@ -72,17 +88,21 @@ async fn create_collection() {
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
 
+    // default endpoint:
+    let default_endpoint = DieselUlid::generate();
+
     // create parent
+    let parent_name = random_name();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: parent_name,
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        DieselUlid::generate().to_string(),
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -91,8 +111,9 @@ async fn create_collection() {
     cache.add_object(parent.clone());
 
     // test requests
+    let collection_name = random_name();
     let request = CreateRequest::Collection(CreateCollectionRequest {
-        name: "collection".to_string(),
+        name: collection_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -106,7 +127,7 @@ async fn create_collection() {
 
     assert_eq!(coll.object.created_by, user.id);
     assert_eq!(coll.object.object_type, ObjectType::COLLECTION);
-    assert_eq!(coll.object.name, "collection".to_string());
+    assert_eq!(coll.object.name, collection_name);
     assert_eq!(coll.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(coll.object.data_class, DataClass::PUBLIC);
     assert_eq!(coll.object.description, "test".to_string());
@@ -116,7 +137,12 @@ async fn create_collection() {
     assert!(coll.object.hashes.0 .0.is_empty());
     assert!(coll.object.key_values.0 .0.is_empty());
     assert!(coll.object.external_relations.0 .0.is_empty());
-    //assert!(coll.object.endpoints.0.is_empty());
+    assert!(coll
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(coll.inbound.0.is_empty());
     assert!(coll.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(coll.outbound.0.is_empty());
@@ -132,17 +158,21 @@ async fn create_dataset() {
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+
+    // endpoint
+    let default_endpoint = DieselUlid::generate();
     // create parent
+    let parent_name = random_name();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: parent_name,
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        DieselUlid::generate().to_string(),
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -151,8 +181,9 @@ async fn create_dataset() {
     cache.add_object(parent.clone());
 
     // test requests
+    let dataset_name = random_name();
     let request = CreateRequest::Dataset(CreateDatasetRequest {
-        name: "dataset".to_string(),
+        name: dataset_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -166,7 +197,7 @@ async fn create_dataset() {
 
     assert_eq!(ds.object.created_by, user.id);
     assert_eq!(ds.object.object_type, ObjectType::DATASET);
-    assert_eq!(ds.object.name, "dataset".to_string());
+    assert_eq!(ds.object.name, dataset_name);
     assert_eq!(ds.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(ds.object.data_class, DataClass::PUBLIC);
     assert_eq!(ds.object.description, "test".to_string());
@@ -176,7 +207,12 @@ async fn create_dataset() {
     assert!(ds.object.hashes.0 .0.is_empty());
     assert!(ds.object.key_values.0 .0.is_empty());
     assert!(ds.object.external_relations.0 .0.is_empty());
-    //assert!(ds.object.endpoints.0.is_empty());
+    assert!(ds
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(ds.inbound.0.is_empty());
     assert!(ds.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(ds.outbound.0.is_empty());
@@ -192,17 +228,39 @@ async fn create_object() {
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+
+    // let not default endpoint
+    let endpoint = DieselUlid::generate();
     // create parent
-    let parent = CreateRequest::Project(
+    let failing_parent = CreateRequest::Project(
         CreateProjectRequest {
             name: "project".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
             data_class: 1,
-            preferred_endpoint: DieselUlid::generate().to_string(),
+            preferred_endpoint: endpoint.to_string(),
         },
         DieselUlid::generate().to_string(),
+    );
+    // Should fail because endpoint does not exist
+    assert!(db_handler
+        .create_resource(failing_parent, user.id, false, cache.clone())
+        .await
+        .is_err());
+
+    let default_endpoint = DieselUlid::generate();
+    let parent_name = random_name();
+    let parent = CreateRequest::Project(
+        CreateProjectRequest {
+            name: parent_name,
+            description: "test".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: 1,
+            preferred_endpoint: "".to_string(),
+        },
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -211,8 +269,9 @@ async fn create_object() {
     cache.add_object(parent.clone());
 
     // test requests
+    let object_name = random_name();
     let request = CreateRequest::Object(CreateObjectRequest {
-        name: "object".to_string(),
+        name: object_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -227,7 +286,7 @@ async fn create_object() {
 
     assert_eq!(obj.object.created_by, user.id);
     assert_eq!(obj.object.object_type, ObjectType::OBJECT);
-    assert_eq!(obj.object.name, "object".to_string());
+    assert_eq!(obj.object.name, object_name);
     assert_eq!(obj.object.object_status, ObjectStatus::INITIALIZING);
     assert_eq!(obj.object.data_class, DataClass::PUBLIC);
     assert_eq!(obj.object.description, "test".to_string());
@@ -237,7 +296,12 @@ async fn create_object() {
     assert!(obj.object.hashes.0 .0.is_empty());
     assert!(obj.object.key_values.0 .0.is_empty());
     assert!(obj.object.external_relations.0 .0.is_empty());
-    //assert!(obj.object.endpoints.0.is_empty());
+    assert!(obj
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(obj.inbound.0.is_empty());
     assert!(obj.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(obj.outbound.0.is_empty());

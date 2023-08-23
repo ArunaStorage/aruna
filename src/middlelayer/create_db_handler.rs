@@ -28,9 +28,8 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
 
         // query endpoints
-        let endpoint_ids = request.get_endpoint(cache.clone())?;
+        let endpoint_ids = request.get_endpoint(cache.clone(), &client).await?;
 
-        dbg!("Reached ep_ids: {:?}", &endpoint_ids);
         // check if project exists:
         if request.get_type() == ObjectType::PROJECT {
             let object = Object::check_existing_projects(request.get_name(), &client).await?;
@@ -53,23 +52,7 @@ impl DatabaseHandler {
         // Create object in database
         let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
         object.endpoints = Json(endpoint_ids);
-        let result = object.create(transaction_client).await;
-        dbg!("Reached obj creation");
-
-        // return Object if ProxyCtx else return Err
-        if result.is_err() && is_dataproxy {
-            let owr = cache.get_object(&object.id);
-            dbg!("Object creation error");
-            return match owr {
-                Some(owr) => Ok((owr, None)),
-                None => Err(anyhow!(
-                    "Either cache not synced or other database error while creating object"
-                )),
-            };
-        } else {
-            result?
-        }
-        dbg!("Object created {:?}", &object);
+        object.create(transaction_client).await?;
 
         // Create internal relation in database && add user permissions for resource
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
@@ -100,7 +83,19 @@ impl DatabaseHandler {
                         relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
                         target_name: object.name.to_string(),
                     };
-                    ir.create(transaction_client).await?;
+                    let result = ir.create(transaction_client).await;
+                    if result.is_err() && is_dataproxy {
+                        transaction.rollback().await?;
+                        let owr = cache.get_object(&object.id);
+                        return match owr {
+                            Some(owr) => Ok((owr, None)),
+                            None => Err(anyhow!(
+                            "Either cache not synced or other database error while creating object"
+                        )),
+                        };
+                    } else {
+                        result?
+                    }
                     DashMap::from_iter([(parent.get_id()?, ir)])
                 }
             };
