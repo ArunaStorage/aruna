@@ -316,7 +316,12 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown object"))
     }
 
-    pub async fn create_object(&self, object: DPObject, token: &str) -> Result<DPObject> {
+    pub async fn create_object(
+        &self,
+        object: DPObject,
+        loc: Option<ObjectLocation>,
+        token: &str,
+    ) -> Result<DPObject> {
         let mut req = Request::new(CreateObjectRequest::from(object));
 
         req.metadata_mut().append(
@@ -335,8 +340,7 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
-
+        self.cache.upsert_object(object.clone(), loc).await?;
         Ok(object)
     }
 

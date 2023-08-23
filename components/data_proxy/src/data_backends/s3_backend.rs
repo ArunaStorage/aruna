@@ -248,6 +248,7 @@ impl StorageBackend for S3Backend {
                 Some(bucket) => bucket,
                 None => self.get_random_bucket().to_ascii_lowercase(),
             },
+            upload_id: None,
             key,
             encryption_key: Some(encryption_key),
             compressed: true,

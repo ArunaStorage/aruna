@@ -77,6 +77,7 @@ pub struct ObjectLocation {
     pub id: DieselUlid,
     pub bucket: String,
     pub key: String,
+    pub upload_id: Option<String>,
     pub encryption_key: Option<String>,
     pub compressed: bool,
     pub raw_content_len: i64,
@@ -1053,7 +1054,7 @@ pub struct CheckAccessResult {
     pub token_id: Option<String>,
     pub resource_ids: Option<ResourceIds>,
     pub missing_resources: Option<Missing>,
-    pub object: Option<Object>,
+    pub object: Option<(Object, Option<ObjectLocation>)>,
 }
 
 impl CheckAccessResult {
@@ -1062,7 +1063,7 @@ impl CheckAccessResult {
         token_id: Option<String>,
         resource_ids: Option<ResourceIds>,
         missing_resources: Option<Missing>,
-        object: Option<Object>,
+        object: Option<(Object, Option<ObjectLocation>)>,
     ) -> Self {
         Self {
             resource_ids,

@@ -3,6 +3,7 @@ use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Missing;
 use crate::structs::Object;
+use crate::structs::ObjectLocation;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceStrings;
 use anyhow::anyhow;
@@ -224,14 +225,14 @@ impl AuthHandler {
             }
         }
 
-        let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
+        let (ids, (obj, loc), missing) = self.extract_object_from_path(path, method)?;
         if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
                 None,
                 None,
                 Some(ids),
                 missing,
-                Some(obj),
+                Some((obj, loc)),
             ));
         } else if let Some(creds) = creds {
             let user = self
@@ -252,7 +253,7 @@ impl AuthHandler {
                         token_id,
                         Some(ids),
                         missing,
-                        Some(obj),
+                        Some((obj, loc)),
                     ));
                 }
             }
@@ -265,7 +266,11 @@ impl AuthHandler {
         &self,
         path: &S3Path,
         method: &Method,
-    ) -> Result<(ResourceIds, Object, Option<Missing>)> {
+    ) -> Result<(
+        ResourceIds,
+        (Object, Option<ObjectLocation>),
+        Option<Missing>,
+    )> {
         let res_strings = ResourceStrings::try_from(path)?;
 
         let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
@@ -279,33 +284,28 @@ impl AuthHandler {
 
         for res in res_strings {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
-                return Ok((
-                    e.clone(),
-                    self.cache
-                        .resources
-                        .get(&e.get_id())
-                        .ok_or_else(|| anyhow!("Unknown object"))?
-                        .value()
-                        .0
-                        .clone(),
-                    None,
-                ));
+                let cache_obj = self
+                    .cache
+                    .resources
+                    .get(&e.get_id())
+                    .ok_or_else(|| anyhow!("Unknown object"))?
+                    .value()
+                    .clone();
+                return Ok((e.clone(), cache_obj, None));
             }
         }
 
         for (res, missing) in alt {
             if let Some(e) = self.cache.get_res_by_res_string(res) {
-                return Ok((
-                    e.clone(),
-                    self.cache
-                        .resources
-                        .get(&e.get_id())
-                        .ok_or_else(|| anyhow!("Unknown object"))?
-                        .value()
-                        .0
-                        .clone(),
-                    Some(missing),
-                ));
+                let cache_obj = self
+                    .cache
+                    .resources
+                    .get(&e.get_id())
+                    .ok_or_else(|| anyhow!("Unknown object"))?
+                    .value()
+                    .clone();
+
+                return Ok((e.clone(), cache_obj, Some(missing)));
             }
         }
         Err(anyhow!("No object found in path"))
