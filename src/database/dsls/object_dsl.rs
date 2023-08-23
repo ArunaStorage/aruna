@@ -567,7 +567,7 @@ impl Object {
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.name = $1 
             GROUP BY o.id;";
-        let prepared = client.prepare(&query).await?;
+        let prepared = client.prepare(query).await?;
         let result: Option<ObjectWithRelations> = client
             .query_opt(&prepared, &[&name])
             .await?

@@ -39,6 +39,12 @@ pub struct Cache {
     lock: AtomicBool,
 }
 
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cache {
     pub fn new() -> Self {
         Self {
@@ -207,7 +213,7 @@ impl Cache {
         self.check_lock();
 
         // Fetch all resources included in request
-        let mut resources = vec![resource_id.clone()];
+        let mut resources = vec![resource_id];
         if recursive {
             resources.append(&mut self.get_subresources(&resource_id)?)
         }
