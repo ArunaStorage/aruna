@@ -28,7 +28,7 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
 
         // query endpoints
-        let endpoint_ids = request.get_endpoint(cache.clone())?;
+        let endpoint_ids = request.get_endpoint(cache.clone(), &client).await?;
 
         dbg!("Reached ep_ids: {:?}", &endpoint_ids);
         // check if project exists:

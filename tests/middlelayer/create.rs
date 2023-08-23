@@ -10,6 +10,7 @@ use aruna_server::database::crud::CrudDb;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -24,7 +25,7 @@ async fn create_project() {
         .await
         .unwrap();
     // Default endpoint:
-    let default_endpoint = DieselUlid::generate().to_string();
+    let default_endpoint = DieselUlid::generate();
 
     // test requests
     let request = CreateRequest::Project(
@@ -36,7 +37,7 @@ async fn create_project() {
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        default_endpoint,
+        default_endpoint.to_string(),
     );
     let (proj, _) = db_handler
         .create_resource(request, user.id, false, cache)
@@ -55,7 +56,12 @@ async fn create_project() {
     assert!(proj.object.hashes.0 .0.is_empty());
     assert!(proj.object.key_values.0 .0.is_empty());
     assert!(proj.object.external_relations.0 .0.is_empty());
-    //assert!(proj.object.endpoints.0.is_empty());
+    assert!(proj
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(proj.inbound.0.is_empty());
     assert!(proj.inbound_belongs_to.0.is_empty());
     assert!(proj.outbound.0.is_empty());
@@ -72,6 +78,9 @@ async fn create_collection() {
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
 
+    // default endpoint:
+    let default_endpoint = DieselUlid::generate();
+
     // create parent
     let parent = CreateRequest::Project(
         CreateProjectRequest {
@@ -82,7 +91,7 @@ async fn create_collection() {
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        DieselUlid::generate().to_string(),
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -116,7 +125,12 @@ async fn create_collection() {
     assert!(coll.object.hashes.0 .0.is_empty());
     assert!(coll.object.key_values.0 .0.is_empty());
     assert!(coll.object.external_relations.0 .0.is_empty());
-    //assert!(coll.object.endpoints.0.is_empty());
+    assert!(coll
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(coll.inbound.0.is_empty());
     assert!(coll.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(coll.outbound.0.is_empty());
@@ -132,6 +146,9 @@ async fn create_dataset() {
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+
+    // endpoint
+    let default_endpoint = DieselUlid::generate();
     // create parent
     let parent = CreateRequest::Project(
         CreateProjectRequest {
@@ -142,7 +159,7 @@ async fn create_dataset() {
             data_class: 1,
             preferred_endpoint: "".to_string(),
         },
-        DieselUlid::generate().to_string(),
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -176,7 +193,12 @@ async fn create_dataset() {
     assert!(ds.object.hashes.0 .0.is_empty());
     assert!(ds.object.key_values.0 .0.is_empty());
     assert!(ds.object.external_relations.0 .0.is_empty());
-    //assert!(ds.object.endpoints.0.is_empty());
+    assert!(ds
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(ds.inbound.0.is_empty());
     assert!(ds.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(ds.outbound.0.is_empty());
@@ -192,7 +214,28 @@ async fn create_object() {
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
+
+    // let not default endpoint
+    let endpoint = DieselUlid::generate();
     // create parent
+    let failing_parent = CreateRequest::Project(
+        CreateProjectRequest {
+            name: "project".to_string(),
+            description: "test".to_string(),
+            key_values: vec![],
+            external_relations: vec![],
+            data_class: 1,
+            preferred_endpoint: endpoint.to_string(),
+        },
+        DieselUlid::generate().to_string(),
+    );
+    // Should fail because endpoint does not exist
+    assert!(db_handler
+        .create_resource(failing_parent, user.id, false, cache.clone())
+        .await
+        .is_err());
+
+    let default_endpoint = DieselUlid::generate();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
             name: "project".to_string(),
@@ -200,9 +243,9 @@ async fn create_object() {
             key_values: vec![],
             external_relations: vec![],
             data_class: 1,
-            preferred_endpoint: DieselUlid::generate().to_string(),
+            preferred_endpoint: "".to_string(),
         },
-        DieselUlid::generate().to_string(),
+        default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
         .create_resource(parent, user.id, false, cache.clone())
@@ -237,7 +280,12 @@ async fn create_object() {
     assert!(obj.object.hashes.0 .0.is_empty());
     assert!(obj.object.key_values.0 .0.is_empty());
     assert!(obj.object.external_relations.0 .0.is_empty());
-    //assert!(obj.object.endpoints.0.is_empty());
+    assert!(obj
+        .object
+        .endpoints
+        .0
+        .into_iter()
+        .contains(&(default_endpoint, true)));
     assert!(obj.inbound.0.is_empty());
     assert!(obj.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(obj.outbound.0.is_empty());
