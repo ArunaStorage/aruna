@@ -148,7 +148,6 @@ impl CreateRequest {
         cache: Arc<Cache>,
         db_client: &Client,
     ) -> Result<DashMap<DieselUlid, bool, RandomState>> {
-        dbg!("Get endpoints");
         match self {
             CreateRequest::Project(req, default_endpoint) => {
                 if req.preferred_endpoint.is_empty() {
@@ -165,7 +164,7 @@ impl CreateRequest {
                             endpoint_id,
                             true, // is true, because at least one full sync endpoint is needed for projects
                         )])),
-                        None => return Err(anyhow!("Endpoint does not exist")),
+                        None => Err(anyhow!("Endpoint does not exist")),
                     }
                 }
             }

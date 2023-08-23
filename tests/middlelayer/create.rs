@@ -11,8 +11,17 @@ use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use std::sync::Arc;
 
+fn random_name() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect()
+}
 #[tokio::test]
 async fn create_project() {
     // init
@@ -26,11 +35,12 @@ async fn create_project() {
         .unwrap();
     // Default endpoint:
     let default_endpoint = DieselUlid::generate();
+    let project_name = random_name();
 
     // test requests
     let request = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: project_name.clone(),
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
@@ -46,7 +56,7 @@ async fn create_project() {
 
     assert_eq!(proj.object.created_by, user.id);
     assert_eq!(proj.object.object_type, ObjectType::PROJECT);
-    assert_eq!(proj.object.name, "project".to_string());
+    assert_eq!(proj.object.name, project_name);
     assert_eq!(proj.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(proj.object.data_class, DataClass::PUBLIC);
     assert_eq!(proj.object.description, "test".to_string());
@@ -82,9 +92,10 @@ async fn create_collection() {
     let default_endpoint = DieselUlid::generate();
 
     // create parent
+    let parent_name = random_name();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: parent_name,
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
@@ -100,8 +111,9 @@ async fn create_collection() {
     cache.add_object(parent.clone());
 
     // test requests
+    let collection_name = random_name();
     let request = CreateRequest::Collection(CreateCollectionRequest {
-        name: "collection".to_string(),
+        name: collection_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -115,7 +127,7 @@ async fn create_collection() {
 
     assert_eq!(coll.object.created_by, user.id);
     assert_eq!(coll.object.object_type, ObjectType::COLLECTION);
-    assert_eq!(coll.object.name, "collection".to_string());
+    assert_eq!(coll.object.name, collection_name);
     assert_eq!(coll.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(coll.object.data_class, DataClass::PUBLIC);
     assert_eq!(coll.object.description, "test".to_string());
@@ -150,9 +162,10 @@ async fn create_dataset() {
     // endpoint
     let default_endpoint = DieselUlid::generate();
     // create parent
+    let parent_name = random_name();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: parent_name,
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
@@ -168,8 +181,9 @@ async fn create_dataset() {
     cache.add_object(parent.clone());
 
     // test requests
+    let dataset_name = random_name();
     let request = CreateRequest::Dataset(CreateDatasetRequest {
-        name: "dataset".to_string(),
+        name: dataset_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -183,7 +197,7 @@ async fn create_dataset() {
 
     assert_eq!(ds.object.created_by, user.id);
     assert_eq!(ds.object.object_type, ObjectType::DATASET);
-    assert_eq!(ds.object.name, "dataset".to_string());
+    assert_eq!(ds.object.name, dataset_name);
     assert_eq!(ds.object.object_status, ObjectStatus::AVAILABLE);
     assert_eq!(ds.object.data_class, DataClass::PUBLIC);
     assert_eq!(ds.object.description, "test".to_string());
@@ -236,9 +250,10 @@ async fn create_object() {
         .is_err());
 
     let default_endpoint = DieselUlid::generate();
+    let parent_name = random_name();
     let parent = CreateRequest::Project(
         CreateProjectRequest {
-            name: "project".to_string(),
+            name: parent_name,
             description: "test".to_string(),
             key_values: vec![],
             external_relations: vec![],
@@ -254,8 +269,9 @@ async fn create_object() {
     cache.add_object(parent.clone());
 
     // test requests
+    let object_name = random_name();
     let request = CreateRequest::Object(CreateObjectRequest {
-        name: "object".to_string(),
+        name: object_name.clone(),
         description: "test".to_string(),
         key_values: vec![],
         external_relations: vec![],
@@ -270,7 +286,7 @@ async fn create_object() {
 
     assert_eq!(obj.object.created_by, user.id);
     assert_eq!(obj.object.object_type, ObjectType::OBJECT);
-    assert_eq!(obj.object.name, "object".to_string());
+    assert_eq!(obj.object.name, object_name);
     assert_eq!(obj.object.object_status, ObjectStatus::INITIALIZING);
     assert_eq!(obj.object.data_class, DataClass::PUBLIC);
     assert_eq!(obj.object.description, "test".to_string());

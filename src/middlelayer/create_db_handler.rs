@@ -30,7 +30,6 @@ impl DatabaseHandler {
         // query endpoints
         let endpoint_ids = request.get_endpoint(cache.clone(), &client).await?;
 
-        dbg!("Reached ep_ids: {:?}", &endpoint_ids);
         // check if project exists:
         if request.get_type() == ObjectType::PROJECT {
             let object = Object::check_existing_projects(request.get_name(), &client).await?;
@@ -88,7 +87,6 @@ impl DatabaseHandler {
                     if result.is_err() && is_dataproxy {
                         transaction.rollback().await?;
                         let owr = cache.get_object(&object.id);
-                        dbg!("Object creation error");
                         return match owr {
                             Some(owr) => Ok((owr, None)),
                             None => Err(anyhow!(
