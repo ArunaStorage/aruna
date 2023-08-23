@@ -4,6 +4,7 @@ use anyhow::Result;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_server::EventNotificationServiceServer,
     storage::services::v2::{
+        authorization_service_server::AuthorizationServiceServer,
         collection_service_server::CollectionServiceServer,
         dataset_service_server::DatasetServiceServer,
         endpoint_service_server::EndpointServiceServer, object_service_server::ObjectServiceServer,
@@ -19,11 +20,11 @@ use aruna_server::{
     caching::{cache::Cache, notifications_handler::NotificationHandler},
     database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
     grpc::{
-        collections::CollectionServiceImpl, datasets::DatasetServiceImpl,
-        endpoints::EndpointServiceImpl, info::StorageStatusServiceImpl,
-        notification::NotificationServiceImpl, object::ObjectServiceImpl,
-        projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
-        users::UserServiceImpl,
+        authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
+        datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl,
+        info::StorageStatusServiceImpl, notification::NotificationServiceImpl,
+        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
+        search::SearchServiceImpl, users::UserServiceImpl,
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
@@ -40,8 +41,7 @@ pub async fn main() -> Result<()> {
     SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .env()
-        .init()
-        .unwrap();
+        .init()?;
 
     // Load env
     dotenvy::from_filename(".env")?;
@@ -142,6 +142,14 @@ pub async fn main() -> Result<()> {
     {
         // Add other services
         builder = builder
+            .add_service(AuthorizationServiceServer::new(
+                AuthorizationServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
+            ))
             .add_service(UserServiceServer::new(
                 UserServiceImpl::new(
                     db_handler_arc.clone(),

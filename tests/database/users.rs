@@ -2,7 +2,7 @@ use crate::common::init_db;
 use aruna_server::database::{
     crud::CrudDb,
     dsls::user_dsl::{APIToken, User, UserAttributes},
-    enums::ObjectMapping,
+    enums::{DbPermissionLevel, ObjectMapping},
 };
 use dashmap::DashMap;
 //use deadpool_postgres::GenericClient;
@@ -409,6 +409,66 @@ async fn remove_user_permission_test() {
             .len(),
         0
     );
+}
+
+#[tokio::test]
+async fn update_user_permission_test() {
+    let db = init_db::init_db().await;
+    let client = db.get_client().await.unwrap();
+
+    let project_id = DieselUlid::generate();
+
+    // Define and create user in database
+    let mut user = User {
+        id: DieselUlid::generate(),
+        display_name: "aha".to_string(),
+        external_id: None,
+        email: "aja".to_string(),
+        attributes: postgres_types::Json(UserAttributes {
+            global_admin: false,
+            service_account: true,
+            trusted_endpoints: DashMap::default(),
+            tokens: DashMap::default(),
+            permissions: DashMap::default(),
+            custom_attributes: vec![],
+        }),
+        active: true,
+    };
+
+    user.create(&client).await.unwrap();
+
+    let user = User::add_user_permission(
+        &client,
+        &user.id,
+        [(project_id, ObjectMapping::PROJECT(DbPermissionLevel::ADMIN))]
+            .into_iter()
+            .collect(),
+    )
+    .await
+    .unwrap();
+
+    dbg!(&user);
+    assert_eq!(user.get_permissions(None).unwrap().len(), 1);
+    assert!(user
+        .get_permissions(None)
+        .unwrap()
+        .contains(&(project_id, DbPermissionLevel::ADMIN)));
+
+    let user = User::update_user_permission(
+        &client,
+        &user.id,
+        &project_id,
+        ObjectMapping::PROJECT(DbPermissionLevel::WRITE),
+    )
+    .await
+    .unwrap();
+
+    dbg!(&user);
+    assert_eq!(user.get_permissions(None).unwrap().len(), 1);
+    assert!(user
+        .get_permissions(None)
+        .unwrap()
+        .contains(&(project_id, DbPermissionLevel::WRITE)));
 }
 
 #[tokio::test]

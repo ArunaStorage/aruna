@@ -95,13 +95,13 @@ impl<'a> ProxyCacheIterator<'a> {
 impl<'a> Iterator for ProxyCacheIterator<'a> {
     type Item = GrpcProxyInfos;
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(res) = self.resource_iter.next() {
+        for res in self.resource_iter.by_ref() {
             let res = res.value();
             if res.object.endpoints.0.contains_key(&self.endpoint_id) {
                 return Some(GrpcProxyInfos::Resource(res.clone().into()));
             }
         }
-        while let Some(res) = self.user_iter.next() {
+        for res in self.user_iter.by_ref() {
             let res = res.value();
             if res
                 .attributes

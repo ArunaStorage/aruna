@@ -8,7 +8,7 @@ use aruna_rust_api::api::storage::services::v2::authorization_service_server::Au
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,
     DeleteAuthorizationResponse, GetAuthorizationsRequest, GetAuthorizationsResponse,
-    UpdateAuthorizationsRequest, UpdateAuthorizationsResponse,
+    ResourceAuthorization, UpdateAuthorizationsRequest, UpdateAuthorizationsResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -65,15 +65,21 @@ impl AuthorizationService for AuthorizationServiceImpl {
             "Internal error"
         );
 
+        // Create response before user gets moved into cache
         let resp = CreateAuthorizationResponse {
             resource_id: resource_id.to_string(),
             user_id: user_id.to_string(),
-            user_name: user.display_name,
+            user_name: user.display_name.to_string(),
             permission_level: request.into_inner().permission_level,
         };
 
+        // Update local cache
+        self.cache.update_user(&user.id.clone(), user);
+
+        // Return gRPC response
         return_with_log!(resp);
     }
+
     /// GetAuthorization
     ///
     /// Status: BETA
@@ -81,10 +87,50 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// This gets resource specific user authorizations
     async fn get_authorizations(
         &self,
-        _request: tonic::Request<GetAuthorizationsRequest>,
+        request: tonic::Request<GetAuthorizationsRequest>,
     ) -> Result<tonic::Response<GetAuthorizationsResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Validate request parameter
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        // Check permissions to fetch authorizations
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        //ToDo: Check all users for permissions on specific resource ... ?
+        let perms = tonic_internal!(
+            self.cache
+                .get_resource_permissions(resource_id, inner_request.recursive),
+            "Permission fetch failed"
+        );
+
+        let authorizations = perms
+            .into_iter()
+            .map(|(resource_id, user_permissions)| ResourceAuthorization {
+                resource_id: resource_id.to_string(),
+                user_permission: user_permissions,
+            })
+            .collect::<Vec<_>>();
+
+        // Return found authorizations
+        let response = GetAuthorizationsResponse { authorizations };
+        return_with_log!(response);
     }
+
     /// DeleteAuthorization
     ///
     /// Status: BETA
@@ -93,10 +139,51 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// specific resource
     async fn delete_authorization(
         &self,
-        _request: tonic::Request<DeleteAuthorizationRequest>,
+        request: tonic::Request<DeleteAuthorizationRequest>,
     ) -> Result<tonic::Response<DeleteAuthorizationResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Validate request parameter
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        let user_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.user_id),
+            "Invalid user id format"
+        );
+
+        // Check permissions to fetch authorizations
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Remove resource permission from user
+        let user = tonic_internal!(
+            self.database_handler
+                .remove_permission_from_user(user_id, resource_id)
+                .await,
+            "Permission removal failed"
+        );
+
+        // Update local cache
+        self.cache.update_user(&user.id.clone(), user);
+
+        // Return found authorizations
+        let response = DeleteAuthorizationResponse {};
+        return_with_log!(response);
     }
+
     /// UpdateAuthorization
     ///
     /// Status: BETA
@@ -105,8 +192,62 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// specific resource
     async fn update_authorizations(
         &self,
-        _request: tonic::Request<UpdateAuthorizationsRequest>,
+        request: tonic::Request<UpdateAuthorizationsRequest>,
     ) -> Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Validate request parameter
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        let user_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.user_id),
+            "Invalid user id format"
+        );
+
+        let permission_level: DbPermissionLevel = tonic_invalid!(
+            inner_request.permission_level.try_into(),
+            "Invalid permission level"
+        );
+
+        // Check permissions to fetch authorizations
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Fetch object from cache to determine type
+        let permission = self
+            .cache
+            .get_object(&resource_id)
+            .ok_or_else(|| tonic::Status::not_found("Object does not exist"))?
+            .into_object_mapping::<DbPermissionLevel>(permission_level);
+
+        // Remove resource permission from user
+        let user = tonic_internal!(
+            self.database_handler
+                .update_permission_from_user(user_id, resource_id, permission)
+                .await,
+            "Permission removal failed"
+        );
+
+        // Update local cache
+        self.cache.update_user(&user.id.clone(), user);
+
+        // Return found authorizations
+        let response = UpdateAuthorizationsResponse {
+            user_permission: None,
+        };
+        return_with_log!(response);
     }
 }
