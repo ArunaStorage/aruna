@@ -201,7 +201,8 @@ impl User {
     ) -> Result<User> {
         let query = "UPDATE users
         SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
-        WHERE id = $2 RETURNING *;";
+        WHERE id = $2 
+        RETURNING *;";
 
         let prepared = client.prepare(query).await?;
         let row = client
@@ -213,18 +214,18 @@ impl User {
     pub async fn remove_user_permission(
         client: &Client,
         user_id: &DieselUlid,
-        user_perm: &DieselUlid,
-    ) -> Result<()> {
-        // let query = "UPDATE users
-        // SET attributes = attributes #- '{permissions, $1::TEXT}'::jsonb WHERE id = $2;";
-
-        let query = "UPDATE users SET attributes = jsonb_set(attributes, '{permissions}', (attributes->'permissions') - $1::TEXT) WHERE id = $2;";
+        resource_id: &DieselUlid,
+    ) -> Result<User> {
+        let query = "UPDATE users 
+        SET attributes = jsonb_set(attributes, '{permissions}', (attributes->'permissions') - $1::TEXT) 
+        WHERE id = $2
+        RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&user_perm.to_string(), user_id])
+        let row = client
+            .query_one(&prepared, &[&resource_id.to_string(), user_id])
             .await?;
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -247,7 +248,9 @@ impl User {
         user_id: &DieselUlid,
         token_id: &DieselUlid,
     ) -> Result<()> {
-        let query = "UPDATE users SET attributes = jsonb_set(attributes, '{tokens}', (attributes->'tokens') - $1::TEXT) WHERE id = $2;";
+        let query = "UPDATE users 
+        SET attributes = jsonb_set(attributes, '{tokens}', (attributes->'tokens') - $1::TEXT) 
+        WHERE id = $2;";
 
         let prepared = client.prepare(query).await?;
         client
