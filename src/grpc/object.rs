@@ -142,20 +142,32 @@ impl ObjectService for ObjectServiceImpl {
         request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>> {
         log_received!(&request);
+
         let token = tonic_auth!(
             get_token_from_md(request.metadata()),
             "Token authentication error."
         );
-        let request = request.into_inner();
-        let object_id = tonic_invalid!(
-            DieselUlid::from_str(&request.object_id),
-            "Invalid object id"
-        );
+        // let token = get_token_from_md(request.metadata()).map_err(|e| {
+        //     log::debug!("{}", e);
+        //     tonic::Status::unauthenticated("Token authentication error.")
+        // })?;
 
-        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, true);
+        let request = request.into_inner();
 
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(
+                        tonic_invalid!(
+                            DieselUlid::from_str(&request.object_id),
+                            "Invalid object_id"
+                        ),
+                        DbPermissionLevel::APPEND,
+                        true
+                    )]
+                )
+                .await,
             "Unauthorized"
         );
 

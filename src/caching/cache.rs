@@ -1,3 +1,4 @@
+use super::structs::ProxyCacheIterator;
 use super::structs::PubKeyEnum;
 use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
@@ -198,6 +199,7 @@ impl Cache {
             ContextVariant::Activated => true,
             ContextVariant::Resource((id, _)) => {
                 if let Some(obj) = self.get_object(id) {
+                    dbg!(&obj);
                     obj.object.endpoints.0.contains_key(endpoint_id)
                 } else {
                     false
@@ -398,6 +400,15 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    pub fn get_proxy_cache_iterator(&self, endpoint_id: &DieselUlid) -> ProxyCacheIterator {
+        ProxyCacheIterator::new(
+            Box::new(self.object_cache.iter()),
+            Box::new(self.user_cache.iter()),
+            Box::new(self.pubkeys.iter()),
+            *endpoint_id,
+        )
     }
 }
 
