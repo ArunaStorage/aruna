@@ -30,6 +30,7 @@ impl DatabaseHandler {
         // query endpoints
         let endpoint_ids = request.get_endpoint(cache.clone())?;
 
+        dbg!("Reached ep_ids: {:?}", &endpoint_ids);
         // check if project exists:
         if request.get_type() == ObjectType::PROJECT {
             let object = Object::check_existing_projects(request.get_name(), &client).await?;
@@ -53,10 +54,12 @@ impl DatabaseHandler {
         let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
         object.endpoints = Json(endpoint_ids);
         let result = object.create(transaction_client).await;
+        dbg!("Reached obj creation");
 
         // return Object if ProxyCtx else return Err
         if result.is_err() && is_dataproxy {
             let owr = cache.get_object(&object.id);
+            dbg!("Object creation error");
             return match owr {
                 Some(owr) => Ok((owr, None)),
                 None => Err(anyhow!(
@@ -66,6 +69,7 @@ impl DatabaseHandler {
         } else {
             result?
         }
+        dbg!("Object created {:?}", &object);
 
         // Create internal relation in database && add user permissions for resource
         let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
