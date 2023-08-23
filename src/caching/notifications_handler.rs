@@ -22,10 +22,7 @@ use crate::{
         crud::CrudDb,
         dsls::{object_dsl::Object, user_dsl::User},
     },
-    notification::{
-        handler::{EventHandler, EventType},
-        natsio_handler::NatsIoHandler,
-    },
+    notification::natsio_handler::NatsIoHandler,
     utils::grpc_utils::{checksum_resource, checksum_user},
 };
 
