@@ -1,3 +1,4 @@
+use super::structs::ProxyCacheIterator;
 use super::structs::PubKeyEnum;
 use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
@@ -14,12 +15,16 @@ use crate::utils::cache_utils::{
     get_collection_children, get_dataset_relations, get_project_children,
 };
 use ahash::HashMap;
+use ahash::HashSet;
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
+use aruna_rust_api::api::storage::services::v2::UserPermission;
+use itertools::Itertools;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -32,6 +37,12 @@ pub struct Cache {
     pub user_cache: DashMap<DieselUlid, User, RandomState>,
     pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
     lock: AtomicBool,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Cache {
@@ -175,6 +186,7 @@ impl Cache {
             }
         }))
     }
+
     pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
         self.check_lock();
         let init = self
@@ -192,12 +204,52 @@ impl Cache {
         Ok(resource)
     }
 
+    pub fn get_resource_permissions(
+        &self,
+        resource_id: DieselUlid,
+        recursive: bool,
+    ) -> Result<HashMap<DieselUlid, Vec<UserPermission>>> {
+        // Lock cache
+        self.check_lock();
+
+        // Fetch all resources included in request
+        let mut resources = vec![resource_id];
+        if recursive {
+            resources.append(&mut self.get_subresources(&resource_id)?)
+        }
+
+        // Collect all permissions for the resources from user cache
+        let mut resource_perms: HashMap<DieselUlid, Vec<UserPermission>> = HashMap::default();
+
+        // Loop over resource ids
+        for resource_id in resources {
+            // Loop over users
+            for entry in &self.user_cache {
+                // Loop over users permissions
+                for perm in entry.value().get_permissions(None)? {
+                    if perm.0 == resource_id {
+                        if let Some(permissions) = resource_perms.get_mut(&resource_id) {
+                            permissions.push(UserPermission {
+                                user_id: entry.value().id.to_string(),
+                                user_name: entry.value().display_name.to_string(),
+                                permission_level: PermissionLevel::from(perm.1) as i32,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(resource_perms)
+    }
+
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
         self.check_lock();
         ctxs.iter().all(|x| match &x.variant {
             ContextVariant::Activated => true,
             ContextVariant::Resource((id, _)) => {
                 if let Some(obj) = self.get_object(id) {
+                    dbg!(&obj);
                     obj.object.endpoints.0.contains_key(endpoint_id)
                 } else {
                     false
@@ -308,6 +360,25 @@ impl Cache {
         Ok(false)
     }
 
+    pub fn get_subresources(&self, root_id: &DieselUlid) -> Result<Vec<DieselUlid>> {
+        self.check_lock();
+
+        let mut subresources: HashSet<DieselUlid> = HashSet::default();
+        let mut queue = VecDeque::new();
+        queue.push_back(*root_id);
+
+        while let Some(resource_id) = queue.pop_front() {
+            if let Some(resource) = self.get_object(&resource_id) {
+                for child_id in resource.get_children() {
+                    subresources.insert(child_id);
+                    queue.push_front(child_id)
+                }
+            }
+        }
+
+        Ok(subresources.into_iter().collect_vec())
+    }
+
     ///ToDo: Rust Doc
     pub fn upstream_dfs_iterative(
         &self,
@@ -398,6 +469,15 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    pub fn get_proxy_cache_iterator(&self, endpoint_id: &DieselUlid) -> ProxyCacheIterator {
+        ProxyCacheIterator::new(
+            Box::new(self.object_cache.iter()),
+            Box::new(self.user_cache.iter()),
+            Box::new(self.pubkeys.iter()),
+            *endpoint_id,
+        )
     }
 }
 
@@ -645,5 +725,74 @@ mod tests {
         ] {
             assert!(iterative_result.contains(&path));
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_subresources() {
+        // Init new cache
+        let cache = Cache::new();
+
+        // Create dummy hierarchies
+        let id1 = DieselUlid::generate(); // Project from [] to [id4]
+        let id2 = DieselUlid::generate(); // Project from [] to [id4]
+        let id3 = DieselUlid::generate(); // Project from [] to [id6]
+        let id4 = DieselUlid::generate(); // Collection: from [id1,id2] and to [id5,id6]
+        let id5 = DieselUlid::generate(); // Dataset: from [id4] to [id7]
+        let id6 = DieselUlid::generate(); // Dataset: from [id3,id4] to [id7]
+        let id7 = DieselUlid::generate(); // Object: from [id5,id6] to []
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id1,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id2,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id4],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id3,
+            ObjectType::PROJECT,
+            vec![],
+            vec![&id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id4,
+            ObjectType::COLLECTION,
+            vec![&id1, &id2],
+            vec![&id5, &id6],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id5,
+            ObjectType::DATASET,
+            vec![&id4],
+            vec![&id7],
+        ));
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id6,
+            ObjectType::DATASET,
+            vec![&id3, &id4],
+            vec![&id7],
+        ));
+
+        cache.add_object(ObjectWithRelations::random_object_v2(
+            &id7,
+            ObjectType::OBJECT,
+            vec![&id5, &id6],
+            vec![],
+        ));
+
+        let subresources = cache.get_subresources(&id3).unwrap();
+
+        dbg!(&subresources);
+
+        vec![id6, id7]
+            .into_iter()
+            .for_each(|id| assert!(subresources.contains(&id)))
     }
 }

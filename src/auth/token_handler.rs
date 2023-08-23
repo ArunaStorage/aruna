@@ -271,7 +271,7 @@ impl TokenHandler {
         Option<DieselUlid>, // User_id
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
-        Option<Action>,
+        Option<Intent>,
     )> {
         let split = token
             .split('.')
@@ -297,7 +297,7 @@ impl TokenHandler {
         Option<DieselUlid>,                   // Maybe Token_ID
         Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
         bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
-        Option<Action>,
+        Option<Intent>,
     )> {
         // Extract pubkey id from JWT header
         let kid = decode_header(token)?
@@ -351,7 +351,7 @@ impl TokenHandler {
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
-        Option<Action>,
+        Option<Intent>,
     )> {
         // Extract pubkey id from JWT header
         let kid = decode_header(token)?
@@ -386,7 +386,7 @@ impl TokenHandler {
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::FetchInfo => Ok((sub_id, None, vec![], true, Some(intent.action))),
+                        Action::FetchInfo => Ok((sub_id, None, vec![], true, Some(intent))),
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
                             // Fetch user from cache
@@ -401,7 +401,7 @@ impl TokenHandler {
                             // Fetch permissions associated with token
                             if let Some(user) = user {
                                 let perms = user.get_permissions(token)?;
-                                return Ok((user.id, token, perms, true, Some(intent.action)));
+                                return Ok((user.id, token, perms, true, Some(intent)));
                             }
                             bail!("Invalid user provided")
                         }
@@ -448,7 +448,7 @@ impl TokenHandler {
         Option<DieselUlid>,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
-        Option<Action>,
+        Option<Intent>,
     )> {
         let claims = self.process_oidc_token(token).await?;
         // Fetch user from oidc provider

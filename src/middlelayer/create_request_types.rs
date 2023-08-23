@@ -1,5 +1,7 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::crud::CrudDb;
+use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use ahash::RandomState;
@@ -12,6 +14,7 @@ use aruna_rust_api::api::storage::{
     },
 };
 use dashmap::DashMap;
+use deadpool_postgres::Client;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
@@ -140,24 +143,29 @@ impl CreateRequest {
         }
     }
 
-    pub fn get_endpoint(
+    pub async fn get_endpoint(
         &self,
         cache: Arc<Cache>,
+        db_client: &Client,
     ) -> Result<DashMap<DieselUlid, bool, RandomState>> {
-        dbg!("Get endpoints");
         match self {
             CreateRequest::Project(req, default_endpoint) => {
                 if req.preferred_endpoint.is_empty() {
-                    // Quick and dirty
                     Ok(DashMap::from_iter([(
                         DieselUlid::from_str(default_endpoint)?,
                         true, // is true, because at least one full sync endpoint is needed for projects
                     )]))
                 } else {
-                    Ok(DashMap::from_iter([(
-                        DieselUlid::from_str(&req.preferred_endpoint)?,
-                        true, // is true, because at least one full sync endpoint is needed for projects
-                    )]))
+                    // TODO: Check if endpoint exists
+
+                    let endpoint_id = DieselUlid::from_str(&req.preferred_endpoint)?;
+                    match Endpoint::get(endpoint_id, db_client).await? {
+                        Some(_) => Ok(DashMap::from_iter([(
+                            endpoint_id,
+                            true, // is true, because at least one full sync endpoint is needed for projects
+                        )])),
+                        None => Err(anyhow!("Endpoint does not exist")),
+                    }
                 }
             }
             _ => {

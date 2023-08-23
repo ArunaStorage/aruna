@@ -1,6 +1,12 @@
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey;
+use crate::database::dsls::user_dsl::User;
+use ahash::RandomState;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::User as APIUser;
+use aruna_rust_api::api::storage::services::v2::Pubkey as APIPubkey;
+use dashmap::mapref::multiple::RefMulti;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 
@@ -58,4 +64,67 @@ impl ObjectWithRelations {
             .map(|x| *x.key())
             .collect::<Vec<_>>()
     }
+}
+
+pub struct ProxyCacheIterator<'a> {
+    resource_iter:
+        Box<dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>> + 'a>,
+    user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a)>,
+    pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a)>,
+    endpoint_id: DieselUlid,
+}
+
+impl<'a> ProxyCacheIterator<'a> {
+    pub fn new(
+        resource_iter: Box<
+            (dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>> + 'a),
+        >,
+        user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a)>,
+        pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a)>,
+        endpoint_id: DieselUlid,
+    ) -> ProxyCacheIterator<'a> {
+        ProxyCacheIterator {
+            resource_iter,
+            user_iter,
+            pub_key_iter,
+            endpoint_id,
+        }
+    }
+}
+
+impl<'a> Iterator for ProxyCacheIterator<'a> {
+    type Item = GrpcProxyInfos;
+    fn next(&mut self) -> Option<Self::Item> {
+        for res in self.resource_iter.by_ref() {
+            let res = res.value();
+            if res.object.endpoints.0.contains_key(&self.endpoint_id) {
+                return Some(GrpcProxyInfos::Resource(res.clone().into()));
+            }
+        }
+        for res in self.user_iter.by_ref() {
+            let res = res.value();
+            if res
+                .attributes
+                .0
+                .trusted_endpoints
+                .contains_key(&self.endpoint_id)
+            {
+                return Some(GrpcProxyInfos::User(res.clone().into()));
+            }
+        }
+        if let Some(pk) = self.pub_key_iter.next() {
+            return Some(GrpcProxyInfos::PubKey(APIPubkey {
+                id: *pk.key(),
+                key: pk.value().get_key_string(),
+                location: pk.value().get_name(),
+            }));
+        }
+        None
+    }
+}
+
+pub enum GrpcProxyInfos {
+    Resource(generic_resource::Resource),
+    User(APIUser),
+    PubKey(APIPubkey),
 }

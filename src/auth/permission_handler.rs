@@ -23,14 +23,14 @@ impl PermissionHandler {
     pub async fn check_permissions_verbose(
         &self,
         token: &str,
-        mut ctxs: Vec<Context>,
+        ctxs: Vec<Context>,
     ) -> Result<(DieselUlid, Option<DieselUlid>, bool), tonic::Status> {
         // What are the cases?
         // 1. User Aruna token       --> (user_id, token_id)
         // 2. User OIDC token        --> (user_id, None)
         // 3. Endpoint signed token  --> (user_id, ?)
         // 4. Endpoint notifications --> (endpoint_id, None)
-        let (main_id, associated_id, permissions, is_proxy, proxy_action) = tonic_auth!(
+        let (main_id, associated_id, permissions, is_proxy, proxy_intent) = tonic_auth!(
             self.token_handler.process_token(token).await,
             "Unauthorized"
         );
@@ -38,10 +38,10 @@ impl PermissionHandler {
         // Individual permission checking if token is signed from Dataproxy
         if is_proxy {
             // Add Dataproxy context
-            ctxs.push(Context::proxy());
+            //ctxs.push(Context::proxy());
 
-            return if let Some(action) = proxy_action {
-                if action == Action::Impersonate {
+            return if let Some(intent) = proxy_intent {
+                if intent.action == Action::Impersonate {
                     //Case 1: Impersonate
                     //  - Check if provided contexts are proxy/activated/resource only
                     for ctx in &ctxs {
@@ -55,7 +55,7 @@ impl PermissionHandler {
                             )),
                         }
                     }
-                } else if action == Action::FetchInfo {
+                } else if intent.action == Action::FetchInfo {
                     //Case 2: FetchInfo
                     //  - Only get functions -> DbPermissionLevel::READ in contexts
                     for ctx in &ctxs {
@@ -80,7 +80,7 @@ impl PermissionHandler {
                     //unimplemented!("Permission check for Dataproxy notification fetch not yet implemented")
                 }
 
-                if self.cache.check_proxy_ctxs(&main_id, &ctxs) {
+                if self.cache.check_proxy_ctxs(&intent.target, &ctxs) {
                     Ok((main_id, associated_id, true))
                 } else {
                     Err(tonic::Status::unauthenticated(

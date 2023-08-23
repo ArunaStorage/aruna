@@ -139,117 +139,58 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn finish_object_staging(
         &self,
-        _request: Request<FinishObjectStagingRequest>,
+        request: Request<FinishObjectStagingRequest>,
     ) -> Result<Response<FinishObjectStagingResponse>> {
-        todo!()
-        // log::info!("Received FinishObjectStagingRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
         // let token = get_token_from_md(request.metadata()).map_err(|e| {
         //     log::debug!("{}", e);
         //     tonic::Status::unauthenticated("Token authentication error.")
         // })?;
 
-        // let inner_request = request.into_inner();
+        let request = request.into_inner();
 
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::internal("ULID conversion error")
-        //     })?,
-        //     level: crate::database::enums::PermissionLevels::WRITE, // append?
-        //     allow_sa: true,
-        // });
-        // let user_id = self
-        //     .authorizer
-        //     .check_permissions(&token, ctx)
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::permission_denied("Permission denied.")
-        //     })?;
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(
+                        tonic_invalid!(
+                            DieselUlid::from_str(&request.object_id),
+                            "Invalid object_id"
+                        ),
+                        DbPermissionLevel::APPEND,
+                        true
+                    )]
+                )
+                .await,
+            "Unauthorized"
+        );
 
-        // let client = self.database.get_client().await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::unavailable("Database not available.")
-        // })?;
-        // let object_pid = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error.")
-        // })?;
-        // let to_update_object = match Object::get(object_pid, &client).await.map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::aborted("Database call failed.")
-        // })? {
-        //     Some(o) => o,
-        //     None => return Err(tonic::Status::aborted("Database call failed.")),
-        // };
+        let object = tonic_internal!(
+            self.database_handler.finish_object(request).await,
+            "Internal database error."
+        );
 
-        // let hashes = if !inner_request.hashes.is_empty() {
-        //     let req_hashes: Hashes = inner_request.hashes.try_into().map_err(|e| {
-        //         log::error!("{}", e);
-        //         tonic::Status::internal("Hash conversion error.")
-        //     })?;
-        //     if !to_update_object.hashes.0 .0.is_empty() {
-        //         let comp_hashes = to_update_object.hashes.0.clone();
+        self.cache.update_object(&object.object.id, object.clone());
 
-        //         if comp_hashes != req_hashes {
-        //             return Err(tonic::Status::internal("Hashes diverge."));
-        //         }
-        //         None
-        //     } else {
-        //         Some(req_hashes)
-        //     }
-        // } else {
-        //     None
-        // };
+        // Add or update object in search index
+        grpc_utils::update_search_index(
+            &self.search_client,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+        .await;
 
-        // if !inner_request.completed_parts.is_empty() {
-        //     return Err(tonic::Status::unimplemented(
-        //         "Finish multipart objects is not yet implemented.",
-        //     ));
-        // }
-
-        // Object::finish_object_staging(
-        //     &object_pid,
-        //     &client,
-        //     hashes.clone(),
-        //     inner_request.content_len,
-        //     crate::database::enums::ObjectStatus::AVAILABLE,
-        // )
-        // .await
-        // .map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::aborted("Database update failed.")
-        // })?;
-
-        // let grpc_object = GRPCObject {
-        //     id: to_update_object.id.to_string(),
-        //     name: to_update_object.name,
-        //     description: to_update_object.description,
-        //     key_values: to_update_object.key_values.0.into(),
-        //     relations: to_update_object
-        //         .external_relations
-        //         .0
-        //          .0
-        //         .into_iter()
-        //         .map(|r| Relation {
-        //             relation: Some(RelationEnum::External(r.into())),
-        //         })
-        //         .collect(),
-        //     content_len: inner_request.content_len,
-        //     data_class: to_update_object.data_class.into(),
-        //     created_at: to_update_object.created_at.map(|t| t.into()),
-        //     created_by: user_id.to_string(),
-        //     status: 3,
-        //     dynamic: false,
-        //     hashes: match hashes {
-        //         Some(h) => h.into(),
-        //         None => to_update_object.hashes.0.into(),
-        //     },
-        // };
-        // Ok(tonic::Response::new(FinishObjectStagingResponse {
-        //     object: Some(grpc_object),
-        // }))
+        let object: generic_resource::Resource =
+            tonic_internal!(object.try_into(), "Object conversion error");
+        let response = FinishObjectStagingResponse {
+            object: Some(object.into_inner()?),
+        };
+        return_with_log!(response);
     }
 
     async fn update_object(
