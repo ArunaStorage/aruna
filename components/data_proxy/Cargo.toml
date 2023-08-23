@@ -57,3 +57,5 @@ postgres-from-row = "=0.5.2"
 dashmap = "5.5.0"
 ahash = "0.8.3"
 jsonwebtoken = {version = "8.3.0", features = ["use_pem"]}
+prost-wkt-types = "0.4.2"
+time = "0.3.27"

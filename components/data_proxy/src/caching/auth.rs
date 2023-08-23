@@ -5,7 +5,7 @@ use crate::structs::Missing;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::ResourceIds;
-use crate::structs::ResourceStrings;
+use crate::structs::ResourceString;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -272,47 +272,36 @@ impl AuthHandler {
         (Object, Option<ObjectLocation>),
         Option<Missing>,
     )> {
-        let res_strings = ResourceStrings::try_from(path)?;
+        let res_strings = ResourceString::try_from(path)?;
 
-        let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
-            res_strings.permute()
-        } else {
-            (res_strings.0, vec![])
-        };
+        let mut found = Vec::new();
+        let mut missing = Vec::new();
 
-        res_strings.sort();
-        alt.sort();
-
-        log::debug!("Res strings: {:?}", &res_strings);
-        log::debug!("Cacher res: {:#?}", self.cache.resources);
-        log::debug!("Cache paths: {:#?}", self.cache.paths);
-        for res in res_strings {
-            if let Some(e) = self.cache.get_res_by_res_string(res) {
-                let cache_obj = self
-                    .cache
-                    .resources
-                    .get(&e.get_id())
-                    .ok_or_else(|| anyhow!("Unknown object"))?
-                    .value()
-                    .clone();
-                return Ok((e.clone(), cache_obj, None));
+        for resource in res_strings.into_parts() {
+            if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
+                found.push(e);
+            } else {
+                missing.push(resource.clone());
             }
         }
+        found.sort();
 
-        for (res, missing) in alt {
-            if let Some(e) = self.cache.get_res_by_res_string(res) {
-                let cache_obj = self
-                    .cache
-                    .resources
-                    .get(&e.get_id())
-                    .ok_or_else(|| anyhow!("Unknown object"))?
-                    .value()
-                    .clone();
+        dbg!(found.clone());
 
-                return Ok((e.clone(), cache_obj, Some(missing)));
-            }
-        }
-        Err(anyhow!("No object found in path"))
+        let resource_id = found
+            .last()
+            .ok_or_else(|| anyhow!("No object found in path"))?
+            .clone();
+
+        let (object, location) = self
+            .cache
+            .resources
+            .get(&resource_id.get_id())
+            .ok_or_else(|| anyhow!("No object found in path"))?
+            .value()
+            .clone();
+
+        return Ok((resource_id, (object, location), Some(missing.into())));
     }
 
     pub(crate) fn sign_impersonating_token(

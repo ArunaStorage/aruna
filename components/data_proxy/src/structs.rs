@@ -679,6 +679,45 @@ pub enum ResourceString {
     Object(String, Option<String>, Option<String>, String),
 }
 
+impl ResourceString {
+    pub fn into_parts(self) -> Vec<ResourceString> {
+        match self {
+            ResourceString::Project(p) => vec![ResourceString::Project(p)],
+            ResourceString::Collection(p, c) => vec![
+                ResourceString::Project(p.to_string()),
+                ResourceString::Collection(p.to_string(), c.to_string()),
+            ],
+            ResourceString::Dataset(p, c, d) => {
+                let mut vec = vec![
+                    ResourceString::Project(p.to_string()),
+                    ResourceString::Dataset(p.to_string(), c.clone(), d.to_string()),
+                ];
+                if let Some(c) = c {
+                    vec.push(ResourceString::Collection(p.to_string(), c.to_string()));
+                }
+                vec
+            }
+            ResourceString::Object(p, c, d, o) => {
+                let mut vec = vec![
+                    ResourceString::Project(p.to_string()),
+                    ResourceString::Object(p.to_string(), c.clone(), d.clone(), o.to_string()),
+                ];
+                if let Some(c) = &c {
+                    vec.push(ResourceString::Collection(p.to_string(), c.to_string()));
+                }
+                if let Some(d) = d {
+                    vec.push(ResourceString::Dataset(
+                        p.to_string(),
+                        c.clone(),
+                        d.to_string(),
+                    ));
+                }
+                vec
+            }
+        }
+    }
+}
+
 impl PartialOrd for ResourceString {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -721,9 +760,6 @@ impl Ord for ResourceString {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
-pub struct ResourceStrings(pub Vec<ResourceString>);
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Missing {
     pub p: Option<String>,
@@ -732,155 +768,178 @@ pub struct Missing {
     pub o: Option<String>,
 }
 
-// s3://foo/bar/baz
-
-impl ResourceStrings {
-    pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
-        let mut orig = Vec::new();
-        let mut permutations = Vec::new();
-
-        for x in self.0.drain(..) {
+impl From<Vec<ResourceString>> for Missing {
+    fn from(value: Vec<ResourceString>) -> Self {
+        let mut missing = Missing::default();
+        for x in value {
             match x {
-                ResourceString::Project(p) => {
-                    orig.push(ResourceString::Project(p.clone()));
+                ResourceString::Project(_) => {}
+                ResourceString::Collection(_, c) => {
+                    missing.c = Some(c);
                 }
-                ResourceString::Collection(p, c) => {
-                    orig.push(ResourceString::Collection(p.clone(), c.clone()));
-                    permutations.push((
-                        ResourceString::Project(p.clone()),
-                        Missing {
-                            c: Some(c.clone()),
-                            ..Default::default()
-                        },
-                    ));
+                ResourceString::Dataset(_, c, d) => {
+                    missing.c = c;
+                    missing.d = Some(d);
                 }
-                ResourceString::Dataset(p, c, d) => {
-                    orig.push(ResourceString::Dataset(p.clone(), c.clone(), d.clone()));
-                    if let Some(c) = c {
-                        permutations.push((
-                            ResourceString::Collection(p.clone(), c.clone()),
-                            Missing {
-                                d: Some(d.clone()),
-                                ..Default::default()
-                            },
-                        ));
-                        permutations.push((
-                            ResourceString::Project(p.clone()),
-                            Missing {
-                                c: Some(c.clone()),
-                                d: Some(d.clone()),
-                                ..Default::default()
-                            },
-                        ));
-                    }
-                    permutations.push((
-                        ResourceString::Project(p.clone()),
-                        Missing {
-                            d: Some(d.clone()),
-                            ..Default::default()
-                        },
-                    ));
-                }
-                ResourceString::Object(p, c, d, o) => {
-                    orig.push(ResourceString::Object(
-                        p.clone(),
-                        c.clone(),
-                        d.clone(),
-                        o.clone(),
-                    ));
-                    if let Some(c) = &c {
-                        permutations.push((
-                            ResourceString::Project(p.clone()),
-                            Missing {
-                                c: Some(c.clone()),
-                                o: Some(o.clone()),
-                                ..Default::default()
-                            },
-                        ));
-
-                        permutations.push((
-                            ResourceString::Collection(p.clone(), c.clone()),
-                            Missing {
-                                o: Some(o.clone()),
-                                ..Default::default()
-                            },
-                        ));
-
-                        if let Some(d) = &d {
-                            permutations.push((
-                                ResourceString::Project(p.clone()),
-                                Missing {
-                                    c: Some(c.clone()),
-                                    d: Some(d.clone()),
-                                    o: Some(o.clone()),
-                                    ..Default::default()
-                                },
-                            ));
-
-                            permutations.push((
-                                ResourceString::Collection(p.clone(), c.clone()),
-                                Missing {
-                                    d: Some(d.clone()),
-                                    o: Some(o.clone()),
-                                    ..Default::default()
-                                },
-                            ));
-
-                            permutations.push((
-                                ResourceString::Dataset(p.clone(), Some(c.clone()), d.clone()),
-                                Missing {
-                                    c: Some(c.clone()),
-                                    d: Some(d.clone()),
-                                    o: Some(o.clone()),
-                                    ..Default::default()
-                                },
-                            ));
-                        }
-                    } else if let Some(d) = &d {
-                        permutations.push((
-                            ResourceString::Project(p.clone()),
-                            Missing {
-                                d: Some(d.clone()),
-                                o: Some(o.clone()),
-                                ..Default::default()
-                            },
-                        ));
-
-                        permutations.push((
-                            ResourceString::Dataset(p.clone(), None, d.clone()),
-                            Missing {
-                                o: Some(o.clone()),
-                                ..Default::default()
-                            },
-                        ));
-                    }
-                    permutations.push((
-                        ResourceString::Project(p.clone()),
-                        Missing {
-                            o: Some(o.clone()),
-                            ..Default::default()
-                        },
-                    ));
+                ResourceString::Object(_, c, d, o) => {
+                    missing.c = c;
+                    missing.d = d;
+                    missing.o = Some(o);
                 }
             }
         }
-
-        (orig, permutations)
+        missing
     }
 }
 
-impl TryFrom<&S3Path> for ResourceStrings {
+// s3://foo/bar/baz
+
+// impl ResourceStrings {
+//     pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
+//         let mut orig = Vec::new();
+//         let mut permutations = Vec::new();
+
+//         for x in self.0.drain(..) {
+//             match x {
+//                 ResourceString::Project(p) => {
+//                     orig.push(ResourceString::Project(p.clone()));
+//                 }
+//                 ResourceString::Collection(p, c) => {
+//                     orig.push(ResourceString::Collection(p.clone(), c.clone()));
+//                     permutations.push((
+//                         ResourceString::Project(p.clone()),
+//                         Missing {
+//                             c: Some(c.clone()),
+//                             ..Default::default()
+//                         },
+//                     ));
+//                 }
+//                 ResourceString::Dataset(p, c, d) => {
+//                     orig.push(ResourceString::Dataset(p.clone(), c.clone(), d.clone()));
+//                     if let Some(c) = c {
+//                         permutations.push((
+//                             ResourceString::Collection(p.clone(), c.clone()),
+//                             Missing {
+//                                 d: Some(d.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+//                         permutations.push((
+//                             ResourceString::Project(p.clone()),
+//                             Missing {
+//                                 c: Some(c.clone()),
+//                                 d: Some(d.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+//                     }
+//                     permutations.push((
+//                         ResourceString::Project(p.clone()),
+//                         Missing {
+//                             d: Some(d.clone()),
+//                             ..Default::default()
+//                         },
+//                     ));
+//                 }
+//                 ResourceString::Object(p, c, d, o) => {
+//                     orig.push(ResourceString::Object(
+//                         p.clone(),
+//                         c.clone(),
+//                         d.clone(),
+//                         o.clone(),
+//                     ));
+//                     if let Some(c) = &c {
+//                         permutations.push((
+//                             ResourceString::Project(p.clone()),
+//                             Missing {
+//                                 c: Some(c.clone()),
+//                                 o: Some(o.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+
+//                         permutations.push((
+//                             ResourceString::Collection(p.clone(), c.clone()),
+//                             Missing {
+//                                 o: Some(o.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+
+//                         if let Some(d) = &d {
+//                             permutations.push((
+//                                 ResourceString::Project(p.clone()),
+//                                 Missing {
+//                                     c: Some(c.clone()),
+//                                     d: Some(d.clone()),
+//                                     o: Some(o.clone()),
+//                                     ..Default::default()
+//                                 },
+//                             ));
+
+//                             permutations.push((
+//                                 ResourceString::Collection(p.clone(), c.clone()),
+//                                 Missing {
+//                                     d: Some(d.clone()),
+//                                     o: Some(o.clone()),
+//                                     ..Default::default()
+//                                 },
+//                             ));
+
+//                             permutations.push((
+//                                 ResourceString::Dataset(p.clone(), Some(c.clone()), d.clone()),
+//                                 Missing {
+//                                     c: Some(c.clone()),
+//                                     d: Some(d.clone()),
+//                                     o: Some(o.clone()),
+//                                     ..Default::default()
+//                                 },
+//                             ));
+//                         }
+//                     } else if let Some(d) = &d {
+//                         permutations.push((
+//                             ResourceString::Project(p.clone()),
+//                             Missing {
+//                                 d: Some(d.clone()),
+//                                 o: Some(o.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+
+//                         permutations.push((
+//                             ResourceString::Dataset(p.clone(), None, d.clone()),
+//                             Missing {
+//                                 o: Some(o.clone()),
+//                                 ..Default::default()
+//                             },
+//                         ));
+//                     }
+//                     permutations.push((
+//                         ResourceString::Project(p.clone()),
+//                         Missing {
+//                             o: Some(o.clone()),
+//                             ..Default::default()
+//                         },
+//                     ));
+//                 }
+//             }
+//         }
+
+//         (orig, permutations)
+//     }
+// }
+
+impl TryFrom<&S3Path> for ResourceString {
     type Error = anyhow::Error;
     fn try_from(value: &S3Path) -> Result<Self> {
         if let Some((b, k)) = value.as_object() {
-            let mut results = Vec::new();
             let pathvec = k.split('/').collect::<Vec<&str>>();
             match pathvec.len() {
                 0 => {
-                    results.push(ResourceString::Project(b.to_string()));
+                    return Ok(ResourceString::Project(b.to_string()));
                 }
                 1 => {
-                    results.push(ResourceString::Object(
+                    return Ok(ResourceString::Object(
                         b.to_string(),
                         None,
                         None,
@@ -888,7 +947,7 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
                 2 => {
-                    results.push(ResourceString::Object(
+                    return Ok(ResourceString::Object(
                         b.to_string(),
                         None,
                         Some(pathvec[0].to_string()),
@@ -896,7 +955,7 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
                 3 => {
-                    results.push(ResourceString::Object(
+                    return Ok(ResourceString::Object(
                         b.to_string(),
                         Some(pathvec[0].to_string()),
                         Some(pathvec[1].to_string()),
@@ -904,7 +963,7 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
                 _ => {
-                    results.push(ResourceString::Object(
+                    return Ok(ResourceString::Object(
                         b.to_string(),
                         None,
                         None,
@@ -912,7 +971,6 @@ impl TryFrom<&S3Path> for ResourceStrings {
                     ));
                 }
             }
-            Ok(ResourceStrings(results))
         } else {
             Err(anyhow!("Invalid path"))
         }

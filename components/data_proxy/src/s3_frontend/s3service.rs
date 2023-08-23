@@ -21,6 +21,7 @@ use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
 use md5::{Digest, Md5};
@@ -147,6 +148,8 @@ impl S3 for ArunaS3Service {
             .cloned()
             .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
+        dbg!(missing_resources.clone());
+
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
             user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
@@ -240,7 +243,7 @@ impl S3 for ArunaS3Service {
         if let Some(missing) = missing_resources {
             let collection_id = if let Some(collection) = missing.c {
                 let col = ProxyObject {
-                    id: DieselUlid::generate(),
+                    id: DieselUlid::default(),
                     name: collection,
                     key_values: vec![],
                     object_status: Status::Available,
@@ -255,16 +258,19 @@ impl S3 for ArunaS3Service {
                     synced: false,
                 };
 
-                let id = col.id;
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        handler
+                        let col = handler
                             .create_collection(col, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                        Some(col.id)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-                Some(id)
             } else {
                 res_ids.get_collection()
             };
@@ -289,16 +295,20 @@ impl S3 for ArunaS3Service {
                     parents: Some(HashSet::from([parent])),
                     synced: false,
                 };
-                let id = dataset.id;
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        handler
+                        let dataset = handler
                             .create_dataset(dataset, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
+
+                        Some(dataset.id)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-                Some(id)
             } else {
                 res_ids.get_dataset()
             };
@@ -677,6 +687,8 @@ impl S3 for ArunaS3Service {
                 .cloned()
                 .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
 
+        dbg!(&object);
+
         let id = match object {
             Some((obj, _)) => obj.id,
             None => return Err(s3_error!(NoSuchKey, "Object not found")),
@@ -829,7 +841,7 @@ impl S3 for ArunaS3Service {
             body,
             content_length: calc_content_len,
             last_modified: None,
-            e_tag: Some(id.to_string()),
+            e_tag: Some(format!("-{}", id.to_string())),
             version_id: None,
             ..Default::default()
         }))
@@ -839,44 +851,46 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        // TODO: Special bucket
-        let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
-            DieselUlid::from_str(&req.input.key)
-                .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
-        } else {
-            match req
-                .extensions
-                .get::<Option<(ResourceIds, String, Option<String>)>>()
+        let CheckAccessResult { object, .. } =
+            req.extensions
+                .get::<CheckAccessResult>()
                 .cloned()
-                .flatten()
-            {
-                Some((ids, _, _)) => match ids {
-                    ResourceIds::Project(id) => Ok(id),
-                    ResourceIds::Collection(_, id) => Ok(id),
-                    ResourceIds::Dataset(_, _, id) => Ok(id),
-                    ResourceIds::Object(_, _, _, id) => Ok(id),
-                },
-                None => Err(s3_error!(NoSuchKey, "No object found")),
-            }?
-        };
-        let (object, location) = self
-            .cache
-            .resources
-            .get(&id)
-            .ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?
-            .clone();
-        let location = location
-            .ok_or_else(|| s3_error!(NoSuchUpload, "Object not stored in this DataProxy"))?;
-        let checksum_sha256 = object.hashes.get("SHA256").map(ChecksumSHA256::from);
+                .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+
+        // // TODO: Special bucket
+        // let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
+        //     DieselUlid::from_str(&req.input.key)
+        //         .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
+        // } else {
+        //     match req
+        //         .extensions
+        //         .get::<Option<(ResourceIds, String, Option<String>)>>()
+        //         .cloned()
+        //         .flatten()
+        //     {
+        //         Some((ids, _, _)) => match ids {
+        //             ResourceIds::Project(id) => Ok(id),
+        //             ResourceIds::Collection(_, id) => Ok(id),
+        //             ResourceIds::Dataset(_, _, id) => Ok(id),
+        //             ResourceIds::Object(_, _, _, id) => Ok(id),
+        //         },
+        //         None => Err(s3_error!(NoSuchKey, "No object found")),
+        //     }?
+        // };
+
+        let (object, location) = object.ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?;
+
+        let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
 
         Ok(S3Response::new(HeadObjectOutput {
-            content_length: location.raw_content_len,
-            content_type: None,
-            content_disposition: None,
-            content_encoding: None,
-            e_tag: Some(location.id.to_string()),
-            storage_class: None,
-            checksum_sha256,
+            content_length: content_len,
+            last_modified: Some(
+                // FIXME: Real time ...
+                time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                    .unwrap()
+                    .into(),
+            ),
+            e_tag: Some(object.id.to_string()),
             ..Default::default()
         }))
     }

@@ -423,7 +423,7 @@ impl GrpcQueryHandler {
             .object
             .ok_or(anyhow!("unknown project"))?;
         let object = DPObject::try_from(response)?;
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache.upsert_object(object.clone(), Some(loc)).await?;
         Ok(object)
     }
 
