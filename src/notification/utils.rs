@@ -138,9 +138,7 @@ pub fn parse_event_consumer_subject(subject: &str) -> anyhow::Result<EventType> 
     } else if subject.starts_with("AOS.ANNOUNCEMENT") {
         // Variant does not matter at this moment
         Ok(EventType::Announcement(None))
-    } else if subject.starts_with("AOS.>") {
-        Ok(EventType::All)
-    } else if subject.starts_with("AOS.ENDPOINT") {
+    } else if subject.starts_with("AOS.>") || subject.starts_with("AOS.ENDPOINT") {
         Ok(EventType::All)
     } else {
         Err(anyhow::anyhow!("Invalid consumer subject"))
