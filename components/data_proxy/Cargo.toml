@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "aos_data_proxy"
-version = "1.0.0"
+version = "2.0.0-rc.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -29,21 +29,21 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DbPermissionLevel {
-    DENY,
-    NONE,
-    READ,
-    APPEND,
-    WRITE,
-    ADMIN,
+    Deny,
+    None,
+    Read,
+    Append,
+    Write,
+    Admin,
 }
 
 impl From<&Method> for DbPermissionLevel {
     fn from(method: &Method) -> Self {
         match *method {
-            Method::GET | Method::OPTIONS => DbPermissionLevel::READ,
-            Method::POST => DbPermissionLevel::APPEND,
-            Method::PUT | Method::DELETE => DbPermissionLevel::WRITE,
-            _ => DbPermissionLevel::ADMIN,
+            Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
+            Method::POST => DbPermissionLevel::Append,
+            Method::PUT | Method::DELETE => DbPermissionLevel::Write,
+            _ => DbPermissionLevel::Admin,
         }
     }
 }
@@ -58,10 +58,10 @@ pub struct User {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
-    PROJECT,
-    COLLECTION,
-    DATASET,
-    OBJECT,
+    Project,
+    Collection,
+    Dataset,
+    Object,
 }
 
 #[derive(Hash, Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord)]
@@ -123,12 +123,12 @@ impl From<Pubkey> for PubKey {
 }
 
 impl TypedRelation {
-    fn get_id(&self) -> DieselUlid {
+    fn _get_id(&self) -> DieselUlid {
         match self {
             TypedRelation::Project(i)
             | TypedRelation::Collection(i)
             | TypedRelation::Dataset(i)
-            | TypedRelation::Object(i) => i.clone(),
+            | TypedRelation::Object(i) => *i,
         }
     }
 }
@@ -136,10 +136,10 @@ impl TypedRelation {
 impl From<&Object> for TypedRelation {
     fn from(value: &Object) -> Self {
         match value.object_type {
-            ObjectType::PROJECT => TypedRelation::Project(value.id),
-            ObjectType::COLLECTION => TypedRelation::Collection(value.id),
-            ObjectType::DATASET => TypedRelation::Dataset(value.id),
-            ObjectType::OBJECT => TypedRelation::Object(value.id),
+            ObjectType::Project => TypedRelation::Project(value.id),
+            ObjectType::Collection => TypedRelation::Collection(value.id),
+            ObjectType::Dataset => TypedRelation::Dataset(value.id),
+            ObjectType::Object => TypedRelation::Object(value.id),
         }
     }
 }
@@ -148,13 +148,13 @@ impl TryFrom<&Relation> for TypedRelation {
     type Error = anyhow::Error;
     fn try_from(value: &Relation) -> Result<Self> {
         match value {
-            Relation::External(_) => return Err(anyhow!("Invalid External rel")),
+            Relation::External(_) => Err(anyhow!("Invalid External rel")),
             Relation::Internal(int) => {
                 let resource_id = DieselUlid::from_str(&int.resource_id)?;
 
                 match int.resource_variant() {
                     aruna_rust_api::api::storage::models::v2::ResourceVariant::Unspecified => {
-                        return Err(anyhow!("Invalid target"))
+                        Err(anyhow!("Invalid target"))
                     }
                     aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                         Ok(Self::Project(resource_id))
@@ -321,11 +321,11 @@ impl WithGenericBytes<String> for User {
 impl From<PermissionLevel> for DbPermissionLevel {
     fn from(level: PermissionLevel) -> Self {
         match level {
-            PermissionLevel::Read => DbPermissionLevel::READ,
-            PermissionLevel::Append => DbPermissionLevel::APPEND,
-            PermissionLevel::Write => DbPermissionLevel::WRITE,
-            PermissionLevel::Admin => DbPermissionLevel::ADMIN,
-            _ => DbPermissionLevel::NONE,
+            PermissionLevel::Read => DbPermissionLevel::Read,
+            PermissionLevel::Append => DbPermissionLevel::Append,
+            PermissionLevel::Write => DbPermissionLevel::Write,
+            PermissionLevel::Admin => DbPermissionLevel::Admin,
+            _ => DbPermissionLevel::None,
         }
     }
 }
@@ -377,7 +377,7 @@ impl TryFrom<Project> for Object {
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
-            object_type: ObjectType::PROJECT,
+            object_type: ObjectType::Project,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
             parents: Some(inbounds),
@@ -434,7 +434,7 @@ impl TryFrom<Collection> for Object {
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
-            object_type: ObjectType::COLLECTION,
+            object_type: ObjectType::Collection,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
             parents: Some(inbounds),
@@ -491,7 +491,7 @@ impl TryFrom<Dataset> for Object {
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
-            object_type: ObjectType::DATASET,
+            object_type: ObjectType::Dataset,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
             parents: Some(inbounds),
@@ -548,7 +548,7 @@ impl TryFrom<GrpcObject> for Object {
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
-            object_type: ObjectType::OBJECT,
+            object_type: ObjectType::Object,
             hashes: HashMap::default(),
             dynamic: value.dynamic,
             parents: Some(inbounds),
@@ -592,8 +592,7 @@ impl From<Object> for CreateCollectionRequest {
             data_class: value.data_class.into(),
             parent: value
                 .parents
-                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
-                .flatten()
+                .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
         }
     }
@@ -609,8 +608,7 @@ impl From<Object> for CreateDatasetRequest {
             data_class: value.data_class.into(),
             parent: value
                 .parents
-                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
-                .flatten()
+                .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
         }
     }
@@ -624,7 +622,7 @@ impl From<CreateBucketInput> for Object {
             key_values: vec![],
             object_status: Status::Available,
             data_class: DataClass::Private,
-            object_type: ObjectType::PROJECT,
+            object_type: ObjectType::Project,
             hashes: HashMap::default(),
             dynamic: false,
             parents: None,
@@ -644,8 +642,7 @@ impl From<Object> for CreateObjectRequest {
             data_class: value.data_class.into(),
             parent: value
                 .parents
-                .map(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
-                .flatten()
+                .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
             hashes: vec![],
         }
@@ -995,21 +992,21 @@ impl ResourceIds {
     pub fn get_typed_parent(&self) -> Option<TypedRelation> {
         match self {
             ResourceIds::Project(_) => None,
-            ResourceIds::Collection(p, _) => Some(TypedRelation::Project(p.clone())),
+            ResourceIds::Collection(p, _) => Some(TypedRelation::Project(*p)),
             ResourceIds::Dataset(p, c, _) => {
                 if let Some(c) = c {
-                    Some(TypedRelation::Collection(c.clone()))
+                    Some(TypedRelation::Collection(*c))
                 } else {
-                    Some(TypedRelation::Project(p.clone()))
+                    Some(TypedRelation::Project(*p))
                 }
             }
             ResourceIds::Object(p, c, d, _) => {
                 if let Some(d) = d {
-                    Some(TypedRelation::Dataset(d.clone()))
+                    Some(TypedRelation::Dataset(*d))
                 } else if let Some(c) = c {
-                    Some(TypedRelation::Collection(c.clone()))
+                    Some(TypedRelation::Collection(*c))
                 } else {
-                    Some(TypedRelation::Project(p.clone()))
+                    Some(TypedRelation::Project(*p))
                 }
             }
         }
@@ -1040,10 +1037,10 @@ impl ResourceIds {
         Option<DieselUlid>,
     ) {
         match self {
-            ResourceIds::Project(p) => (p.clone(), None, None, None),
-            ResourceIds::Collection(p, c) => (p.clone(), Some(c.clone()), None, None),
-            ResourceIds::Dataset(p, c, d) => (p.clone(), c.clone(), Some(d.clone()), None),
-            ResourceIds::Object(p, c, d, o) => (p.clone(), c.clone(), d.clone(), Some(o.clone())),
+            ResourceIds::Project(p) => (*p, None, None, None),
+            ResourceIds::Collection(p, c) => (*p, Some(*c), None, None),
+            ResourceIds::Dataset(p, c, d) => (*p, *c, Some(*d), None),
+            ResourceIds::Object(p, c, d, o) => (*p, *c, *d, Some(*o)),
         }
     }
 }

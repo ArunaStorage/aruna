@@ -172,11 +172,11 @@ impl Cache {
             .ok_or_else(|| anyhow!("Resource not found"))?
             .clone();
         match variant {
-            ObjectType::PROJECT => Ok(vec![(
+            ObjectType::Project => Ok(vec![(
                 ResourceString::Project(initial_res.name),
                 ResourceIds::Project(initial_res.id),
             )]),
-            ObjectType::COLLECTION => {
+            ObjectType::Collection => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
                     if let Some(childs) = &initial_res.children {
@@ -199,7 +199,7 @@ impl Cache {
                 }
                 Ok(res)
             }
-            ObjectType::DATASET => {
+            ObjectType::Dataset => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
                     if let Some(childs) = &initial_res.children {
@@ -210,7 +210,7 @@ impl Cache {
                                 .ok_or_else(|| anyhow!("Resource not found"))?
                                 .0
                                 .clone();
-                            if elem.value().0.object_type == ObjectType::PROJECT {
+                            if elem.value().0.object_type == ObjectType::Project {
                                 res.push((
                                     ResourceString::Dataset(
                                         other1.name.to_string(),
@@ -223,7 +223,7 @@ impl Cache {
                                 for elem2 in self.resources.iter() {
                                     if let Some(childs2) = &elem.0.children {
                                         if childs2.contains(&(&elem2.value().0).into())
-                                            && elem2.value().0.object_type == ObjectType::COLLECTION
+                                            && elem2.value().0.object_type == ObjectType::Collection
                                         {
                                             let other2 = self
                                                 .resources
@@ -252,7 +252,7 @@ impl Cache {
                 }
                 Ok(res)
             }
-            ObjectType::OBJECT => {
+            ObjectType::Object => {
                 let mut res = Vec::new();
                 for elem in self.resources.iter() {
                     if let Some(childs) = &initial_res.children {
@@ -263,7 +263,7 @@ impl Cache {
                                 .ok_or_else(|| anyhow!("Resource not found"))?
                                 .0
                                 .clone();
-                            if elem.value().0.object_type == ObjectType::PROJECT {
+                            if elem.value().0.object_type == ObjectType::Project {
                                 res.push((
                                     ResourceString::Object(
                                         other1.name.to_string(),
@@ -273,11 +273,11 @@ impl Cache {
                                     ),
                                     ResourceIds::Object(other1.id, None, None, initial_res.id),
                                 ));
-                            } else if elem.value().0.object_type == ObjectType::COLLECTION {
+                            } else if elem.value().0.object_type == ObjectType::Collection {
                                 for elem2 in self.resources.iter() {
                                     if let Some(childs2) = &elem.value().0.children {
                                         if childs2.contains(&(&elem2.value().0).into())
-                                            && elem2.value().0.object_type == ObjectType::COLLECTION
+                                            && elem2.value().0.object_type == ObjectType::Collection
                                         {
                                             let other2 = self
                                                 .resources

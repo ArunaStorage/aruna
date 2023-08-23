@@ -170,7 +170,7 @@ impl AuthHandler {
 
                 return Ok(CheckAccessResult {
                     user_id: Some(user.user_id.to_string()),
-                    token_id: token_id,
+                    token_id,
                     resource_ids: None,
                     missing_resources: Some(Missing {
                         p: Some(b.to_string()),
@@ -226,7 +226,7 @@ impl AuthHandler {
         }
 
         let (ids, (obj, loc), missing) = self.extract_object_from_path(path, method)?;
-        if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
+        if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
                 None,
                 None,
@@ -262,6 +262,7 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,
         path: &S3Path,

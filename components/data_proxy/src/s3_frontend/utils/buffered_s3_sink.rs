@@ -143,12 +143,7 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
-    async fn process_bytes(
-        &mut self,
-        buf: &mut BytesMut,
-        finished: bool,
-        _: bool,
-    ) -> Result<bool> {
+    async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
         self.sum += buf.len();
         let len = buf.len();
 

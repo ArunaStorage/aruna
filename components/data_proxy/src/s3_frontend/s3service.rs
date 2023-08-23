@@ -107,7 +107,6 @@ impl S3 for ArunaS3Service {
         }
         let output = CreateBucketOutput {
             location: Some(new_object.name.to_string()),
-            ..Default::default()
         };
 
         self.cache
@@ -150,9 +149,7 @@ impl S3 for ArunaS3Service {
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
-            user_id
-                .map(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-                .flatten()
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
         } else {
             None
         };
@@ -172,7 +169,7 @@ impl S3 for ArunaS3Service {
             key_values: vec![],
             object_status: Status::Initializing,
             data_class: DataClass::Private,
-            object_type: crate::structs::ObjectType::OBJECT,
+            object_type: crate::structs::ObjectType::Object,
             hashes: HashMap::default(),
             dynamic: false,
             children: None,
@@ -248,7 +245,7 @@ impl S3 for ArunaS3Service {
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::COLLECTION,
+                    object_type: crate::structs::ObjectType::Collection,
                     hashes: HashMap::default(),
                     dynamic: true,
                     children: None,
@@ -262,7 +259,7 @@ impl S3 for ArunaS3Service {
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
                         handler
-                            .create_collection(col, &token)
+                            .create_collection(col, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
                     }
@@ -285,7 +282,7 @@ impl S3 for ArunaS3Service {
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::DATASET,
+                    object_type: crate::structs::ObjectType::Dataset,
                     hashes: HashMap::default(),
                     dynamic: true,
                     children: None,
@@ -296,7 +293,7 @@ impl S3 for ArunaS3Service {
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
                         handler
-                            .create_dataset(dataset, &token)
+                            .create_dataset(dataset, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
                     }
@@ -327,7 +324,7 @@ impl S3 for ArunaS3Service {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
                     handler
-                        .create_and_finish(new_object.clone(), location, &token)
+                        .create_and_finish(new_object.clone(), location, token)
                         .await
                         .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
@@ -361,9 +358,7 @@ impl S3 for ArunaS3Service {
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
-            user_id
-                .map(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-                .flatten()
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
         } else {
             None
         };
@@ -383,7 +378,7 @@ impl S3 for ArunaS3Service {
             key_values: vec![],
             object_status: Status::Initializing,
             data_class: DataClass::Private,
-            object_type: crate::structs::ObjectType::OBJECT,
+            object_type: crate::structs::ObjectType::Object,
             hashes: HashMap::default(),
             dynamic: false,
             children: None,
@@ -415,7 +410,7 @@ impl S3 for ArunaS3Service {
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::COLLECTION,
+                    object_type: crate::structs::ObjectType::Collection,
                     hashes: HashMap::default(),
                     dynamic: true,
                     children: None,
@@ -429,7 +424,7 @@ impl S3 for ArunaS3Service {
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
                         handler
-                            .create_collection(col, &token)
+                            .create_collection(col, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
                     }
@@ -452,7 +447,7 @@ impl S3 for ArunaS3Service {
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::DATASET,
+                    object_type: crate::structs::ObjectType::Dataset,
                     hashes: HashMap::default(),
                     dynamic: true,
                     children: None,
@@ -463,7 +458,7 @@ impl S3 for ArunaS3Service {
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
                         handler
-                            .create_dataset(dataset, &token)
+                            .create_dataset(dataset, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
                     }
@@ -486,7 +481,7 @@ impl S3 for ArunaS3Service {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
                     handler
-                        .create_object(new_object.clone(), Some(location), &token)
+                        .create_object(new_object.clone(), Some(location), token)
                         .await
                         .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
@@ -594,9 +589,7 @@ impl S3 for ArunaS3Service {
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
-            user_id
-                .map(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-                .flatten()
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
         } else {
             None
         };
@@ -662,7 +655,7 @@ impl S3 for ArunaS3Service {
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 handler
-                    .finish_object(location.id, location.raw_content_len, hashes, &token)
+                    .finish_object(location.id, location.raw_content_len, hashes, token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
             }

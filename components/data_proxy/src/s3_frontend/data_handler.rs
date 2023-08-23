@@ -1,5 +1,4 @@
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;

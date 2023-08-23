@@ -30,11 +30,11 @@ impl GetId for ResourceId {
 }
 
 pub trait IntoHashMap {
-    fn into_hash_map(&self) -> Result<HashMap<DieselUlid, DbPermissionLevel>>;
+    fn into_hash_map(self) -> Result<HashMap<DieselUlid, DbPermissionLevel>>;
 }
 
 impl IntoHashMap for Permission {
-    fn into_hash_map(&self) -> Result<HashMap<DieselUlid, DbPermissionLevel>> {
+    fn into_hash_map(self) -> Result<HashMap<DieselUlid, DbPermissionLevel>> {
         let mut map = HashMap::new();
         map.insert(
             self.resource_id

@@ -64,7 +64,7 @@ pub struct GrpcQueryHandler {
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
-    endpoint_id: String,
+    _endpoint_id: String,
     long_lived_token: String,
 }
 
@@ -73,7 +73,7 @@ impl GrpcQueryHandler {
     pub async fn new(
         server: impl Into<String>,
         cache: Arc<Cache>,
-        endpoint_id: String,
+        _endpoint_id: String,
     ) -> Result<Self> {
         //let tls_config = ClientTlsConfig::new();
         let endpoint = Channel::from_shared(server.into())?;
@@ -113,7 +113,7 @@ impl GrpcQueryHandler {
             storage_status_service,
             event_notification_service,
             cache,
-            endpoint_id,
+            _endpoint_id,
             long_lived_token,
         };
 

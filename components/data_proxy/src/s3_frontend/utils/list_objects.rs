@@ -71,7 +71,7 @@ pub fn list_response(
     cache: &Arc<Cache>,
     delimiter: &Option<String>,
     prefix: &Option<String>,
-    start_after: &String,
+    start_after: &str,
     max_keys: usize,
 ) -> Result<(HashSet<Contents>, HashSet<String>, Option<String>)> {
     let mut keys: HashSet<Contents> = HashSet::default();
@@ -80,7 +80,7 @@ pub fn list_response(
 
     match (delimiter.clone(), prefix.clone()) {
         (Some(delimiter), Some(prefix)) => {
-            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+            for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 if let Some(split) = path.strip_prefix(&prefix) {
                     if let Some((sub_prefix, _)) = split.split_once(&delimiter) {
                         // If Some split -> common prefixes
@@ -121,7 +121,7 @@ pub fn list_response(
             }
         }
         (Some(delimiter), None) => {
-            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+            for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 if let Some((pre, _)) = path.split_once(&delimiter) {
                     // If Some split -> common prefixes
                     if idx == max_keys + 1 {
@@ -151,7 +151,7 @@ pub fn list_response(
             }
         }
         (None, Some(prefix)) => {
-            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+            for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 let entry: Contents = if path.strip_prefix(&prefix).is_some() {
                     (
                         path,
@@ -174,7 +174,7 @@ pub fn list_response(
         }
 
         (None, None) => {
-            for (idx, (path, id)) in sorted.range(start_after.clone()..).enumerate() {
+            for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 let entry: Contents = (
                     path,
                     cache
