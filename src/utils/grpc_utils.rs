@@ -147,7 +147,7 @@ pub async fn update_search_index(
     // Remove confidential objects
     let final_updates = index_updates
         .into_iter()
-        .filter(|od| od.resource_type < 3)
+        .filter(|od| od.object_type < 3)
         .collect::<Vec<_>>();
 
     // Update remaining objects in search index
