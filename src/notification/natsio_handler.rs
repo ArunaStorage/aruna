@@ -7,7 +7,7 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
-use async_nats::jetstream::consumer::{Config, DeliverPolicy, PullConsumer};
+use async_nats::jetstream::consumer::{pull, Config, DeliverPolicy, PullConsumer};
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -248,23 +248,24 @@ impl NatsIoHandler {
         &self,
         event_consumer_id: String,
     ) -> anyhow::Result<PullConsumer> {
-        // Try to get consumer from stream
+        // Try to get pull consumer from stream
         Ok(match self.stream.get_consumer(&event_consumer_id).await {
             Ok(consumer) => consumer,
             Err(err) => return Err(anyhow::anyhow!(err)),
         })
     }
 
-    //ToDo: Rust Doc
+    /// Creates a Nats.io consumer which is a little bit more customizable than its
+    /// counterpart for the external users.
     pub async fn create_internal_consumer(
         &self,
         consumer_id: DieselUlid,
         consumer_subject: String,
         delivery_policy: DeliverPolicy,
         ephemeral: bool,
-    ) -> anyhow::Result<(DieselUlid, Config)> {
+    ) -> anyhow::Result<PullConsumer> {
         // Define consumer config
-        let consumer_config = Config {
+        let consumer_config = pull::Config {
             name: Some(consumer_id.to_string()),
             filter_subject: consumer_subject.clone(),
             durable_name: if ephemeral {
@@ -273,19 +274,18 @@ impl NatsIoHandler {
                 Some(consumer_id.to_string())
             },
             deliver_policy: delivery_policy,
-            // Remove consumer after 30 days idle.
-            // Still in discussion if this is the right way.
-            //inactive_threshold: Duration::from_secs(2592000),
+            inactive_threshold: Duration::from_secs(86400), // Remove consumer after 1 day idle
             ..Default::default()
         };
 
         // Create consumer with the generated config if not already exists
-        self.stream
+        Ok(self
+            .stream
             .get_or_create_consumer(&consumer_id.to_string(), consumer_config.clone())
-            .await?;
+            .await?)
 
         // Return consumer id
-        Ok((consumer_id, consumer_config))
+        //Ok((consumer_id, consumer_config))
     }
 
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)

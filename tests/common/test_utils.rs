@@ -10,6 +10,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
+#[allow(dead_code)]
 pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
     User {
         id: DieselUlid::generate(),
@@ -39,6 +40,7 @@ pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
     }
 }
 
+#[allow(dead_code)]
 pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: ObjectType) -> Object {
     Object {
         id: object_id,
@@ -60,6 +62,7 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
     }
 }
 
+#[allow(dead_code)]
 pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelation {
     InternalRelation {
         id: DieselUlid::generate(),
@@ -71,6 +74,7 @@ pub fn new_internal_relation(origin: &Object, target: &Object) -> InternalRelati
         target_name: target.name.to_string(),
     }
 }
+
 #[allow(dead_code)]
 pub fn object_from_mapping(
     user_id: DieselUlid,

@@ -15,6 +15,7 @@ use aruna_rust_api::api::notification::services::v2::{
 };
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use async_nats::jetstream::{consumer::DeliverPolicy, Message};
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 use std::str::FromStr;
@@ -82,9 +83,9 @@ impl EventNotificationService for NotificationServiceImpl {
         )?;
 
         // Check permission for evaluated permission context
-        let (user_id, _, is_proxy) = tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![perm_context])
+                .check_permissions(&token, vec![perm_context])
                 .await,
             "Permission denied"
         );
@@ -99,34 +100,18 @@ impl EventNotificationService for NotificationServiceImpl {
             DeliverPolicy::All // Default
         };
 
-        // Consumer creation depending on request token source
-        let (consumer_id, consumer_config) = if is_proxy {
-            let consumer_name = DieselUlid::generate(); // Some random id as name
-            let consumer_subject = generate_endpoint_subject(&user_id);
-            tonic_internal!(
-                self.natsio_handler
-                    .create_internal_consumer(
-                        consumer_name,
-                        consumer_subject,
-                        DeliverPolicy::All,
-                        false,
-                    )
-                    .await,
-                "Consumer creation failed"
-            )
-        } else {
-            tonic_internal!(
-                self.natsio_handler
-                    .create_event_consumer(event_type, deliver_policy)
-                    .await,
-                "Consumer creation failed"
-            )
-        };
+        // Create consumer in Nats.io
+        let (consumer_id, consumer_config) = tonic_internal!(
+            self.natsio_handler
+                .create_event_consumer(event_type, deliver_policy)
+                .await,
+            "Consumer creation failed"
+        );
 
         // Create stream consumer in database
         let mut stream_consumer = StreamConsumer {
             id: consumer_id,
-            user_id: if is_proxy { None } else { Some(user_id) },
+            user_id: Some(user_id),
             config: postgres_types::Json(consumer_config),
         };
 
@@ -308,54 +293,74 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Check empty permission context just to validate registered and active user
-        tonic_auth!(
+        let (_, _, is_proxy) = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::default()])
+                .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
             "Permission denied"
         );
 
-        // Fetch stream consumer, parse subject and check specific permissions. This is shit.
-        let client = &self
-            .database_handler
-            .database
-            .get_client()
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                Status::unavailable("Database not available.")
-            })?;
-
-        let stream_consumer = StreamConsumer::get(consumer_id, client)
-            .await
-            .map_err(|_| Status::aborted("Stream consumer fetch failed"))?;
-
-        let specific_context: Context = if let Some(consumer) = stream_consumer {
-            tonic_invalid!(
-                parse_event_consumer_subject(&consumer.config.0.filter_subject),
-                "Invalid consumer subject"
+        // If request is from Dataproxy: Create ephemeral consumer
+        let pull_consumer = if is_proxy {
+            tonic_internal!(
+                self.natsio_handler
+                    .create_internal_consumer(
+                        DieselUlid::generate(), //  Random temp id
+                        generate_endpoint_subject(&consumer_id),
+                        DeliverPolicy::ByStartTime {
+                            start_time: tonic_invalid!(
+                                OffsetDateTime::from_unix_timestamp(Utc::now().timestamp()),
+                                "Incorrect timestamp format"
+                            ),
+                        },
+                        true,
+                    )
+                    .await,
+                "Consumer creation failed"
             )
-            .try_into()?
         } else {
-            return Err(Status::invalid_argument("Stream consumer does not exist."));
-        };
+            // Try to fetch stream consumer, parse subject and check specific permissions.
+            let client = &self
+                .database_handler
+                .database
+                .get_client()
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    Status::unavailable("Database not available.")
+                })?;
 
-        tonic_auth!(
-            self.authorizer
-                .check_permissions(&token, vec![specific_context])
-                .await,
-            "Nope."
-        );
+            let stream_consumer = StreamConsumer::get(consumer_id, client)
+                .await
+                .map_err(|_| Status::aborted("Stream consumer fetch failed"))?;
+
+            let specific_context: Context = if let Some(consumer) = stream_consumer {
+                tonic_invalid!(
+                    parse_event_consumer_subject(&consumer.config.0.filter_subject),
+                    "Invalid consumer subject"
+                )
+                .try_into()?
+            } else {
+                return Err(Status::invalid_argument("Stream consumer does not exist."));
+            };
+
+            tonic_auth!(
+                self.authorizer
+                    .check_permissions(&token, vec![specific_context])
+                    .await,
+                "Nope."
+            );
+
+            tonic_internal!(
+                self.natsio_handler
+                    .get_pull_consumer(consumer_id.to_string())
+                    .await,
+                "Fetching consumer failed"
+            )
+        };
 
         // Create multi-producer single-consumer channel
         let (tx, rx) = mpsc::channel(4);
-
-        let pull_consumer = tonic_internal!(
-            self.natsio_handler
-                .get_pull_consumer(consumer_id.to_string())
-                .await,
-            "Fetching consumer failed"
-        );
         let mut message_stream = tonic_internal!(
             pull_consumer.messages().await,
             "Message stream creation failed"

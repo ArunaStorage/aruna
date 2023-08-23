@@ -10,8 +10,10 @@ use aruna_rust_api::api::{
     storage::models::v2::generic_resource,
 };
 use async_nats::jetstream::consumer::DeliverPolicy;
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
+use time::OffsetDateTime;
 
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::{
@@ -20,10 +22,7 @@ use crate::{
         crud::CrudDb,
         dsls::{object_dsl::Object, user_dsl::User},
     },
-    notification::{
-        handler::{EventHandler, EventType},
-        natsio_handler::NatsIoHandler,
-    },
+    notification::natsio_handler::NatsIoHandler,
     utils::grpc_utils::{checksum_resource, checksum_user},
 };
 
@@ -40,12 +39,29 @@ impl NotificationHandler {
         search_client: Arc<MeilisearchClient>,
     ) -> anyhow::Result<Self> {
         // Create standard pull consumer to fetch all notifications
+        /*
         let (some1, _) = natsio_handler
             .create_event_consumer(EventType::All, DeliverPolicy::All)
             .await?;
+        */
+
+        // Create ephemeral pull consumer which fetches only messages from the time of startup
+        let pull_consumer = natsio_handler
+            .create_internal_consumer(
+                DieselUlid::generate(),
+                "AOS.>".to_string(), // All event notifications
+                DeliverPolicy::ByStartTime {
+                    start_time: tonic_invalid!(
+                        OffsetDateTime::from_unix_timestamp(Utc::now().timestamp()),
+                        "Incorrect timestamp format"
+                    ),
+                },
+                true,
+            )
+            .await?;
 
         //Todo: Persist consumer for ArunaServer instances?
-        let pull_consumer = natsio_handler.get_pull_consumer(some1.to_string()).await?;
+        //let pull_consumer = natsio_handler.get_pull_consumer(some1.to_string()).await?;
 
         // Async move the consumer listening
         let mut messages = pull_consumer.messages().await?;
@@ -239,7 +255,7 @@ async fn process_user_event(
             EventVariant::Available => unimplemented!("Set user activated?"),
             EventVariant::Deleted => cache.remove_user(&user_ulid),
             EventVariant::Snapshotted => {
-                unimplemented!("Delete from cache or set status to 'Snapshotted'?")
+                unimplemented!("Sync all objects underneath the snapshotted resource into cache")
             }
         }
     } else {

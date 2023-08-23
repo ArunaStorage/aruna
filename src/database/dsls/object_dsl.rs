@@ -819,7 +819,7 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
     for edge in edge_list {
         children_map
             .entry(edge.origin_pid)
-            .or_insert(HashSet::default())
+            .or_default()
             .insert(edge.into_target_object_mapping());
 
         if edge.origin_type == ObjectType::PROJECT {
@@ -860,7 +860,7 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
                             queue.push_back((mut_hierarchy, *dataset_id))
                         }
                         ObjectMapping::OBJECT(object_id) => {
-                            if children_map.get(&object_id).is_some() {
+                            if children_map.get(object_id).is_some() {
                                 queue.push_back((mut_hierarchy.clone(), *object_id))
                             }
 

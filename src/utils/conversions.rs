@@ -543,7 +543,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: e.value().clone(),
+                        full_synced: *e.value(),
                     })
                     .collect(),
             }),
@@ -566,7 +566,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: e.value().clone(),
+                        full_synced: *e.value(),
                     })
                     .collect(),
             }),
@@ -589,7 +589,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: e.value().clone(),
+                        full_synced: *e.value(),
                     })
                     .collect(),
             }),
@@ -613,7 +613,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: e.value().clone(),
+                        full_synced: *e.value(),
                     })
                     .collect(),
             }),
@@ -699,7 +699,7 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: e.value().clone(),
+                    full_synced: *e.value(),
                 })
                 .collect(),
         })),
@@ -721,7 +721,7 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: e.value().clone(),
+                    full_synced: *e.value(),
                 })
                 .collect(),
         })),
@@ -743,7 +743,7 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: e.value().clone(),
+                    full_synced: *e.value(),
                 })
                 .collect(),
         })),
@@ -766,7 +766,7 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: e.value().clone(),
+                    full_synced: *e.value(),
                 })
                 .collect(),
         })),

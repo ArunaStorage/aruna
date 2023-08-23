@@ -60,6 +60,7 @@ impl SnapshotResponse {
         };
         Ok(result)
     }
+
     async fn archive_project(
         project: &SnapshotProject,
         mut client: DClient,
@@ -70,21 +71,7 @@ impl SnapshotResponse {
         transaction.commit().await?;
         Ok(objects)
     }
-    async fn snapshot_dataset(
-        dataset: &mut SnapshotDataset,
-        mut client: DClient,
-    ) -> Result<Vec<ObjectWithRelations>> {
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
-        dataset.dataset.create(transaction_client).await?;
-        if !dataset.relations.is_empty() {
-            InternalRelation::batch_create(&dataset.relations, transaction_client).await?;
-        }
-        transaction.commit().await?;
-        Ok(vec![
-            Object::get_object_with_relations(&dataset.dataset.id, &client).await?,
-        ])
-    }
+
     async fn snapshot_collection(
         collection: &mut SnapshotCollection,
         mut client: DClient,
@@ -105,6 +92,22 @@ impl SnapshotResponse {
         let results = Object::get_objects_with_relations(&updated, &client).await?;
         Ok(results)
     }
+
+    async fn snapshot_dataset(
+        dataset: &mut SnapshotDataset,
+        mut client: DClient,
+    ) -> Result<Vec<ObjectWithRelations>> {
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        dataset.dataset.create(transaction_client).await?;
+        if !dataset.relations.is_empty() {
+            InternalRelation::batch_create(&dataset.relations, transaction_client).await?;
+        }
+        transaction.commit().await?;
+        Ok(vec![
+            Object::get_object_with_relations(&dataset.dataset.id, &client).await?,
+        ])
+    }
 }
 
 impl SnapshotRequest {
@@ -115,25 +118,29 @@ impl SnapshotRequest {
             SnapshotRequest::Dataset(req) => DieselUlid::from_str(&req.dataset_id)?,
         })
     }
+
     pub async fn get_archived_project(
-        project: ObjectWithRelations,
+        project: &ObjectWithRelations,
         client: &Client,
     ) -> Result<SnapshotProject> {
         Ok(SnapshotProject {
             resource_ids: SnapshotRequest::get_all_resource_ids(project.clone(), client).await?,
         })
     }
+
     pub async fn get_cloned_dataset(dataset: ObjectWithRelations) -> Result<SnapshotDataset> {
         let new_id = DieselUlid::generate();
 
         let mut relations =
             SnapshotRequest::get_other_relations(dataset.outbound.0, new_id).await?;
+
         let mut belongs_to: Vec<InternalRelation> = dataset
             .outbound_belongs_to
             .0
             .into_iter()
             .map(|r| r.1.clone_relation(&new_id))
             .collect();
+
         let version = InternalRelation {
             id: DieselUlid::generate(),
             origin_pid: new_id,
@@ -145,6 +152,7 @@ impl SnapshotRequest {
         };
         relations.push(version);
         relations.append(&mut belongs_to);
+
         Ok(SnapshotDataset {
             dataset: dataset.object.get_cloned_persistent(new_id),
             relations,
@@ -210,6 +218,7 @@ impl SnapshotRequest {
             relations,
         })
     }
+
     async fn get_all_resource_ids(
         project: ObjectWithRelations,
         client: &Client,
@@ -242,6 +251,7 @@ impl SnapshotRequest {
         results.append(&mut datasets);
         Ok(results)
     }
+
     async fn get_other_relations(
         relations: DashMap<DieselUlid, InternalRelation, RandomState>,
         new_id: DieselUlid,

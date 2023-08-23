@@ -42,5 +42,5 @@ psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/src/database/schema.sql
 # Add initial data (script has to be called from project root)
 psql "postgres://yugabyte@localhost:5433/test" < $(pwd)/tests/common/initial_data.sql
 
-
+# Start something that gives an emulated keycloak response 
 $Runtime run -d --name fake-keycloak -p 8999:80 -v "$(pwd)/tests/common/keycloak/:/usr/local/apache2/htdocs/" httpd:2.4
