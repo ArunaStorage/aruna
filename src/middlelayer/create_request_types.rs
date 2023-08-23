@@ -1,7 +1,9 @@
 use crate::auth::structs::Context;
+use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
-use anyhow::Result;
+use ahash::RandomState;
+use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -13,6 +15,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub enum CreateRequest {
     Project(CreateProjectRequest),
@@ -137,11 +140,31 @@ impl CreateRequest {
         }
     }
 
-    pub fn get_endpoint(&self) -> Result<DieselUlid> {
+    pub fn get_endpoint(
+        &self,
+        cache: Arc<Cache>,
+    ) -> Result<DashMap<DieselUlid, bool, RandomState>> {
         // FIXME: Please daddy fix me !
         match self {
-            CreateRequest::Project(req) => Ok(DieselUlid::from_str(&req.preferred_endpoint)?),
-            _ => todo!(),
+            CreateRequest::Project(req) => Ok(DashMap::from_iter([(
+                DieselUlid::from_str(&req.preferred_endpoint)?,
+                true, // is true, because at least one full sync endpoint is needed for projects
+            )])),
+            _ => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent found"))?;
+                let parent = cache
+                    .get_object(&parent.get_id()?)
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                Ok(parent
+                    .object
+                    .endpoints
+                    .0
+                    .into_iter()
+                    .filter(|(_, full_sync)| full_sync.clone())
+                    .collect())
+            }
         }
     }
 
