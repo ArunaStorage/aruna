@@ -8,7 +8,7 @@ use aruna_rust_api::api::storage::services::v2::authorization_service_server::Au
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,
     DeleteAuthorizationResponse, GetAuthorizationsRequest, GetAuthorizationsResponse,
-    UpdateAuthorizationsRequest, UpdateAuthorizationsResponse,
+    ResourceAuthorization, UpdateAuthorizationsRequest, UpdateAuthorizationsResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -74,6 +74,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
 
         return_with_log!(resp);
     }
+
     /// GetAuthorization
     ///
     /// Status: BETA
@@ -81,10 +82,50 @@ impl AuthorizationService for AuthorizationServiceImpl {
     /// This gets resource specific user authorizations
     async fn get_authorizations(
         &self,
-        _request: tonic::Request<GetAuthorizationsRequest>,
+        request: tonic::Request<GetAuthorizationsRequest>,
     ) -> Result<tonic::Response<GetAuthorizationsResponse>, tonic::Status> {
-        todo!()
+        // Log some stuff
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, inner_request) = request.into_parts();
+
+        // Validate request parameter
+        let resource_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "Invalid resource id format"
+        );
+
+        // Check permissions to fetch authorizations
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        let ctx = Context::res_ctx(resource_id, DbPermissionLevel::ADMIN, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        //ToDo: Check all users for permissions on specific resource ... ?
+        let perms = tonic_internal!(
+            self.cache
+                .get_resource_permissions(resource_id, inner_request.recursive),
+            "Permission fetch failed"
+        );
+
+        let authorizations = perms
+            .into_iter()
+            .map(|(resource_id, user_permissions)| ResourceAuthorization {
+                resource_id: resource_id.to_string(),
+                user_permission: user_permissions,
+            })
+            .collect::<Vec<_>>();
+
+        // Return found authorizations
+        let response = GetAuthorizationsResponse { authorizations };
+        return_with_log!(response);
     }
+
     /// DeleteAuthorization
     ///
     /// Status: BETA
