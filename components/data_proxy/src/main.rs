@@ -6,7 +6,8 @@ use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures_util::TryFutureExt;
 use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
-use std::{io::Write, net::SocketAddr, str::FromStr, sync::Arc};
+use simple_logger::SimpleLogger;
+use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
 
@@ -40,20 +41,11 @@ async fn main() -> Result<()> {
     //
     let data_proxy_grpc_addr = dotenvy::var("DATA_PROXY_GRPC_SERVER")?.parse::<SocketAddr>()?;
 
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{}:{} {} [{}] - {}",
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter_level(log::LevelFilter::Debug)
-        .init();
+    // Init logger
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
+        .env()
+        .init()?;
 
     let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY")?;
     let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")?.parse::<i32>()?;

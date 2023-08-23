@@ -4,11 +4,9 @@ use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::anouncement_event;
-use aruna_rust_api::api::notification::services::v2::create_stream_consumer_request::Target;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequest;
 use aruna_rust_api::api::notification::services::v2::AnouncementEvent;
-use aruna_rust_api::api::notification::services::v2::CreateStreamConsumerRequest;
 use aruna_rust_api::api::notification::services::v2::EventMessage;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamRequest;
@@ -64,7 +62,7 @@ pub struct GrpcQueryHandler {
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
-    _endpoint_id: String,
+    endpoint_id: String,
     long_lived_token: String,
 }
 
@@ -73,7 +71,7 @@ impl GrpcQueryHandler {
     pub async fn new(
         server: impl Into<String>,
         cache: Arc<Cache>,
-        _endpoint_id: String,
+        endpoint_id: String,
     ) -> Result<Self> {
         //let tls_config = ClientTlsConfig::new();
         let endpoint = Channel::from_shared(server.into())?;
@@ -113,7 +111,7 @@ impl GrpcQueryHandler {
             storage_status_service,
             event_notification_service,
             cache,
-            _endpoint_id,
+            endpoint_id,
             long_lived_token,
         };
 
@@ -420,27 +418,8 @@ impl GrpcQueryHandler {
     }
 
     pub async fn create_notifications_channel(&self) -> Result<()> {
-        let mut req = Request::new(CreateStreamConsumerRequest {
-            include_subresources: true,
-            target: Some(Target::All(true)),
-            ..Default::default()
-        });
-
-        req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
-        );
-
-        let consumer = self
-            .event_notification_service
-            .clone()
-            .create_stream_consumer(req)
-            .await?
-            .into_inner()
-            .stream_consumer;
-
         let mut req = Request::new(GetEventMessageStreamRequest {
-            stream_consumer: consumer,
+            stream_consumer: self.endpoint_id.to_string(),
         });
 
         req.metadata_mut().append(

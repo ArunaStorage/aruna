@@ -6,6 +6,7 @@ version = "2.0.0-rc.1"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+simple_logger = "4.2.0"
 anyhow = "1.0.75"
 aruna-file = "0.2.0-rc.14"
 aruna-rust-api = "2.0.0-alpha.10"
