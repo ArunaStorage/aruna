@@ -4,6 +4,7 @@ use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
+use crate::structs::PartETag;
 use crate::structs::TypedRelation;
 use crate::structs::{ResourceIds, ResourceString};
 use anyhow::Result;
@@ -25,6 +26,7 @@ use futures_util::TryStreamExt;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
+use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
@@ -576,56 +578,87 @@ impl S3 for ArunaS3Service {
     #[tracing::instrument]
     async fn complete_multipart_upload(
         &self,
-        _req: S3Request<CompleteMultipartUploadInput>,
+        req: S3Request<CompleteMultipartUploadInput>,
     ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&req.input.bucket, &req.input.key, 0)
-        //     .await?;
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            object,
+            ..
+        } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        // let parts = match req.input.multipart_upload {
-        //     Some(parts) => parts
-        //         .parts
-        //         .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
-        //     None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
-        // }?;
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id
+                .map(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+                .flatten()
+        } else {
+            None
+        };
 
-        // let etag_parts = parts
-        //     .into_iter()
-        //     .map(|a| {
-        //         Ok(PartETag {
-        //             part_number: a.part_number as i64,
-        //             etag: a
-        //                 .e_tag
-        //                 .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
-        //         })
-        //     })
-        //     .collect::<Result<Vec<PartETag>, S3Error>>()?;
+        // If the object exists and the signatures match -> Skip the download
 
-        // let (object_id, collection_id) = anotif.get_col_obj()?;
-        // // Does this object exists (including object id etc)
-        // //req.input.multipart_upload.unwrap().
-        // self.data_handler
-        //     .clone()
-        //     .finish_multipart(
-        //         etag_parts,
-        //         object_id.to_string(),
-        //         collection_id,
-        //         req.input.upload_id,
-        //         anotif.get_path()?,
-        //     )
-        //     .await?;
+        let location = if let Some((_, Some(loc))) = object {
+            loc
+        } else {
+            return Err(s3_error!(InvalidArgument, "Object not initialized"));
+        };
 
-        // Ok(CompleteMultipartUploadOutput {
-        //     e_tag: Some(object_id),
-        //     version_id: Some(anotif.get_revision_string()?),
-        //     ..Default::default()
-        // })
+        let parts = match req.input.multipart_upload {
+            Some(parts) => parts
+                .parts
+                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
+            None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
+        }?;
+
+        let etag_parts = parts
+            .into_iter()
+            .map(|a| {
+                Ok(PartETag {
+                    part_number: a.part_number,
+                    etag: a
+                        .e_tag
+                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
+                })
+            })
+            .collect::<Result<Vec<PartETag>, S3Error>>()?;
+
+        // Does this object exists (including object id etc)
+        //req.input.multipart_upload.unwrap().
+        self.backend
+            .clone()
+            .finish_multipart_upload(
+                location.clone(),
+                etag_parts,
+                location
+                    .upload_id
+                    .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?,
+            )
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to finish upload")
+            })?;
+
+        let response = CompleteMultipartUploadOutput {
+            e_tag: Some(location.id.to_string()),
+            ..Default::default()
+        };
+
+        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+            if let Some(token) = &impersonating_token {
+                handler
+                    .finish_object(location.id, todo!(), todo!(), &token)
+                    .await
+                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+            }
+        }
+
+        Ok(S3Response::new(response))
     }
 
     async fn get_object(
