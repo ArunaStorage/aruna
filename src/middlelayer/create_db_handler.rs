@@ -86,13 +86,22 @@ impl DatabaseHandler {
                     let result = ir.create(transaction_client).await;
                     if result.is_err() && is_dataproxy {
                         transaction.rollback().await?;
-                        let owr = cache.get_object(&object.id);
-                        return match owr {
-                            Some(owr) => Ok((owr, None)),
-                            None => Err(anyhow!(
+                        if let Some(parent) = cache.get_object(&parent.get_id()?) {
+                            for (id, irel) in parent.outbound_belongs_to.0 {
+                                if irel.target_name == object.name {
+                                    return Ok((
+                                        cache
+                                            .get_object(&id)
+                                            .ok_or_else(|| anyhow!("Cache not synced"))?
+                                            .clone(),
+                                        None,
+                                    ));
+                                }
+                            }
+                        }
+                        return Err(anyhow!(
                             "Either cache not synced or other database error while creating object"
-                        )),
-                        };
+                        ));
                     } else {
                         result?
                     }
