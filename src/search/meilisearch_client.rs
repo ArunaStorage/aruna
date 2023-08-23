@@ -6,7 +6,7 @@ use aruna_rust_api::api::storage::models::v2::{
     KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
 };
 use diesel_ulid::DieselUlid;
-use meilisearch_sdk::{indexes::Index, task_info::TaskInfo, Client};
+use meilisearch_sdk::{indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -36,7 +36,7 @@ impl Display for MeilisearchIndexes {
 }
 
 // Struct for generalized object data used for the search index
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObjectDocument {
     pub id: DieselUlid,
     pub object_type: u8, // 256 should be enough
@@ -383,15 +383,27 @@ impl MeilisearchClient {
                     "data_class",     // e.g. data_class = "PUBLIC"
                     "created_at",     // e.g. created_at < 1692824072 (2023-08-23T20:54:32+00:00)
                 ])
+                .await?
+                .wait_for_completion(&self.client, None, None)
                 .await?;
 
             // Set the sortable attributes of the index
             index
                 .set_sortable_attributes(["size", "object_type", "created_at"])
+                .await?
+                .wait_for_completion(&self.client, None, None)
                 .await?;
 
             //ToDo: Exclude fields from search?
             //index.set_searchable_attributes(&[]).await?;
+
+            index
+                .set_pagination(PaginationSetting {
+                    max_total_hits: 1_000_000,
+                })
+                .await?
+                .wait_for_completion(&self.client, None, None)
+                .await?;
 
             index
         })
@@ -407,6 +419,7 @@ impl MeilisearchClient {
             .client
             .index(index_name)
             .search()
+            .with_limit(1_000_000) // Hardcoded limit of Meilisearch is 1000 ...
             .execute::<T>()
             .await?
             .hits;
