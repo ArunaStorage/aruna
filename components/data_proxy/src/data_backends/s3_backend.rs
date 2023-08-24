@@ -236,6 +236,7 @@ impl StorageBackend for S3Backend {
         _obj: &Object,
         expected_size: Option<i64>,
         ex_bucket: Option<String>,
+        temp: bool,
     ) -> Result<ObjectLocation> {
         let key: String = thread_rng()
             .sample_iter(&Alphanumeric)
@@ -255,7 +256,7 @@ impl StorageBackend for S3Backend {
             upload_id: None,
             key,
             encryption_key: Some(encryption_key),
-            compressed: true,
+            compressed: !temp,
             raw_content_len: expected_size.unwrap_or_default(),
             disk_content_len: 0,
         })

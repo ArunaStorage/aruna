@@ -98,5 +98,6 @@ pub trait StorageBackend: Debug + Send + Sync {
         obj: &Object,
         expected_size: Option<i64>,
         ex_bucket: Option<String>,
+        temp: bool,
     ) -> Result<ObjectLocation>;
 }

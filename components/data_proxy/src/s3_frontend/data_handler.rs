@@ -1,4 +1,5 @@
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::s3_frontend::utils::hashing_transformer::HashingTransformer;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -12,8 +13,12 @@ use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use futures::future;
 use futures::StreamExt;
+use hmac::digest::core_api::CoreWrapper;
+use hmac::digest::core_api::CtVariableCoreWrapper;
+use md5::Md5Core;
 use md5::{Digest, Md5};
 use sha2::Sha256;
+use sha2::Sha256VarCore;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -22,7 +27,8 @@ pub struct DataHandler {}
 impl DataHandler {
     pub async fn finalize_location(
         backend: Arc<Box<dyn StorageBackend>>,
-        before_location: &mut ObjectLocation,
+        before_location: &ObjectLocation,
+        new_location: &mut ObjectLocation,
     ) -> Result<Vec<Hash>> {
         let location = before_location.clone();
 
@@ -38,8 +44,6 @@ impl DataHandler {
             .clone()
             .encryption_key
             .map(|k| k.as_bytes().to_vec());
-        let mut md5_hash = Md5::new();
-        let mut sha256_hash = Sha256::new();
 
         let (transform_send, transform_receive) = async_channel::bounded(10);
 
@@ -64,38 +68,27 @@ impl DataHandler {
 
             asr = asr.add_transformer(uncompressed_probe);
 
+            let (sha_transformer, sha_recv) = HashingTransformer::new(Sha256::new());
+            let (md5_transformer, md5_recv) = HashingTransformer::new(Md5::new());
+
+            asr = asr.add_transformer(sha_transformer);
+            asr = asr.add_transformer(md5_transformer);
+
             asr.process().await?;
 
             match 1 {
                 1 => Ok((
                     orig_size_stream.try_recv()?,
                     uncompressed_stream.try_recv()?,
+                    sha_recv.try_recv()?.data,
+                    md5_recv.try_recv()?.data,
                 )),
                 _ => Err(anyhow!("Will not occur")),
             }
         });
 
-        let hashing_handle = tokio::spawn(async move {
-            let md5_str = transform_receive.inspect(|res_bytes| {
-                if let Ok(bytes) = res_bytes {
-                    md5_hash.update(bytes)
-                }
-            });
-            let sha_str = md5_str.inspect(|res_bytes| {
-                if let Ok(bytes) = res_bytes {
-                    sha256_hash.update(bytes)
-                }
-            });
-            sha_str.for_each(|_| future::ready(())).await;
-            (
-                format!("{:x}", sha256_hash.finalize()),
-                format!("{:x}", md5_hash.finalize()),
-            )
-        });
-
         backend.get_object(location.clone(), None, tx_send).await?;
-        let (before_size, after_size) = aswr_handle.await??;
-        let (sha, md5) = hashing_handle.await?;
+        let (before_size, after_size, sha, md5) = aswr_handle.await??;
 
         log::debug!(
             "Finished finalizing location {:?}/{:?}",
@@ -103,8 +96,8 @@ impl DataHandler {
             location.key
         );
 
-        before_location.disk_content_len = before_size as i64;
-        before_location.raw_content_len = after_size as i64;
+        new_location.disk_content_len = before_size as i64;
+        new_location.raw_content_len = after_size as i64;
 
         Ok(vec![
             Hash {

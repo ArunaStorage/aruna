@@ -182,7 +182,7 @@ impl S3 for ArunaS3Service {
 
         let mut location = self
             .backend
-            .initialize_location(&new_object, req.input.content_length, None)
+            .initialize_location(&new_object, req.input.content_length, None, false)
             .await
             .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
@@ -403,7 +403,7 @@ impl S3 for ArunaS3Service {
 
         let mut location = self
             .backend
-            .initialize_location(&new_object, None, None)
+            .initialize_location(&new_object, None, None, true)
             .await
             .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
@@ -615,7 +615,7 @@ impl S3 for ArunaS3Service {
 
         // If the object exists and the signatures match -> Skip the download
 
-        let (object, mut location) = if let Some((object, Some(loc))) = object {
+        let (object, old_location) = if let Some((object, Some(loc))) = object {
             (object, loc)
         } else {
             return Err(s3_error!(InvalidArgument, "Object not initialized"));
@@ -645,9 +645,9 @@ impl S3 for ArunaS3Service {
         self.backend
             .clone()
             .finish_multipart_upload(
-                location.clone(),
+                old_location.clone(),
                 etag_parts,
-                location
+                old_location
                     .upload_id
                     .as_ref()
                     .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
@@ -664,19 +664,30 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
 
-        let hashes = DataHandler::finalize_location(self.backend.clone(), &mut location)
+        let mut new_location = self
+            .backend
+            .initialize_location(&object, None, None, false)
             .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Unable to finalize location")
-            })?;
+            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+
+        let hashes =
+            DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Unable to finalize location")
+                })?;
 
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
-                handler
-                    .finish_object(object.id, location.raw_content_len, hashes, token)
+                let object = handler
+                    .finish_object(object.id, new_location.raw_content_len, hashes, token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                self.cache
+                    .upsert_object(object, Some(new_location))
+                    .await
+                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
             }
         }
 
@@ -692,8 +703,6 @@ impl S3 for ArunaS3Service {
                 .get::<CheckAccessResult>()
                 .cloned()
                 .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
-
-        dbg!(&object);
 
         let id = match object {
             Some((obj, _)) => obj.id,
