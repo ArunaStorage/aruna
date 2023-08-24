@@ -399,7 +399,7 @@ impl MeilisearchClient {
 
             index
                 .set_pagination(PaginationSetting {
-                    max_total_hits: 1_000_000,
+                    max_total_hits: 100,
                 })
                 .await?
                 .wait_for_completion(&self.client, None, None)

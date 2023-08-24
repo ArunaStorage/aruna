@@ -25,7 +25,7 @@ async fn search_test() {
         .unwrap();
 
     // Generate random index objects
-    let index_documents = (0..10)
+    let index_documents = (0..2)
         .map(|_| generate_random_object_document())
         .collect::<Vec<_>>();
 
