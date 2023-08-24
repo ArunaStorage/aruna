@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1.0.75"
-aruna-rust-api = "2.0.0-alpha.10"
+aruna-rust-api = "2.0.0-beta.1"
 async-nats = "0.30.0"
 bigdecimal = "0.4.1"
 bincode = "1.3.3"
@@ -29,11 +29,11 @@ rand = "0.8.5"
 rand_core = "0.6.4"
 regex = "1.9.3"
 reqsign = { version = "0.14.1", features = ["reqwest_request"]}
-reqwest = {version = "0.11.19", features = ["json"] }
-serde = {version = "1.0.185", features = ["derive"]}
+reqwest = {version = "0.11.20", features = ["json"] }
+serde = {version = "1.0.186", features = ["derive"]}
 serde_json = {version = "1.0.105", features = ["raw_value"]}
 simple_logger = "4.2.0"
-time = "0.3.0"
+time = "0.3.27"
 tokio = {version = "1.32.0", features = ["full"]}
 tokio-stream = { version = "0.1.14", features = ["net"] }
 toml = "0.7.6"
