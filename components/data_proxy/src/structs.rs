@@ -4,6 +4,7 @@ use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
@@ -15,7 +16,6 @@ use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
-use aruna_rust_api::api::storage::services::v2::Pubkey;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;

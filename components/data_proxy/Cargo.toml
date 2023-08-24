@@ -9,14 +9,14 @@ version = "2.0.0-rc.1"
 simple_logger = "4.2.0"
 anyhow = "1.0.75"
 aruna-file = "0.2.0-rc.14"
-aruna-rust-api = "2.0.0-alpha.10"
+aruna-rust-api = "2.0.0-beta.1"
 async-channel = "1.9.0"
 async-stream = "0.3.5"
 async-trait = "0.1.73"
 axum = "0.6.20"
-aws-config = "0.56.0"
+aws-config = "0.56.1"
 aws-sdk-s3 = "0.29.0"
-aws-smithy-http = "0.56.0"
+aws-smithy-http = "0.56.1"
 base64 = "0.21.2"
 byteorder = "1.4.3"
 bytes = "1.4.0"
@@ -34,9 +34,9 @@ hyper = {version = "0.14.27", features = ["full"]}
 log = "0.4.20"
 md-5 = "0.10.5"
 rand = "0.8.5"
-reqwest = "0.11.18"
+reqwest = "0.11.20"
 s3s = "0.7.0"
-serde = {version = "1.0.185", features = ["derive"]}
+serde = {version = "1.0.186", features = ["derive"]}
 sha2 = {version = "0.10.7", features = ["std", "asm", "sha2-asm"]}
 tokio = {version = "1.32.0", features = ["full"]}
 tokio-stream = "0.1.14"
@@ -54,7 +54,7 @@ postgres-types = { version = "0.2.6", features = ["derive"] }
 postgres_array = "0.11.1"
 deadpool-postgres = "0.10.5"
 postgres-from-row = "=0.5.2"
-dashmap = "5.5.0"
+dashmap = "5.5.1"
 ahash = "0.8.3"
 jsonwebtoken = {version = "8.3.0", features = ["use_pem"]}
 prost-wkt-types = "0.4.2"

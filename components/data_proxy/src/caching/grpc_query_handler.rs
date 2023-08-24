@@ -18,6 +18,7 @@ use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
@@ -30,7 +31,6 @@ use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
-use aruna_rust_api::api::storage::services::v2::Pubkey;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -445,8 +445,10 @@ impl GrpcQueryHandler {
 
         let mut inner_stream = stream.into_inner();
 
+        // TODO: Fullsync
+
         while let Some(m) = inner_stream.message().await? {
-            if let Some(message) = m.messages {
+            if let Some(message) = m.message {
                 log::debug!("Received message: {:?}", message);
 
                 if let Ok(Some(r)) = self.process_message(message).await {

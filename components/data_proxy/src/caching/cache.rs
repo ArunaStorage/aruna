@@ -2,6 +2,7 @@ use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
     transforms::ExtractAccessKeyPermissions,
 };
+use crate::structs::TypedRelation;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
@@ -16,10 +17,7 @@ use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
 use std::{str::FromStr, sync::Arc};
-use aruna_rust_api::api::dataproxy::services::v2::pull_replica_request::Resource::ResourceId;
-use env_logger::init;
 use tokio::sync::RwLock;
-use crate::structs::TypedRelation;
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
@@ -181,19 +179,31 @@ impl Cache {
             )]),
             ObjectType::Collection => {
                 let mut res = Vec::new();
-                for parent in initial_res.parents.ok_or_else(|| anyhow!("Collection has no parents"))? {
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("Collection has no parents"))?
+                {
                     match parent {
                         TypedRelation::Project(parent_id) => {
-                            let parent_full = self.resources.get(&parent_id).ok_or_else(|| anyhow!("Parent for collection not found"))?.0.clone();
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent for collection not found"))?
+                                .0
+                                .clone();
                             res.push((
                                 ResourceString::Collection(
                                     parent_full.name.to_string(),
                                     initial_res.name.clone(),
                                 ),
                                 ResourceIds::Collection(parent_id, initial_res.id),
-                                ))
-                        },
-                        _ => return Err(anyhow!("Collections cant have parents other than projects")),
+                            ))
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "Collections cant have parents other than projects"
+                            ))
+                        }
                     }
                 }
                 Ok(res)
@@ -220,10 +230,18 @@ impl Cache {
             }
             ObjectType::Dataset => {
                 let mut res = Vec::new();
-                for parent in initial_res.parents.ok_or_else(|| anyhow!("No parents found for dataset"))? {
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("No parents found for dataset"))?
+                {
                     match parent {
                         TypedRelation::Project(parent_id) => {
-                            let parent_full = self.resources.get(&parent_id).ok_or_else(|| anyhow!("Parent for dataset not found"))?.0.clone();
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                .0
+                                .clone();
                             res.push((
                                 ResourceString::Dataset(
                                     parent_full.name.to_string(),
@@ -232,27 +250,54 @@ impl Cache {
                                 ),
                                 ResourceIds::Dataset(parent_id, None, initial_res.id),
                             ))
-                        },
+                        }
                         TypedRelation::Collection(parent_id) => {
-                            let parent_full = self.resources.get(&parent_id).ok_or_else(|| anyhow!("No parent found"))?.0.clone();
-                            for grand_parent in parent_full.parents.ok_or_else(|| anyhow!("No parent found"))? {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                            {
                                 match grand_parent {
                                     TypedRelation::Project(grand_parent_id) => {
-                                        let grand_parent_full = self.resources.get(&grand_parent_id).ok_or_else(|| anyhow!("Parent for collection not found"))?.0.clone();
+                                        let grand_parent_full = self
+                                            .resources
+                                            .get(&grand_parent_id)
+                                            .ok_or_else(|| {
+                                                anyhow!("Parent for collection not found")
+                                            })?
+                                            .0
+                                            .clone();
                                         res.push((
                                             ResourceString::Dataset(
                                                 grand_parent_full.name.to_string(),
                                                 Some(parent_full.name.to_string()),
                                                 initial_res.name.clone(),
                                             ),
-                                            ResourceIds::Dataset(grand_parent_id, Some(parent_id), initial_res.id),
+                                            ResourceIds::Dataset(
+                                                grand_parent_id,
+                                                Some(parent_id),
+                                                initial_res.id,
+                                            ),
                                         ))
-                                    },
-                                    _ => return Err(anyhow!("Collections cant have parents other than projects")),
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Collections cant have parents other than projects"
+                                        ))
+                                    }
                                 }
                             }
-                        },
-                        _ => return Err(anyhow!("Datasets cannot have parents other than projects and collections"))
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "Datasets cannot have parents other than projects and collections"
+                            ))
+                        }
                     }
                 }
                 Ok(res)
@@ -309,10 +354,18 @@ impl Cache {
             }
             ObjectType::Object => {
                 let mut res = Vec::new();
-                for parent in initial_res.parents.ok_or_else(|| anyhow!("No parents found for object"))? {
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("No parents found for object"))?
+                {
                     match parent {
                         TypedRelation::Project(parent_id) => {
-                            let full_parent = self.resources.get(&parent_id).ok_or_else(|| anyhow!("Parent not found"))?.0.clone();
+                            let full_parent = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent not found"))?
+                                .0
+                                .clone();
                             res.push((
                                 ResourceString::Object(
                                     full_parent.name.to_string(),
@@ -320,20 +373,30 @@ impl Cache {
                                     None,
                                     initial_res.name.clone(),
                                 ),
-                                ResourceIds::Object(
-                                    parent_id,
-                                    None,
-                                    None,
-                                    initial_res.id,
-                                ),
-                                ))
-                        },
+                                ResourceIds::Object(parent_id, None, None, initial_res.id),
+                            ))
+                        }
                         TypedRelation::Collection(parent_id) => {
-                            let parent_full = self.resources.get(&parent_id).ok_or_else(|| anyhow!("No parent found"))?.0.clone();
-                            for grand_parent in parent_full.parents.ok_or_else(|| anyhow!("No parent found"))? {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                            {
                                 match grand_parent {
                                     TypedRelation::Project(grand_parent_id) => {
-                                        let grand_parent_full = self.resources.get(&grand_parent_id).ok_or_else(|| anyhow!("Parent for collection not found"))?.0.clone();
+                                        let grand_parent_full = self
+                                            .resources
+                                            .get(&grand_parent_id)
+                                            .ok_or_else(|| {
+                                                anyhow!("Parent for collection not found")
+                                            })?
+                                            .0
+                                            .clone();
                                         res.push((
                                             ResourceString::Object(
                                                 grand_parent_full.name.to_string(),
@@ -341,19 +404,41 @@ impl Cache {
                                                 None,
                                                 initial_res.name.clone(),
                                             ),
-                                            ResourceIds::Object(grand_parent_id, Some(parent_id), None, initial_res.id),
+                                            ResourceIds::Object(
+                                                grand_parent_id,
+                                                Some(parent_id),
+                                                None,
+                                                initial_res.id,
+                                            ),
                                         ))
-                                    },
-                                    _ => return Err(anyhow!("Collections cant have parents other than projects")),
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Collections cant have parents other than projects"
+                                        ))
+                                    }
                                 }
                             }
-                        },
+                        }
                         TypedRelation::Dataset(parent_id) => {
-                            let parent_full = self.resources.get(&parent_id).ok_or_else(|| anyhow!("No parent found"))?.0.clone();
-                            for grand_parent in parent_full.parents.ok_or_else(|| anyhow!("Parent not found"))? {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("Parent not found"))?
+                            {
                                 match grand_parent {
                                     TypedRelation::Project(project_parent_id) => {
-                                        let project_parent_full = self.resources.get(&project_parent_id).ok_or_else(|| anyhow!("Parent for dataset not found"))?.0.clone();
+                                        let project_parent_full = self
+                                            .resources
+                                            .get(&project_parent_id)
+                                            .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                            .0
+                                            .clone();
                                         res.push((
                                             ResourceString::Object(
                                                 project_parent_full.name.to_string(),
@@ -366,12 +451,21 @@ impl Cache {
                                                 None,
                                                 Some(parent_id),
                                                 initial_res.id,
-                                            )
-                                            ))
-                                    },
+                                            ),
+                                        ))
+                                    }
                                     TypedRelation::Collection(collection_parent_id) => {
-                                        let collection_parent_full = self.resources.get(&collection_parent_id).ok_or_else(|| anyhow!("Parent for dataset not found"))?.0.clone();
-                                        for project_parent in collection_parent_full.parents.ok_or_else(|| anyhow!("No parents found for collection"))? {
+                                        let collection_parent_full = self
+                                            .resources
+                                            .get(&collection_parent_id)
+                                            .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                            .0
+                                            .clone();
+                                        for project_parent in
+                                            collection_parent_full.parents.ok_or_else(|| {
+                                                anyhow!("No parents found for collection")
+                                            })?
+                                        {
                                             match project_parent {
                                                 TypedRelation::Project(project_parent_id) => {
                                                     let project_parent_full = self.resources.get(&project_parent_id).ok_or_else(|| anyhow!("Parent for dataset not found"))?.0.clone();
@@ -394,15 +488,17 @@ impl Cache {
 
                                             }
                                         }
-
-                                    },
-                                    _ => return Err(anyhow!("Datasets can only have collection or project children"))
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Datasets can only have collection or project children"
+                                        ))
+                                    }
                                 }
                             }
-                        },
-                        _ => return Err(anyhow!("Objects cannot have object parents"))
+                        }
+                        _ => return Err(anyhow!("Objects cannot have object parents")),
                     }
-
                 }
                 Ok(res)
                 // for elem in self.resources.iter() {
