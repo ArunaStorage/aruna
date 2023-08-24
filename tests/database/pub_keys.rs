@@ -1,4 +1,4 @@
-use crate::common::init_db;
+use crate::common::init;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
@@ -6,14 +6,14 @@ use tokio_postgres::GenericClient;
 
 #[tokio::test]
 async fn test_crud() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     let mut key_one = PubKey {
         id: 1001,
         proxy: None,
-        pubkey: "key_one".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAZ+mKlzCFRvR1bfSt1jrW9OSiO6Jf/zOQI9K5JtfeR7o=".to_string(),
     };
 
     key_one.create(client).await.unwrap();
@@ -23,12 +23,12 @@ async fn test_crud() {
     let mut key_two = PubKey {
         id: 2001,
         proxy: None,
-        pubkey: "key_two".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAK6xkhtaRnJGxt/t2o/xVYb4XS/vlDLRDEayUGpUs2c0=".to_string(),
     };
     let mut key_three = PubKey {
         id: 3001,
         proxy: None,
-        pubkey: "key_three".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAFbz/lgotH+LhybhaVCcdz2k/gKR/IeTZt+3/7Tl70ro=".to_string(),
     };
     key_two.create(client).await.unwrap();
     key_three.create(client).await.unwrap();
@@ -54,12 +54,12 @@ async fn test_crud() {
 #[tokio::test]
 async fn test_pub_key_serial_auto_incerement() {
     // Init database connection
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
     // Reusable closure to generate random pubkey string
-    let gen_rand_string = || -> String {
+    let _gen_rand_string = || -> String {
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(32)
@@ -68,8 +68,8 @@ async fn test_pub_key_serial_auto_incerement() {
     };
 
     // Generate random strings as key dummy
-    let dummy_pubkey_001 = gen_rand_string();
-    let dummy_pubkey_002 = gen_rand_string();
+    let dummy_pubkey_001 = "MCowBQYDK2VwAyEAw6nwkNVZyJyYytGxLTfa9yQpPJNR616iq7G9BzjT8wM="; //gen_rand_string();
+    let dummy_pubkey_002 = "MCowBQYDK2VwAyEAQPP30yBtHJ4IRRtNjxBr4+p4HzpE0EWLMMN/sHpWnT4="; //gen_rand_string();
 
     // Persist dummy keys in database with auto serial increment
     let dummy_key_001 = PubKey::create_or_get_without_id(None, &dummy_pubkey_001, client)

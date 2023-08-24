@@ -1,4 +1,4 @@
-use crate::common::{init_db, test_utils};
+use crate::common::{init, test_utils};
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::object_dsl::{
     DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
@@ -16,7 +16,7 @@ use tokio_postgres::GenericClient;
 
 #[tokio::test]
 async fn fetch_object_paths() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Create random user
@@ -127,7 +127,7 @@ async fn fetch_object_paths() {
 
 #[tokio::test]
 async fn create_object() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
@@ -143,7 +143,7 @@ async fn create_object() {
 }
 #[tokio::test]
 async fn get_object_with_relations_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let dataset_id = DieselUlid::generate();
@@ -291,7 +291,7 @@ async fn get_object_with_relations_test() {
 
 #[tokio::test]
 async fn test_keyvals() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let obj_id = DieselUlid::generate();
@@ -356,7 +356,7 @@ async fn test_keyvals() {
 }
 #[tokio::test]
 async fn test_external_relations() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -426,7 +426,7 @@ async fn test_external_relations() {
 
 #[tokio::test]
 async fn test_updates() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let mut client = db.get_client().await.unwrap();
     let transaction = client.transaction().await.unwrap();
 
@@ -491,7 +491,7 @@ async fn test_updates() {
 }
 #[tokio::test]
 async fn test_delete() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
@@ -524,7 +524,7 @@ async fn test_delete() {
 }
 #[tokio::test]
 async fn archive_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

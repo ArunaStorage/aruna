@@ -1,2 +1,2 @@
-pub mod init_db;
+pub mod init;
 pub mod test_utils;

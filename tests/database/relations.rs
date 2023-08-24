@@ -1,4 +1,4 @@
-use crate::common::{init_db, test_utils};
+use crate::common::{init, test_utils};
 use aruna_server::database::dsls::object_dsl::{DefinedVariant, ExternalRelation};
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::database::{
@@ -16,7 +16,7 @@ use tokio_postgres::GenericClient;
 
 #[tokio::test]
 async fn test_external_relations() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -84,7 +84,7 @@ async fn test_external_relations() {
 
 #[tokio::test]
 async fn get_object_with_relations_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -231,7 +231,7 @@ async fn get_object_with_relations_test() {
 
 #[tokio::test]
 async fn delete_relations() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -307,7 +307,7 @@ async fn delete_relations() {
 
 #[tokio::test]
 async fn get_by() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();

@@ -1,4 +1,4 @@
-use crate::common::init_db::init_handler;
+use crate::common::init::init_database_handler_middlelayer;
 use aruna_rust_api::api::storage::services::v2::{
     CreateEndpointRequest, DeleteEndpointRequest, GetEndpointRequest,
 };
@@ -13,12 +13,12 @@ use postgres_types::Json;
 #[tokio::test]
 async fn test_create_ep() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let mut pk = PubKey {
         id: 0,
         proxy: None,
-        pubkey: "SERVER_PUBKEY_DUMMY_1".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAnwnN68pHig/AXGyFb2IttslBN93+72kBRSf3vCmSi7w=".to_string(),
     };
     pk.create(&client).await.unwrap();
 
@@ -27,7 +27,7 @@ async fn test_create_ep() {
         name: "endpoint_test".to_string(),
         ep_variant: 1,
         is_public: true,
-        pubkey: "test".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAWBBLB9+sOZ4pSjM7U3DCSoq5R4xQYG4W27iwI1QoMN0=".to_string(),
         host_configs: vec![],
     });
 
@@ -43,13 +43,13 @@ async fn test_create_ep() {
 #[tokio::test]
 async fn test_get_ep() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep_id = DieselUlid::generate();
     let mut pk = PubKey {
         id: 5001,
         proxy: Some(ep_id),
-        pubkey: "SERVER_PUBKEY_DUMMY_2".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAskJBFNbcuMzONfHosX1+60kFejaIVJdM8kr13IL/69U=".to_string(),
     };
     let mut endpoint = Endpoint {
         id: ep_id,
@@ -88,7 +88,7 @@ async fn test_get_ep() {
 #[tokio::test]
 async fn test_get_all() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep_one = DieselUlid::generate();
     let ep_two = DieselUlid::generate();
@@ -135,7 +135,7 @@ async fn test_get_all() {
 #[tokio::test]
 async fn test_delete_ep() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
     let mut endpoint = Endpoint {
@@ -159,7 +159,7 @@ async fn test_delete_ep() {
 #[tokio::test]
 async fn test_get_default_ep() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let ep = DieselUlid::generate();
     let mut endpoint = Endpoint {
