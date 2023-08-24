@@ -671,6 +671,17 @@ impl Cache {
         }
         let object_id = object.id;
         let obj_type = object.object_type.clone();
+
+        let location = if let Some(o) = self.resources.get(&object.id) {
+            if location.is_none() {
+                o.value().1.clone()
+            } else {
+                location
+            }
+        } else {
+            location
+        };
+
         self.resources.insert(object.id, (object, location));
         self.paths.retain(|_, v| v != &object_id);
         let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;

@@ -28,6 +28,10 @@ use std::{
     str::FromStr,
 };
 
+pub fn type_name_of<T>(_: T) -> &'static str {
+    std::any::type_name::<T>()
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DbPermissionLevel {
     Deny,

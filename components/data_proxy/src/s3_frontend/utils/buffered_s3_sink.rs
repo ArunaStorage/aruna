@@ -148,7 +148,7 @@ impl Transformer for BufferedS3Sink {
         let len = buf.len();
 
         self.buffer.put(buf);
-        if self.buffer.len() > 5242880 && !self.only_parts {
+        if self.buffer.len() > 5242880 {
             // 5 Mib -> initialize multipart
             if self.upload_id.is_none() {
                 self.initialize_multipart().await?;

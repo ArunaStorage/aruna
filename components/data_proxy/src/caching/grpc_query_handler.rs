@@ -13,6 +13,7 @@ use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamReques
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
+use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
@@ -461,16 +462,14 @@ impl GrpcQueryHandler {
             .full_sync_endpoint(req)
             .await?
             .into_inner();
-
+        let mut resources = Vec::new();
         while let Some(full_sync_message) = full_sync_stream.message().await? {
             match full_sync_message
                 .target
                 .ok_or_else(|| anyhow!("Missing target in full_sync"))?
             {
                 Target::GenericResource(GenericResource { resource: Some(r) }) => {
-                    self.cache
-                        .upsert_object(DPObject::try_from(r)?, None)
-                        .await?
+                    resources.push(r);
                 }
                 Target::User(u) => self.cache.upsert_user(u).await?,
                 Target::Pubkey(pk) => {
@@ -488,7 +487,12 @@ impl GrpcQueryHandler {
                 _ => (),
             }
         }
-
+        sort_resources(&mut resources);
+        for res in resources {
+            self.cache
+                .upsert_object(DPObject::try_from(res)?, None)
+                .await?
+        }
         while let Some(m) = inner_stream.message().await? {
             if let Some(message) = m.message {
                 log::debug!("Received message: {:?}", message);
@@ -617,4 +621,25 @@ impl GrpcQueryHandler {
         }
         Ok(event.reply)
     }
+}
+
+pub fn sort_resources(res: &mut Vec<Resource>) {
+    res.sort_by(|x, y| match (x, y) {
+        (Resource::Project(_), Resource::Project(_)) => std::cmp::Ordering::Equal,
+        (Resource::Project(_), Resource::Collection(_))
+        | (Resource::Project(_), Resource::Dataset(_))
+        | (Resource::Project(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Collection(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Collection(_), Resource::Collection(_)) => std::cmp::Ordering::Equal,
+        (Resource::Collection(_), Resource::Dataset(_)) => std::cmp::Ordering::Less,
+        (Resource::Collection(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Dataset(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Dataset(_), Resource::Collection(_)) => std::cmp::Ordering::Greater,
+        (Resource::Dataset(_), Resource::Dataset(_)) => std::cmp::Ordering::Equal,
+        (Resource::Dataset(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Object(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Collection(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Dataset(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Object(_)) => std::cmp::Ordering::Equal,
+    })
 }

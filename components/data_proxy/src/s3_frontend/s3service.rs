@@ -4,6 +4,7 @@ use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::log_received;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
@@ -355,6 +356,8 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
+        log_received!(&req);
+
         let CheckAccessResult {
             user_id,
             token_id,
@@ -512,6 +515,8 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<UploadPartInput>,
     ) -> S3Result<S3Response<UploadPartOutput>> {
+        log_received!(&req);
+
         match req.input.content_length {
             Some(0) | None => {
                 return Err(s3_error!(

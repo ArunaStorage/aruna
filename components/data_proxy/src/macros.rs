@@ -7,3 +7,11 @@ macro_rules! required {
         }
     };
 }
+
+#[macro_export]
+macro_rules! log_received {
+    ($request:expr) => {
+        log::info!("Received {}", $crate::structs::type_name_of($request));
+        log::debug!("{:?}", $request);
+    };
+}
