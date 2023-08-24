@@ -86,47 +86,11 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         _request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>> {
-        todo!()
-        // log::info!("Received CreateObjectRequest.");
-        // log::debug!("{:?}", &request);
-
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
-
-        // let inner_request = request.into_inner();
-
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error.")
-        // })?;
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::WRITE, // append?
-        //     allow_sa: true,
-        // });
-
-        // let user_id = match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // //TODO
-        // Err(tonic::Status::unimplemented(
-        //     "GetUploadURL is not implemented.",
-        // ))
+        Err(tonic::Status::unimplemented(
+            "GetDownloadURL is not implemented.",
+        ))
     }
+
     async fn get_download_url(
         &self,
         _request: Request<GetDownloadUrlRequest>,
@@ -147,10 +111,6 @@ impl ObjectService for ObjectServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error."
         );
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
 
         let request = request.into_inner();
 
