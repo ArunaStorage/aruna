@@ -1,8 +1,9 @@
 use aruna_rust_api::api::storage::{
-    models::v2::{DataClass, DataEndpoint, Status},
+    models::v2::{DataClass, DataEndpoint, KeyValue, KeyValueVariant, Status},
     services::v2::{
         project_service_server::ProjectService, CreateProjectRequest, GetProjectRequest,
-        GetProjectsRequest,
+        GetProjectsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
+        UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
     },
 };
 use tonic::Request;
@@ -10,8 +11,8 @@ use tonic::Request;
 use crate::common::{
     init::init_project_service,
     test_utils::{
-        self, add_token, fast_track_grpc_project_create, rand_string, DEFAULT_ENDPOINT_ULID,
-        USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_project_create, rand_string, ADMIN_OIDC_TOKEN,
+        DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
     },
 };
 
@@ -32,7 +33,7 @@ async fn grpc_create_project() {
         preferred_endpoint: "".to_string(),
     };
 
-    let grpc_request = add_token(Request::new(create_request), test_utils::ADMIN_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);
 
     // Create project via gRPC service
     let create_response = project_service
@@ -105,4 +106,155 @@ async fn grpc_get_projects() {
     for project in vec![project_01, project_02] {
         assert!(proto_projects.contains(&project))
     }
+}
+
+#[tokio::test]
+async fn grpc_update_project() {
+    // Init ProjectService
+    let project_service = init_project_service().await;
+
+    // Create multiple projects
+    let project = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
+
+    // Update project name
+    let update_name_request = add_token(
+        Request::new(UpdateProjectNameRequest {
+            project_id: project.id.to_string(),
+            name: "updated-name".to_string(),
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .update_project_name(update_name_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert_ne!(project.name, updated_project.name);
+    assert_eq!(updated_project.name, "updated-name".to_string());
+
+    // Update project description
+    let update_description_request = add_token(
+        Request::new(UpdateProjectDescriptionRequest {
+            project_id: project.id.to_string(),
+            description: "Updated description.".to_string(),
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .update_project_description(update_description_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert_ne!(project.description, updated_project.description);
+    assert_eq!(
+        updated_project.description,
+        "Updated description.".to_string()
+    );
+
+    // Update project key-values (add)
+    let add_kv_request = add_token(
+        Request::new(UpdateProjectKeyValuesRequest {
+            project_id: project.id.to_string(),
+            add_key_values: vec![KeyValue {
+                key: "validated".to_string(),
+                value: "true".to_string(),
+                variant: KeyValueVariant::Label as i32,
+            }],
+            remove_key_values: vec![],
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .update_project_key_values(add_kv_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert_ne!(project.key_values, updated_project.key_values);
+    assert_eq!(
+        updated_project.key_values,
+        vec![KeyValue {
+            key: "validated".to_string(),
+            value: "true".to_string(),
+            variant: KeyValueVariant::Label as i32,
+        }]
+    );
+
+    // Update project key-values (combine add and remove)
+    let update_kv_request = add_token(
+        Request::new(UpdateProjectKeyValuesRequest {
+            project_id: project.id.to_string(),
+            add_key_values: vec![KeyValue {
+                key: "validated".to_string(),
+                value: "false".to_string(),
+                variant: KeyValueVariant::Label as i32,
+            }],
+            remove_key_values: updated_project.key_values, // Remove all 
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .update_project_key_values(update_kv_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert_ne!(project.key_values, updated_project.key_values);
+    assert_eq!(
+        updated_project.key_values,
+        vec![KeyValue {
+            key: "validated".to_string(),
+            value: "false".to_string(),
+            variant: KeyValueVariant::Label as i32,
+        }]
+    );
+
+    // Update project dataclass (Error)
+    let mut update_dataclass_request = UpdateProjectDataClassRequest {
+        project_id: project.id.to_string(),
+        data_class: DataClass::Workspace as i32,
+    };
+
+    let grpc_request = add_token(
+        Request::new(update_dataclass_request.clone()),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .update_project_data_class(grpc_request)
+        .await;
+
+    assert!(updated_project.is_err()); // Cannot tighten dataclass
+
+    // Update project dataclass
+    update_dataclass_request.data_class = DataClass::Public as i32;
+
+    let grpc_request = add_token(Request::new(update_dataclass_request), ADMIN_OIDC_TOKEN);
+
+    let updated_project = project_service
+        .update_project_data_class(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert_ne!(project.data_class, updated_project.data_class);
+    assert_eq!(updated_project.data_class, DataClass::Public as i32);
+
+    // Archive project
 }

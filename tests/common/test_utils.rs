@@ -161,7 +161,7 @@ pub async fn fast_track_grpc_project_create(
         description: "".to_string(),
         key_values: vec![],
         external_relations: vec![],
-        data_class: ApiDataClass::Public as i32,
+        data_class: ApiDataClass::Private as i32,
         preferred_endpoint: "".to_string(),
     };
 
