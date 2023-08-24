@@ -5,6 +5,7 @@ use super::utils::ranges::calculate_ranges;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::log_received;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
@@ -400,7 +401,7 @@ impl S3 for ArunaS3Service {
             synced: false,
         };
 
-        let location = self
+        let mut location = self
             .backend
             .initialize_location(&new_object, None, None)
             .await
@@ -415,6 +416,8 @@ impl S3 for ArunaS3Service {
                 log::error!("{}", e);
                 s3_error!(InvalidArgument, "Unable to initialize multi-part")
             })?;
+
+        location.upload_id = Some(init_response.to_string());
 
         if let Some(missing) = missing_resources {
             let collection_id = if let Some(collection) = missing.c {
@@ -612,8 +615,8 @@ impl S3 for ArunaS3Service {
 
         // If the object exists and the signatures match -> Skip the download
 
-        let mut location = if let Some((_, Some(loc))) = object {
-            loc
+        let (object, mut location) = if let Some((object, Some(loc))) = object {
+            (object, loc)
         } else {
             return Err(s3_error!(InvalidArgument, "Object not initialized"));
         };
@@ -657,7 +660,7 @@ impl S3 for ArunaS3Service {
             })?;
 
         let response = CompleteMultipartUploadOutput {
-            e_tag: Some(location.id.to_string()),
+            e_tag: Some(object.id.to_string()),
             ..Default::default()
         };
 
@@ -671,7 +674,7 @@ impl S3 for ArunaS3Service {
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 handler
-                    .finish_object(location.id, location.raw_content_len, hashes, token)
+                    .finish_object(object.id, location.raw_content_len, hashes, token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
             }

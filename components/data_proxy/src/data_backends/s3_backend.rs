@@ -190,9 +190,8 @@ impl StorageBackend for S3Backend {
             completed_parts.push(completed_part);
         }
 
-        log::debug!("{:?}", completed_parts);
-
-        self.s3_client
+        match self
+            .s3_client
             .complete_multipart_upload()
             .bucket(location.bucket)
             .key(location.key)
@@ -203,9 +202,14 @@ impl StorageBackend for S3Backend {
                     .build(),
             )
             .send()
-            .await?;
-
-        return Ok(());
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                log::error!("{:?}", e.raw_response());
+                Err(e.into())
+            }
+        }
     }
 
     async fn create_bucket(&self, bucket: String) -> Result<()> {

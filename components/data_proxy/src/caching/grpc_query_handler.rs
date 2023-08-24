@@ -322,7 +322,7 @@ impl GrpcQueryHandler {
     pub async fn create_object(
         &self,
         object: DPObject,
-        loc: Option<ObjectLocation>,
+        mut loc: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
         let mut req = Request::new(CreateObjectRequest::from(object));
@@ -342,6 +342,10 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown project"))?;
 
         let object = DPObject::try_from(response)?;
+
+        if let Some(ref mut loc) = loc {
+            loc.id = object.id;
+        }
 
         self.cache.upsert_object(object.clone(), loc).await?;
         Ok(object)
