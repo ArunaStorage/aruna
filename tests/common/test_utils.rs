@@ -9,6 +9,14 @@ use aruna_server::database::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
+
+/* ----- Begin Testing Constants ---------- */
+#[allow(dead_code)]
+pub static ADMIN_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjM2Njc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI0YWVlYzYzNC02NmU4LTQ1OWMtOGZjZi1lMGJmNjY3MDZjMTUiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiZGY1YjAyMDktNjBlMC00YTNiLTgwNmQtYmJmYzk5ZDllMTUyIiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJhcnVuYS1hZG1pbiJ9.5hZh2lG6JSOCvMB1crX6miEaDLf6GTCVC3dcnfc2KMME4SY68DEMAZJzk8ag_aQba4ObDOq4-QpRl4vNW6HgA8yYsBI6pbCZorWvjWklwnfv0vDVmegVybSWu2LJONxZ4lMxip1zR4FT_nRUBIda_hq-SQHGuJI1n4NxVzQ67Rreo-i6TDyqHj_aCuNN9OQxwPZQisOuNbd7oACrkCzbbv37jHf46uDUQnHwqS3DCO60ywAbe28zh0YwjfUINIf_1HgNXkS7ZF1eDcZmohFu24Wo8G2Hb2bo_zp8vR2jatNkchRq__9hUcySHAcLuiPfl8OLsqx2WA7JMyX7OZStI9MIRC6yK9hHF81pwpd29cK47wdBer0FzQaNnuBw5BXjhk5YYz0RUs27kYHOUnQJHAhCWKbGyvDy0wDkOp5XrWvgxJrPbhDY0Fjmh-4nrHdd7ozqoVtRt8G1jsKZmv3y9w7VObURLQplWpLHwQ_vqvcG0_3DDSB90_HYrOnn93xNixMq0Gk0ZCrYe2QJN92njkhhND5KqWDfho6TF1OFok2hrnMGKtlKdeiB9qH2vC4y-OweOf1pB8OXk2_3QB9FDGeLNrLeTL9uY2XTtyyqRZGIekEr8MBCyhtgwOy7jG24MMwmcTKOroQNboFu-_S0kz4k77PVHSL5785IuLlRVSY";
+#[allow(dead_code)]
+pub static DEFAULT_ENDPOINT_ULID: &str = "01H81W0ZMB54YEP5711Q2BK46V";
+/* ----- End Testing Constants ---------- */
 
 #[allow(dead_code)]
 pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
@@ -104,4 +112,14 @@ pub fn object_from_mapping(
         dynamic: false,
         endpoints: Json(DashMap::default()),
     }
+}
+
+#[allow(dead_code)]
+pub fn add_token<T>(mut req: tonic::Request<T>, token: &str) -> tonic::Request<T> {
+    let metadata = req.metadata_mut();
+    metadata.append(
+        AsciiMetadataKey::from_bytes(b"Authorization").unwrap(),
+        AsciiMetadataValue::try_from(format!("Bearer {token}")).unwrap(),
+    );
+    req
 }

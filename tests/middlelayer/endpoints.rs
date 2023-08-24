@@ -37,9 +37,13 @@ async fn test_create_ep() {
     assert!(ep.is_public);
     assert!(ep.host_config.0 .0.is_empty());
     assert!(pk.proxy.is_some());
-    assert_eq!(pk.pubkey, "test".to_string());
+    assert_eq!(
+        pk.pubkey,
+        "MCowBQYDK2VwAyEAWBBLB9+sOZ4pSjM7U3DCSoq5R4xQYG4W27iwI1QoMN0=".to_string()
+    );
     ep.delete(&client).await.unwrap();
 }
+
 #[tokio::test]
 async fn test_get_ep() {
     // init
