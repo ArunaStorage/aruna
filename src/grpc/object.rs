@@ -27,7 +27,7 @@ use aruna_rust_api::api::storage::services::v2::{
     GetUploadUrlRequest, GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
 };
 use diesel_ulid::DieselUlid;
-use http::Method;
+use http::{HeaderMap, Method};
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
@@ -278,6 +278,9 @@ impl ObjectService for ObjectServiceImpl {
         .into_inner();
         // TODO: Impersonate User and InitMultiPartUpload via S3 and endpoint_host_url
         let client = reqwest::Client::new();
+        let result = client.post(&endpoint_host_url);
+        //.headers()
+        //.body();
 
         let signed_url = tonic_invalid!(
             grpc_utils::sign_url(
