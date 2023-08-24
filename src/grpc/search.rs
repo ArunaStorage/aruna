@@ -52,7 +52,7 @@ impl SearchService for SearchServiceImpl {
         );
 
         // Check if: 0 < limit <= 100
-        if inner_request.limit <= 0 || inner_request.limit > 100 {
+        if inner_request.limit < 1 || inner_request.limit > 100 {
             return Err(Status::invalid_argument("Limit must be between 1 and 100"));
         }
 
