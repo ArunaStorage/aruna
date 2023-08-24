@@ -949,41 +949,31 @@ impl TryFrom<&S3Path> for ResourceString {
         if let Some((b, k)) = value.as_object() {
             let pathvec = k.split('/').collect::<Vec<&str>>();
             match pathvec.len() {
-                0 => {
-                    return Ok(ResourceString::Project(b.to_string()));
-                }
-                1 => {
-                    return Ok(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        pathvec[0].to_string(),
-                    ));
-                }
-                2 => {
-                    return Ok(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        Some(pathvec[0].to_string()),
-                        pathvec[1].to_string(),
-                    ));
-                }
-                3 => {
-                    return Ok(ResourceString::Object(
-                        b.to_string(),
-                        Some(pathvec[0].to_string()),
-                        Some(pathvec[1].to_string()),
-                        pathvec[2].to_string(),
-                    ));
-                }
-                _ => {
-                    return Ok(ResourceString::Object(
-                        b.to_string(),
-                        None,
-                        None,
-                        k.to_string(),
-                    ));
-                }
+                0 => Ok(ResourceString::Project(b.to_string())),
+                1 => Ok(ResourceString::Object(
+                    b.to_string(),
+                    None,
+                    None,
+                    pathvec[0].to_string(),
+                )),
+                2 => Ok(ResourceString::Object(
+                    b.to_string(),
+                    None,
+                    Some(pathvec[0].to_string()),
+                    pathvec[1].to_string(),
+                )),
+                3 => Ok(ResourceString::Object(
+                    b.to_string(),
+                    Some(pathvec[0].to_string()),
+                    Some(pathvec[1].to_string()),
+                    pathvec[2].to_string(),
+                )),
+                _ => Ok(ResourceString::Object(
+                    b.to_string(),
+                    None,
+                    None,
+                    k.to_string(),
+                )),
             }
         } else {
             Err(anyhow!("Invalid path"))

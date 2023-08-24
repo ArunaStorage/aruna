@@ -472,7 +472,7 @@ impl GrpcQueryHandler {
                         .upsert_object(DPObject::try_from(r)?, None)
                         .await?
                 }
-                Target::User(u) => self.cache.upsert_user(u.try_into()?).await?,
+                Target::User(u) => self.cache.upsert_user(u).await?,
                 Target::Pubkey(pk) => {
                     let dec_key = DecodingKey::from_ed_pem(
                         format!(

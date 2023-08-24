@@ -299,7 +299,7 @@ impl AuthHandler {
             .value()
             .clone();
 
-        return Ok((resource_id, (object, location), Some(missing.into())));
+        Ok((resource_id, (object, location), Some(missing.into())))
     }
 
     pub(crate) fn sign_impersonating_token(
