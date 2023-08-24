@@ -357,7 +357,7 @@ impl MeilisearchClient {
             index
         } else {
             // Create index in Meilisearch server
-            let index = if let Ok(index) = self
+            let index = match self
                 .client
                 .create_index(index_name, primary_key)
                 .await?
@@ -365,9 +365,18 @@ impl MeilisearchClient {
                 .await?
                 .try_make_index(&self.client)
             {
-                index
-            } else {
-                bail!("Index creation failed.")
+                Ok(index) => index,
+                Err(err) => match &err {
+                    meilisearch_sdk::tasks::Task::Failed { content } => {
+                        match content.error.error_code {
+                            meilisearch_sdk::errors::ErrorCode::IndexAlreadyExists => {
+                                self.client.get_index(index_name).await?
+                            }
+                            _ => bail!("Index creation failed: {:#?}", err),
+                        }
+                    }
+                    _ => bail!("Index creation failed: {:#?}", err),
+                },
             };
 
             // Set the filterable attributes of the index
