@@ -1,3 +1,7 @@
+use super::data_handler::DataHandler;
+use super::utils::buffered_s3_sink::BufferedS3Sink;
+use super::utils::ranges::calculate_content_length_from_range;
+use super::utils::ranges::calculate_ranges;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
@@ -5,8 +9,8 @@ use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
+use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
-use crate::structs::{ResourceIds, ResourceString};
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
@@ -36,13 +40,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::str::FromStr;
 use std::sync::Arc;
-
-use super::data_handler::DataHandler;
-use super::utils::buffered_s3_sink::BufferedS3Sink;
-use super::utils::ranges::calculate_content_length_from_range;
-use super::utils::ranges::calculate_ranges;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,

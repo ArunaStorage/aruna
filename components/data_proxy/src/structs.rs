@@ -1,6 +1,7 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
@@ -326,6 +327,19 @@ impl From<PermissionLevel> for DbPermissionLevel {
             PermissionLevel::Write => DbPermissionLevel::Write,
             PermissionLevel::Admin => DbPermissionLevel::Admin,
             _ => DbPermissionLevel::None,
+        }
+    }
+}
+
+impl TryFrom<Resource> for Object {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Resource) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Resource::Project(p) => p.try_into(),
+            Resource::Collection(c) => c.try_into(),
+            Resource::Dataset(d) => d.try_into(),
+            Resource::Object(o) => o.try_into(),
         }
     }
 }

@@ -15,16 +15,19 @@ use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::FinishObjectStagingRequest;
+use aruna_rust_api::api::storage::services::v2::FullSyncEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
@@ -43,6 +46,7 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
+use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
@@ -58,7 +62,7 @@ pub struct GrpcQueryHandler {
     dataset_service: DatasetServiceClient<Channel>,
     object_service: ObjectServiceClient<Channel>,
     user_service: UserServiceClient<Channel>,
-    _endpoint_service: EndpointServiceClient<Channel>,
+    endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
@@ -87,7 +91,7 @@ impl GrpcQueryHandler {
 
         let user_service = UserServiceClient::new(channel.clone());
 
-        let _endpoint_service = EndpointServiceClient::new(channel.clone());
+        let endpoint_service = EndpointServiceClient::new(channel.clone());
 
         let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
@@ -107,7 +111,7 @@ impl GrpcQueryHandler {
             dataset_service,
             object_service,
             user_service,
-            _endpoint_service,
+            endpoint_service,
             storage_status_service,
             event_notification_service,
             cache,
@@ -446,6 +450,44 @@ impl GrpcQueryHandler {
         let mut inner_stream = stream.into_inner();
 
         // TODO: Fullsync
+        let mut req = Request::new(FullSyncEndpointRequest {});
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+        let mut full_sync_stream = self
+            .endpoint_service
+            .clone()
+            .full_sync_endpoint(req)
+            .await?
+            .into_inner();
+
+        while let Some(full_sync_message) = full_sync_stream.message().await? {
+            match full_sync_message
+                .target
+                .ok_or_else(|| anyhow!("Missing target in full_sync"))?
+            {
+                Target::GenericResource(GenericResource { resource: Some(r) }) => {
+                    self.cache
+                        .upsert_object(DPObject::try_from(r)?, None)
+                        .await?
+                }
+                Target::User(u) => self.cache.upsert_user(u.try_into()?).await?,
+                Target::Pubkey(pk) => {
+                    let dec_key = DecodingKey::from_ed_pem(
+                        format!(
+                            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                            pk.key
+                        )
+                        .as_bytes(),
+                    )?;
+                    self.cache
+                        .pubkeys
+                        .insert(pk.id, (pk.clone().into(), dec_key));
+                }
+                _ => (),
+            }
+        }
 
         while let Some(m) = inner_stream.message().await? {
             if let Some(message) = m.message {

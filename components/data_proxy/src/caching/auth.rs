@@ -266,7 +266,7 @@ impl AuthHandler {
     pub fn extract_object_from_path(
         &self,
         path: &S3Path,
-        method: &Method,
+        _method: &Method,
     ) -> Result<(
         ResourceIds,
         (Object, Option<ObjectLocation>),
@@ -285,8 +285,6 @@ impl AuthHandler {
             }
         }
         found.sort();
-
-        dbg!(found.clone());
 
         let resource_id = found
             .last()
