@@ -1,7 +1,6 @@
 use crate::common::init;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::pub_key_dsl::PubKey;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tokio_postgres::GenericClient;
 
 #[tokio::test]
@@ -57,15 +56,6 @@ async fn test_pub_key_serial_auto_incerement() {
     let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
-
-    // Reusable closure to generate random pubkey string
-    let _gen_rand_string = || -> String {
-        thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect()
-    };
 
     // Generate random strings as key dummy
     let dummy_pubkey_001 = "MCowBQYDK2VwAyEAw6nwkNVZyJyYytGxLTfa9yQpPJNR616iq7G9BzjT8wM="; //gen_rand_string();

@@ -34,11 +34,7 @@ async fn grpc_create_project() {
     .await;
 
     // Create request with OIDC token in header
-    let project_name: String = thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect();
+    let project_name = rand_string(32);
 
     let create_request = CreateProjectRequest {
         name: project_name.to_string(),

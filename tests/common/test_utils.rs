@@ -9,7 +9,7 @@ use aruna_server::database::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 /* ----- Begin Testing Constants ---------- */
 #[allow(dead_code)]
@@ -123,3 +123,13 @@ pub fn add_token<T>(mut req: tonic::Request<T>, token: &str) -> tonic::Request<T
     );
     req
 }
+
+#[allow(dead_code)]
+pub fn rand_string(length: usize) -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
+}
+
