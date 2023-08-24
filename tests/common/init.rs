@@ -5,7 +5,7 @@ use aruna_server::database::connection::Database;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
-use aruna_server::search::meilisearch_client::MeilisearchClient;
+use aruna_server::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
 use std::sync::Arc;
 
 use super::test_utils::DEFAULT_ENDPOINT_ULID;
@@ -74,6 +74,12 @@ pub async fn init_search_client() -> Arc<MeilisearchClient> {
         Some(&dotenvy::var("MEILISEARCH_API_KEY").unwrap()),
     )
     .unwrap();
+
+    // Create index if not exists on startup
+    meilisearch_client
+        .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+        .await
+        .unwrap();
 
     Arc::new(meilisearch_client)
 }
