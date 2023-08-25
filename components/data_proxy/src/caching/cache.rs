@@ -111,7 +111,11 @@ impl Cache {
             .get(&access_key)
             .map(|e| e.value().secret.clone())
         {
-            Some(secret) => return Ok((access_key, secret)),
+            Some(secret) => {
+                if !secret.is_empty() {
+                    return Ok((access_key, secret));
+                }
+            }
             None => {}
         }
 
