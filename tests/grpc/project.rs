@@ -1,20 +1,24 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::{
     models::v2::{DataClass, DataEndpoint, KeyValue, KeyValueVariant, Status},
     services::v2::{
         project_service_server::ProjectService, ArchiveProjectRequest, CreateProjectRequest,
         GetProjectRequest, GetProjectsRequest, UpdateProjectDataClassRequest,
-        UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
+        UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest, DeleteProjectRequest,
     },
 };
+use diesel_ulid::DieselUlid;
 use tonic::Request;
 
 use crate::common::{
-    init::init_project_service,
+    init::{init_project_service, init_database},
     test_utils::{
         add_token, fast_track_grpc_project_create, rand_string, ADMIN_OIDC_TOKEN,
         DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
     },
 };
+use aruna_server::database::{crud::CrudDb, dsls::object_dsl::Object, enums::ObjectStatus};
 
 #[tokio::test]
 async fn grpc_create_project() {
@@ -275,4 +279,34 @@ async fn grpc_update_project() {
     assert!(!updated_project.dynamic)
 }
 
+#[tokio::test]
+async fn grpc_delete_project() {
+    // Init ProjectService
+    let db_conn = init_database().await;
+    let project_service = init_project_service().await;
+
+    // Create random project
+    let project = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
+    let project_ulid = DieselUlid::from_str(&project.id).unwrap();
+
+    // Delete random project
+    let delete_project_request = add_token(
+        Request::new(DeleteProjectRequest {
+            project_id: project.id.to_string(),
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    project_service
+        .delete_project(delete_project_request)
+        .await
+        .unwrap();
+
+    // Fetch project and check status
+    let deleted_project = Object::get(project_ulid, &db_conn.get_client().await.unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(deleted_project.object_status, ObjectStatus::DELETED)
 }
