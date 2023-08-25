@@ -1,19 +1,22 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
-use crate::s3_frontend::utils::hashing_transformer::GetHash;
-use crate::s3_frontend::utils::hashing_transformer::HashingTransformer;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformer::ReadWriter;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
+use aruna_file::transformers::encrypt::ChaCha20Enc;
+use aruna_file::transformers::hashing_transformer::HashingTransformer;
 use aruna_file::transformers::size_probe::SizeProbe;
+use aruna_file::transformers::zstd_comp::ZstdEnc;
 use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use md5::{Digest, Md5};
 use sha2::Sha256;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -34,6 +37,11 @@ impl DataHandler {
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
         let clone_key: Option<Vec<u8>> = before_location
+            .clone()
+            .encryption_key
+            .map(|k| k.as_bytes().to_vec());
+
+        let after_key: Option<Vec<u8>> = new_location
             .clone()
             .encryption_key
             .map(|k| k.as_bytes().to_vec());
@@ -75,23 +83,28 @@ impl DataHandler {
 
             asr = asr.add_transformer(sha_transformer);
             asr = asr.add_transformer(md5_transformer);
+            asr = asr.add_transformer(ZstdEnc::new(true));
+            asr = asr.add_transformer(ChaCha20Enc::new(
+                false,
+                after_key.ok_or_else(|| anyhow!("Missing encryption_key"))?,
+            )?);
 
             asr.process().await?;
 
-            match 1 {
-                1 => Ok((
-                    orig_size_stream.try_recv()?,
-                    uncompressed_stream.try_recv()?,
-                    sha_recv.try_recv()?.data.get_hash(),
-                    md5_recv.try_recv()?.data.get_hash(),
-                )),
-                _ => Err(anyhow!("Will not occur")),
-            }
+            Ok::<(u64, u64, String, String), anyhow::Error>((
+                orig_size_stream.try_recv()?,
+                uncompressed_stream.try_recv()?,
+                sha_recv.try_recv()?,
+                md5_recv.try_recv()?,
+            ))
         });
 
         backend
             .get_object(before_location.clone(), None, tx_send)
             .await?;
+
+        //
+
         let (before_size, after_size, sha, md5) = aswr_handle.await??;
 
         log::debug!(
