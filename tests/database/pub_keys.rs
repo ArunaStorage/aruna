@@ -62,12 +62,12 @@ async fn test_pub_key_serial_auto_incerement() {
     let dummy_pubkey_002 = "MCowBQYDK2VwAyEAQPP30yBtHJ4IRRtNjxBr4+p4HzpE0EWLMMN/sHpWnT4="; //gen_rand_string();
 
     // Persist dummy keys in database with auto serial increment
-    let dummy_key_001 = PubKey::create_or_get_without_id(None, &dummy_pubkey_001, client)
+    let dummy_key_001 = PubKey::create_or_get_without_id(None, dummy_pubkey_001, client)
         .await
         .unwrap();
 
     // Persist dummy keys in database with auto serial increment
-    let dummy_key_002 = PubKey::create_or_get_without_id(None, &dummy_pubkey_002, client)
+    let dummy_key_002 = PubKey::create_or_get_without_id(None, dummy_pubkey_002, client)
         .await
         .unwrap();
 

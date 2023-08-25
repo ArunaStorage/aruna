@@ -4,15 +4,15 @@ use aruna_rust_api::api::storage::{
     models::v2::{DataClass, DataEndpoint, KeyValue, KeyValueVariant, Status},
     services::v2::{
         project_service_server::ProjectService, ArchiveProjectRequest, CreateProjectRequest,
-        GetProjectRequest, GetProjectsRequest, UpdateProjectDataClassRequest,
-        UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest, DeleteProjectRequest,
+        DeleteProjectRequest, GetProjectRequest, GetProjectsRequest, UpdateProjectDataClassRequest,
+        UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
     },
 };
 use diesel_ulid::DieselUlid;
 use tonic::Request;
 
 use crate::common::{
-    init::{init_project_service, init_database},
+    init::{init_database, init_project_service},
     test_utils::{
         add_token, fast_track_grpc_project_create, rand_string, ADMIN_OIDC_TOKEN,
         DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
@@ -56,7 +56,7 @@ async fn grpc_create_project() {
     assert_eq!(proto_project.data_class, 1);
     assert_eq!(proto_project.relations, vec![]);
     assert_eq!(proto_project.status, Status::Available as i32);
-    assert_eq!(proto_project.dynamic, true);
+    assert!(proto_project.dynamic);
     assert_eq!(
         proto_project.endpoints,
         vec![DataEndpoint {
