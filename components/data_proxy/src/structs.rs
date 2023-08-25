@@ -87,6 +87,7 @@ pub struct ObjectLocation {
     pub compressed: bool,
     pub raw_content_len: i64,
     pub disk_content_len: i64,
+    pub disk_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -21,6 +21,8 @@ use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::filter::Filter;
 use aruna_file::transformers::footer::FooterGenerator;
+use aruna_file::transformers::hashing_transformer::HashingTransformer;
+use aruna_file::transformers::size_probe::SizeProbe;
 use aruna_file::transformers::zstd_comp::ZstdEnc;
 use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
@@ -185,25 +187,22 @@ impl S3 for ArunaS3Service {
             .await
             .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
-        let mut md5_hash = Md5::new();
-        let mut sha256_hash = Sha256::new();
-        let mut final_md5 = String::new();
-        let mut final_sha256 = String::new();
-        let mut size_counter = 0;
-        // If the object exists and the signatures match -> Skip the download
+        let (initial_sha_trans, initial_sha_recv) = HashingTransformer::new(Sha256::new());
+        let (initial_md5_trans, initial_md5_recv) = HashingTransformer::new(Md5::new());
+        let (initial_size_trans, initial_size_recv) = SizeProbe::new();
+        let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
+        let (final_size_trans, final_size_recv) = SizeProbe::new();
+
+        let mut md5_initial: Option<String> = None;
+        let mut sha_initial: Option<String> = None;
+        let sha_final: String;
+        let initial_size: u64;
+        let final_size: u64;
 
         match req.input.body {
             Some(data) => {
-                // MD5 Stream
-                let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-                // Sha256 stream
-                let shaed_stream =
-                    md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
-
-                let sized_stream = shaed_stream.inspect_ok(|by| size_counter += by.len());
-
                 let mut awr = ArunaStreamReadWriter::new_with_sink(
-                    sized_stream,
+                    data,
                     BufferedS3Sink::new(
                         self.backend.clone(),
                         location.clone(),
@@ -215,6 +214,10 @@ impl S3 for ArunaS3Service {
                     )
                     .0,
                 );
+
+                awr = awr.add_transformer(initial_sha_trans);
+                awr = awr.add_transformer(initial_md5_trans);
+                awr = awr.add_transformer(initial_size_trans);
 
                 if location.compressed {
                     awr = awr.add_transformer(ZstdEnc::new(true));
@@ -231,6 +234,9 @@ impl S3 for ArunaS3Service {
                         })?,
                     );
                 }
+
+                awr = awr.add_transformer(final_sha_trans);
+                awr = awr.add_transformer(final_size_trans);
 
                 awr.process().await.map_err(|e| {
                     log::error!("{}", e);
@@ -323,16 +329,45 @@ impl S3 for ArunaS3Service {
                 )]));
             }
 
-            final_md5 = format!("{:x}", md5_hash.finalize());
-            final_sha256 = format!("{:x}", sha256_hash.finalize());
+            md5_initial = Some(
+                initial_md5_recv
+                    .try_recv()
+                    .map_err(|_| s3_error!(InternalError, "Unable to md5 hash initial data"))?,
+            );
+            sha_initial = Some(
+                initial_sha_recv
+                    .try_recv()
+                    .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
+            );
+            sha_final = final_sha_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to md5 hash final data"))?;
+            initial_size = initial_size_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
+            final_size = final_size_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
 
             new_object.hashes = vec![
-                ("MD5".to_string(), final_md5.clone()),
-                ("SHA256".to_string(), final_sha256.clone()),
+                (
+                    "MD5".to_string(),
+                    md5_initial.clone().ok_or_else(|| {
+                        s3_error!(InternalError, "Unable to get md5 hash initial data")
+                    })?,
+                ),
+                (
+                    "SHA256".to_string(),
+                    sha_initial.clone().ok_or_else(|| {
+                        s3_error!(InternalError, "Unable to get sha hash initial data")
+                    })?,
+                ),
             ]
             .into_iter()
             .collect::<HashMap<String, String>>();
-            location.raw_content_len = size_counter as i64;
+            location.raw_content_len = initial_size as i64;
+            location.disk_content_len = final_size as i64;
+            location.disk_hash = Some(sha_final.clone());
 
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
@@ -344,8 +379,8 @@ impl S3 for ArunaS3Service {
             }
         }
         let output = PutObjectOutput {
-            e_tag: Some(final_md5),
-            checksum_sha256: Some(final_sha256),
+            e_tag: md5_initial,
+            checksum_sha256: sha_initial,
             version_id: Some(new_object.id.to_string()),
             ..Default::default()
         };

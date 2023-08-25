@@ -259,6 +259,7 @@ impl StorageBackend for S3Backend {
             compressed: !temp,
             raw_content_len: expected_size.unwrap_or_default(),
             disk_content_len: 0,
+            disk_hash: None,
         })
     }
 }

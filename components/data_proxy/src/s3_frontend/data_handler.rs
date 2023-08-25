@@ -1,6 +1,5 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -89,13 +88,17 @@ impl DataHandler {
                 after_key.ok_or_else(|| anyhow!("Missing encryption_key"))?,
             )?);
 
+            let (final_sha, final_sha_recv) = HashingTransformer::new(Sha256::new());
+
+            asr = asr.add_transformer(final_sha);
             asr.process().await?;
 
-            Ok::<(u64, u64, String, String), anyhow::Error>((
+            Ok::<(u64, u64, String, String, String), anyhow::Error>((
                 orig_size_stream.try_recv()?,
                 uncompressed_stream.try_recv()?,
                 sha_recv.try_recv()?,
                 md5_recv.try_recv()?,
+                final_sha_recv.try_recv()?,
             ))
         });
 
@@ -105,7 +108,7 @@ impl DataHandler {
 
         //
 
-        let (before_size, after_size, sha, md5) = aswr_handle.await??;
+        let (before_size, after_size, sha, md5, final_sha) = aswr_handle.await??;
 
         log::debug!(
             "Finished finalizing location {:?}/{:?}",
@@ -115,6 +118,7 @@ impl DataHandler {
 
         new_location.disk_content_len = before_size as i64;
         new_location.raw_content_len = after_size as i64;
+        new_location.disk_hash = Some(final_sha);
 
         Ok(vec![
             Hash {
