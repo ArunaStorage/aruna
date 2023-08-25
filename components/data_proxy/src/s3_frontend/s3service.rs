@@ -728,6 +728,14 @@ impl S3 for ArunaS3Service {
                     .upsert_object(object, Some(new_location))
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
+
+                self.backend
+                    .delete_object(old_location)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to delete old object")
+                    })?;
             }
         }
 
