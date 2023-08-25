@@ -125,11 +125,20 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let id = request.get_id()?;
         let (add_key_values, rm_key_values) = request.get_keyvals()?;
+
+        if add_key_values.0.is_empty() && rm_key_values.0.is_empty() {
+            return Err(anyhow!(
+                "Both add_key_values and remove_key_values are empty.",
+            ));
+        }
+
         if !add_key_values.0.is_empty() {
             for kv in add_key_values.0 {
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
-        } else if !rm_key_values.0.is_empty() {
+        }
+
+        if !rm_key_values.0.is_empty() {
             let object = Object::get(id, transaction_client)
                 .await?
                 .ok_or(anyhow!("Dataset does not exist."))?;
@@ -140,10 +149,6 @@ impl DatabaseHandler {
                     return Err(anyhow!("Cannot remove static labels."));
                 }
             }
-        } else {
-            return Err(anyhow!(
-                "Both add_key_values and remove_key_values are empty.",
-            ));
         }
         transaction.commit().await?;
 

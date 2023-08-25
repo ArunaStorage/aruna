@@ -1,4 +1,4 @@
-use crate::common::init_db;
+use crate::common::init;
 use aruna_server::database::{
     crud::CrudDb,
     dsls::user_dsl::{APIToken, User, UserAttributes},
@@ -12,7 +12,7 @@ use tokio_postgres::GenericClient;
 #[tokio::test]
 async fn create_user_test() {
     // Init database connection
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -48,7 +48,7 @@ async fn create_user_test() {
 
 #[tokio::test]
 async fn update_user_name_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -89,7 +89,7 @@ async fn update_user_name_test() {
 
 #[tokio::test]
 async fn update_user_email_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -130,7 +130,7 @@ async fn update_user_email_test() {
 
 #[tokio::test]
 async fn update_user_admin_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -171,7 +171,7 @@ async fn update_user_admin_test() {
 
 #[tokio::test]
 async fn update_user_service_account_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -212,7 +212,7 @@ async fn update_user_service_account_test() {
 
 #[tokio::test]
 async fn delete_user_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -245,7 +245,7 @@ async fn delete_user_test() {
 
 #[tokio::test]
 async fn add_permission_user_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define and create user in database
@@ -308,7 +308,7 @@ async fn add_permission_user_test() {
 
 #[tokio::test]
 async fn remove_user_permission_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let perm1 = DieselUlid::generate();
@@ -400,7 +400,7 @@ async fn remove_user_permission_test() {
 
 #[tokio::test]
 async fn update_user_permission_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let project_id = DieselUlid::generate();
@@ -460,7 +460,7 @@ async fn update_user_permission_test() {
 
 #[tokio::test]
 async fn user_token_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let perm1 = DieselUlid::generate();
@@ -566,7 +566,7 @@ async fn user_token_test() {
 
 #[tokio::test]
 async fn user_status_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

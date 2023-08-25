@@ -460,16 +460,18 @@ impl Object {
             COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
             COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') outbound,
             COALESCE(JSON_OBJECT_AGG(ir1.target_pid, ir1.*) FILTER (WHERE ir1.origin_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') outbound_belongs_to
-            FROM objects o
+            FROM o
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.id IN ";
-        let query_five = " GROUP BY o.id;";
+        let query_five = " GROUP BY o.id, o.revision_number, o.name, o.description, o.created_at, o.created_by, o.content_len, o.count, o.key_values, 
+        o.object_status, o.data_class, o.object_type, o.external_relations, o.hashes, o.dynamic, o.endpoints;";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in ids {
             inserts.push(id);
         }
         let query_insert = create_multi_query(&inserts);
         let query = format!("{query_one}{query_insert}{query_three}{query_insert}{query_five}");
+        dbg!(&query);
         let prepared = client.prepare(&query).await?;
         let result: Vec<ObjectWithRelations> = client
             .query(&prepared, &inserts)
@@ -477,6 +479,7 @@ impl Object {
             .iter()
             .map(ObjectWithRelations::from_row)
             .collect();
+
         Ok(result)
     }
     pub async fn get_objects(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
