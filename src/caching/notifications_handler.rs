@@ -153,62 +153,59 @@ async fn process_resource_event(
     search_client: Arc<MeilisearchClient>,
 ) -> anyhow::Result<()> {
     if let Some(resource) = resource_event.resource {
-        // Extract resource id
-        let resource_ulid = DieselUlid::from_str(&resource.resource_id)?;
-
         // Process cache
         if let Some(variant) = EventVariant::from_i32(resource_event.event_variant) {
-            // Update resource cache
-            match variant {
+            // Extract resource id to validate format
+            let resource_ulid = DieselUlid::from_str(&resource.resource_id)?;
+
+            // Update resource cache for all resources affected by the received notification
+            for res_ulid in match variant {
                 EventVariant::Unspecified => bail!("Unspecified event variant not allowed"),
                 EventVariant::Created
                 | EventVariant::Available
                 | EventVariant::Updated
-                | EventVariant::Deleted => {
-                    if let Some(object_plus) = cache.get_object(&resource_ulid) {
-                        // Convert to proto and compare checksum
-                        let proto_resource: generic_resource::Resource =
-                            object_plus.clone().try_into()?;
-                        let proto_checksum = checksum_resource(proto_resource.clone())?;
+                | EventVariant::Deleted => vec![resource_ulid],
+                EventVariant::Snapshotted => {
+                    let client = database.get_client().await?;
+                    let mut ids = vec![resource_ulid];
+                    ids.append(&mut Object::fetch_subresources_by_id(&resource_ulid, &client).await?);
+                    ids
+                }
+            } {
+                if let Some(object_plus) = cache.get_object(&res_ulid) {
+                    // Convert to proto and compare checksum
+                    let proto_resource: generic_resource::Resource =
+                        object_plus.clone().try_into()?;
+                    let proto_checksum = checksum_resource(proto_resource.clone())?;
 
-                        if proto_checksum != resource.checksum {
-                            // Update updated object in cache and search index
-                            cache.update_object(&resource_ulid, object_plus);
-
-                            // Update resource search index
-                            search_client
-                                .add_or_update_stuff(
-                                    &[ObjectDocument::try_from(proto_resource)?],
-                                    MeilisearchIndexes::OBJECT,
-                                )
-                                .await?;
-                        }
-                    } else {
-                        // Fetch object with relations from database and put into cache
-                        let client = database.get_client().await?;
-                        let object_plus =
-                            Object::get_object_with_relations(&resource_ulid, &client).await?;
+                    if proto_checksum != resource.checksum {
+                        // Update updated object in cache and search index
+                        cache.update_object(&res_ulid, object_plus);
 
                         // Update resource search index
                         search_client
                             .add_or_update_stuff(
-                                &[ObjectDocument::from(object_plus.object.clone())],
+                                &[ObjectDocument::try_from(proto_resource)?],
                                 MeilisearchIndexes::OBJECT,
                             )
                             .await?;
-
-                        // Add to cache
-                        cache.object_cache.insert(resource_ulid, object_plus);
                     }
-                }
-                EventVariant::Available => {
-                    unimplemented!("Ignore or set resource available in cache?")
-                }
-                EventVariant::Deleted => {
-                    unimplemented!("Delete from cache or set status to 'Deleted'?")
-                }
-                EventVariant::Snapshotted => {
-                    unimplemented!("Delete from cache or set status to 'Snapshotted'?")
+                } else {
+                    // Fetch object with relations from database and put into cache
+                    let client = database.get_client().await?;
+                    let object_plus =
+                        Object::get_object_with_relations(&res_ulid, &client).await?;
+
+                    // Update resource search index
+                    search_client
+                        .add_or_update_stuff(
+                            &[ObjectDocument::from(object_plus.object.clone())],
+                            MeilisearchIndexes::OBJECT,
+                        )
+                        .await?;
+
+                    // Add to cache
+                    cache.object_cache.insert(res_ulid, object_plus);
                 }
             }
         } else {
