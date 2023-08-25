@@ -1,9 +1,9 @@
 use aruna_rust_api::api::storage::{
     models::v2::{DataClass, DataEndpoint, KeyValue, KeyValueVariant, Status},
     services::v2::{
-        project_service_server::ProjectService, CreateProjectRequest, GetProjectRequest,
-        GetProjectsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
-        UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
+        project_service_server::ProjectService, ArchiveProjectRequest, CreateProjectRequest,
+        GetProjectRequest, GetProjectsRequest, UpdateProjectDataClassRequest,
+        UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
     },
 };
 use tonic::Request;
@@ -200,7 +200,7 @@ async fn grpc_update_project() {
                 value: "false".to_string(),
                 variant: KeyValueVariant::Label as i32,
             }],
-            remove_key_values: updated_project.key_values, // Remove all 
+            remove_key_values: updated_project.key_values, // Remove all
         }),
         ADMIN_OIDC_TOKEN,
     );
@@ -257,4 +257,22 @@ async fn grpc_update_project() {
     assert_eq!(updated_project.data_class, DataClass::Public as i32);
 
     // Archive project
+    let archive_project_request = add_token(
+        Request::new(ArchiveProjectRequest {
+            project_id: project.id,
+        }),
+        ADMIN_OIDC_TOKEN,
+    );
+
+    let updated_project = project_service
+        .archive_project(archive_project_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+
+    assert!(!updated_project.dynamic)
+}
+
 }

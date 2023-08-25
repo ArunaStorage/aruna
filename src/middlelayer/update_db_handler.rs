@@ -131,13 +131,13 @@ impl DatabaseHandler {
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
-        
+
         if !add_key_values.0.is_empty() {
             for kv in add_key_values.0 {
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
-        } 
-        
+        }
+
         if !rm_key_values.0.is_empty() {
             let object = Object::get(id, transaction_client)
                 .await?
@@ -149,7 +149,7 @@ impl DatabaseHandler {
                     return Err(anyhow!("Cannot remove static labels."));
                 }
             }
-        } 
+        }
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
