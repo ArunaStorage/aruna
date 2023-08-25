@@ -92,6 +92,30 @@ where
             Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
         }
     }
+
+    async fn get_opt(id: &X, client: &Client) -> Result<Option<Self>>
+    where
+        Self: WithGenericBytes<X>,
+    {
+        let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
+        let prepared = client.prepare(&query).await?;
+        let row = client.query_opt(&prepared, &[&id]).await?;
+
+        match row {
+            Some(row) => {
+                match Self::try_from(GenericBytes {
+                    id: row.get::<usize, X>(0),
+                    data: row.get(1),
+                    table: Self::get_table(),
+                }) {
+                    Ok(generic) => Ok(Some(generic)),
+                    Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn delete(id: &X, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await?;

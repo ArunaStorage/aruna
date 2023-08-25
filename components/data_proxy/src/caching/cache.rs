@@ -112,12 +112,11 @@ impl Cache {
             self.users.insert(user.access_key.clone(), user);
         }
 
-        self.set_pubkeys(PubKey::get_all(&client).await?).await?;
+        self.sync_pubkeys(PubKey::get_all(&client).await?).await?;
 
         for object in Object::get_all(&client).await? {
-            let location = ObjectLocation::get(&object.id, &client).await?;
-            self.resources
-                .insert(object.id, (object.clone(), Some(location.clone())));
+            let location = ObjectLocation::get_opt(&object.id, &client).await?;
+            self.resources.insert(object.id, (object.clone(), location));
             let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
             for (e, v) in tree {
                 self.paths.insert(e, v);
@@ -175,6 +174,20 @@ impl Cache {
         self.users.insert(access_key.to_string(), user_access);
 
         Ok((access_key, new_secret))
+    }
+
+    pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
+        for pk in pks.into_iter() {
+            let dec_key = DecodingKey::from_ed_pem(
+                format!(
+                    "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                    pk.key
+                )
+                .as_bytes(),
+            )?;
+            self.pubkeys.insert(pk.id.into(), (pk.clone(), dec_key));
+        }
+        Ok(())
     }
 
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
@@ -488,8 +501,6 @@ impl Cache {
     pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
-        let mut access_ids = Vec::new();
-
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
             let user_access = User {
                 access_key: key.clone(),
@@ -505,7 +516,6 @@ impl Cache {
                 user_access.upsert(&persistence.get_client().await?).await?;
             }
             self.users.insert(key.clone(), user_access);
-            access_ids.push(key);
         }
         Ok(())
     }
