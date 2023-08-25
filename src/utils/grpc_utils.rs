@@ -3,19 +3,15 @@ use crate::database::enums::DbPermissionLevel;
 use crate::grpc::users::UserServiceImpl;
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
 use crate::{auth::structs::Context, search::meilisearch_client::ObjectDocument};
-use anyhow::anyhow;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, Collection, Dataset, Object, Project, User,
 };
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
-use http::Method;
-use reqsign::{AwsCredential, AwsV4Signer};
 use rusty_ulid::DecodingError;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Result, Status};
-use url::Url;
 use xxhash_rust::xxh3::xxh3_128;
 
 pub fn type_name_of<T>(_: T) -> &'static str {

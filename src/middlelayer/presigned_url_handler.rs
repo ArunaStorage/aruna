@@ -5,7 +5,6 @@ use crate::database::dsls::endpoint_dsl::{Endpoint, HostConfig};
 use crate::database::enums::{DataProxyFeature, ObjectMapping};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::GetEP;
-use crate::utils::grpc_utils;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
 use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCredentialsResponse};
@@ -26,20 +25,59 @@ use tonic::Request;
 use url::Url;
 
 pub struct PresignedUpload(pub GetUploadUrlRequest);
-pub struct PresigendDownload(pub GetDownloadUrlRequest);
+pub struct PresignedDownload(pub GetDownloadUrlRequest);
 impl DatabaseHandler {
-    pub async fn get_presigend_url(
+    pub async fn get_presigned_download(
+        &self,
+        cache: Arc<Cache>,
+        authorizer: Arc<PermissionHandler>,
+        request: PresignedDownload,
+        user_id: DieselUlid,
+    ) -> Result<String> {
+        let object_id = request.get_id()?;
+        let (project_id, bucket_name, key) =
+            DatabaseHandler::get_path(object_id, cache.clone()).await?;
+        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
+
+        // Not sure if this is needed
+        // Check if user trusts endpoint
+        let user = cache
+            .get_user(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+        if !user
+            .attributes
+            .0
+            .trusted_endpoints
+            .contains_key(&endpoint.id)
+        {
+            return Err(anyhow!("User does not trust endpoint"));
+        }
+
+        let (endpoint_host_url, ssl, credentials) =
+            DatabaseHandler::get_credentials(authorizer, user_id, endpoint).await?;
+        let url = sign_download_url(
+            &credentials.access_key,
+            &credentials.secret_key,
+            ssl,
+            &bucket_name,
+            &key,
+            &endpoint_host_url,
+        )?;
+        Ok(url)
+    }
+    pub async fn get_presigend_upload(
         &self,
         cache: Arc<Cache>,
         request: PresignedUpload,
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
     ) -> Result<String> {
+        let object_id = request.get_id()?;
         let multipart = request.get_multipart();
         let parts = request.get_parts()?;
 
         let (project_id, bucket_name, key) =
-            DatabaseHandler::get_path(request, cache.clone()).await?;
+            DatabaseHandler::get_path(object_id, cache.clone()).await?;
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
         let (endpoint_host_url, ssl, credentials) =
             DatabaseHandler::get_credentials(authorizer, user_id, endpoint).await?;
@@ -72,10 +110,9 @@ impl DatabaseHandler {
         Ok(signed_url)
     }
     async fn get_path(
-        request: PresignedUpload,
+        object_id: DieselUlid,
         cache: Arc<Cache>,
     ) -> Result<(DieselUlid, String, String)> {
-        let object_id = request.get_id()?;
         let paths = cache.upstream_dfs_iterative(&object_id)?;
         let mut path: (DieselUlid, String, String) =
             (DieselUlid::default(), String::new(), String::new());
@@ -245,6 +282,11 @@ impl DatabaseHandler {
         Ok(upload_id)
     }
 }
+impl PresignedDownload {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        Ok(DieselUlid::from_str(&self.0.object_id)?)
+    }
+}
 
 impl PresignedUpload {
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -300,7 +342,7 @@ fn sign_url(
     key: &str,
     endpoint: &str,
     duration: i64,
-) -> anyhow::Result<String> {
+) -> Result<String> {
     let signer = AwsV4Signer::new("s3", "RegionOne");
 
     // Set protocol depending if ssl
@@ -354,7 +396,7 @@ fn sign_download_url(
     bucket: &str,
     key: &str,
     endpoint: &str,
-) -> anyhow::Result<String> {
+) -> Result<String> {
     sign_url(
         Method::GET,
         access_key,
@@ -362,7 +404,7 @@ fn sign_download_url(
         ssl,
         false,
         0,
-        "",
+        None,
         bucket,
         key,
         endpoint,

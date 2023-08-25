@@ -1,39 +1,29 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
-use crate::auth::token_handler::{Action, Intent};
 use crate::caching::cache::Cache;
-use crate::database::dsls::endpoint_dsl::HostConfig;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
-use crate::database::enums::{DataProxyFeature, DbPermissionLevel, ObjectMapping, ObjectType};
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::clone_request_types::CloneObject;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
-use crate::middlelayer::endpoints_request_types::GetEP;
-use crate::middlelayer::presigned_url_handler::PresignedUpload;
+use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
-use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsRequest;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
-use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint as APIEndpointEnum;
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use aruna_rust_api::api::storage::services::v2::{
     CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
     DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
-    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetEndpointRequest,
-    GetObjectRequest, GetObjectResponse, GetObjectsRequest, GetObjectsResponse,
-    GetUploadUrlRequest, GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
+    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
+    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
+    GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
 };
-use aws_sdk_s3::config::{Credentials, Region};
-use aws_sdk_s3::Client;
 use diesel_ulid::DieselUlid;
-use http::{HeaderMap, Method};
 use std::str::FromStr;
 use std::sync::Arc;
-use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::{Request, Response, Result, Status};
 
 crate::impl_grpc_server!(ObjectServiceImpl, search_client: Arc<MeilisearchClient>);
@@ -119,7 +109,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let signed_url = tonic_internal!(
             self.database_handler
-                .get_presigend_url(
+                .get_presigend_upload(
                     self.cache.clone(),
                     request,
                     self.authorizer.clone(),
@@ -135,12 +125,43 @@ impl ObjectService for ObjectServiceImpl {
     }
     async fn get_download_url(
         &self,
-        _request: Request<GetDownloadUrlRequest>,
+        request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "GetDownloadURL is not implemented.",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = PresignedDownload(request.into_inner());
+
+        let object_id = tonic_invalid!(request.get_id(), "Invalid id");
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(object_id, DbPermissionLevel::READ, true)]
+                )
+                .await,
+            "Unauthorized"
+        );
+
+        let signed_url = tonic_internal!(
+            self.database_handler
+                .get_presigned_download(
+                    self.cache.clone(),
+                    self.authorizer.clone(),
+                    request,
+                    user_id,
+                )
+                .await,
+            "Error while building presigned url"
+        );
+
+        let result = GetDownloadUrlResponse { url: signed_url };
+
+        return_with_log!(result);
     }
 
     async fn finish_object_staging(
@@ -365,7 +386,7 @@ impl ObjectService for ObjectServiceImpl {
         let res = self
             .cache
             .get_object(&object_id)
-            .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
+            .ok_or_else(|| Status::not_found("Object not found"))?;
 
         let generic_object: generic_resource::Resource =
             tonic_invalid!(res.try_into(), "Invalid object");
