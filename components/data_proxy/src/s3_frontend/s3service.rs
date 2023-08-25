@@ -5,7 +5,6 @@ use super::utils::ranges::calculate_ranges;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::log_received;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
@@ -212,6 +211,7 @@ impl S3 for ArunaS3Service {
                         None,
                         false,
                         None,
+                        false,
                     )
                     .0,
                 );
@@ -553,6 +553,7 @@ impl S3 for ArunaS3Service {
                     Some(req.input.part_number),
                     true,
                     None,
+                    true,
                 );
 
                 let mut awr = ArunaStreamReadWriter::new_with_sink(data, sink);
@@ -575,10 +576,14 @@ impl S3 for ArunaS3Service {
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
 
-                receiver.recv().await.map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Unable to query etag")
-                })?
+                if let Some(r) = receiver {
+                    r.recv().await.map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to query etag")
+                    })?
+                } else {
+                    return Err(s3_error!(InternalError, "Unable to query etag"));
+                }
             }
             None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
         };

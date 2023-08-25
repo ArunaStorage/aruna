@@ -1,5 +1,5 @@
 use anyhow::Result;
-use aruna_file::notifications::{Message, ProbeBroadcast};
+use aruna_file::notifications::{Message, MessageData, ProbeBroadcast};
 use aruna_file::transformer::{Transformer, TransformerType};
 use async_channel::{Receiver, Sender};
 use digest::{Digest, FixedOutputReset};
@@ -59,5 +59,18 @@ where
 
     fn get_type(&self) -> TransformerType {
         TransformerType::SizeProbe
+    }
+}
+
+pub trait GetHash {
+    fn get_hash(&self) -> String;
+}
+
+impl GetHash for MessageData {
+    fn get_hash(&self) -> String {
+        match self {
+            MessageData::ProbeBroadcast(pb) => pb.message.to_string(),
+            _ => "".to_string(),
+        }
     }
 }

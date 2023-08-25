@@ -1,24 +1,19 @@
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::s3_frontend::utils::hashing_transformer::GetHash;
 use crate::s3_frontend::utils::hashing_transformer::HashingTransformer;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformer::ReadWriter;
-use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::size_probe::SizeProbe;
 use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
-use futures::future;
-use futures::StreamExt;
-use hmac::digest::core_api::CoreWrapper;
-use hmac::digest::core_api::CtVariableCoreWrapper;
-use md5::Md5Core;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use sha2::Sha256VarCore;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -30,29 +25,36 @@ impl DataHandler {
         before_location: &ObjectLocation,
         new_location: &mut ObjectLocation,
     ) -> Result<Vec<Hash>> {
-        let location = before_location.clone();
-
         log::debug!(
             "Finalizing {:?}/{:?}",
-            location.bucket.to_string(),
-            location.key.to_string()
+            before_location.bucket.to_string(),
+            before_location.key.to_string()
         );
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
-        let clone_key = location
+        let clone_key: Option<Vec<u8>> = before_location
             .clone()
             .encryption_key
             .map(|k| k.as_bytes().to_vec());
 
-        let (transform_send, transform_receive) = async_channel::bounded(10);
+        let before_location = before_location.clone();
+        let backend_clone = backend.clone();
+        let new_location_clone = new_location.clone();
 
         let aswr_handle = tokio::spawn(async move {
-            // Bind to variable to extend the lifetime of arsw to the end of the function
-            let mut asr = ArunaStreamReadWriter::new_with_sink(
-                tx_receive.clone(),
-                AsyncSenderSink::new(transform_send),
+            let (sink, _) = BufferedS3Sink::new(
+                backend_clone,
+                new_location_clone,
+                None,
+                None,
+                false,
+                None,
+                false,
             );
+
+            // Bind to variable to extend the lifetime of arsw to the end of the function
+            let mut asr = ArunaStreamReadWriter::new_with_sink(tx_receive.clone(), sink);
             let (orig_probe, orig_size_stream) = SizeProbe::new();
             asr = asr.add_transformer(orig_probe);
 
@@ -60,7 +62,7 @@ impl DataHandler {
                 asr = asr.add_transformer(ChaCha20Dec::new(Some(key))?);
             }
 
-            if location.compressed {
+            if before_location.compressed {
                 asr = asr.add_transformer(ZstdDec::new());
             }
 
@@ -80,20 +82,22 @@ impl DataHandler {
                 1 => Ok((
                     orig_size_stream.try_recv()?,
                     uncompressed_stream.try_recv()?,
-                    sha_recv.try_recv()?.data,
-                    md5_recv.try_recv()?.data,
+                    sha_recv.try_recv()?.data.get_hash(),
+                    md5_recv.try_recv()?.data.get_hash(),
                 )),
                 _ => Err(anyhow!("Will not occur")),
             }
         });
 
-        backend.get_object(location.clone(), None, tx_send).await?;
+        backend
+            .get_object(before_location.clone(), None, tx_send)
+            .await?;
         let (before_size, after_size, sha, md5) = aswr_handle.await??;
 
         log::debug!(
             "Finished finalizing location {:?}/{:?}",
-            location.bucket,
-            location.key
+            new_location.bucket,
+            new_location.key
         );
 
         new_location.disk_content_len = before_size as i64;

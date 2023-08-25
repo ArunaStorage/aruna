@@ -15,7 +15,7 @@ pub struct BufferedS3Sink {
     single_part_upload: bool,
     tags: Vec<PartETag>,
     sum: usize,
-    sender: Sender<String>,
+    sender: Option<Sender<String>>,
 }
 
 impl Sink for BufferedS3Sink {}
@@ -28,13 +28,19 @@ impl BufferedS3Sink {
         part_number: Option<i32>,
         single_part_upload: bool,
         tags: Option<Vec<PartETag>>,
-    ) -> (Self, Receiver<String>) {
+        with_sender: bool,
+    ) -> (Self, Option<Receiver<String>>) {
         let t = match tags {
             Some(t) => t,
             None => Vec::new(),
         };
 
-        let (tx, sx) = async_channel::bounded(2);
+        let (sx, tx) = if with_sender {
+            let (tx, sx) = async_channel::bounded(2);
+            (Some(sx), Some(tx))
+        } else {
+            (None, None)
+        };
 
         (
             Self {
@@ -109,7 +115,9 @@ impl BufferedS3Sink {
                 .await
         })
         .await??;
-        self.sender.send(tag.etag.to_string()).await?;
+        if let Some(s) = &self.sender {
+            s.send(tag.etag.to_string()).await?;
+        }
         self.tags.push(tag);
         self.part_number = Some(pnumber + 1);
 
