@@ -46,7 +46,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 let (access_key, secret_key) = self
                     .cache
                     .clone()
-                    .create_secret(user, tid)
+                    .create_or_get_secret(user, tid)
                     .await
                     .map_err(|e| {
                         log::debug!("Error creating secret: {}", e);

@@ -99,18 +99,27 @@ impl Cache {
     }
 
     /// Requests a secret key from the cache
-    pub async fn create_secret(
+    pub async fn create_or_get_secret(
         &self,
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
+        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+
+        match self
+            .users
+            .get(&access_key)
+            .map(|e| e.value().secret.clone())
+        {
+            Some(secret) => return Ok((access_key, secret)),
+            None => {}
+        }
+
         let new_secret = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
             .map(char::from)
             .collect::<String>();
-
-        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
         let perm = user
             .extract_access_key_permissions()?
