@@ -5,11 +5,11 @@ use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
-use crate::common::{init_db, test_utils};
+use crate::common::{init, test_utils};
 
 #[tokio::test]
 async fn create_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 
@@ -39,7 +39,7 @@ async fn create_test() {
 
 #[tokio::test]
 async fn delete_test() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
     let client = client.client();
@@ -68,7 +68,7 @@ async fn delete_test() {
 }
 #[tokio::test]
 async fn get_by_tests() {
-    let db = init_db::init_db().await;
+    let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let client = client.client();
 

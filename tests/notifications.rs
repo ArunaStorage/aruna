@@ -16,12 +16,14 @@ use aruna_server::{
 use async_nats::jetstream::consumer::{Config, DeliverPolicy};
 use diesel_ulid::DieselUlid;
 
+use crate::common::init::init_database;
+
 mod common;
 
 #[tokio::test]
 async fn create_stream_consumer() {
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -55,7 +57,7 @@ async fn create_stream_consumer() {
 #[tokio::test]
 async fn get_stream_consumer() {
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -87,7 +89,7 @@ async fn get_stream_consumer() {
 #[tokio::test]
 async fn delete_stream_consumer() {
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Define stream consumer
@@ -134,7 +136,7 @@ async fn notification_test() {
         .unwrap();
 
     // Init database connection
-    let db = common::init_db::init_db().await;
+    let db = init_database().await;
     let client = db.get_client().await.unwrap();
 
     // Create random user

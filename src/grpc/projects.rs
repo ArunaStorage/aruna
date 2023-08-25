@@ -392,6 +392,7 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error."
         );
 
+        // Update local cache and prepare search index documents
         let mut search_update: Vec<ObjectDocument> = vec![];
         for resource in resources {
             self.cache
@@ -399,7 +400,7 @@ impl ProjectService for ProjectServiceImpl {
             search_update.push(ObjectDocument::from(resource.object))
         }
 
-        // Add or update project in search index
+        // Add or update resources in search index
         grpc_utils::update_search_index(&self.search_client, search_update).await;
 
         let project: generic_resource::Resource = tonic_internal!(
