@@ -303,7 +303,7 @@ async fn process_announcement_event(
                     "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
                     pubkey.pubkey
                 );
-                let decoding_key = DecodingKey::from_ed_pem(&pub_pem.as_bytes())?;
+                let decoding_key = DecodingKey::from_ed_pem(pub_pem.as_bytes())?;
 
                 // Insert pubkey in cache
                 let cache_pubkey = match pubkey.proxy {
