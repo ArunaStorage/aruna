@@ -171,7 +171,12 @@ impl Cache {
             .ok_or_else(|| anyhow!("User not found"))
     }
 
-    pub async fn get_all(&self) -> Vec<APIUser> {
+    pub async fn get_all_users(&self) -> Vec<APIUser> {
+        self.check_lock();
+        Vec::from_iter(self.user_cache.iter().map(|u| u.clone().into()))
+    }
+
+    pub async fn get_all_users_proto(&self) -> Vec<APIUser> {
         self.check_lock();
         Vec::from_iter(self.user_cache.iter().map(|u| u.clone().into()))
     }
@@ -185,6 +190,32 @@ impl Cache {
                 None
             }
         }))
+    }
+
+    pub fn remove_endpoint_pubkeys(&self, endpoint_id: &DieselUlid) {
+        self.check_lock();
+        for entry in &self.pubkeys {
+            if let PubKeyEnum::DataProxy((_, _, pubkey_endpoint)) = entry.value() {
+                if endpoint_id == pubkey_endpoint {
+                    self.pubkeys.remove(entry.key());
+                }
+            }
+        }
+    }
+
+    pub fn remove_endpoint_from_resources(&self, endpoint_id: &DieselUlid) {
+        self.check_lock();
+        for entry in &self.object_cache {
+            entry.object.endpoints.0.remove(endpoint_id);
+        }
+    }
+
+    pub fn remove_endpoint_from_users(&self, endpoint_id: &DieselUlid) {
+        self.check_lock();
+        self.user_cache.iter().for_each(|entry| {
+            let val = entry.value();
+            val.attributes.0.trusted_endpoints.remove(endpoint_id);
+        });
     }
 
     pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
@@ -483,8 +514,81 @@ impl Cache {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::dsls::{user_dsl::UserAttributes, Empty};
+
     use super::*;
     use diesel_ulid::DieselUlid;
+    use postgres_types::Json;
+
+    #[test]
+    fn test_remove_endpoint_from_users() {
+        let cache = Cache::new();
+
+        // Generate random endpoint id
+        let endpoint_id = DieselUlid::generate();
+        let random_endpoint = DieselUlid::generate();
+
+        // Insert users with trusted_endpoint
+        let user_1 = DieselUlid::generate();
+        cache.add_user(
+            user_1,
+            User {
+                id: user_1,
+                display_name: "user-1".to_string(),
+                external_id: Some("my-external-id".to_string()),
+                email: "test-1@example.com".to_string(),
+                attributes: Json(UserAttributes {
+                    global_admin: false,
+                    service_account: false,
+                    tokens: DashMap::default(),
+                    trusted_endpoints: DashMap::from_iter([
+                        (endpoint_id, Empty {}),
+                        (random_endpoint, Empty {}),
+                    ]),
+                    custom_attributes: vec![],
+                    permissions: DashMap::default(),
+                }),
+                active: true,
+            },
+        );
+
+        // Insert users with trusted_endpoint
+        let user_2 = DieselUlid::generate();
+        cache.add_user(
+            user_2,
+            User {
+                id: user_2,
+                display_name: "user-2".to_string(),
+                external_id: Some("my-other-external-id".to_string()),
+                email: "test-2@example.com".to_string(),
+                attributes: Json(UserAttributes {
+                    global_admin: false,
+                    service_account: false,
+                    tokens: DashMap::default(),
+                    trusted_endpoints: DashMap::from_iter([(endpoint_id, Empty {})]),
+                    custom_attributes: vec![],
+                    permissions: DashMap::default(),
+                }),
+                active: true,
+            },
+        );
+
+        // Remove endpoint from users
+        cache.remove_endpoint_from_users(&endpoint_id);
+
+        // Fetch user and validate endpoint removal
+        let user_1_upd = cache.get_user(&user_1).unwrap();
+
+        assert_eq!(user_1_upd.attributes.0.trusted_endpoints.len(), 1);
+        assert!(user_1_upd
+            .attributes
+            .0
+            .trusted_endpoints
+            .contains_key(&random_endpoint));
+
+        let user_2_upd = cache.get_user(&user_2).unwrap();
+        assert!(user_2_upd.attributes.0.trusted_endpoints.is_empty())
+    }
 
     #[test]
     fn test_traverse_down_with_relations() {
@@ -788,8 +892,6 @@ mod tests {
         ));
 
         let subresources = cache.get_subresources(&id3).unwrap();
-
-        dbg!(&subresources);
 
         vec![id6, id7]
             .into_iter()

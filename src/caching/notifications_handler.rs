@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as ApiUser;
 use aruna_rust_api::api::{
     notification::services::v2::{
@@ -13,8 +13,10 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
+use jsonwebtoken::DecodingKey;
 use time::OffsetDateTime;
 
+use crate::database::dsls::pub_key_dsl::PubKey;
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
 use crate::{
     database::{
@@ -27,6 +29,7 @@ use crate::{
 };
 
 use super::cache::Cache;
+use super::structs::PubKeyEnum;
 
 pub struct NotificationHandler {}
 
@@ -137,7 +140,7 @@ impl NotificationHandler {
             }
 
             MessageVariant::AnnouncementEvent(event) => {
-                process_announcement_event(event)?;
+                process_announcement_event(event, cache, database).await?;
             }
         }
 
@@ -168,7 +171,9 @@ async fn process_resource_event(
                 EventVariant::Snapshotted => {
                     let client = database.get_client().await?;
                     let mut ids = vec![resource_ulid];
-                    ids.append(&mut Object::fetch_subresources_by_id(&resource_ulid, &client).await?);
+                    ids.append(
+                        &mut Object::fetch_subresources_by_id(&resource_ulid, &client).await?,
+                    );
                     ids
                 }
             } {
@@ -193,8 +198,7 @@ async fn process_resource_event(
                 } else {
                     // Fetch object with relations from database and put into cache
                     let client = database.get_client().await?;
-                    let object_plus =
-                        Object::get_object_with_relations(&res_ulid, &client).await?;
+                    let object_plus = Object::get_object_with_relations(&res_ulid, &client).await?;
 
                     // Update resource search index
                     search_client
@@ -263,24 +267,64 @@ async fn process_user_event(
     Ok(())
 }
 
-fn process_announcement_event(announcement_event: AnouncementEvent) -> anyhow::Result<()> {
+async fn process_announcement_event(
+    announcement_event: AnouncementEvent,
+    cache: Arc<Cache>,
+    database: Arc<Database>,
+) -> anyhow::Result<()> {
     if let Some(variant) = announcement_event.event_variant {
         match variant {
-            AnnEventVariant::NewDataProxyId(_) => {
-                unimplemented!("Endpoint cache currently not implemented")
+            AnnEventVariant::NewDataProxyId(id) => {
+                //Note: Endpoint cache currently not implemented
+                log::info!("Received NewDataProxyId announcement for: {id}")
             }
-            AnnEventVariant::RemoveDataProxyId(_) => {
-                unimplemented!("Remove from trusted endpoints of users?")
+            AnnEventVariant::RemoveDataProxyId(id) => {
+                let endpoint_id = DieselUlid::from_str(&id)?;
+                // Remove endpoint pubkeys from cache
+                cache.remove_endpoint_pubkeys(&endpoint_id);
+                // Remove endpoint from all users in cache
+                cache.remove_endpoint_from_users(&endpoint_id);
+                // Remove endpoint from all resources
+                cache.remove_endpoint_from_users(&endpoint_id);
+                //Note: No need to remove pubkeys from database here
+                //      as they are cascade deleted with the endpoint
             }
-            AnnEventVariant::UpdateDataProxyId(_) => {
-                unimplemented!("Endpoint cache currently not implemented")
+            AnnEventVariant::UpdateDataProxyId(id) => {
+                //Note: Endpoint cache currently not implemented
+                log::info!("Received UpdateDataProxyId announcement for: {id}");
             }
-            AnnEventVariant::NewPubkey(_) => unimplemented!("Refresh pubkey cache"),
-            AnnEventVariant::RemovePubkey(_) => unimplemented!("Refresh pubkey cache"),
-            AnnEventVariant::Downtime(_) => {
-                unimplemented!("Prepare for downtime. Degradation or something ...")
+            AnnEventVariant::NewPubkey(serial) => {
+                // Fetch pubkey from database
+                let client = database.get_client().await?;
+                let pubkey = PubKey::get(serial, &client)
+                    .await?
+                    .ok_or_else(|| anyhow!("Could not find pub key"))?;
+                let pub_pem = format!(
+                    "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                    pubkey.pubkey
+                );
+                let decoding_key = DecodingKey::from_ed_pem(&pub_pem.as_bytes())?;
+
+                // Insert pubkey in cache
+                let cache_pubkey = match pubkey.proxy {
+                    Some(endpoint_id) => {
+                        PubKeyEnum::DataProxy((pubkey.pubkey, decoding_key, endpoint_id))
+                    }
+                    None => PubKeyEnum::Server((pubkey.pubkey, decoding_key)),
+                };
+
+                cache.add_pubkey(pubkey.id as i32, cache_pubkey);
             }
-            AnnEventVariant::Version(version) => log::debug!("{:#?}", version),
+            AnnEventVariant::RemovePubkey(serial) => cache.remove_pubkey(&serial),
+            AnnEventVariant::Downtime(info) => {
+                //ToDo: Implement downtime/shutdown preparation
+                //  - Set instance status to something like `HealthStatus::Shutdown`
+                //  - Do not accept any new requests
+                log::info!("Received Downtime announcement: {:?}", info)
+            }
+            AnnEventVariant::Version(version) => {
+                log::info!("Received Version announcement: {:?}", version)
+            }
         }
     } else {
         // Return error if variant is None
