@@ -1,4 +1,5 @@
-use crate::common::{init_db::init_handler, test_utils};
+use crate::common::init::init_database_handler_middlelayer;
+use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::{
     DeleteCollectionRequest, DeleteDatasetRequest, DeleteObjectRequest, DeleteProjectRequest,
 };
@@ -14,7 +15,7 @@ use diesel_ulid::DieselUlid;
 #[tokio::test]
 async fn delete_project() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
 
     // create user + project
@@ -42,7 +43,7 @@ async fn delete_project() {
 #[tokio::test]
 async fn delete_collection() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + collection
@@ -70,7 +71,7 @@ async fn delete_collection() {
 #[tokio::test]
 async fn delete_dataset() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + dataset
@@ -98,7 +99,7 @@ async fn delete_dataset() {
 #[tokio::test]
 async fn delete_object() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
 
     // create user + objects

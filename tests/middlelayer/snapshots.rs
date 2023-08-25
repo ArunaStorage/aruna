@@ -1,4 +1,5 @@
-use crate::common::{init_db::init_handler, test_utils};
+use crate::common::init::init_database_handler_middlelayer;
+use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, SnapshotCollectionRequest, SnapshotDatasetRequest,
 };
@@ -13,7 +14,7 @@ use diesel_ulid::DieselUlid;
 
 #[tokio::test]
 async fn test_archive() {
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let p_id = DieselUlid::generate();
     let ulids = vec![
         ObjectMapping::PROJECT(p_id),
@@ -67,7 +68,7 @@ async fn test_archive() {
 #[tokio::test]
 async fn test_snapshot_collection() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let collection_id = DieselUlid::generate();
     let d1_id = DieselUlid::generate();
     let d2_id = DieselUlid::generate();
@@ -128,7 +129,7 @@ async fn test_snapshot_collection() {
 #[tokio::test]
 async fn test_snapshot_dataset() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let dataset_id = DieselUlid::generate();
     let o1_id = DieselUlid::generate();
     let o2_id = DieselUlid::generate();

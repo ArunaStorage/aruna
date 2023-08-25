@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::common::{init_db::init_handler, test_utils};
+use crate::common::init::init_database_handler_middlelayer;
+use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::ExternalRelation as APIExternalRelation;
 use aruna_rust_api::api::storage::models::v2::InternalRelation as APIInternalRelation;
@@ -23,7 +24,7 @@ use postgres_types::Json;
 #[tokio::test]
 async fn test_modify() {
     // init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let origin = DieselUlid::generate();
     let target = DieselUlid::generate();

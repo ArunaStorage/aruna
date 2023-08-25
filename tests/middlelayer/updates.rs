@@ -1,4 +1,4 @@
-use crate::common::init_db::init_handler;
+use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent;
@@ -22,7 +22,7 @@ use postgres_types::Json;
 #[tokio::test]
 async fn test_update_dataclass() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -91,7 +91,7 @@ async fn test_update_dataclass() {
 #[tokio::test]
 async fn test_update_name() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -156,7 +156,7 @@ async fn test_update_name() {
 #[tokio::test]
 async fn test_update_description() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -233,7 +233,7 @@ async fn test_update_description() {
 #[tokio::test]
 async fn test_update_keyvals() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -388,7 +388,7 @@ async fn test_update_keyvals() {
 #[tokio::test]
 async fn update_object_test() {
     // Init
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let object_id = DieselUlid::generate();
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();

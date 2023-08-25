@@ -1,4 +1,5 @@
-use crate::common::{init_db, test_utils};
+use crate::common::init::init_database_handler_middlelayer;
+use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::create_collection_request::Parent as CollectionParent;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent as DatasetParent;
 use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as ObjectParent;
@@ -25,7 +26,7 @@ fn random_name() -> String {
 #[tokio::test]
 async fn create_project() {
     // init
-    let db_handler = init_db::init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let cache = Arc::new(Cache::new());
 
     // create user
@@ -80,7 +81,7 @@ async fn create_project() {
 #[tokio::test]
 async fn create_collection() {
     // init
-    let db_handler = init_db::init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
 
@@ -151,7 +152,7 @@ async fn create_collection() {
 #[tokio::test]
 async fn create_dataset() {
     // init
-    let db_handler = init_db::init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
 
@@ -221,7 +222,7 @@ async fn create_dataset() {
 #[tokio::test]
 async fn create_object() {
     // init
-    let db_handler = init_db::init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
 

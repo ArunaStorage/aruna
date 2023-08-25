@@ -1,4 +1,4 @@
-use crate::common::init_db::init_handler;
+use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::{
     ActivateUserRequest, DeactivateUserRequest, UpdateUserDisplayNameRequest,
@@ -39,7 +39,7 @@ use aruna_server::middlelayer::user_request_types::{
 // }
 #[tokio::test]
 async fn test_activate_user() {
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
@@ -62,7 +62,7 @@ async fn test_activate_user() {
 }
 #[tokio::test]
 async fn test_update_display_name() {
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
@@ -81,7 +81,7 @@ async fn test_update_display_name() {
 }
 #[tokio::test]
 async fn test_update_email() {
-    let db_handler = init_handler().await;
+    let db_handler = init_database_handler_middlelayer().await;
     let client = db_handler.database.get_client().await.unwrap();
     let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
