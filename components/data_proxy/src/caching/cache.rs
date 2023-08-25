@@ -42,17 +42,12 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
-        let persistence = if !with_persistence {
-            RwLock::new(None)
-        } else {
-            RwLock::new(Some(Database::new().await?))
-        };
         let cache = Arc::new(Cache {
             users: DashMap::default(),
             resources: DashMap::default(),
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
-            persistence,
+            persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
@@ -74,6 +69,12 @@ impl Cache {
 
             cache.set_notifications(notication_handler).await
         };
+
+        if with_persistence {
+            let persistence = Database::new().await?;
+            cache.set_persistence(persistence).await?;
+        }
+
         Ok(cache)
     }
 
@@ -87,6 +88,13 @@ impl Cache {
         *guard = Some(auth);
     }
 
+    pub async fn set_persistence(&self, persistence: Database) -> Result<()> {
+        let persistence = self.sync_with_persistence(persistence).await?;
+        let mut guard = self.persistence.write().await;
+        *guard = Some(persistence);
+        Ok(())
+    }
+
     /// Requests a secret key from the cache
     pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
         Ok(SecretKey::from(
@@ -96,6 +104,27 @@ impl Cache {
                 .secret
                 .as_ref(),
         ))
+    }
+
+    pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
+        let client = database.get_client().await?;
+        for user in User::get_all(&client).await? {
+            self.users.insert(user.access_key.clone(), user);
+        }
+
+        self.set_pubkeys(PubKey::get_all(&client).await?).await?;
+
+        for object in Object::get_all(&client).await? {
+            let location = ObjectLocation::get(&object.id, &client).await?;
+            self.resources
+                .insert(object.id, (object.clone(), Some(location.clone())));
+            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
+            }
+        }
+
+        Ok(database)
     }
 
     /// Requests a secret key from the cache
@@ -164,7 +193,7 @@ impl Cache {
                 )
                 .as_bytes(),
             )?;
-            self.pubkeys.insert(pk.id, (pk.clone(), dec_key));
+            self.pubkeys.insert(pk.id.into(), (pk.clone(), dec_key));
         }
         Ok(())
     }
@@ -220,26 +249,6 @@ impl Cache {
                     }
                 }
                 Ok(res)
-                // for elem in self.resources.iter() {
-                //     if let Some(childs) = &initial_res.children {
-                //         if childs.contains(&(&elem.value().0).into()) {
-                //             let other1 = self
-                //                 .resources
-                //                 .get(elem.key())
-                //                 .ok_or_else(|| anyhow!("Resource not found"))?
-                //                 .0
-                //                 .clone();
-                //             res.push((
-                //                 ResourceString::Collection(
-                //                     other1.name.to_string(),
-                //                     initial_res.name.clone(),
-                //                 ),
-                //                 ResourceIds::Collection(other1.id, initial_res.id),
-                //             ));
-                //         }
-                //     }
-                // }
-                // Ok(res)
             }
             ObjectType::Dataset => {
                 let mut res = Vec::new();
@@ -314,56 +323,6 @@ impl Cache {
                     }
                 }
                 Ok(res)
-                // for elem in self.resources.iter() {
-                //     if let Some(childs) = &initial_res.children {
-                //         if childs.contains(&(&elem.value().0).into()) {
-                //             let other1 = self
-                //                 .resources
-                //                 .get(elem.key())
-                //                 .ok_or_else(|| anyhow!("Resource not found"))?
-                //                 .0
-                //                 .clone();
-                //             if elem.value().0.object_type == ObjectType::Project {
-                //                 res.push((
-                //                     ResourceString::Dataset(
-                //                         other1.name.to_string(),
-                //                         None,
-                //                         initial_res.name.clone(),
-                //                     ),
-                //                     ResourceIds::Dataset(other1.id, None, initial_res.id),
-                //                 ));
-                //             } else {
-                //                 for elem2 in self.resources.iter() {
-                //                     if let Some(childs2) = &elem.0.children {
-                //                         if childs2.contains(&(&elem2.value().0).into())
-                //                             && elem2.value().0.object_type == ObjectType::Collection
-                //                         {
-                //                             let other2 = self
-                //                                 .resources
-                //                                 .get(elem2.key())
-                //                                 .ok_or_else(|| anyhow!("Resource not found"))?
-                //                                 .0
-                //                                 .clone();
-                //                             res.push((
-                //                                 ResourceString::Dataset(
-                //                                     other2.name.to_string(),
-                //                                     Some(other1.name.to_string()),
-                //                                     initial_res.name.clone(),
-                //                                 ),
-                //                                 ResourceIds::Dataset(
-                //                                     other2.id,
-                //                                     Some(other1.id),
-                //                                     initial_res.id,
-                //                                 ),
-                //                             ));
-                //                         }
-                //                     }
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
-                //Ok(res)
             }
             ObjectType::Object => {
                 let mut res = Vec::new();
@@ -514,103 +473,6 @@ impl Cache {
                     }
                 }
                 Ok(res)
-                // for elem in self.resources.iter() {
-                //     if let Some(childs) = &initial_res.children {
-                //         if childs.contains(&(&elem.value().0).into()) {
-                //             let other1 = self
-                //                 .resources
-                //                 .get(elem.key())
-                //                 .ok_or_else(|| anyhow!("Resource not found"))?
-                //                 .0
-                //                 .clone();
-                //             if elem.value().0.object_type == ObjectType::Project {
-                //                 res.push((
-                //                     ResourceString::Object(
-                //                         other1.name.to_string(),
-                //                         None,
-                //                         None,
-                //                         initial_res.name.clone(),
-                //                     ),
-                //                     ResourceIds::Object(other1.id, None, None, initial_res.id),
-                //                 ));
-                //             } else if elem.value().0.object_type == ObjectType::Collection {
-                //                 for elem2 in self.resources.iter() {
-                //                     if let Some(childs2) = &elem.value().0.children {
-                //                         if childs2.contains(&(&elem2.value().0).into())
-                //                             && elem2.value().0.object_type == ObjectType::Collection
-                //                         {
-                //                             let other2 = self
-                //                                 .resources
-                //                                 .get(elem2.key())
-                //                                 .ok_or_else(|| anyhow!("Resource not found"))?
-                //                                 .0
-                //                                 .clone();
-                //                             res.push((
-                //                                 ResourceString::Object(
-                //                                     other2.name.to_string(),
-                //                                     Some(other1.name.to_string()),
-                //                                     None,
-                //                                     initial_res.name.clone(),
-                //                                 ),
-                //                                 ResourceIds::Object(
-                //                                     other2.id,
-                //                                     Some(other1.id),
-                //                                     None,
-                //                                     initial_res.id,
-                //                                 ),
-                //                             ));
-                //                         }
-                //                     }
-                //                 }
-                //             } else {
-                //                 for elem2 in self.resources.iter() {
-                //                     if let Some(childs2) = &elem.value().0.children {
-                //                         if childs2.contains(&(&elem2.value().0).into()) {
-                //                             for elem3 in self.resources.iter() {
-                //                                 if let Some(childs3) = &elem2.value().0.children {
-                //                                     if childs3.contains(&(&elem3.value().0).into())
-                //                                     {
-                //                                         let other2 = self
-                //                                             .resources
-                //                                             .get(elem2.key())
-                //                                             .ok_or_else(|| {
-                //                                                 anyhow!("Resource not found")
-                //                                             })?
-                //                                             .0
-                //                                             .clone();
-                //                                         let other3 = self
-                //                                             .resources
-                //                                             .get(elem3.key())
-                //                                             .ok_or_else(|| {
-                //                                                 anyhow!("Resource not found")
-                //                                             })?
-                //                                             .0
-                //                                             .clone();
-                //                                         res.push((
-                //                                             ResourceString::Object(
-                //                                                 other3.name.to_string(),
-                //                                                 Some(other2.name.to_string()),
-                //                                                 Some(other1.name.to_string()),
-                //                                                 initial_res.name.clone(),
-                //                                             ),
-                //                                             ResourceIds::Object(
-                //                                                 other3.id,
-                //                                                 Some(other2.id),
-                //                                                 Some(other1.id),
-                //                                                 initial_res.id,
-                //                                             ),
-                //                                         ));
-                //                                     }
-                //                                 }
-                //                             }
-                //                         }
-                //                     }
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
-                // Ok(res)
             }
         }
     }
@@ -627,6 +489,7 @@ impl Cache {
         let user_id = DieselUlid::from_str(&user.id)?;
 
         let mut access_ids = Vec::new();
+
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
             let user_access = User {
                 access_key: key.clone(),
@@ -637,6 +500,7 @@ impl Cache {
                     .unwrap_or_default(),
                 permissions: perm,
             };
+
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user_access.upsert(&persistence.get_client().await?).await?;
             }

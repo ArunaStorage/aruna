@@ -22,7 +22,6 @@ use http::Method;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
-
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -113,7 +112,7 @@ pub struct PartETag {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PubKey {
-    pub id: i32,
+    pub id: i16,
     pub key: String,
     pub is_proxy: bool,
 }
@@ -121,7 +120,7 @@ pub struct PubKey {
 impl From<Pubkey> for PubKey {
     fn from(value: Pubkey) -> Self {
         Self {
-            id: value.id,
+            id: value.id as i16,
             key: value.key,
             is_proxy: value.location.contains("proxy"),
         }
@@ -224,16 +223,16 @@ impl TryInto<create_object_request::Parent> for TypedRelation {
     }
 }
 
-impl TryFrom<GenericBytes<i32>> for PubKey {
+impl TryFrom<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
-    fn try_from(value: GenericBytes<i32>) -> Result<Self, Self::Error> {
+    fn try_from(value: GenericBytes<i16>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
 }
 
-impl TryInto<GenericBytes<i32>> for PubKey {
+impl TryInto<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
-    fn try_into(self) -> Result<GenericBytes<i32>, Self::Error> {
+    fn try_into(self) -> Result<GenericBytes<i16>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
@@ -243,7 +242,7 @@ impl TryInto<GenericBytes<i32>> for PubKey {
     }
 }
 
-impl WithGenericBytes<i32> for PubKey {
+impl WithGenericBytes<i16> for PubKey {
     fn get_table() -> Table {
         Table::PubKeys
     }
@@ -302,17 +301,20 @@ impl WithGenericBytes<DieselUlid> for ObjectLocation {
 impl TryFrom<GenericBytes<String>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data)?)
+        let user: User = bincode::deserialize(&value.data).unwrap();
+        Ok(user)
     }
 }
 
 impl TryInto<GenericBytes<String>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
-        let data = bincode::serialize(&self)?;
+        let user = self;
+        let data = bincode::serialize(&user)?;
+        dbg!(&data);
         Ok(GenericBytes {
-            id: self.access_key,
-            data: data.into(),
+            id: user.access_key,
+            data: data,
             table: Self::get_table(),
         })
     }
