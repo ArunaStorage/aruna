@@ -149,8 +149,41 @@ impl BundlerService for BundlerServiceImpl {
     }
     async fn delete_bundle(
         &self,
-        _request: tonic::Request<DeleteBundleRequest>,
+        request: tonic::Request<DeleteBundleRequest>,
     ) -> std::result::Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
-        todo!()
+        if let Some(a) = self.cache.auth.read().await.as_ref() {
+            let token = get_token_from_md(request.metadata())
+                .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+            let (u, tid) = a.check_permissions(&token).map_err(|e| {
+                log::debug!("Error checking permissions: {}", e);
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
+
+            let access_key = if let Some(t_id) = tid {
+                t_id
+            } else {
+                u.to_string()
+            };
+
+            let user = self.cache.users.get(&access_key).ok_or_else(|| {
+                log::debug!("Error getting user from cache");
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
+
+            let bundle_id =
+                DieselUlid::from_str(request.get_ref().bundle_id.as_str()).map_err(|e| {
+                    log::debug!("Error parsing ULID: {}", e);
+                    tonic::Status::invalid_argument("Unable to parse BundleID")
+                })?;
+
+            if let Some(perm) = user.value().permissions.get(&bundle_id) {
+                if *perm == DbPermissionLevel::Admin {
+                    return Ok(tonic::Response::new(DeleteBundleResponse {}));
+                }
+            }
+        }
+        return Err(tonic::Status::unauthenticated(
+            "Unable to authenticate user",
+        ));
     }
 }
