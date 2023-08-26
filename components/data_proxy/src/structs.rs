@@ -62,6 +62,7 @@ pub struct User {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
+    Bundle, // Bundles are proxy specific objects that group together all lower level objects into a single bundle
     Project,
     Collection,
     Dataset,
@@ -138,16 +139,18 @@ impl TypedRelation {
     }
 }
 
-impl From<&Object> for TypedRelation {
-    fn from(value: &Object) -> Self {
-        match value.object_type {
-            ObjectType::Project => TypedRelation::Project(value.id),
-            ObjectType::Collection => TypedRelation::Collection(value.id),
-            ObjectType::Dataset => TypedRelation::Dataset(value.id),
-            ObjectType::Object => TypedRelation::Object(value.id),
-        }
-    }
-}
+// impl TryFrom<&Object> for TypedRelation {
+//     type Error = anyhow::Error;
+//     fn try_from(value: &Object) -> Result<Self> {
+//         Ok(match value.object_type {
+//             ObjectType::Project => TypedRelation::Project(value.id),
+//             ObjectType::Collection => TypedRelation::Collection(value.id),
+//             ObjectType::Dataset => TypedRelation::Dataset(value.id),
+//             ObjectType::Object => TypedRelation::Object(value.id),
+//             ObjectType::Bundle => bail!("Bundles do not have typed relations"),
+//         })
+//     }
+// }
 
 impl TryFrom<&Relation> for TypedRelation {
     type Error = anyhow::Error;
