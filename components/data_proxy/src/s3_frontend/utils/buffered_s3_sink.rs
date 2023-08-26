@@ -12,10 +12,10 @@ pub struct BufferedS3Sink {
     target_location: ObjectLocation,
     upload_id: Option<String>,
     part_number: Option<i32>,
-    only_parts: bool,
+    single_part_upload: bool,
     tags: Vec<PartETag>,
     sum: usize,
-    sender: Sender<String>,
+    sender: Option<Sender<String>>,
 }
 
 impl Sink for BufferedS3Sink {}
@@ -26,15 +26,21 @@ impl BufferedS3Sink {
         target_location: ObjectLocation,
         upload_id: Option<String>,
         part_number: Option<i32>,
-        only_parts: bool,
+        single_part_upload: bool,
         tags: Option<Vec<PartETag>>,
-    ) -> (Self, Receiver<String>) {
+        with_sender: bool,
+    ) -> (Self, Option<Receiver<String>>) {
         let t = match tags {
             Some(t) => t,
             None => Vec::new(),
         };
 
-        let (tx, sx) = async_channel::bounded(2);
+        let (sx, tx) = if with_sender {
+            let (tx, sx) = async_channel::bounded(2);
+            (Some(sx), Some(tx))
+        } else {
+            (None, None)
+        };
 
         (
             Self {
@@ -43,7 +49,7 @@ impl BufferedS3Sink {
                 target_location,
                 upload_id,
                 part_number,
-                only_parts,
+                single_part_upload,
                 tags: t,
                 sum: 0,
                 sender: tx,
@@ -87,6 +93,7 @@ impl BufferedS3Sink {
     }
 
     async fn upload_part(&mut self) -> Result<()> {
+        dbg!("part", &self.buffer.len());
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
@@ -100,7 +107,7 @@ impl BufferedS3Sink {
             .ok_or_else(|| anyhow!("Upload ID not found"))?;
 
         let (sender, receiver) = async_channel::bounded(10);
-        sender.send(Ok(self.buffer.split().freeze())).await?;
+        sender.try_send(Ok(self.buffer.split().freeze()))?;
 
         let tag = tokio::spawn(async move {
             backend_clone
@@ -108,7 +115,9 @@ impl BufferedS3Sink {
                 .await
         })
         .await??;
-        self.sender.send(tag.etag.to_string()).await?;
+        if let Some(s) = &self.sender {
+            s.send(tag.etag.to_string()).await?;
+        }
         self.tags.push(tag);
         self.part_number = Some(pnumber + 1);
 
@@ -143,36 +152,40 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
-    async fn process_bytes(
-        &mut self,
-        buf: &mut BytesMut,
-        finished: bool,
-        _: bool,
-    ) -> Result<bool> {
+    async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
         self.sum += buf.len();
         let len = buf.len();
 
-        self.buffer.put(buf);
-        if self.buffer.len() > 5242880 && !self.only_parts {
-            // 5 Mib -> initialize multipart
-            if self.upload_id.is_none() {
-                self.initialize_multipart().await?;
-            }
-            self.upload_part().await?;
-        }
+        self.buffer.put(buf.split());
 
-        if len == 0 && finished {
-            if self.upload_id.is_none() {
-                self.upload_single().await?;
-            } else {
-                // Upload den Rest +
+        if self.single_part_upload {
+            if len == 0 && finished {
                 self.upload_part().await?;
-                if !self.only_parts {
-                    self.finish_multipart().await?;
-                }
+                return Ok(true);
             }
-            return Ok(true);
+            Ok(false)
+        } else {
+            if self.buffer.len() > 5242880 {
+                // 5 Mib -> initialize multipart
+                if self.upload_id.is_none() {
+                    self.initialize_multipart().await?;
+                }
+                self.upload_part().await?;
+            }
+
+            if len == 0 && finished {
+                if self.upload_id.is_none() {
+                    self.upload_single().await?;
+                } else {
+                    // Upload den Rest +
+                    self.upload_part().await?;
+                    if !self.single_part_upload {
+                        self.finish_multipart().await?;
+                    }
+                }
+                return Ok(true);
+            }
+            Ok(false)
         }
-        Ok(false)
     }
 }

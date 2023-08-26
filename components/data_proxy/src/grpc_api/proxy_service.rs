@@ -1,24 +1,23 @@
-use std::sync::{Arc, RwLock};
-
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_service_server::DataproxyService, InitReplicationRequest, InitReplicationResponse,
     RequestReplicationRequest, RequestReplicationResponse,
 };
+use std::sync::Arc;
 
 use crate::caching::cache::Cache;
 
-pub struct ProxyService {
-    pub cache: Arc<RwLock<Cache>>,
+pub struct DataproxyServiceImpl {
+    pub cache: Arc<Cache>,
 }
 
-impl ProxyService {
-    pub fn _new(cache: Arc<RwLock<Cache>>) -> Self {
+impl DataproxyServiceImpl {
+    pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
 }
 
 #[tonic::async_trait]
-impl DataproxyService for ProxyService {
+impl DataproxyService for DataproxyServiceImpl {
     /// RequestReplication
     ///
     /// Status: BETA

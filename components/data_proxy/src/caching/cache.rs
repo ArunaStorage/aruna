@@ -2,6 +2,7 @@ use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
     transforms::ExtractAccessKeyPermissions,
 };
+use crate::structs::TypedRelation;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
@@ -21,8 +22,6 @@ use tokio::sync::RwLock;
 pub struct Cache {
     // Map with AccessKey as key and User as value
     pub users: DashMap<String, User, RandomState>,
-    // HashMap that contains user_id <-> Vec<access_key> pairs
-    pub user_access_keys: DashMap<DieselUlid, Vec<String>, RandomState>,
     // Map with ObjectId as key and Object as value
     pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
     // Maps with bucket / key as key and set of all ObjectIds as value
@@ -43,21 +42,18 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
-        let persistence = if with_persistence {
-            RwLock::new(None)
-        } else {
-            RwLock::new(Some(Database::new().await?))
-        };
         let cache = Arc::new(Cache {
             users: DashMap::default(),
-            user_access_keys: DashMap::default(),
             resources: DashMap::default(),
             paths: DashMap::default(),
             pubkeys: DashMap::default(),
-            persistence,
+            persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
+        let auth_handler =
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+        cache.set_auth(auth_handler).await;
         if let Some(url) = notifications_url {
             let notication_handler: Arc<GrpcQueryHandler> =
                 Arc::new(GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await?);
@@ -68,14 +64,17 @@ impl Cache {
                     .clone()
                     .create_notifications_channel()
                     .await
+                    .unwrap()
             });
 
             cache.set_notifications(notication_handler).await
         };
 
-        let auth_handler =
-            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
-        cache.set_auth(auth_handler).await;
+        if with_persistence {
+            let persistence = Database::new().await?;
+            cache.set_persistence(persistence).await?;
+        }
+
         Ok(cache)
     }
 
@@ -89,6 +88,13 @@ impl Cache {
         *guard = Some(auth);
     }
 
+    pub async fn set_persistence(&self, persistence: Database) -> Result<()> {
+        let persistence = self.sync_with_persistence(persistence).await?;
+        let mut guard = self.persistence.write().await;
+        *guard = Some(persistence);
+        Ok(())
+    }
+
     /// Requests a secret key from the cache
     pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
         Ok(SecretKey::from(
@@ -100,19 +106,52 @@ impl Cache {
         ))
     }
 
+    pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
+        let client = database.get_client().await?;
+        for user in User::get_all(&client).await? {
+            self.users.insert(user.access_key.clone(), user);
+        }
+
+        self.sync_pubkeys(PubKey::get_all(&client).await?).await?;
+
+        for object in Object::get_all(&client).await? {
+            let location = ObjectLocation::get_opt(&object.id, &client).await?;
+            self.resources.insert(object.id, (object.clone(), location));
+            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
+            }
+        }
+
+        Ok(database)
+    }
+
     /// Requests a secret key from the cache
-    pub async fn create_secret(
+    pub async fn create_or_get_secret(
         &self,
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
+        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+
+        match self
+            .users
+            .get(&access_key)
+            .map(|e| e.value().secret.clone())
+        {
+            Some(secret) => {
+                if !secret.is_empty() {
+                    return Ok((access_key, secret));
+                }
+            }
+            None => {}
+        }
+
         let new_secret = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
             .map(char::from)
             .collect::<String>();
-
-        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
         let perm = user
             .extract_access_key_permissions()?
@@ -137,6 +176,20 @@ impl Cache {
         Ok((access_key, new_secret))
     }
 
+    pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
+        for pk in pks.into_iter() {
+            let dec_key = DecodingKey::from_ed_pem(
+                format!(
+                    "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                    pk.key
+                )
+                .as_bytes(),
+            )?;
+            self.pubkeys.insert(pk.id.into(), (pk.clone(), dec_key));
+        }
+        Ok(())
+    }
+
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             PubKey::delete_all(&persistence.get_client().await?).await?;
@@ -148,12 +201,12 @@ impl Cache {
         for pk in pks.into_iter() {
             let dec_key = DecodingKey::from_ed_pem(
                 format!(
-                    "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
+                    "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
                     pk.key
                 )
                 .as_bytes(),
             )?;
-            self.pubkeys.insert(pk.id, (pk.clone(), dec_key));
+            self.pubkeys.insert(pk.id.into(), (pk.clone(), dec_key));
         }
         Ok(())
     }
@@ -175,163 +228,261 @@ impl Cache {
             .ok_or_else(|| anyhow!("Resource not found"))?
             .clone();
         match variant {
-            ObjectType::PROJECT => Ok(vec![(
+            ObjectType::Project => Ok(vec![(
                 ResourceString::Project(initial_res.name),
                 ResourceIds::Project(initial_res.id),
             )]),
-            ObjectType::COLLECTION => {
+            ObjectType::Collection => {
                 let mut res = Vec::new();
-                for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        res.push((
-                            ResourceString::Collection(
-                                other1.name.to_string(),
-                                initial_res.name.clone(),
-                            ),
-                            ResourceIds::Collection(other1.id, initial_res.id),
-                        ));
-                    }
-                }
-                Ok(res)
-            }
-            ObjectType::DATASET => {
-                let mut res = Vec::new();
-                for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        if elem.value().0.object_type == ObjectType::PROJECT {
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("Collection has no parents"))?
+                {
+                    match parent {
+                        TypedRelation::Project(parent_id) => {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent for collection not found"))?
+                                .0
+                                .clone();
                             res.push((
-                                ResourceString::Dataset(
-                                    other1.name.to_string(),
-                                    None,
+                                ResourceString::Collection(
+                                    parent_full.name.to_string(),
                                     initial_res.name.clone(),
                                 ),
-                                ResourceIds::Dataset(other1.id, None, initial_res.id),
-                            ));
-                        } else {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key())
-                                    && elem2.value().0.object_type == ObjectType::COLLECTION
-                                {
-                                    let other2 = self
-                                        .resources
-                                        .get(elem2.key())
-                                        .ok_or_else(|| anyhow!("Resource not found"))?
-                                        .0
-                                        .clone();
-                                    res.push((
-                                        ResourceString::Dataset(
-                                            other2.name.to_string(),
-                                            Some(other1.name.to_string()),
-                                            initial_res.name.clone(),
-                                        ),
-                                        ResourceIds::Dataset(
-                                            other2.id,
-                                            Some(other1.id),
-                                            initial_res.id,
-                                        ),
-                                    ));
-                                }
-                            }
+                                ResourceIds::Collection(parent_id, initial_res.id),
+                            ))
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "Collections cant have parents other than projects"
+                            ))
                         }
                     }
                 }
                 Ok(res)
             }
-            ObjectType::OBJECT => {
+            ObjectType::Dataset => {
                 let mut res = Vec::new();
-                for elem in self.resources.iter() {
-                    if initial_res.children.contains(elem.key()) {
-                        let other1 = self
-                            .resources
-                            .get(elem.key())
-                            .ok_or_else(|| anyhow!("Resource not found"))?
-                            .0
-                            .clone();
-                        if elem.value().0.object_type == ObjectType::PROJECT {
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("No parents found for dataset"))?
+                {
+                    match parent {
+                        TypedRelation::Project(parent_id) => {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                .0
+                                .clone();
                             res.push((
-                                ResourceString::Object(
-                                    other1.name.to_string(),
-                                    None,
+                                ResourceString::Dataset(
+                                    parent_full.name.to_string(),
                                     None,
                                     initial_res.name.clone(),
                                 ),
-                                ResourceIds::Object(other1.id, None, None, initial_res.id),
-                            ));
-                        } else if elem.value().0.object_type == ObjectType::COLLECTION {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key())
-                                    && elem2.value().0.object_type == ObjectType::COLLECTION
-                                {
-                                    let other2 = self
-                                        .resources
-                                        .get(elem2.key())
-                                        .ok_or_else(|| anyhow!("Resource not found"))?
-                                        .0
-                                        .clone();
-                                    res.push((
-                                        ResourceString::Object(
-                                            other2.name.to_string(),
-                                            Some(other1.name.to_string()),
-                                            None,
-                                            initial_res.name.clone(),
-                                        ),
-                                        ResourceIds::Object(
-                                            other2.id,
-                                            Some(other1.id),
-                                            None,
-                                            initial_res.id,
-                                        ),
-                                    ));
-                                }
-                            }
-                        } else {
-                            for elem2 in self.resources.iter() {
-                                if elem.value().0.children.contains(elem2.key()) {
-                                    for elem3 in self.resources.iter() {
-                                        if elem2.value().0.children.contains(elem3.key()) {
-                                            let other2 = self
-                                                .resources
-                                                .get(elem2.key())
-                                                .ok_or_else(|| anyhow!("Resource not found"))?
-                                                .0
-                                                .clone();
-                                            let other3 = self
-                                                .resources
-                                                .get(elem3.key())
-                                                .ok_or_else(|| anyhow!("Resource not found"))?
-                                                .0
-                                                .clone();
-                                            res.push((
-                                                ResourceString::Object(
-                                                    other3.name.to_string(),
-                                                    Some(other2.name.to_string()),
-                                                    Some(other1.name.to_string()),
-                                                    initial_res.name.clone(),
-                                                ),
-                                                ResourceIds::Object(
-                                                    other3.id,
-                                                    Some(other2.id),
-                                                    Some(other1.id),
-                                                    initial_res.id,
-                                                ),
-                                            ));
-                                        }
+                                ResourceIds::Dataset(parent_id, None, initial_res.id),
+                            ))
+                        }
+                        TypedRelation::Collection(parent_id) => {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                            {
+                                match grand_parent {
+                                    TypedRelation::Project(grand_parent_id) => {
+                                        let grand_parent_full = self
+                                            .resources
+                                            .get(&grand_parent_id)
+                                            .ok_or_else(|| {
+                                                anyhow!("Parent for collection not found")
+                                            })?
+                                            .0
+                                            .clone();
+                                        res.push((
+                                            ResourceString::Dataset(
+                                                grand_parent_full.name.to_string(),
+                                                Some(parent_full.name.to_string()),
+                                                initial_res.name.clone(),
+                                            ),
+                                            ResourceIds::Dataset(
+                                                grand_parent_id,
+                                                Some(parent_id),
+                                                initial_res.id,
+                                            ),
+                                        ))
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Collections cant have parents other than projects"
+                                        ))
                                     }
                                 }
                             }
                         }
+                        _ => {
+                            return Err(anyhow!(
+                                "Datasets cannot have parents other than projects and collections"
+                            ))
+                        }
+                    }
+                }
+                Ok(res)
+            }
+            ObjectType::Object => {
+                let mut res = Vec::new();
+                for parent in initial_res
+                    .parents
+                    .ok_or_else(|| anyhow!("No parents found for object"))?
+                {
+                    match parent {
+                        TypedRelation::Project(parent_id) => {
+                            let full_parent = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("Parent not found"))?
+                                .0
+                                .clone();
+                            res.push((
+                                ResourceString::Object(
+                                    full_parent.name.to_string(),
+                                    None,
+                                    None,
+                                    initial_res.name.clone(),
+                                ),
+                                ResourceIds::Object(parent_id, None, None, initial_res.id),
+                            ))
+                        }
+                        TypedRelation::Collection(parent_id) => {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                            {
+                                match grand_parent {
+                                    TypedRelation::Project(grand_parent_id) => {
+                                        let grand_parent_full = self
+                                            .resources
+                                            .get(&grand_parent_id)
+                                            .ok_or_else(|| {
+                                                anyhow!("Parent for collection not found")
+                                            })?
+                                            .0
+                                            .clone();
+                                        res.push((
+                                            ResourceString::Object(
+                                                grand_parent_full.name.to_string(),
+                                                Some(parent_full.name.to_string()),
+                                                None,
+                                                initial_res.name.clone(),
+                                            ),
+                                            ResourceIds::Object(
+                                                grand_parent_id,
+                                                Some(parent_id),
+                                                None,
+                                                initial_res.id,
+                                            ),
+                                        ))
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Collections cant have parents other than projects"
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                        TypedRelation::Dataset(parent_id) => {
+                            let parent_full = self
+                                .resources
+                                .get(&parent_id)
+                                .ok_or_else(|| anyhow!("No parent found"))?
+                                .0
+                                .clone();
+                            for grand_parent in parent_full
+                                .parents
+                                .ok_or_else(|| anyhow!("Parent not found"))?
+                            {
+                                match grand_parent {
+                                    TypedRelation::Project(project_parent_id) => {
+                                        let project_parent_full = self
+                                            .resources
+                                            .get(&project_parent_id)
+                                            .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                            .0
+                                            .clone();
+                                        res.push((
+                                            ResourceString::Object(
+                                                project_parent_full.name.to_string(),
+                                                None,
+                                                Some(parent_full.name.to_string()),
+                                                initial_res.name.clone(),
+                                            ),
+                                            ResourceIds::Object(
+                                                project_parent_id,
+                                                None,
+                                                Some(parent_id),
+                                                initial_res.id,
+                                            ),
+                                        ))
+                                    }
+                                    TypedRelation::Collection(collection_parent_id) => {
+                                        let collection_parent_full = self
+                                            .resources
+                                            .get(&collection_parent_id)
+                                            .ok_or_else(|| anyhow!("Parent for dataset not found"))?
+                                            .0
+                                            .clone();
+                                        for project_parent in
+                                            collection_parent_full.parents.ok_or_else(|| {
+                                                anyhow!("No parents found for collection")
+                                            })?
+                                        {
+                                            match project_parent {
+                                                TypedRelation::Project(project_parent_id) => {
+                                                    let project_parent_full = self.resources.get(&project_parent_id).ok_or_else(|| anyhow!("Parent for dataset not found"))?.0.clone();
+                                                    res.push((
+                                                        ResourceString::Object(
+                                                            project_parent_full.name.to_string(),
+                                                            Some(collection_parent_full.name.to_string()),
+                                                            Some(parent_full.name.to_string()),
+                                                            initial_res.name.clone(),
+                                                        ),
+                                                        ResourceIds::Object(
+                                                            project_parent_id,
+                                                            Some(collection_parent_id),
+                                                            Some(parent_id),
+                                                            initial_res.id,
+                                                        )
+                                                        ))
+                                                },
+                                                _ => return Err(anyhow!("Collections cannot have parents other than projects"))
+
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Datasets can only have collection or project children"
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                        _ => return Err(anyhow!("Objects cannot have object parents")),
                     }
                 }
                 Ok(res)
@@ -350,7 +501,6 @@ impl Cache {
     pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
-        let mut access_ids = Vec::new();
         for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
             let user_access = User {
                 access_key: key.clone(),
@@ -361,22 +511,27 @@ impl Cache {
                     .unwrap_or_default(),
                 permissions: perm,
             };
+
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user_access.upsert(&persistence.get_client().await?).await?;
             }
             self.users.insert(key.clone(), user_access);
-            access_ids.push(key);
         }
-        self.user_access_keys.insert(user_id, access_ids);
         Ok(())
     }
 
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         let keys = self
-            .user_access_keys
-            .remove(&user_id)
-            .ok_or_else(|| anyhow!("User not found"))?
-            .1;
+            .users
+            .iter()
+            .filter_map(|k| {
+                if k.value().user_id == user_id {
+                    Some(k.key().clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         for key in keys {
             let user = self.users.remove(&key);
@@ -403,6 +558,17 @@ impl Cache {
         }
         let object_id = object.id;
         let obj_type = object.object_type.clone();
+
+        let location = if let Some(o) = self.resources.get(&object.id) {
+            if location.is_none() {
+                o.value().1.clone()
+            } else {
+                location
+            }
+        } else {
+            location
+        };
+
         self.resources.insert(object.id, (object, location));
         self.paths.retain(|_, v| v != &object_id);
         let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
@@ -424,13 +590,5 @@ impl Cache {
 
     pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
         self.users.get(access_key).map(|e| e.value().clone())
-    }
-
-    pub fn is_user(&self, user_id: DieselUlid) -> bool {
-        self.user_access_keys.get(&user_id).is_some()
-    }
-
-    pub fn is_resource(&self, resource_id: DieselUlid) -> bool {
-        self.resources.get(&resource_id).is_some()
     }
 }

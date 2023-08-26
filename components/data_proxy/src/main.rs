@@ -1,8 +1,15 @@
+use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_service_server::DataproxyServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
 use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
-use std::{io::Write, str::FromStr, sync::Arc};
+use futures_util::TryFutureExt;
+use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
+use simple_logger::SimpleLogger;
+use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
+use tonic::transport::Server;
 
 // mod bundler;
 mod caching;
@@ -31,20 +38,14 @@ async fn main() -> Result<()> {
     // ULID of the endpoint
     let endpoint_id = dotenvy::var("DATA_PROXY_ENDPOINT_ID")?;
 
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{}:{} {} [{}] - {}",
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter_level(log::LevelFilter::Debug)
-        .init();
+    //
+    let data_proxy_grpc_addr = dotenvy::var("DATA_PROXY_GRPC_SERVER")?.parse::<SocketAddr>()?;
+
+    // Init logger
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
+        .env()
+        .init()?;
 
     let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY")?;
     let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")?.parse::<i32>()?;
@@ -61,11 +62,30 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let s3_server =
-        s3_frontend::s3server::S3Server::new("0.0.0.0:9000", hostname, storage_backend, cache)
-            .await?;
+    let cache_clone = cache.clone();
 
-    match try_join!(s3_server.run()) {
+    let grpc_server_handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(DataproxyServiceServer::new(DataproxyServiceImpl::new(
+                cache_clone.clone(),
+            )))
+            .add_service(DataproxyUserServiceServer::new(
+                DataproxyUserServiceImpl::new(cache_clone.clone()),
+            ))
+            .serve(data_proxy_grpc_addr)
+            .await
+    })
+    .map_err(|e| anyhow!("an error occured {e}"));
+
+    let s3_server = s3_frontend::s3server::S3Server::new(
+        &hostname,
+        hostname.to_string(),
+        storage_backend,
+        cache,
+    )
+    .await?;
+
+    match try_join!(s3_server.run(), grpc_server_handle) {
         Ok(_) => Ok(()),
         Err(err) => {
             log::error!("{}", err);

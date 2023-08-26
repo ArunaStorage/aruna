@@ -1,4 +1,5 @@
 use crate::structs::Object as DPObject;
+use crate::structs::ObjectLocation;
 use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -8,23 +9,32 @@ use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequ
 use aruna_rust_api::api::notification::services::v2::AnouncementEvent;
 use aruna_rust_api::api::notification::services::v2::EventMessage;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use aruna_rust_api::api::notification::services::v2::GetEventMessageBatchStreamRequest;
+use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamRequest;
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
+use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::GenericResource;
+use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
+use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
+use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
+use aruna_rust_api::api::storage::services::v2::FinishObjectStagingRequest;
+use aruna_rust_api::api::storage::services::v2::FullSyncEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
-use aruna_rust_api::api::storage::services::v2::Pubkey;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -37,11 +47,12 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
+use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
-use tonic::transport::{Channel, ClientTlsConfig};
+use tonic::transport::Channel;
 use tonic::Request;
 
 use super::cache::Cache;
@@ -52,7 +63,7 @@ pub struct GrpcQueryHandler {
     dataset_service: DatasetServiceClient<Channel>,
     object_service: ObjectServiceClient<Channel>,
     user_service: UserServiceClient<Channel>,
-    _endpoint_service: EndpointServiceClient<Channel>,
+    endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
     cache: Arc<Cache>,
@@ -67,8 +78,8 @@ impl GrpcQueryHandler {
         cache: Arc<Cache>,
         endpoint_id: String,
     ) -> Result<Self> {
-        let tls_config = ClientTlsConfig::new();
-        let endpoint = Channel::from_shared(server.into())?.tls_config(tls_config)?;
+        //let tls_config = ClientTlsConfig::new();
+        let endpoint = Channel::from_shared(server.into())?;
         let channel = endpoint.connect().await?;
 
         let project_service = ProjectServiceClient::new(channel.clone());
@@ -81,7 +92,7 @@ impl GrpcQueryHandler {
 
         let user_service = UserServiceClient::new(channel.clone());
 
-        let _endpoint_service = EndpointServiceClient::new(channel.clone());
+        let endpoint_service = EndpointServiceClient::new(channel.clone());
 
         let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
@@ -95,19 +106,29 @@ impl GrpcQueryHandler {
             .ok_or_else(|| anyhow!("No auth found"))?
             .sign_notification_token()?;
 
-        Ok(GrpcQueryHandler {
+        let handler = GrpcQueryHandler {
             project_service,
             collection_service,
             dataset_service,
             object_service,
             user_service,
-            _endpoint_service,
+            endpoint_service,
             storage_status_service,
             event_notification_service,
             cache,
             endpoint_id,
             long_lived_token,
-        })
+        };
+
+        let pks = handler
+            .get_pubkeys()
+            .await?
+            .into_iter()
+            .map(PubKey::from)
+            .collect();
+        handler.cache.set_pubkeys(pks).await?;
+
+        Ok(handler)
     }
 }
 
@@ -120,7 +141,7 @@ impl GrpcQueryHandler {
 
         req.metadata_mut().append(
             AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token))?,
         );
 
         let user = self
@@ -167,7 +188,11 @@ impl GrpcQueryHandler {
             .project
             .ok_or(anyhow!("unknown project"))?;
 
-        DPObject::try_from(response)
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
     }
 
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
@@ -208,6 +233,30 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown collection"))
     }
 
+    pub async fn create_collection(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateCollectionRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .collection_service
+            .clone()
+            .create_collection(req)
+            .await?
+            .into_inner()
+            .collection
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
     async fn get_dataset(&self, id: &DieselUlid, _checksum: String) -> Result<Dataset> {
         let mut req = Request::new(GetDatasetRequest {
             dataset_id: id.to_string(),
@@ -225,6 +274,30 @@ impl GrpcQueryHandler {
             .into_inner()
             .dataset
             .ok_or(anyhow!("unknown dataset"))
+    }
+
+    pub async fn create_dataset(&self, object: DPObject, token: &str) -> Result<DPObject> {
+        let mut req = Request::new(CreateDatasetRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .dataset_service
+            .clone()
+            .create_dataset(req)
+            .await?
+            .into_inner()
+            .dataset
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
     }
 
     async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
@@ -246,10 +319,126 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown object"))
     }
 
+    pub async fn create_object(
+        &self,
+        object: DPObject,
+        mut loc: Option<ObjectLocation>,
+        token: &str,
+    ) -> Result<DPObject> {
+        let mut req = Request::new(CreateObjectRequest::from(object));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        if let Some(ref mut loc) = loc {
+            loc.id = object.id;
+        }
+
+        self.cache.upsert_object(object.clone(), loc).await?;
+        Ok(object)
+    }
+
+    pub async fn finish_object(
+        &self,
+        object_id: DieselUlid,
+        content_len: i64,
+        hashes: Vec<Hash>,
+        token: &str,
+    ) -> Result<DPObject> {
+        let mut req = Request::new(FinishObjectStagingRequest {
+            object_id: object_id.to_string(),
+            content_len,
+            hashes,
+            completed_parts: vec![],
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
+    pub async fn create_and_finish(
+        &self,
+        object: DPObject,
+        loc: ObjectLocation,
+        token: &str,
+    ) -> Result<DPObject> {
+        let mut req = Request::new(CreateObjectRequest::from(object.clone()));
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await?
+            .into_inner();
+
+        let object: DPObject = response
+            .object
+            .ok_or(anyhow!("unknown project"))?
+            .try_into()?;
+
+        let mut req = Request::new(FinishObjectStagingRequest {
+            object_id: object.id.to_string(),
+            content_len: loc.raw_content_len,
+            hashes: object.get_hashes(),
+            completed_parts: vec![],
+        });
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await?
+            .into_inner()
+            .object
+            .ok_or(anyhow!("unknown project"))?;
+        let object = DPObject::try_from(response)?;
+        self.cache.upsert_object(object.clone(), Some(loc)).await?;
+        Ok(object)
+    }
+
     pub async fn create_notifications_channel(&self) -> Result<()> {
-        let mut req = Request::new(GetEventMessageBatchStreamRequest {
+        let mut req = Request::new(GetEventMessageStreamRequest {
             stream_consumer: self.endpoint_id.to_string(),
-            batch_size: 10,
         });
 
         req.metadata_mut().append(
@@ -260,24 +449,76 @@ impl GrpcQueryHandler {
         let stream = self
             .event_notification_service
             .clone()
-            .get_event_message_batch_stream(req)
+            .get_event_message_stream(req)
             .await?;
 
         let mut inner_stream = stream.into_inner();
 
+        // TODO: Fullsync
+        let mut req = Request::new(FullSyncEndpointRequest {});
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+        );
+        let mut full_sync_stream = self
+            .endpoint_service
+            .clone()
+            .full_sync_endpoint(req)
+            .await?
+            .into_inner();
+        let mut resources = Vec::new();
+        while let Some(full_sync_message) = full_sync_stream.message().await? {
+            match full_sync_message
+                .target
+                .ok_or_else(|| anyhow!("Missing target in full_sync"))?
+            {
+                Target::GenericResource(GenericResource { resource: Some(r) }) => {
+                    resources.push(r);
+                }
+                Target::User(u) => self.cache.upsert_user(u).await?,
+                Target::Pubkey(pk) => {
+                    let dec_key = DecodingKey::from_ed_pem(
+                        format!(
+                            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                            pk.key
+                        )
+                        .as_bytes(),
+                    )?;
+                    self.cache
+                        .pubkeys
+                        .insert(pk.id, (pk.clone().into(), dec_key));
+                }
+                _ => (),
+            }
+        }
+        sort_resources(&mut resources);
+        for res in resources {
+            self.cache
+                .upsert_object(DPObject::try_from(res)?, None)
+                .await?
+        }
         while let Some(m) = inner_stream.message().await? {
-            let mut acks = Vec::new();
-            for message in m.messages {
+            if let Some(message) = m.message {
+                log::debug!("Received message: {:?}", message);
+
                 if let Ok(Some(r)) = self.process_message(message).await {
-                    acks.push(r)
+                    let mut resp =
+                        Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
+
+                    resp.metadata_mut().append(
+                        AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+                        AsciiMetadataValue::try_from(format!(
+                            "Bearer {}",
+                            self.long_lived_token.as_str()
+                        ))?,
+                    );
+
+                    self.event_notification_service
+                        .clone()
+                        .acknowledge_message_batch(resp)
+                        .await?;
                 }
             }
-            self.event_notification_service
-                .clone()
-                .acknowledge_message_batch(Request::new(AcknowledgeMessageBatchRequest {
-                    replies: acks,
-                }))
-                .await?;
         }
         Err(anyhow!("Stream was closed by sender"))
     }
@@ -326,19 +567,15 @@ impl GrpcQueryHandler {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
-                if self.cache.is_user(uid) {
-                    let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                    self.cache.upsert_user(user_info.clone()).await?;
-                };
+                let user_info = self.get_user(uid, message.checksum.clone()).await?;
+                self.cache.upsert_user(user_info.clone()).await?;
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
 
-                if self.cache.is_user(uid) {
-                    self.cache.remove_user(uid).await?;
-                };
+                self.cache.remove_user(uid).await?;
             }
-            EventVariant::Unspecified => (),
+            _ => (),
         }
 
         Ok(message.reply)
@@ -348,12 +585,6 @@ impl GrpcQueryHandler {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
                 if let Some(r) = event.resource {
-                    if !self
-                        .cache
-                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
-                    {
-                        return Ok(event.reply);
-                    };
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             let object = self
@@ -385,12 +616,6 @@ impl GrpcQueryHandler {
             }
             EventVariant::Deleted => {
                 if let Some(r) = event.resource {
-                    if !self
-                        .cache
-                        .is_resource(DieselUlid::from_str(&r.resource_id)?)
-                    {
-                        return Ok(event.reply);
-                    };
                     self.cache
                         .delete_object(DieselUlid::from_str(&r.resource_id)?)
                         .await?;
@@ -400,4 +625,25 @@ impl GrpcQueryHandler {
         }
         Ok(event.reply)
     }
+}
+
+pub fn sort_resources(res: &mut Vec<Resource>) {
+    res.sort_by(|x, y| match (x, y) {
+        (Resource::Project(_), Resource::Project(_)) => std::cmp::Ordering::Equal,
+        (Resource::Project(_), Resource::Collection(_))
+        | (Resource::Project(_), Resource::Dataset(_))
+        | (Resource::Project(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Collection(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Collection(_), Resource::Collection(_)) => std::cmp::Ordering::Equal,
+        (Resource::Collection(_), Resource::Dataset(_)) => std::cmp::Ordering::Less,
+        (Resource::Collection(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Dataset(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Dataset(_), Resource::Collection(_)) => std::cmp::Ordering::Greater,
+        (Resource::Dataset(_), Resource::Dataset(_)) => std::cmp::Ordering::Equal,
+        (Resource::Dataset(_), Resource::Object(_)) => std::cmp::Ordering::Less,
+        (Resource::Object(_), Resource::Project(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Collection(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Dataset(_)) => std::cmp::Ordering::Greater,
+        (Resource::Object(_), Resource::Object(_)) => std::cmp::Ordering::Equal,
+    })
 }

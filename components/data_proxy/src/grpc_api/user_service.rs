@@ -6,18 +6,18 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 };
 use std::sync::Arc;
 
-pub struct DataProxyUserService {
+pub struct DataproxyUserServiceImpl {
     pub cache: Arc<Cache>,
 }
 
-impl DataProxyUserService {
+impl DataproxyUserServiceImpl {
     pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
 }
 
 #[tonic::async_trait]
-impl DataproxyUserService for DataProxyUserService {
+impl DataproxyUserService for DataproxyUserServiceImpl {
     /// GetCredentials
     ///
     /// Status: BETA
@@ -46,7 +46,7 @@ impl DataproxyUserService for DataProxyUserService {
                 let (access_key, secret_key) = self
                     .cache
                     .clone()
-                    .create_secret(user, tid)
+                    .create_or_get_secret(user, tid)
                     .await
                     .map_err(|e| {
                         log::debug!("Error creating secret: {}", e);

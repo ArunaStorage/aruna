@@ -1,34 +1,49 @@
+use super::data_handler::DataHandler;
+use super::utils::buffered_s3_sink::BufferedS3Sink;
+use super::utils::ranges::calculate_content_length_from_range;
+use super::utils::ranges::calculate_ranges;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::structs::{CheckAccessResult};
-use crate::structs::{ResourceIds, ResourceString};
-
+use crate::log_received;
+use crate::s3_frontend::utils::list_objects::filter_list_objects;
+use crate::s3_frontend::utils::list_objects::list_response;
+use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
-
-use crate::s3_frontend::utils::list_objects::{filter_list_objects, list_response};
-use crate::s3_frontend::utils::ranges::{calculate_content_length_from_range, calculate_ranges};
-
+use crate::structs::PartETag;
+use crate::structs::ResourceString;
+use crate::structs::TypedRelation;
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformer::ReadWriter;
 use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
+use aruna_file::transformers::encrypt::ChaCha20Enc;
 use aruna_file::transformers::filter::Filter;
+use aruna_file::transformers::footer::FooterGenerator;
+use aruna_file::transformers::hashing_transformer::HashingTransformer;
+use aruna_file::transformers::size_probe::SizeProbe;
+use aruna_file::transformers::zstd_comp::ZstdEnc;
 use aruna_file::transformers::zstd_decomp::ZstdDec;
+use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
+use futures_util::TryStreamExt;
+use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
+use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
+use sha2::Sha256;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Debug;
-use std::str::FromStr;
 use std::sync::Arc;
-use futures_util::TryStreamExt;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -73,10 +88,15 @@ impl S3 for ArunaS3Service {
                 .await
                 .as_ref()
                 .unwrap()
-                .sign_impersonating_token(user_id, token_id)
+                .sign_impersonating_token(
+                    user_id.ok_or_else(|| {
+                        s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                    })?,
+                    token_id,
+                )
                 .map_err(|e| {
                     dbg!(e);
-                    s3_error!(NotSignedUp, "Unauthorized")
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
                 })?;
 
             new_object = client
@@ -89,7 +109,6 @@ impl S3 for ArunaS3Service {
         }
         let output = CreateBucketOutput {
             location: Some(new_object.name.to_string()),
-            ..Default::default()
         };
 
         self.cache
@@ -118,397 +137,647 @@ impl S3 for ArunaS3Service {
             _ => {}
         };
 
-        todo!()
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            resource_ids,
+            missing_resources,
+            ..
+        } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&req.input.bucket, &req.input.key, req.input.content_length)
-        //     .await?;
-        // anotif.validate_hashes(req.input.content_md5, req.input.checksum_sha256)?;
-        // anotif.get_encryption_key().await?;
+        dbg!(missing_resources.clone());
 
-        // let hash = anotif.get_sha256();
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+        } else {
+            None
+        };
 
-        // let exists = match hash {
-        //     Some(h) => {
-        //         if !h.is_empty() && h.len() == 32 {
-        //             self.backend
-        //                 .head_object(ArunaLocation {
-        //                     bucket: format!("{}-{}", &self.endpoint_id.to_lowercase(), &h[0..2]),
-        //                     path: h[2..].to_string(),
-        //                     ..Default::default()
-        //                 })
-        //                 .await
-        //                 .is_ok()
-        //         } else {
-        //             false
-        //         }
-        //     }
-        //     None => false,
-        // };
+        let res_ids =
+            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
-        // let (location, is_temp) = anotif.get_location(exists)?;
+        let missing_object_name = missing_resources
+            .clone()
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-        // let mut md5_hash = Md5::new();
-        // let mut sha256_hash = Sha256::new();
-        // let mut final_md5 = String::new();
-        // let mut final_sha256 = String::new();
-        // let mut size_counter = 0;
-        // // If the object exists and the signatures match -> Skip the download
+        let mut new_object = ProxyObject {
+            id: DieselUlid::generate(),
+            name: missing_object_name,
+            key_values: vec![],
+            object_status: Status::Initializing,
+            data_class: DataClass::Private,
+            object_type: crate::structs::ObjectType::Object,
+            hashes: HashMap::default(),
+            dynamic: false,
+            children: None,
+            parents: None,
+            synced: false,
+        };
 
-        // if !exists {
-        //     match req.input.body {
-        //         Some(data) => {
-        //             // MD5 Stream
-        //             let md5ed_stream = data.inspect_ok(|bytes| md5_hash.update(bytes.as_ref()));
-        //             // Sha256 stream
-        //             let shaed_stream =
-        //                 md5ed_stream.inspect_ok(|bytes| sha256_hash.update(bytes.as_ref()));
+        let mut location = self
+            .backend
+            .initialize_location(&new_object, req.input.content_length, None, false)
+            .await
+            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
-        //             let sized_stream = shaed_stream.inspect_ok(|by| size_counter += by.len());
+        let (initial_sha_trans, initial_sha_recv) = HashingTransformer::new(Sha256::new());
+        let (initial_md5_trans, initial_md5_recv) = HashingTransformer::new(Md5::new());
+        let (initial_size_trans, initial_size_recv) = SizeProbe::new();
+        let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
+        let (final_size_trans, final_size_recv) = SizeProbe::new();
 
-        //             let mut awr = ArunaStreamReadWriter::new_with_sink(
-        //                 sized_stream,
-        //                 BufferedS3Sink::new(
-        //                     self.backend.clone(),
-        //                     location.clone(),
-        //                     None,
-        //                     None,
-        //                     false,
-        //                     None,
-        //                 )
-        //                 .0,
-        //             );
+        let mut md5_initial: Option<String> = None;
+        let mut sha_initial: Option<String> = None;
+        let sha_final: String;
+        let initial_size: u64;
+        let final_size: u64;
 
-        //             if location.is_compressed {
-        //                 awr = awr.add_transformer(ZstdEnc::new(true));
-        //                 if req.input.content_length > 5242880 + 80 * 28 {
-        //                     awr = awr.add_transformer(FooterGenerator::new(None))
-        //                 }
-        //             }
+        match req.input.body {
+            Some(data) => {
+                let mut awr = ArunaStreamReadWriter::new_with_sink(
+                    data,
+                    BufferedS3Sink::new(
+                        self.backend.clone(),
+                        location.clone(),
+                        None,
+                        None,
+                        false,
+                        None,
+                        false,
+                    )
+                    .0,
+                );
 
-        //             if location.is_encrypted {
-        //                 awr = awr.add_transformer(
-        //                     ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
-        //                         log::error!("{}", e);
-        //                         s3_error!(
-        //                             InternalError,
-        //                             "Internal data transformer encryption error"
-        //                         )
-        //                     })?,
-        //                 );
-        //             }
+                awr = awr.add_transformer(initial_sha_trans);
+                awr = awr.add_transformer(initial_md5_trans);
+                awr = awr.add_transformer(initial_size_trans);
 
-        //             awr.process().await.map_err(|e| {
-        //                 log::error!("{}", e);
-        //                 s3_error!(InternalError, "Internal data transformer processing error")
-        //             })?;
+                if location.compressed {
+                    awr = awr.add_transformer(ZstdEnc::new(true));
+                    if location.raw_content_len > 5242880 + 80 * 28 {
+                        awr = awr.add_transformer(FooterGenerator::new(None))
+                    }
+                }
 
-        //             if size_counter as i64 != req.input.content_length {
-        //                 self.backend.delete_object(location).await.map_err(|e| {
-        //                     log::error!(
-        //                         "PUT: Unable to delete object, after wrong content_len: {}",
-        //                         e
-        //                     );
-        //                     s3_error!(InternalError, "PUT: Unable to delete object")
-        //                 })?;
-        //                 return Err(s3_error!(
-        //                     UnexpectedContent,
-        //                     "Content length does not match"
-        //                 ));
-        //             }
-        //         }
-        //         None => {
-        //             return Err(s3_error!(
-        //                 InvalidObjectState,
-        //                 "Request body / data is required, use ArunaAPI for empty objects"
-        //             ))
-        //         }
-        //     }
+                if let Some(enc_key) = &location.encryption_key {
+                    awr = awr.add_transformer(
+                        ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal data transformer encryption error")
+                        })?,
+                    );
+                }
 
-        //     final_md5 = format!("{:x}", md5_hash.finalize());
-        //     final_sha256 = format!("{:x}", sha256_hash.finalize());
+                awr = awr.add_transformer(final_sha_trans);
+                awr = awr.add_transformer(final_size_trans);
 
-        //     let hashes_is_ok = anotif.test_final_hashes(&final_md5, &final_sha256)?;
+                awr.process().await.map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal data transformer processing error")
+                })?;
+            }
+            None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
+        }
 
-        //     if !hashes_is_ok {
-        //         self.backend.delete_object(location).await.map_err(|e| {
-        //             log::error!("PUT: Unable to delete object, after wrong hash: {}", e);
-        //             s3_error!(InternalError, "PUT: Unable to delete object")
-        //         })?;
-        //         return Err(s3_error!(InvalidDigest, "Invalid hash digest"));
-        //     };
-        //     if is_temp {
-        //         let (object_id, collection_id) = anotif.get_col_obj()?;
-        //         self.data_handler
-        //             .clone()
-        //             .move_encode(
-        //                 location.clone(),
-        //                 create_location_from_hash(
-        //                     &final_sha256,
-        //                     &object_id,
-        //                     &collection_id,
-        //                     self.data_handler.settings.encrypting,
-        //                     self.data_handler.settings.compressing,
-        //                     location.encryption_key.clone(),
-        //                     self.data_handler.settings.endpoint_id.to_string(),
-        //                     exists,
-        //                 )
-        //                 .0,
-        //                 object_id,
-        //                 collection_id,
-        //                 Some(vec![
-        //                     Hash {
-        //                         alg: Hashalgorithm::Md5 as i32,
-        //                         hash: final_md5.clone(),
-        //                     },
-        //                     Hash {
-        //                         alg: Hashalgorithm::Sha256 as i32,
-        //                         hash: final_sha256.clone(),
-        //                     },
-        //                 ]),
-        //                 format!("s3://{}/{}", &req.input.bucket, &req.input.key),
-        //             )
-        //             .await
-        //             .map_err(|e| {
-        //                 log::error!("InternalError: {}", e);
-        //                 s3_error!(InternalError, "Internal data mover error")
-        //             })?
-        //     }
-        // }
+        if let Some(missing) = missing_resources {
+            let collection_id = if let Some(collection) = missing.c {
+                let col = ProxyObject {
+                    id: DieselUlid::default(),
+                    name: collection,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Collection,
+                    hashes: HashMap::default(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([TypedRelation::Project(
+                        res_ids.get_project(),
+                    )])),
+                    synced: false,
+                };
 
-        // if !is_temp {
-        //     let (object_id, collection_id) = anotif.get_col_obj()?;
-        //     self.data_handler
-        //         .internal_notifier_service
-        //         .clone() // This uses mpsc channel internally and just clones the handle -> Should be ok to clone
-        //         .finalize_object(FinalizeObjectRequest {
-        //             object_id,
-        //             collection_id,
-        //             location: Some(location),
-        //             content_length: req.input.content_length,
-        //             hashes: vec![
-        //                 Hash {
-        //                     alg: Hashalgorithm::Md5 as i32,
-        //                     hash: final_md5,
-        //                 },
-        //                 Hash {
-        //                     alg: Hashalgorithm::Sha256 as i32,
-        //                     hash: final_sha256.to_string(),
-        //                 },
-        //             ],
-        //         })
-        //         .await
-        //         .map_err(|e| {
-        //             log::error!("{}", e);
-        //             s3_error!(InternalError, "Internal aruna error")
-        //         })?;
-        // }
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        let col = handler
+                            .create_collection(col, token)
+                            .await
+                            .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                        Some(col.id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                res_ids.get_collection()
+            };
 
-        // let (object_id, _) = anotif.get_col_obj()?;
-        // let output = PutObjectOutput {
-        //     e_tag: Some(format!("-{}", object_id)),
-        //     checksum_sha256: Some(final_sha256),
-        //     ..Default::default()
-        // };
-        // Ok(output)
+            let dataset_id = if let Some(dataset) = missing.d {
+                let parent = if let Some(collection_id) = collection_id {
+                    TypedRelation::Collection(collection_id)
+                } else {
+                    TypedRelation::Project(res_ids.get_project())
+                };
+
+                let dataset = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: dataset,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Dataset,
+                    hashes: HashMap::default(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([parent])),
+                    synced: false,
+                };
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        let dataset = handler
+                            .create_dataset(dataset, token)
+                            .await
+                            .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
+
+                        Some(dataset.id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                res_ids.get_dataset()
+            };
+
+            if let Some(ds_id) = dataset_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
+            } else if let Some(col_id) = collection_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
+            } else {
+                new_object.parents = Some(HashSet::from([TypedRelation::Project(
+                    res_ids.get_project(),
+                )]));
+            }
+
+            md5_initial = Some(
+                initial_md5_recv
+                    .try_recv()
+                    .map_err(|_| s3_error!(InternalError, "Unable to md5 hash initial data"))?,
+            );
+            sha_initial = Some(
+                initial_sha_recv
+                    .try_recv()
+                    .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
+            );
+            sha_final = final_sha_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to md5 hash final data"))?;
+            initial_size = initial_size_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
+            final_size = final_size_recv
+                .try_recv()
+                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
+
+            new_object.hashes = vec![
+                (
+                    "MD5".to_string(),
+                    md5_initial.clone().ok_or_else(|| {
+                        s3_error!(InternalError, "Unable to get md5 hash initial data")
+                    })?,
+                ),
+                (
+                    "SHA256".to_string(),
+                    sha_initial.clone().ok_or_else(|| {
+                        s3_error!(InternalError, "Unable to get sha hash initial data")
+                    })?,
+                ),
+            ]
+            .into_iter()
+            .collect::<HashMap<String, String>>();
+            location.raw_content_len = initial_size as i64;
+            location.disk_content_len = final_size as i64;
+            location.disk_hash = Some(sha_final.clone());
+
+            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                if let Some(token) = &impersonating_token {
+                    handler
+                        .create_and_finish(new_object.clone(), location, token)
+                        .await
+                        .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                }
+            }
+        }
+        let output = PutObjectOutput {
+            e_tag: md5_initial,
+            checksum_sha256: sha_initial,
+            version_id: Some(new_object.id.to_string()),
+            ..Default::default()
+        };
+        Ok(S3Response::new(output))
     }
 
     #[tracing::instrument]
     async fn create_multipart_upload(
         &self,
-        _req: S3Request<CreateMultipartUploadInput>,
+        req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&req.input.bucket, &req.input.key, 0)
-        //     .await?;
+        log_received!(&req);
 
-        // let (object_id, collection_id) = anotif.get_col_obj()?;
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            resource_ids,
+            missing_resources,
+            ..
+        } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        // let init_response = self
-        //     .backend
-        //     .clone()
-        //     .init_multipart_upload(ArunaLocation {
-        //         bucket: format!("{}-temp", self.endpoint_id.to_lowercase()),
-        //         path: format!("{}/{}", collection_id, object_id),
-        //         ..Default::default()
-        //     })
-        //     .await
-        //     .map_err(|e| {
-        //         log::error!("{}", e);
-        //         s3_error!(InvalidArgument, "Unable to initialize multi-part")
-        //     })?;
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+        } else {
+            None
+        };
 
-        // Ok(CreateMultipartUploadOutput {
-        //     key: Some(req.input.key),
-        //     bucket: Some(req.input.bucket),
-        //     upload_id: Some(init_response),
-        //     ..Default::default()
-        // })
+        let res_ids =
+            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
+
+        let missing_object_name = missing_resources
+            .clone()
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+
+        let mut new_object = ProxyObject {
+            id: DieselUlid::generate(),
+            name: missing_object_name,
+            key_values: vec![],
+            object_status: Status::Initializing,
+            data_class: DataClass::Private,
+            object_type: crate::structs::ObjectType::Object,
+            hashes: HashMap::default(),
+            dynamic: false,
+            children: None,
+            parents: None,
+            synced: false,
+        };
+
+        let mut location = self
+            .backend
+            .initialize_location(&new_object, None, None, true)
+            .await
+            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+
+        let init_response = self
+            .backend
+            .clone()
+            .init_multipart_upload(location.clone())
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InvalidArgument, "Unable to initialize multi-part")
+            })?;
+
+        location.upload_id = Some(init_response.to_string());
+
+        if let Some(missing) = missing_resources {
+            let collection_id = if let Some(collection) = missing.c {
+                let col = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: collection,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Collection,
+                    hashes: HashMap::default(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([TypedRelation::Project(
+                        res_ids.get_project(),
+                    )])),
+                    synced: false,
+                };
+
+                let id = col.id;
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        handler
+                            .create_collection(col, token)
+                            .await
+                            .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                    }
+                }
+                Some(id)
+            } else {
+                res_ids.get_collection()
+            };
+
+            let dataset_id = if let Some(dataset) = missing.d {
+                let parent = if let Some(collection_id) = collection_id {
+                    TypedRelation::Collection(collection_id)
+                } else {
+                    TypedRelation::Project(res_ids.get_project())
+                };
+
+                let dataset = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: dataset,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Dataset,
+                    hashes: HashMap::default(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([parent])),
+                    synced: false,
+                };
+                let id = dataset.id;
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        handler
+                            .create_dataset(dataset, token)
+                            .await
+                            .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
+                    }
+                }
+                Some(id)
+            } else {
+                res_ids.get_dataset()
+            };
+
+            if let Some(ds_id) = dataset_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
+            } else if let Some(col_id) = collection_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
+            } else {
+                new_object.parents = Some(HashSet::from([TypedRelation::Project(
+                    res_ids.get_project(),
+                )]));
+            }
+
+            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                if let Some(token) = &impersonating_token {
+                    handler
+                        .create_object(new_object.clone(), Some(location), token)
+                        .await
+                        .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                }
+            }
+        }
+        let output = CreateMultipartUploadOutput {
+            key: Some(req.input.key),
+            bucket: Some(req.input.bucket),
+            upload_id: Some(init_response),
+            ..Default::default()
+        };
+        Ok(S3Response::new(output))
     }
 
     #[tracing::instrument]
     async fn upload_part(
         &self,
-        _req: S3Request<UploadPartInput>,
+        req: S3Request<UploadPartInput>,
     ) -> S3Result<S3Response<UploadPartOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // if req.input.content_length == 0 {
-        //     return Err(s3_error!(
-        //         MissingContentLength,
-        //         "Missing or invalid (0) content-length"
-        //     ));
-        // }
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&req.input.bucket, &req.input.key, 0)
-        //     .await?;
+        log_received!(&req);
 
-        // anotif.get_encryption_key().await?;
+        match req.input.content_length {
+            Some(0) | None => {
+                return Err(s3_error!(
+                    MissingContentLength,
+                    "Missing or invalid (0) content-length"
+                ));
+            }
+            _ => {}
+        };
 
-        // let (object_id, collection_id) = anotif.get_col_obj()?;
-        // let etag;
+        let CheckAccessResult { object, .. } =
+            req.extensions
+                .get::<CheckAccessResult>()
+                .cloned()
+                .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        // match req.input.body {
-        //     Some(data) => {
-        //         let (sink, recv) = BufferedS3Sink::new(
-        //             self.backend.clone(),
-        //             ArunaLocation {
-        //                 bucket: format!("{}-temp", &self.endpoint_id.to_lowercase()),
-        //                 path: format!("{}/{}", collection_id, object_id),
-        //                 ..Default::default()
-        //             },
-        //             Some(req.input.upload_id),
-        //             Some(req.input.part_number),
-        //             true,
-        //             None,
-        //         );
-        //         let mut awr = ArunaStreamReadWriter::new_with_sink(data.into_stream(), sink);
+        // If the object exists and the signatures match -> Skip the download
 
-        //         if self.data_handler.settings.encrypting {
-        //             awr = awr.add_transformer(
-        //                 ChaCha20Enc::new(true, anotif.retrieve_enc_key()?).map_err(|e| {
-        //                     log::error!("{}", e);
-        //                     s3_error!(InternalError, "Internal data transformer encryption error")
-        //                 })?,
-        //             );
-        //         }
+        let location = if let Some((_, Some(loc))) = object {
+            loc
+        } else {
+            return Err(s3_error!(InvalidArgument, "Object not initialized"));
+        };
 
-        //         awr.process().await.map_err(|e| {
-        //             log::error!("Processing error: {}", e);
-        //             s3_error!(InternalError, "Internal data transformer processing error")
-        //         })?;
+        let etag = match req.input.body {
+            Some(data) => {
+                let (sink, receiver) = BufferedS3Sink::new(
+                    self.backend.clone(),
+                    location.clone(),
+                    location.upload_id,
+                    Some(req.input.part_number),
+                    true,
+                    None,
+                    true,
+                );
 
-        //         etag = recv
-        //             .try_recv()
-        //             .map_err(|_| s3_error!(InternalError, "Unable to get etag"))?;
-        //     }
-        //     _ => return Err(s3_error!(InvalidPart, "MultiPart cannot be empty")),
-        // };
+                let mut awr = ArunaStreamReadWriter::new_with_sink(data, sink);
 
-        // Ok(UploadPartOutput {
-        //     e_tag: Some(format!("-{}", etag)),
-        //     ..Default::default()
-        // })
+                if location.compressed {
+                    awr = awr.add_transformer(ZstdEnc::new(false));
+                }
+
+                if let Some(enc_key) = &location.encryption_key {
+                    awr = awr.add_transformer(
+                        ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Internal data transformer encryption error")
+                        })?,
+                    );
+                }
+
+                awr.process().await.map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Internal data transformer processing error")
+                })?;
+
+                if let Some(r) = receiver {
+                    r.recv().await.map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to query etag")
+                    })?
+                } else {
+                    return Err(s3_error!(InternalError, "Unable to query etag"));
+                }
+            }
+            None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
+        };
+
+        let output = UploadPartOutput {
+            e_tag: Some(format!("-{}", etag)),
+            ..Default::default()
+        };
+        Ok(S3Response::new(output))
     }
 
     #[tracing::instrument]
     async fn complete_multipart_upload(
         &self,
-        _req: S3Request<CompleteMultipartUploadInput>,
+        req: S3Request<CompleteMultipartUploadInput>,
     ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
-        return Err(s3_error!(NotImplemented, "Not implemented yet"));
-        // let mut anotif = ArunaNotifier::new(
-        //     self.data_handler.internal_notifier_service.clone(),
-        //     self.data_handler.settings.clone(),
-        // );
-        // anotif.set_credentials(req.credentials)?;
-        // anotif
-        //     .get_or_create_object(&req.input.bucket, &req.input.key, 0)
-        //     .await?;
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            object,
+            ..
+        } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        // let parts = match req.input.multipart_upload {
-        //     Some(parts) => parts
-        //         .parts
-        //         .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
-        //     None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
-        // }?;
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+        } else {
+            None
+        };
 
-        // let etag_parts = parts
-        //     .into_iter()
-        //     .map(|a| {
-        //         Ok(PartETag {
-        //             part_number: a.part_number as i64,
-        //             etag: a
-        //                 .e_tag
-        //                 .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
-        //         })
-        //     })
-        //     .collect::<Result<Vec<PartETag>, S3Error>>()?;
+        // If the object exists and the signatures match -> Skip the download
 
-        // let (object_id, collection_id) = anotif.get_col_obj()?;
-        // // Does this object exists (including object id etc)
-        // //req.input.multipart_upload.unwrap().
-        // self.data_handler
-        //     .clone()
-        //     .finish_multipart(
-        //         etag_parts,
-        //         object_id.to_string(),
-        //         collection_id,
-        //         req.input.upload_id,
-        //         anotif.get_path()?,
-        //     )
-        //     .await?;
+        let (object, old_location) = if let Some((object, Some(loc))) = object {
+            (object, loc)
+        } else {
+            return Err(s3_error!(InvalidArgument, "Object not initialized"));
+        };
 
-        // Ok(CompleteMultipartUploadOutput {
-        //     e_tag: Some(object_id),
-        //     version_id: Some(anotif.get_revision_string()?),
-        //     ..Default::default()
-        // })
+        let parts = match req.input.multipart_upload {
+            Some(parts) => parts
+                .parts
+                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
+            None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
+        }?;
+
+        let etag_parts = parts
+            .into_iter()
+            .map(|a| {
+                Ok(PartETag {
+                    part_number: a.part_number,
+                    etag: a
+                        .e_tag
+                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
+                })
+            })
+            .collect::<Result<Vec<PartETag>, S3Error>>()?;
+
+        // Does this object exists (including object id etc)
+        //req.input.multipart_upload.unwrap().
+        self.backend
+            .clone()
+            .finish_multipart_upload(
+                old_location.clone(),
+                etag_parts,
+                old_location
+                    .upload_id
+                    .as_ref()
+                    .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
+                    .to_string(),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to finish upload")
+            })?;
+
+        let response = CompleteMultipartUploadOutput {
+            e_tag: Some(object.id.to_string()),
+            ..Default::default()
+        };
+
+        let mut new_location = self
+            .backend
+            .initialize_location(&object, None, None, false)
+            .await
+            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+
+        let hashes =
+            DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
+                .await
+                .map_err(|e| {
+                    log::error!("{}", e);
+                    s3_error!(InternalError, "Unable to finalize location")
+                })?;
+
+        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+            if let Some(token) = &impersonating_token {
+                let object = handler
+                    .finish_object(object.id, new_location.raw_content_len, hashes, token)
+                    .await
+                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                self.cache
+                    .upsert_object(object, Some(new_location))
+                    .await
+                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
+
+                self.backend
+                    .delete_object(old_location)
+                    .await
+                    .map_err(|e| {
+                        log::error!("{}", e);
+                        s3_error!(InternalError, "Unable to delete old object")
+                    })?;
+            }
+        }
+
+        Ok(S3Response::new(response))
     }
 
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult {
-            object: ProxyObject { id, .. },
-            ..
-        } = req
-            .extensions
-            .get::<CheckAccessResult>()
-            .cloned()
-            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+        let CheckAccessResult { object, .. } =
+            req.extensions
+                .get::<CheckAccessResult>()
+                .cloned()
+                .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+
+        let id = match object {
+            Some((obj, _)) => obj.id,
+            None => return Err(s3_error!(NoSuchKey, "Object not found")),
+        };
+
         let cache_result = self
             .cache
             .resources
             .get(&id)
             .ok_or_else(|| s3_error!(NoSuchKey, "Object not found"))?;
         let (_, location) = cache_result.value();
-        let location =
-            location.as_ref().ok_or_else(|| s3_error!(InternalError, "Object location not found"))?.clone();
+        let location = location
+            .as_ref()
+            .ok_or_else(|| s3_error!(InternalError, "Object location not found"))?
+            .clone();
         let content_length = location.raw_content_len;
-        let encryption_key = location.clone().encryption_key.map(|k| k.as_bytes().to_vec());
+        let encryption_key = location
+            .clone()
+            .encryption_key
+            .map(|k| k.as_bytes().to_vec());
 
         let (sender, receiver) = async_channel::bounded(10);
 
-        // TODO: Ranges
         // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5242880  * 28 { // Without encryption block because this is already checked inside
+        let footer_parser: Option<FooterParser> = if content_length > 5242880 * 28 {
+            // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
             let parser = match encryption_key.clone() {
                 Some(key) => {
@@ -592,7 +861,11 @@ impl S3 for ArunaS3Service {
 
         // Spawn get_object
         let backend = self.backend.clone();
-        tokio::spawn(async move { backend.get_object(location.clone(), query_ranges, sender).await });
+        tokio::spawn(async move {
+            backend
+                .get_object(location.clone(), query_ranges, sender)
+                .await
+        });
         let (final_send, final_rcv) = async_channel::bounded(10);
 
         // Spawn final part
@@ -631,7 +904,7 @@ impl S3 for ArunaS3Service {
             body,
             content_length: calc_content_len,
             last_modified: None,
-            e_tag: Some(id.to_string()),
+            e_tag: Some(format!("-{}", id.to_string())),
             version_id: None,
             ..Default::default()
         }))
@@ -641,44 +914,46 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        // TODO: Special bucket
-        let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
-            DieselUlid::from_str(&req.input.key)
-                .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
-        } else {
-            match req
-                .extensions
-                .get::<Option<(ResourceIds, String, Option<String>)>>()
+        let CheckAccessResult { object, .. } =
+            req.extensions
+                .get::<CheckAccessResult>()
                 .cloned()
-                .flatten()
-            {
-                Some((ids, _, _)) => match ids {
-                    ResourceIds::Project(id) => Ok(id),
-                    ResourceIds::Collection(_, id) => Ok(id),
-                    ResourceIds::Dataset(_, _, id) => Ok(id),
-                    ResourceIds::Object(_, _, _, id) => Ok(id),
-                },
-                None => Err(s3_error!(NoSuchKey, "No object found")),
-            }?
-        };
-        let (object, location) = self
-            .cache
-            .resources
-            .get(&id)
-            .ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?
-            .clone();
-        let location = location
-            .ok_or_else(|| s3_error!(NoSuchUpload, "Object not stored in this DataProxy"))?;
-        let checksum_sha256 = object.hashes.get("SHA256").map(ChecksumSHA256::from);
+                .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+
+        // // TODO: Special bucket
+        // let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
+        //     DieselUlid::from_str(&req.input.key)
+        //         .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
+        // } else {
+        //     match req
+        //         .extensions
+        //         .get::<Option<(ResourceIds, String, Option<String>)>>()
+        //         .cloned()
+        //         .flatten()
+        //     {
+        //         Some((ids, _, _)) => match ids {
+        //             ResourceIds::Project(id) => Ok(id),
+        //             ResourceIds::Collection(_, id) => Ok(id),
+        //             ResourceIds::Dataset(_, _, id) => Ok(id),
+        //             ResourceIds::Object(_, _, _, id) => Ok(id),
+        //         },
+        //         None => Err(s3_error!(NoSuchKey, "No object found")),
+        //     }?
+        // };
+
+        let (object, location) = object.ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?;
+
+        let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
 
         Ok(S3Response::new(HeadObjectOutput {
-            content_length: location.raw_content_len,
-            content_type: None,
-            content_disposition: None,
-            content_encoding: None,
-            e_tag: Some(location.id.to_string()),
-            storage_class: None,
-            checksum_sha256,
+            content_length: content_len,
+            last_modified: Some(
+                // FIXME: Real time ...
+                time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                    .unwrap()
+                    .into(),
+            ),
+            e_tag: Some(object.id.to_string()),
             ..Default::default()
         }))
     }

@@ -96,6 +96,8 @@ pub trait StorageBackend: Debug + Send + Sync {
     async fn initialize_location(
         &self,
         obj: &Object,
+        expected_size: Option<i64>,
         ex_bucket: Option<String>,
+        temp: bool,
     ) -> Result<ObjectLocation>;
 }

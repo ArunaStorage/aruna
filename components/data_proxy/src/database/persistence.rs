@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use anyhow::Result;
-use bytes::Bytes;
 use deadpool_postgres::Client;
 use postgres_types::{FromSql, ToSql};
 use std::fmt::{Debug, Display, Formatter};
@@ -8,7 +7,7 @@ use std::fmt::{Debug, Display, Formatter};
 #[derive(Debug, PartialEq, Eq)]
 pub struct GenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync> {
     pub id: X,
-    pub data: Bytes,
+    pub data: Vec<u8>,
     pub table: Table,
 }
 
@@ -25,7 +24,7 @@ impl Display for Table {
         match self {
             Table::Objects => write!(f, "objects"),
             Table::Users => write!(f, "users"),
-            Table::PubKeys => write!(f, "pubkeys"),
+            Table::PubKeys => write!(f, "pub_keys"),
             Table::ObjectLocations => write!(f, "object_locations"),
         }
     }
@@ -46,12 +45,12 @@ where
         };
 
         let query = format!(
-            "INSERT INTO {} (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2;",
+            "INSERT INTO {} (id, data) VALUES ($1, $2::BYTEA) ON CONFLICT (id) DO UPDATE SET data = $2;",
             Self::get_table()
         );
         let prepared = client.prepare(&query).await?;
         client
-            .query(&prepared, &[&generic.id, &generic.data.to_vec()])
+            .query(&prepared, &[&generic.id, &generic.data.to_vec().as_slice()])
             .await?;
         Ok(())
     }
@@ -67,8 +66,8 @@ where
             .iter()
             .map(|row| {
                 match Self::try_from(GenericBytes {
-                    id: row.get(0),
-                    data: Bytes::copy_from_slice(row.get(1)),
+                    id: row.get::<&str, X>("id"),
+                    data: row.get("data"),
                     table: Self::get_table(),
                 }) {
                     Ok(generic) => Ok(generic),
@@ -85,14 +84,38 @@ where
         let prepared = client.prepare(&query).await?;
         let row = client.query_one(&prepared, &[&id]).await?;
         match Self::try_from(GenericBytes {
-            id: row.get(0),
-            data: Bytes::copy_from_slice(row.get(1)),
+            id: row.get::<usize, X>(0),
+            data: row.get(1),
             table: Self::get_table(),
         }) {
             Ok(generic) => Ok(generic),
             Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
         }
     }
+
+    async fn get_opt(id: &X, client: &Client) -> Result<Option<Self>>
+    where
+        Self: WithGenericBytes<X>,
+    {
+        let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
+        let prepared = client.prepare(&query).await?;
+        let row = client.query_opt(&prepared, &[&id]).await?;
+
+        match row {
+            Some(row) => {
+                match Self::try_from(GenericBytes {
+                    id: row.get::<usize, X>(0),
+                    data: row.get(1),
+                    table: Self::get_table(),
+                }) {
+                    Ok(generic) => Ok(Some(generic)),
+                    Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn delete(id: &X, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await?;

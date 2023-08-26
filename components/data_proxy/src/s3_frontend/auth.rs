@@ -19,19 +19,27 @@ impl AuthProvider {
 #[async_trait::async_trait]
 impl S3Auth for AuthProvider {
     async fn get_secret_key(&self, access_key: &str) -> S3Result<SecretKey> {
-        Ok(self
+        dbg!(format!("check access key: {}", &access_key));
+        let secret = self
             .cache
             .get_secret(access_key)
-            .map_err(|_| s3_error!(AccessDenied, "Invalid access key"))?)
+            .map_err(|_| s3_error!(AccessDenied, "Invalid access key"))?;
+
+        dbg!(secret.expose());
+        Ok(secret)
     }
 
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
+        dbg!(format!("check context: {:#?}", cx.s3_path()));
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
                 let result = auth
                     .check_access(cx.credentials(), cx.method(), cx.s3_path())
                     .await
-                    .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+                    .map_err(|e| {
+                        log::error!("Error on check_access: {}", e);
+                        s3_error!(AccessDenied, "Access denied")
+                    })?;
 
                 cx.extensions_mut().insert(result);
                 Ok(())

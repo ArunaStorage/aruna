@@ -3,8 +3,9 @@ use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Missing;
 use crate::structs::Object;
+use crate::structs::ObjectLocation;
 use crate::structs::ResourceIds;
-use crate::structs::ResourceStrings;
+use crate::structs::ResourceString;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -143,11 +144,7 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
-        let token = decode::<ArunaTokenClaims>(
-            token,
-            dec_key,
-            &Validation::new(Algorithm::EdDSA),
-        )?;
+        let token = decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA))?;
         Ok(token.claims)
     }
 
@@ -157,15 +154,85 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
     ) -> Result<CheckAccessResult> {
-        let (ids, obj, missing) = self.extract_object_from_path(path, method)?;
         let db_perm_from_method = DbPermissionLevel::from(method);
-        if db_perm_from_method == DbPermissionLevel::READ && obj.data_class == DataClass::Public {
+        if let Some(b) = path.as_bucket() {
+            if method == Method::POST || method == Method::PUT {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                let token_id = if user.user_id.to_string() == user.access_key {
+                    None
+                } else {
+                    Some(user.access_key.clone())
+                };
+
+                return Ok(CheckAccessResult {
+                    user_id: Some(user.user_id.to_string()),
+                    token_id,
+                    resource_ids: None,
+                    missing_resources: Some(Missing {
+                        p: Some(b.to_string()),
+                        c: None,
+                        d: None,
+                        o: None,
+                    }),
+                    object: None,
+                });
+
+                // let get_object = self
+                //     .cache
+                //     .get_res_by_res_string(crate::structs::ResourceString::Project(b.to_string()))
+                //     .ok_or_else(|| anyhow!("Unknown object"))?;
+
+                // let obj = &self
+                //     .cache
+                //     .resources
+                //     .get(&get_object.get_id())
+                //     .ok_or_else(|| anyhow!("Unknown object"))?
+                //     .0;
+
+                // for (res, perm) in user.permissions {
+                //     if get_object.check_if_in(res) && perm >= db_perm_from_method {
+                //         return Ok(CheckAccessResult::new(
+                //             Some(user.user_id.to_string()),
+                //             Some(user.access_key),
+                //             Some(get_object),
+                //             None,
+                //             Some(obj.clone()),
+                //         ));
+                //     }
+                // }
+            } else {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                return Ok(CheckAccessResult::new(
+                    Some(user.user_id.to_string()),
+                    Some(user.access_key),
+                    None,
+                    Some(Missing {
+                        p: Some(b.to_string()),
+                        c: None,
+                        d: None,
+                        o: None,
+                    }),
+                    None,
+                ));
+            }
+        }
+
+        let (ids, (obj, loc), missing) = self.extract_object_from_path(path, method)?;
+        if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
-                ids,
-                missing,
-                "".to_string(),
                 None,
-                obj,
+                None,
+                Some(ids),
+                missing,
+                Some((obj, loc)),
             ));
         } else if let Some(creds) = creds {
             let user = self
@@ -173,19 +240,20 @@ impl AuthHandler {
                 .get_user_by_key(&creds.access_key)
                 .ok_or_else(|| anyhow!("Unknown user"))?;
 
-            for (token_id, perm) in user.permissions {
-                if ids.check_if_in(token_id) && perm >= db_perm_from_method {
-                    let res_id = if token_id == user.user_id {
+            for (res, perm) in user.permissions {
+                if ids.check_if_in(res) && perm >= db_perm_from_method {
+                    let token_id = if user.user_id.to_string() == user.access_key {
                         None
                     } else {
-                        Some(token_id.to_string())
+                        Some(user.access_key.clone())
                     };
+
                     return Ok(CheckAccessResult::new(
-                        ids,
+                        Some(user.user_id.to_string()),
+                        token_id,
+                        Some(ids),
                         missing,
-                        user.user_id.to_string(),
-                        res_id,
-                        obj,
+                        Some((obj, loc)),
                     ));
                 }
             }
@@ -194,54 +262,44 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,
         path: &S3Path,
-        method: &Method,
-    ) -> Result<(ResourceIds, Object, Option<Missing>)> {
-        let res_strings = ResourceStrings::try_from(path)?;
+        _method: &Method,
+    ) -> Result<(
+        ResourceIds,
+        (Object, Option<ObjectLocation>),
+        Option<Missing>,
+    )> {
+        let res_strings = ResourceString::try_from(path)?;
 
-        let (mut res_strings, mut alt) = if method == Method::PUT || method == Method::POST {
-            res_strings.permute()
-        } else {
-            (res_strings.0, vec![])
-        };
+        let mut found = Vec::new();
+        let mut missing = Vec::new();
 
-        res_strings.sort();
-        alt.sort();
-
-        for res in res_strings {
-            if let Some(e) = self.cache.get_res_by_res_string(res) {
-                return Ok((
-                    e.clone(),
-                    self.cache
-                        .resources
-                        .get(&e.get_id())
-                        .ok_or_else(|| anyhow!("Unknown object"))?
-                        .value()
-                        .0
-                        .clone(),
-                    None,
-                ));
+        for resource in res_strings.into_parts() {
+            if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
+                found.push(e);
+            } else {
+                missing.push(resource.clone());
             }
         }
+        found.sort();
 
-        for (res, missing) in alt {
-            if let Some(e) = self.cache.get_res_by_res_string(res) {
-                return Ok((
-                    e.clone(),
-                    self.cache
-                        .resources
-                        .get(&e.get_id())
-                        .ok_or_else(|| anyhow!("Unknown object"))?
-                        .value()
-                        .0
-                        .clone(),
-                    Some(missing),
-                ));
-            }
-        }
-        Err(anyhow!("No object found in path"))
+        let resource_id = found
+            .last()
+            .ok_or_else(|| anyhow!("No object found in path"))?
+            .clone();
+
+        let (object, location) = self
+            .cache
+            .resources
+            .get(&resource_id.get_id())
+            .ok_or_else(|| anyhow!("No object found in path"))?
+            .value()
+            .clone();
+
+        Ok((resource_id, (object, location), Some(missing.into())))
     }
 
     pub(crate) fn sign_impersonating_token(
