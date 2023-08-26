@@ -487,6 +487,7 @@ impl Cache {
                 }
                 Ok(res)
             }
+            ObjectType::Bundle => return Err(anyhow!("Bundles do not have paths / trees")),
         }
     }
 
