@@ -262,6 +262,36 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    pub fn check_ids(
+        &self,
+        vec_vec_ids: &Vec<Vec<ResourceIds>>,
+        access_key: &str,
+        target_perm_level: DbPermissionLevel,
+        get_secret: bool,
+    ) -> Result<Option<String>> {
+        let user = self
+            .cache
+            .get_user_by_key(access_key)
+            .ok_or_else(|| anyhow!("Unknown user"))?;
+
+        for (res, perm) in user.permissions {
+            'id_vec: for vec_ids in vec_vec_ids {
+                for id in vec_ids {
+                    if id.check_if_in(res) && perm >= target_perm_level {
+                        continue 'id_vec;
+                    }
+                }
+                return Err(anyhow!("Invalid permissions"));
+            }
+        }
+
+        if get_secret {
+            Ok(Some(user.access_key.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,

@@ -2,14 +2,14 @@ use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
     transforms::ExtractAccessKeyPermissions,
 };
-use crate::structs::TypedRelation;
+use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
 };
 use ahash::RandomState;
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -521,6 +521,48 @@ impl Cache {
         Ok(())
     }
 
+    pub async fn add_permission_to_access_key(
+        &self,
+        access_key: &str,
+        permission: (DieselUlid, DbPermissionLevel),
+    ) -> Result<()> {
+        if let Some(mut user) = self.users.get_mut(access_key) {
+            user.value_mut()
+                .permissions
+                .insert(permission.0, permission.1);
+
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                user.value()
+                    .upsert(&persistence.get_client().await?)
+                    .await?;
+            }
+
+            Ok(())
+        } else {
+            Err(anyhow!("User not found"))
+        }
+    }
+
+    pub async fn _remove_permission_from_access_key(
+        &self,
+        access_key: &str,
+        permission: &DieselUlid,
+    ) -> Result<()> {
+        if let Some(mut user) = self.users.get_mut(access_key) {
+            user.value_mut().permissions.remove(permission);
+
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                user.value()
+                    .upsert(&persistence.get_client().await?)
+                    .await?;
+            }
+
+            Ok(())
+        } else {
+            Err(anyhow!("User not found"))
+        }
+    }
+
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         let keys = self
             .users
@@ -592,4 +634,323 @@ impl Cache {
     pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
         self.users.get(access_key).map(|e| e.value().clone())
     }
+
+    pub fn get_resource_ids_from_id(
+        &self,
+        id: DieselUlid,
+    ) -> Result<(Vec<ResourceIds>, TypedRelation)> {
+        let mut result = Vec::new();
+        let rel;
+
+        if let Some(resource) = self.resources.get(&id) {
+            let (object, _) = resource.value();
+
+            match object.object_type {
+                ObjectType::Bundle => bail!("Bundles are not allowed in this context"),
+                ObjectType::Project => {
+                    rel = TypedRelation::Project(object.id);
+                    result.push(ResourceIds::Project(object.id))
+                }
+                ObjectType::Collection => {
+                    rel = TypedRelation::Collection(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid collection, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Collection(*parent_id, object.id))
+                            }
+                            _ => bail!("Invalid collection, parent is not a project"),
+                        }
+                    }
+                }
+                ObjectType::Dataset => {
+                    rel = TypedRelation::Dataset(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Dataset(*parent_id, None, object.id))
+                            }
+                            TypedRelation::Collection(parent_id) => {
+                                if let Some(resource) = self.resources.get(&parent_id) {
+                                    let (collection_object, _) = resource.value();
+
+                                    for parent_parent in collection_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Dataset(
+                                                    *project_id,
+                                                    Some(*parent_id),
+                                                    object.id,
+                                                ))
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            _ => bail!("Invalid dataset, parent is not a project"),
+                        }
+                    }
+                }
+                ObjectType::Object => {
+                    rel = TypedRelation::Object(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Object(*parent_id, None, None, object.id))
+                            }
+                            TypedRelation::Collection(parent_id) => {
+                                if let Some(resource) = self.resources.get(&parent_id) {
+                                    let (collection_object, _) = resource.value();
+
+                                    for parent_parent in collection_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Object(
+                                                    *project_id,
+                                                    Some(*parent_id),
+                                                    None,
+                                                    object.id,
+                                                ))
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            TypedRelation::Dataset(parent_id) => {
+                                if let Some(resource) = self.resources.get(&parent_id) {
+                                    let (dataset_object, _) = resource.value();
+
+                                    for parent_parent in dataset_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Object(
+                                                    *project_id,
+                                                    None,
+                                                    Some(*parent_id),
+                                                    object.id,
+                                                ))
+                                            }
+
+                                            TypedRelation::Collection(collection_id) => {
+                                                if let Some(resource) =
+                                                    self.resources.get(&collection_id)
+                                                {
+                                                    let (collection_object, _) = resource.value();
+
+                                                    for parent_parent in collection_object
+                                                        .parents
+                                                        .as_ref()
+                                                        .ok_or_else(|| {
+                                                            anyhow!(
+                                                                "Invalid dataset, missing parent"
+                                                            )
+                                                        })?
+                                                    {
+                                                        match parent_parent {
+                                                            TypedRelation::Project(project_id) => {
+                                                                result.push(ResourceIds::Object(
+                                                                    *project_id,
+                                                                    Some(*collection_id),
+                                                                    Some(*parent_id),
+                                                                    object.id,
+                                                                ))
+                                                            }
+                                                            _ => {
+                                                                bail!("Invalid dataset, parent is not a collection")
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    bail!("Invalid dataset, parent is not a collection")
+                                                }
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            _ => bail!("Invalid dataset, parent is not a project"),
+                        }
+                    }
+                }
+            }
+        } else {
+            return Err(anyhow!("Resource not found"));
+        }
+        Ok((result, rel))
+    }
 }
+
+// pub fn get_resource_ids_by_vec(&self, check_ids: Vec<DieselUlid>) -> Result<Vec<ResourceIds>> {
+//     let mut res = Vec::new();
+
+//     let mut queue = VecDeque::new();
+//     for id in check_ids {
+//         if let Some(resource) = self.resources.get(&id) {
+//             let (object, _) = resource.value();
+
+//             match object.object_type {
+//                 ObjectType::Bundle => bail!("Bundles are not allowed in this context"),
+//                 ObjectType::Project => res.push(ResourceIds::Project(object.id)),
+//                 ObjectType::Collection => {
+//                     for parent in object
+//                         .parents
+//                         .ok_or_else(|| anyhow!("Invalid collection, missing parent"))?
+//                     {
+//                         match parent {
+//                             TypedRelation::Project(parent_id) => {
+//                                 res.push(ResourceIds::Collection(parent_id, object.id))
+//                             }
+//                             _ => bail!("Invalid collection, parent is not a project"),
+//                         }
+//                     }
+//                 }
+//                 ObjectType::Dataset => {
+//                     for parent in object
+//                         .parents
+//                         .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+//                     {
+//                         match parent {
+//                             TypedRelation::Project(parent_id) => {
+//                                 res.push(ResourceIds::Dataset(parent_id, None, object.id))
+//                             }
+//                             TypedRelation::Collection(parent_id) => queue.push_back((
+//                                 parent_id,
+//                                 ResourceIds::Dataset(
+//                                     DieselUlid::default(),
+//                                     Some(parent_id),
+//                                     object.id,
+//                                 ),
+//                             )),
+//                             _ => bail!("Invalid dataset, parent is not a project"),
+//                         }
+//                     }
+//                 }
+//                 ObjectType::Object => {
+//                     for parent in object
+//                         .parents
+//                         .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+//                     {
+//                         match parent {
+//                             TypedRelation::Project(parent_id) => {
+//                                 res.push(ResourceIds::Object(parent_id, None, None, object.id))
+//                             }
+//                             TypedRelation::Collection(parent_id) => queue.push_back((
+//                                 parent_id,
+//                                 ResourceIds::Object(
+//                                     DieselUlid::default(),
+//                                     Some(parent_id),
+//                                     None,
+//                                     object.id,
+//                                 ),
+//                             )),
+//                             TypedRelation::Dataset(parent_id) => queue.push_back((
+//                                 parent_id,
+//                                 ResourceIds::Object(
+//                                     DieselUlid::default(),
+//                                     None,
+//                                     Some(parent_id),
+//                                     object.id,
+//                                 ),
+//                             )),
+//                             _ => bail!("Invalid dataset, parent is not a project"),
+//                         }
+//                     }
+//                 }
+//             }
+//         } else {
+//             return Err(anyhow!("Resource not found"));
+//         }
+//     }
+
+//     while let Some((id, mut res_id)) = queue.pop_front() {
+//         if let Some(resource) = self.resources.get(&id) {
+//             let (object, _) = resource.value();
+
+//             match object.object_type {
+//                 ObjectType::Project => {
+//                     res_id.set_project(object.id);
+//                     res.push(res_id)
+//                 }
+//                 ObjectType::Collection => {
+//                     res_id.set_collection(object.id)?;
+//                     for parent in object
+//                         .parents
+//                         .ok_or_else(|| anyhow!("Invalid collection, missing parent"))?
+//                     {
+//                         match parent {
+//                             TypedRelation::Project(parent_id) => {
+//                                 res_id.set_project(parent_id);
+//                                 res.push(res_id.clone())
+//                             }
+//                             _ => bail!("Invalid collection, parent is not a project"),
+//                         }
+//                     }
+//                 }
+//                 ObjectType::Dataset => {
+//                     res_id.set_dataset(object.id)?;
+//                     for parent in object
+//                         .parents
+//                         .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+//                     {
+//                         match parent {
+//                             TypedRelation::Project(parent_id) => {
+//                                 res_id.set_project(parent_id);
+//                                 res.push(res_id.clone())
+//                             }
+//                             TypedRelation::Collection(parent_id) => {
+//                                 res_id.set_collection(parent_id);
+//                                 queue.push_back((parent_id, res_id.clone()))
+//                             }
+//                             _ => bail!("Invalid dataset, parent is not a project"),
+//                         }
+//                     }
+//                 }
+//                 ObjectType::Bundle => bail!("Bundles are not allowed in this context"),
+//                 ObjectType::Object => bail!("Invalid type, object cannot be parent"),
+//             }
+//         } else {
+//             return Err(anyhow!("Resource not found"));
+//         }
+//     }
+
+//     Ok(res)
+// }
+//}

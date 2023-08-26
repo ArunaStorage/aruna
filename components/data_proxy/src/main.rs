@@ -21,6 +21,7 @@ mod grpc_api;
 mod structs;
 #[macro_use]
 mod macros;
+mod helpers;
 
 #[tokio::main]
 async fn main() -> Result<()> {

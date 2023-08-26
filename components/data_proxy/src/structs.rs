@@ -1115,6 +1115,49 @@ impl ResourceIds {
             ResourceIds::Object(p, c, d, o) => (*p, *c, *d, Some(*o)),
         }
     }
+
+    pub fn set_project(&mut self, id: DieselUlid) {
+        match self {
+            ResourceIds::Project(p) => *p = id,
+            ResourceIds::Collection(p, _) => *p = id,
+            ResourceIds::Dataset(p, _, _) => *p = id,
+            ResourceIds::Object(p, _, _, _) => *p = id,
+        }
+    }
+
+    pub fn set_collection(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set collection on project")),
+            ResourceIds::Collection(_, c) => *c = id,
+            ResourceIds::Dataset(_, c, _) => *c = Some(id),
+            ResourceIds::Object(_, c, _, _) => *c = Some(id),
+        };
+        Ok(())
+    }
+
+    pub fn set_dataset(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set dataset on project")),
+            ResourceIds::Collection(_, _) => {
+                return Err(anyhow!("Cannot set dataset on collection"))
+            }
+            ResourceIds::Dataset(_, _, d) => *d = id,
+            ResourceIds::Object(_, _, d, _) => *d = Some(id),
+        };
+        Ok(())
+    }
+
+    pub fn set_object(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set object on project")),
+            ResourceIds::Collection(_, _) => {
+                return Err(anyhow!("Cannot set object on collection"))
+            }
+            ResourceIds::Dataset(_, _, _) => return Err(anyhow!("Cannot set object on dataset")),
+            ResourceIds::Object(_, _, _, o) => *o = id,
+        };
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
