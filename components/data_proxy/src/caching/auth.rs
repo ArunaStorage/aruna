@@ -204,7 +204,6 @@ impl AuthHandler {
         }
 
         let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
-
         if let Some(bundle) = bundle {
             if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
             {
@@ -213,7 +212,7 @@ impl AuthHandler {
                     token_id: None,
                     resource_ids: None,
                     missing_resources: None,
-                    object: None,
+                    object: Some((obj, loc)),
                     bundle: Some(bundle),
                 });
             } else {
@@ -235,7 +234,7 @@ impl AuthHandler {
                             token_id,
                             Some(ids),
                             missing,
-                            None,
+                            Some((obj, loc)),
                             Some(bundle),
                         ));
                     }
@@ -327,7 +326,7 @@ impl AuthHandler {
                 path = path.trim_matches('/');
                 if let Some((prefix, name)) = path.split_once('/') {
                     let id = DieselUlid::from_str(prefix)?;
-
+                    dbg!(id);
                     let obj = self
                         .cache
                         .resources

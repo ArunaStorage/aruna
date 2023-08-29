@@ -165,7 +165,9 @@ impl Cache {
             .map(char::from)
             .collect::<String>();
 
-        user.value_mut().secret = new_secret.clone();
+        {
+            user.pair_mut().1.secret = new_secret.clone();
+        }
 
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             user.value()
@@ -854,7 +856,12 @@ impl Cache {
             {
                 queue.push_back(("".to_string(), x.get_id()));
             }
+        } else {
+            queue.push_back(("".to_string(), init.0.id.clone()));
         };
+
+        dbg!(&queue);
+        dbg!(&resource_id);
 
         let mut finished = Vec::with_capacity(10_000);
 
@@ -866,14 +873,23 @@ impl Cache {
 
             if resource.0.object_type == ObjectType::Object {
                 name = format!("{}/{}", name, resource.0.name);
+                name = name.trim_matches('/').to_string();
                 finished.push((name, resource.1.clone()));
             } else {
                 if let Some(child) = resource.0.children.as_ref() {
-                    for x in child {
-                        queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
+                    if child.is_empty() {
+                        name = format!("{}/{}", name, resource.0.name);
+                        name = name.trim_matches('/').to_string();
+                        finished.push((name, resource.1.clone()));
+                    } else {
+                        for x in child {
+                            name = name.trim_matches('/').to_string();
+                            queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
+                        }
                     }
                 } else {
                     name = format!("{}/{}", name, resource.0.name);
+                    name = name.trim_matches('/').to_string();
                     finished.push((name, resource.1.clone()));
                 }
             }

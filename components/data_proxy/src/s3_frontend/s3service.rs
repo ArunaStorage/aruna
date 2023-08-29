@@ -2,6 +2,8 @@ use super::data_handler::DataHandler;
 use super::utils::buffered_s3_sink::BufferedS3Sink;
 use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
+use crate::bundler::bundle_helper;
+use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::log_received;
@@ -31,6 +33,8 @@ use base64::Engine;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
+use http::HeaderValue;
+use jsonwebtoken::Header;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
@@ -746,11 +750,34 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, .. } =
-            req.extensions
-                .get::<CheckAccessResult>()
-                .cloned()
-                .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+        let CheckAccessResult { object, bundle, .. } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+
+        if let Some(_bundle) = bundle {
+            let id = match object {
+                Some((obj, _)) => obj.id,
+                None => return Err(s3_error!(NoSuchKey, "Object not found")),
+            };
+            let levels = self.cache.get_path_levels(id).map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to get path levels")
+            })?;
+
+            let body = get_bundle(levels, self.backend.clone()).await;
+
+            let resp = S3Response::new(GetObjectOutput {
+                body,
+                content_length: 86,
+                last_modified: None,
+                e_tag: Some(format!("-{}", id.to_string())),
+                ..Default::default()
+            });
+
+            return Ok(resp);
+        }
 
         let id = match object {
             Some((obj, _)) => obj.id,
@@ -914,11 +941,36 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, .. } =
-            req.extensions
-                .get::<CheckAccessResult>()
-                .cloned()
-                .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+        let CheckAccessResult { object, bundle, .. } = req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+
+        dbg!((&object, &bundle));
+
+        if let Some(_bundle) = bundle {
+            let id = match object {
+                Some((obj, _)) => obj.id,
+                None => return Err(s3_error!(NoSuchKey, "Object not found")),
+            };
+            let _levels = self.cache.get_path_levels(id).map_err(|e| {
+                log::error!("{}", e);
+                s3_error!(InternalError, "Unable to get path levels")
+            })?;
+
+            return Ok(S3Response::new(HeadObjectOutput {
+                content_length: -1,
+                last_modified: Some(
+                    // FIXME: Real time ...
+                    time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                        .unwrap()
+                        .into(),
+                ),
+                e_tag: Some(format!("-{}", id.to_string())),
+                ..Default::default()
+            }));
+        }
 
         // // TODO: Special bucket
         // let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
