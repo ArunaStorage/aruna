@@ -2,6 +2,7 @@ pub mod authorization;
 pub mod collections;
 pub mod datasets;
 pub mod endpoints;
+pub mod hooks;
 pub mod info;
 pub mod notification;
 pub mod object;
