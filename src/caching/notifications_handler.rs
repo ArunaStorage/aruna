@@ -231,8 +231,7 @@ async fn process_user_event(
     // Process cache
     if let Some(variant) = EventVariant::from_i32(user_event.event_variant) {
         match variant {
-            EventVariant::Unspecified => bail!("Unspecified user event variant not allowed"),
-            EventVariant::Created | EventVariant::Updated => {
+            EventVariant::Created | EventVariant::Updated | EventVariant::Available => {
                 // Check if user already exists
                 if let Some(user) = cache.get_user(&user_ulid) {
                     // Convert to proto and compare checksum
@@ -252,11 +251,8 @@ async fn process_user_event(
                     }
                 }
             }
-            EventVariant::Available => unimplemented!("Set user activated?"),
             EventVariant::Deleted => cache.remove_user(&user_ulid),
-            EventVariant::Snapshotted => {
-                unimplemented!("Sync all objects underneath the snapshotted resource into cache")
-            }
+            _ => {}
         }
     } else {
         // Return error if variant is None

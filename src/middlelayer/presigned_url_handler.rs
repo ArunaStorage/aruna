@@ -166,7 +166,7 @@ impl DatabaseHandler {
                     (true, false) => {
                         format!("{}/{}", collection_name, object_name)
                     }
-                    (false, false) => format!("{}", object_name),
+                    (false, false) => object_name,
                 }
             };
             path = (project_id, project_name, key);

@@ -1,10 +1,11 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
 use aruna_rust_api::api::storage::services::v2::{
     GetPubkeysRequest, GetPubkeysResponse, GetStorageStatusRequest, GetStorageStatusResponse,
-    GetStorageVersionRequest, GetStorageVersionResponse, Pubkey,
+    GetStorageVersionRequest, GetStorageVersionResponse,
 };
 use std::sync::Arc;
 use tonic::Response;

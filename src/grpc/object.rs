@@ -123,6 +123,7 @@ impl ObjectService for ObjectServiceImpl {
 
         return_with_log!(result);
     }
+
     async fn get_download_url(
         &self,
         request: Request<GetDownloadUrlRequest>,
