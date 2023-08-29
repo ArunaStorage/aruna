@@ -1166,6 +1166,7 @@ pub struct CheckAccessResult {
     pub resource_ids: Option<ResourceIds>,
     pub missing_resources: Option<Missing>,
     pub object: Option<(Object, Option<ObjectLocation>)>,
+    pub bundle: Option<String>,
 }
 
 impl CheckAccessResult {
@@ -1175,6 +1176,7 @@ impl CheckAccessResult {
         resource_ids: Option<ResourceIds>,
         missing_resources: Option<Missing>,
         object: Option<(Object, Option<ObjectLocation>)>,
+        bundle: Option<String>,
     ) -> Self {
         Self {
             resource_ids,
@@ -1182,6 +1184,7 @@ impl CheckAccessResult {
             user_id,
             token_id,
             object,
+            bundle,
         }
     }
 }
