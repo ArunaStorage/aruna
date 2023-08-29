@@ -25,6 +25,23 @@ impl HooksService for HookServiceImpl {
         &self,
         request: Request<CreateHookRequest>,
     ) -> Result<Response<CreateHookResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+        let project_id =
+            tonic_invalid!(DieselUlid::from_str(&request.project_id), "invalid parent");
+
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::APPEND, true);
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
         todo!()
     }
     async fn list_hooks(

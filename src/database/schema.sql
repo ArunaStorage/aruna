@@ -177,3 +177,15 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
     user_id UUID REFERENCES users(id),
     config JSONB NOT NULL
 );
+
+/* ----- Hook Service -------------------------------------- */
+-- Table for the hook service to persist hooks 
+CREATE TABLE IF NOT EXISTS hooks (
+    id UUID PRIMARY KEY NOT NULL,
+    project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    trigger_type "TriggerType" NOT NULL,
+    trigger_key VARCHAR(511) NOT NULL,
+    trigger_value VARCHAR(511) NOT NULL,
+    timeout TIMESTAMP NOT NULL, -- needs a sane default
+    hook JSONB NOT NULL -- can either be a internal or external hook with configs
+)

@@ -1,9 +1,10 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
 use postgres_from_row::FromRow;
+use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, Serialize, Deserialize, Clone)]
 pub struct RelationType {
     pub relation_name: String,
 }
