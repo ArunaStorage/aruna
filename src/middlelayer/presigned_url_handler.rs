@@ -53,7 +53,7 @@ impl DatabaseHandler {
             return Err(anyhow!("User does not trust endpoint"));
         }
 
-        let (endpoint_host_url, ssl, credentials) =
+        let (_, endpoint_s3_url, ssl, credentials) =
             DatabaseHandler::get_credentials(authorizer, user_id, endpoint).await?;
         let url = sign_download_url(
             &credentials.access_key,
@@ -61,7 +61,7 @@ impl DatabaseHandler {
             ssl,
             &bucket_name,
             &key,
-            &endpoint_host_url,
+            &endpoint_s3_url,
         )?;
         Ok(url)
     }
@@ -78,8 +78,16 @@ impl DatabaseHandler {
 
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
+
+        dbg!(
+            "Id: {}, bucket: {}, key: {}",
+            &project_id,
+            &bucket_name,
+            &key
+        );
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-        let (endpoint_host_url, ssl, credentials) =
+        dbg!("Endpoint: {}", &endpoint);
+        let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
             DatabaseHandler::get_credentials(authorizer, user_id, endpoint).await?;
         let upload_id = if multipart {
             DatabaseHandler::impersonated_multi_upload_init(
@@ -94,6 +102,8 @@ impl DatabaseHandler {
             None
         };
 
+        dbg!("Upload id: {}", &upload_id);
+
         let signed_url = sign_url(
             Method::PUT,
             &credentials.access_key,
@@ -104,7 +114,7 @@ impl DatabaseHandler {
             upload_id,
             &bucket_name,
             &key,
-            &endpoint_host_url,
+            &endpoint_s3_url,
             604800,
         )?;
         Ok(signed_url)
@@ -158,7 +168,7 @@ impl DatabaseHandler {
             let key = if project_name.is_empty() || object_name.is_empty() {
                 return Err(anyhow!("No project or object found"));
             } else {
-                match (collection_name.is_empty(), dataset_name.is_empty()) {
+                match (!collection_name.is_empty(), !dataset_name.is_empty()) {
                     (true, true) => {
                         format!("{}/{}/{}", collection_name, dataset_name, object_name)
                     }
@@ -198,7 +208,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
         project_endpoint: Endpoint,
-    ) -> Result<(String, bool, GetCredentialsResponse)> {
+    ) -> Result<(String, String, bool, GetCredentialsResponse)> {
         // Get s3 creds with slt:
         // 1. Create short-lived token with intent
         let slt = authorizer.token_handler.sign_dataproxy_slt(
@@ -213,15 +223,27 @@ impl DatabaseHandler {
         // 2. Request S3 credentials from Dataproxy
         let mut ssl: bool = true;
         let mut endpoint_host_url: String = String::new();
+        let mut endpoint_s3_url: String = String::new();
         for endpoint_config in project_endpoint.host_config.0 .0 {
-            if let HostConfig {
-                feature: DataProxyFeature::PROXY,
-                is_primary: true,
-                ..
-            } = endpoint_config
-            {
-                endpoint_host_url = endpoint_config.url;
-                ssl = endpoint_config.ssl;
+            match endpoint_config {
+                HostConfig {
+                    feature: DataProxyFeature::S3,
+                    is_primary: true,
+                    ..
+                } => {
+                    endpoint_s3_url = endpoint_config.url;
+                    ssl = endpoint_config.ssl;
+                }
+                HostConfig {
+                    feature: DataProxyFeature::GRPC,
+                    is_primary: true,
+                    ..
+                } => {
+                    endpoint_host_url = endpoint_config.url;
+                }
+                _ => continue,
+            };
+            if !endpoint_s3_url.is_empty() && !endpoint_host_url.is_empty() {
                 break;
             }
         }
@@ -242,7 +264,7 @@ impl DatabaseHandler {
             .get_credentials(credentials_request)
             .await?
             .into_inner();
-        Ok((endpoint_host_url, ssl, response))
+        Ok((endpoint_host_url, endpoint_s3_url, ssl, response))
     }
 
     async fn impersonated_multi_upload_init(
