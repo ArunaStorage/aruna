@@ -314,7 +314,6 @@ impl TryInto<GenericBytes<String>> for User {
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let user = self;
         let data = bincode::serialize(&user)?;
-        dbg!(&data);
         Ok(GenericBytes {
             id: user.access_key,
             data: data,

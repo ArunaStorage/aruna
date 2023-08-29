@@ -134,25 +134,6 @@ impl Cache {
     ) -> Result<(String, String)> {
         let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
-        match self
-            .users
-            .get(&access_key)
-            .map(|e| e.value().secret.clone())
-        {
-            Some(secret) => {
-                if !secret.is_empty() {
-                    return Ok((access_key, secret));
-                }
-            }
-            None => {}
-        }
-
-        let new_secret = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect::<String>();
-
         let perm = user
             .extract_access_key_permissions()?
             .iter()
@@ -161,17 +142,37 @@ impl Cache {
             .1
             .clone();
 
-        let user_access = User {
-            access_key: access_key.to_string(),
-            user_id: DieselUlid::from_str(&user.id)?,
-            secret: new_secret.clone(),
-            permissions: perm,
-        };
-        if let Some(persistence) = self.persistence.read().await.as_ref() {
-            user_access.upsert(&persistence.get_client().await?).await?;
+        let mut user = self
+            .users
+            .entry(access_key.to_string())
+            .or_try_insert_with(|| {
+                Ok::<_, anyhow::Error>(User {
+                    access_key: access_key.to_string(),
+                    user_id: DieselUlid::from_str(&user.id)?,
+                    secret: "".to_string(),
+                    permissions: perm,
+                })
+            })?;
+
+        if !user.secret.is_empty() {
+            return Ok((user.access_key.clone(), user.secret.clone()));
         }
 
-        self.users.insert(access_key.to_string(), user_access);
+        let new_secret = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect::<String>();
+
+        user.value_mut().secret = new_secret.clone();
+
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            user.value()
+                .upsert(&persistence.get_client().await?)
+                .await?;
+        }
+
+        dbg!(&self.users);
 
         Ok((access_key, new_secret))
     }
@@ -502,21 +503,36 @@ impl Cache {
     pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
-        for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
+        let mut to_insert = Vec::new();
+
+        for mut entry in self.users.iter_mut() {
+            for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
+                if *entry.key() == key {
+                    entry.value_mut().permissions = perm;
+                    continue;
+                } else {
+                    to_insert.push((key, perm));
+                }
+                if let Some(persistence) = self.persistence.read().await.as_ref() {
+                    entry
+                        .value()
+                        .upsert(&persistence.get_client().await?)
+                        .await?;
+                }
+            }
+        }
+
+        for (key, perm) in to_insert {
             let user_access = User {
-                access_key: key.clone(),
+                access_key: key.to_string(),
                 user_id,
-                secret: self
-                    .get_secret(&key)
-                    .map(|k| k.expose().to_string())
-                    .unwrap_or_default(),
+                secret: "".to_string(),
                 permissions: perm,
             };
-
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user_access.upsert(&persistence.get_client().await?).await?;
             }
-            self.users.insert(key.clone(), user_access);
+            self.users.insert(key.to_string(), user_access);
         }
         Ok(())
     }
