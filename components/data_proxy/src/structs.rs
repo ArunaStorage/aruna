@@ -129,7 +129,7 @@ impl From<Pubkey> for PubKey {
 }
 
 impl TypedRelation {
-    fn _get_id(&self) -> DieselUlid {
+    pub fn get_id(&self) -> DieselUlid {
         match self {
             TypedRelation::Project(i)
             | TypedRelation::Collection(i)

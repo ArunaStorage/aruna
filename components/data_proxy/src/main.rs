@@ -11,7 +11,7 @@ use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
 
-// mod bundler;
+mod bundler;
 mod caching;
 mod data_backends;
 mod database;
