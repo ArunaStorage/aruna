@@ -2,6 +2,7 @@ use super::create_request_types::CreateRequest;
 use super::db_handler::DatabaseHandler;
 use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::hook_dsl::{Hook, TriggerType};
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
@@ -43,7 +44,6 @@ impl DatabaseHandler {
                 };
             };
         }
-
         // Transaction setup
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -105,6 +105,8 @@ impl DatabaseHandler {
                     } else {
                         result?
                     }
+                    // Trigger hooks
+                    // TODO: self.trigger_on_creation(cache.clone(), parent.clone());
                     DashMap::from_iter([(parent.get_id()?, ir)])
                 }
             };

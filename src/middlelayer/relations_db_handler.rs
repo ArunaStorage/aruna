@@ -53,7 +53,6 @@ impl DatabaseHandler {
         }
         if !relations_remove.internal.is_empty() {
             InternalRelation::batch_delete(
-                // This does not work because the conversion cannot guess diesel ulids
                 &relations_remove.internal.iter().map(|r| r.id).collect(),
                 transaction_client,
             )

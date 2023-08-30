@@ -1,4 +1,5 @@
 use crate::caching::cache::Cache;
+use crate::database::dsls::hook_dsl::{BasicTemplate, Hook};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -23,6 +24,10 @@ use crate::database::{
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
+use aruna_rust_api::api::hooks::services::v2::hook::HookType;
+use aruna_rust_api::api::hooks::services::v2::{
+    Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
+};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
     Status, Token, User as ApiUser, UserAttributes,
@@ -38,6 +43,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use serde_json::json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::MetadataMap;
@@ -1173,5 +1179,80 @@ impl TryFrom<i32> for EndpointVariant {
             2 => EndpointVariant::VOLATILE,
             _ => return Err(anyhow!("Undefined endpoint variant")),
         })
+    }
+}
+
+impl From<Hook> for HookInfo {
+    fn from(hook: Hook) -> HookInfo {
+        let trigger = Some(hook.into_trigger());
+        HookInfo {
+            hook_id: hook.id.to_string(),
+            hook: Some(hook.into_api_hook()),
+            trigger,
+            timeout: hook.timeout.timestamp_millis() as u64,
+        }
+    }
+}
+impl Hook {
+    fn into_trigger(&self) -> Trigger {
+        Trigger {
+            trigger_type: match self.trigger_type {
+                crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
+                crate::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED => 2,
+            },
+            key: self.trigger_key.clone(),
+            value: self.trigger_value.clone(),
+        }
+    }
+    fn into_api_hook(&self) -> APIHook {
+        match &self.hook.0 {
+            crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
+                let (internal_action, target_id, value) = match internal_hook {
+                    crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
+                        (1, key.clone(), value.clone())
+                    }
+                    crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
+                        (2, key.clone(), value.clone())
+                    }
+
+                    crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
+                        target_id,
+                        relation_type,
+                    } => (3, target_id.to_string(), relation_type.clone()),
+                };
+                APIHook {
+                    hook_type: Some(HookType::InternalHook(InternalHook {
+                        internal_action,
+                        target_id,
+                        value,
+                    })),
+                }
+            }
+            crate::database::dsls::hook_dsl::HookVariant::External(external_hook) => {
+                // TODO: This needs to be modified when templating gets implemented
+                let json_template = match external_hook.template {
+                    crate::database::dsls::hook_dsl::TemplateVariant::BasicTemplate => {
+                        json!({
+                            "hook_id": "ULID_PLACEHOLDER",
+                            "object": "RESOURCE_PLACEHOLDER",
+                            "secret": "SECRET_PLACEHOLDER",
+                            "download": "DONWLOAD_URL_PLACEHOLDER",
+                            "upload": "UPLOAD_URL_PLACEHOLDER"
+                        })
+                    }
+                }
+                .to_string();
+                APIHook {
+                    hook_type: Some(HookType::ExternalHook(ExternalHook {
+                        url: external_hook.url.clone(),
+                        credentials: external_hook
+                            .credentials
+                            .clone()
+                            .map(|c| Credentials { token: c.token }),
+                        json_template,
+                    })),
+                }
+            }
+        }
     }
 }
