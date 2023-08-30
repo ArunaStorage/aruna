@@ -2,7 +2,6 @@ use super::data_handler::DataHandler;
 use super::utils::buffered_s3_sink::BufferedS3Sink;
 use super::utils::ranges::calculate_content_length_from_range;
 use super::utils::ranges::calculate_ranges;
-use crate::bundler::bundle_helper;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
@@ -34,7 +33,6 @@ use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
 use http::HeaderValue;
-use jsonwebtoken::Header;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
@@ -91,7 +89,7 @@ impl S3 for ArunaS3Service {
                 .read()
                 .await
                 .as_ref()
-                .unwrap()
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler"))?
                 .sign_impersonating_token(
                     user_id.ok_or_else(|| {
                         s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
@@ -146,6 +144,7 @@ impl S3 for ArunaS3Service {
             token_id,
             resource_ids,
             missing_resources,
+            object,
             ..
         } = req
             .extensions
@@ -165,29 +164,38 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
-        let missing_object_name = missing_resources
-            .clone()
-            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-            .o
-            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+        let mut object = if let Some((o, _loc)) = object {
+            if o.object_status == Status::Initializing {
+                o
+            } else {
+                todo!();
+                // TODO: Update object!
+            }
+        } else {
+            let missing_object_name = missing_resources
+                .clone()
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+                .o
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-        let mut new_object = ProxyObject {
-            id: DieselUlid::generate(),
-            name: missing_object_name,
-            key_values: vec![],
-            object_status: Status::Initializing,
-            data_class: DataClass::Private,
-            object_type: crate::structs::ObjectType::Object,
-            hashes: HashMap::default(),
-            dynamic: false,
-            children: None,
-            parents: None,
-            synced: false,
+            let new_object = ProxyObject {
+                id: DieselUlid::generate(),
+                name: missing_object_name.to_string(),
+                key_values: vec![],
+                object_status: Status::Initializing,
+                data_class: DataClass::Private,
+                object_type: crate::structs::ObjectType::Object,
+                hashes: HashMap::default(),
+                dynamic: false,
+                children: None,
+                parents: None,
+                synced: false,
+            };
+            new_object
         };
-
         let mut location = self
             .backend
-            .initialize_location(&new_object, req.input.content_length, None, false)
+            .initialize_location(&object, req.input.content_length, None, false)
             .await
             .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
@@ -324,11 +332,11 @@ impl S3 for ArunaS3Service {
             };
 
             if let Some(ds_id) = dataset_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
+                object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
             } else if let Some(col_id) = collection_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
+                object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
             } else {
-                new_object.parents = Some(HashSet::from([TypedRelation::Project(
+                object.parents = Some(HashSet::from([TypedRelation::Project(
                     res_ids.get_project(),
                 )]));
             }
@@ -353,7 +361,7 @@ impl S3 for ArunaS3Service {
                 .try_recv()
                 .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
 
-            new_object.hashes = vec![
+            object.hashes = vec![
                 (
                     "MD5".to_string(),
                     md5_initial.clone().ok_or_else(|| {
@@ -376,7 +384,7 @@ impl S3 for ArunaS3Service {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
                     handler
-                        .create_and_finish(new_object.clone(), location, token)
+                        .create_and_finish(object.clone(), location, token)
                         .await
                         .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
@@ -385,7 +393,7 @@ impl S3 for ArunaS3Service {
         let output = PutObjectOutput {
             e_tag: md5_initial,
             checksum_sha256: sha_initial,
-            version_id: Some(new_object.id.to_string()),
+            version_id: Some(object.id.to_string()),
             ..Default::default()
         };
         Ok(S3Response::new(output))
@@ -768,13 +776,17 @@ impl S3 for ArunaS3Service {
 
             let body = get_bundle(levels, self.backend.clone()).await;
 
-            let resp = S3Response::new(GetObjectOutput {
+            let mut resp = S3Response::new(GetObjectOutput {
                 body,
-                content_length: 0,
                 last_modified: None,
                 e_tag: Some(format!("-{}", id.to_string())),
                 ..Default::default()
             });
+
+            resp.headers.insert(
+                hyper::header::TRANSFER_ENCODING,
+                HeaderValue::from_static("chunked"),
+            );
 
             return Ok(resp);
         }

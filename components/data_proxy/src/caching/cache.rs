@@ -133,6 +133,7 @@ impl Cache {
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
+        dbg!("Was here!");
         let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
         let perm = user
