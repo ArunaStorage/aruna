@@ -5,6 +5,7 @@ use crate::caching::structs::PubKeyEnum;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
 use crate::utils::conversions::get_token_from_md;
+use anyhow::bail;
 use aruna_rust_api::api::storage::models::v2::Endpoint;
 use aruna_rust_api::api::storage::services::v2::endpoint_service_server::EndpointService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -15,12 +16,16 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use jsonwebtoken::DecodingKey;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Result, Status};
 
 crate::impl_grpc_server!(EndpointServiceImpl, default_endpoint: String);
 
 #[tonic::async_trait]
 impl EndpointService for EndpointServiceImpl {
+    type FullSyncEndpointStream = ReceiverStream<Result<FullSyncEndpointResponse, Status>>;
+
     async fn create_endpoint(
         &self,
         request: Request<CreateEndpointRequest>,
@@ -72,9 +77,49 @@ impl EndpointService for EndpointServiceImpl {
 
     async fn full_sync_endpoint(
         &self,
-        _request: Request<FullSyncEndpointRequest>,
-    ) -> Result<Response<FullSyncEndpointResponse>> {
-        todo!()
+        request: Request<FullSyncEndpointRequest>,
+    ) -> Result<Response<Self::FullSyncEndpointStream>> {
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let user = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![Context::proxy()])
+                .await,
+            "Unauthorized"
+        );
+
+        // Create multi-producer single-consumer channel
+        let (tx, rx) = mpsc::channel(4);
+
+        // Send messages in batches if present
+        let cache_clone = self.cache.clone();
+        tokio::spawn(async move {
+            for item in cache_clone.get_proxy_cache_iterator(&user) {
+                match tx.send(Ok(item.into())).await {
+                    Ok(_) => {
+                        log::info!("Successfully send stream response")
+                    }
+                    Err(err) => {
+                        bail!("Error while sending stream response: {}", err)
+                    }
+                };
+            }
+            Ok(())
+        });
+
+        // Create gRPC response
+        let grpc_response: Response<
+            ReceiverStream<std::result::Result<FullSyncEndpointResponse, Status>>,
+        > = Response::new(ReceiverStream::new(rx));
+
+        // Log some stuff and return response
+        log::info!("Sending GetEventMessageBatchStreamStreamResponse back to client.");
+        log::debug!("{:?}", &grpc_response);
+        return Ok(grpc_response);
     }
 
     async fn get_endpoint(

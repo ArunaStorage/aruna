@@ -8,7 +8,7 @@ use aruna_rust_api::api::storage::services::v2::authorization_service_server::Au
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,
     DeleteAuthorizationResponse, GetAuthorizationsRequest, GetAuthorizationsResponse,
-    ResourceAuthorization, UpdateAuthorizationsRequest, UpdateAuthorizationsResponse,
+    ResourceAuthorization, UpdateAuthorizationRequest, UpdateAuthorizationResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -190,10 +190,10 @@ impl AuthorizationService for AuthorizationServiceImpl {
     ///
     /// This creates a user-specific attribute that handles permission for a
     /// specific resource
-    async fn update_authorizations(
+    async fn update_authorization(
         &self,
-        request: tonic::Request<UpdateAuthorizationsRequest>,
-    ) -> Result<tonic::Response<UpdateAuthorizationsResponse>, tonic::Status> {
+        request: tonic::Request<UpdateAuthorizationRequest>,
+    ) -> Result<tonic::Response<UpdateAuthorizationResponse>, tonic::Status> {
         // Log some stuff
         log_received!(&request);
 
@@ -245,7 +245,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
         self.cache.update_user(&user.id.clone(), user);
 
         // Return found authorizations
-        let response = UpdateAuthorizationsResponse {
+        let response = UpdateAuthorizationResponse {
             user_permission: None,
         };
         return_with_log!(response);

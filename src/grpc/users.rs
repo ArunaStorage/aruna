@@ -498,10 +498,14 @@ impl UserService for UserServiceImpl {
         self.cache.update_user(&user_id, user);
 
         // Request S3 credentials from Dataproxy
-        let mut endpoint_host_url: String = "".to_string();
+        let mut endpoint_host_url: String = String::new();
+        let mut endpoint_s3_url: String = String::new();
         for endpoint_config in endpoint.host_config.0 .0 {
-            if let DataProxyFeature::PROXY = endpoint_config.feature {
-                endpoint_host_url = endpoint_config.url;
+            match endpoint_config.feature {
+                DataProxyFeature::GRPC => endpoint_host_url = endpoint_config.url,
+                DataProxyFeature::S3 => endpoint_s3_url = endpoint_config.url,
+            }
+            if !endpoint_s3_url.is_empty() && !endpoint_host_url.is_empty() {
                 break;
             }
         }
@@ -534,7 +538,7 @@ impl UserService for UserServiceImpl {
         let response = GetS3CredentialsUserResponse {
             s3_access_key: response.access_key,
             s3_secret_key: response.secret_key,
-            s3_endpoint_url: endpoint_host_url.to_string(),
+            s3_endpoint_url: endpoint_s3_url.to_string(),
         };
         return_with_log!(response);
     }

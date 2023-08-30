@@ -7,6 +7,7 @@ use crate::middlelayer::clone_request_types::CloneObject;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
+use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
@@ -23,7 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use tonic::{Request, Response, Result};
+use tonic::{Request, Response, Result, Status};
 
 crate::impl_grpc_server!(ObjectServiceImpl, search_client: Arc<MeilisearchClient>);
 
@@ -84,57 +85,84 @@ impl ObjectService for ObjectServiceImpl {
 
     async fn get_upload_url(
         &self,
-        _request: Request<GetUploadUrlRequest>,
+        request: Request<GetUploadUrlRequest>,
     ) -> Result<Response<GetUploadUrlResponse>> {
-        todo!()
-        // log::info!("Received CreateObjectRequest.");
-        // log::debug!("{:?}", &request);
+        log_received!(&request);
 
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
 
-        // let inner_request = request.into_inner();
+        let request = PresignedUpload(request.into_inner());
 
-        // let object_id = DieselUlid::from_str(&inner_request.object_id).map_err(|e| {
-        //     log::error!("{}", e);
-        //     tonic::Status::internal("ULID conversion error.")
-        // })?;
-        // let ctx = Context::Object(ResourcePermission {
-        //     id: object_id,
-        //     level: crate::database::enums::PermissionLevels::WRITE, // append?
-        //     allow_sa: true,
-        // });
+        let object_id = tonic_invalid!(request.get_id(), "Invalid id");
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(object_id, DbPermissionLevel::WRITE, true)]
+                )
+                .await,
+            "Unauthorized"
+        );
 
-        // let user_id = match &self.authorizer.check_permissions(&token, ctx) {
-        //     Ok(b) => {
-        //         if *b {
-        //             // ToDo!
-        //             // PLACEHOLDER!
-        //             DieselUlid::generate()
-        //         } else {
-        //             return Err(tonic::Status::permission_denied("Not allowed."));
-        //         }
-        //     }
-        //     Err(e) => {
-        //         log::debug!("{}", e);
-        //         return Err(tonic::Status::permission_denied("Not allowed."));
-        //     }
-        // };
-        // //TODO
-        // Err(tonic::Status::unimplemented(
-        //     "GetUploadURL is not implemented.",
-        // ))
+        let signed_url = tonic_internal!(
+            self.database_handler
+                .get_presigend_upload(
+                    self.cache.clone(),
+                    request,
+                    self.authorizer.clone(),
+                    user_id,
+                )
+                .await,
+            "Error while building presigned url"
+        );
+
+        let result = GetUploadUrlResponse { url: signed_url };
+
+        return_with_log!(result);
     }
+
     async fn get_download_url(
         &self,
-        _request: Request<GetDownloadUrlRequest>,
+        request: Request<GetDownloadUrlRequest>,
     ) -> Result<Response<GetDownloadUrlResponse>> {
-        //TODO
-        Err(tonic::Status::unimplemented(
-            "GetDownloadURL is not implemented.",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = PresignedDownload(request.into_inner());
+
+        let object_id = tonic_invalid!(request.get_id(), "Invalid id");
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(object_id, DbPermissionLevel::READ, true)]
+                )
+                .await,
+            "Unauthorized"
+        );
+
+        let signed_url = tonic_internal!(
+            self.database_handler
+                .get_presigned_download(
+                    self.cache.clone(),
+                    self.authorizer.clone(),
+                    request,
+                    user_id,
+                )
+                .await,
+            "Error while building presigned url"
+        );
+
+        let result = GetDownloadUrlResponse { url: signed_url };
+
+        return_with_log!(result);
     }
 
     async fn finish_object_staging(
@@ -147,16 +175,12 @@ impl ObjectService for ObjectServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error."
         );
-        // let token = get_token_from_md(request.metadata()).map_err(|e| {
-        //     log::debug!("{}", e);
-        //     tonic::Status::unauthenticated("Token authentication error.")
-        // })?;
 
         let request = request.into_inner();
 
-        tonic_auth!(
+        let (_, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions(
+                .check_permissions_verbose(
                     &token,
                     vec![Context::res_ctx(
                         tonic_invalid!(
@@ -170,6 +194,21 @@ impl ObjectService for ObjectServiceImpl {
                 .await,
             "Unauthorized"
         );
+        if !is_dataproxy {
+            let object = self
+                .cache
+                .get_object(&tonic_invalid!(
+                    DieselUlid::from_str(&request.object_id),
+                    "Invalid id"
+                ))
+                .ok_or_else(|| Status::not_found("Object not found"))?;
+            let object: generic_resource::Resource =
+                tonic_internal!(object.try_into(), "Object conversion error");
+            let response = FinishObjectStagingResponse {
+                object: Some(object.into_inner()?),
+            };
+            return_with_log!(response);
+        }
 
         let object = tonic_internal!(
             self.database_handler.finish_object(request).await,
@@ -348,7 +387,7 @@ impl ObjectService for ObjectServiceImpl {
         let res = self
             .cache
             .get_object(&object_id)
-            .ok_or_else(|| tonic::Status::not_found("Object not found"))?;
+            .ok_or_else(|| Status::not_found("Object not found"))?;
 
         let generic_object: generic_resource::Resource =
             tonic_invalid!(res.try_into(), "Invalid object");

@@ -4,8 +4,11 @@ use crate::database::dsls::user_dsl::User;
 use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_rust_api::api::storage::models::v2::GenericResource;
+use aruna_rust_api::api::storage::models::v2::Pubkey as APIPubkey;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
-use aruna_rust_api::api::storage::services::v2::Pubkey as APIPubkey;
+use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response;
+use aruna_rust_api::api::storage::services::v2::FullSyncEndpointResponse;
 use dashmap::mapref::multiple::RefMulti;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
@@ -67,20 +70,33 @@ impl ObjectWithRelations {
 }
 
 pub struct ProxyCacheIterator<'a> {
-    resource_iter:
-        Box<dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>> + 'a>,
-    user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a)>,
-    pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a)>,
+    resource_iter: Box<
+        dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>>
+            + 'a
+            + Send
+            + Sync,
+    >,
+    user_iter:
+        Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync)>,
+    pub_key_iter:
+        Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a + Send + Sync)>,
     endpoint_id: DieselUlid,
 }
 
 impl<'a> ProxyCacheIterator<'a> {
     pub fn new(
         resource_iter: Box<
-            (dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>> + 'a),
+            (dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>>
+                 + 'a
+                 + Send
+                 + Sync),
         >,
-        user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a)>,
-        pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a)>,
+        user_iter: Box<
+            (dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync),
+        >,
+        pub_key_iter: Box<
+            (dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a + Send + Sync),
+        >,
         endpoint_id: DieselUlid,
     ) -> ProxyCacheIterator<'a> {
         ProxyCacheIterator {
@@ -123,8 +139,27 @@ impl<'a> Iterator for ProxyCacheIterator<'a> {
     }
 }
 
+#[derive(Clone)]
 pub enum GrpcProxyInfos {
     Resource(generic_resource::Resource),
     User(APIUser),
     PubKey(APIPubkey),
+}
+
+impl From<GrpcProxyInfos> for FullSyncEndpointResponse {
+    fn from(value: GrpcProxyInfos) -> Self {
+        match value {
+            GrpcProxyInfos::Resource(r) => FullSyncEndpointResponse {
+                target: Some(full_sync_endpoint_response::Target::GenericResource(
+                    GenericResource { resource: Some(r) },
+                )),
+            },
+            GrpcProxyInfos::User(u) => FullSyncEndpointResponse {
+                target: Some(full_sync_endpoint_response::Target::User(u)),
+            },
+            GrpcProxyInfos::PubKey(p) => FullSyncEndpointResponse {
+                target: Some(full_sync_endpoint_response::Target::Pubkey(p)),
+            },
+        }
+    }
 }
