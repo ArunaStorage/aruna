@@ -770,7 +770,7 @@ impl S3 for ArunaS3Service {
 
             let resp = S3Response::new(GetObjectOutput {
                 body,
-                content_length: 86,
+                content_length: 0,
                 last_modified: None,
                 e_tag: Some(format!("-{}", id.to_string())),
                 ..Default::default()
