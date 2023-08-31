@@ -1215,10 +1215,10 @@ impl Hook {
                         (2, key.clone(), value.clone())
                     }
 
-                    crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
-                        target_id,
-                        relation_type,
-                    } => (3, target_id.to_string(), relation_type.clone()),
+                    crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
+                        // (3, target_id.to_string(), relation_type.clone());
+                        todo!()
+                    }
                 };
                 APIHook {
                     hook_type: Some(HookType::InternalHook(InternalHook {

@@ -60,7 +60,7 @@ impl ProjectService for ProjectServiceImpl {
 
         let (project, user) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
+                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );

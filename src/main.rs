@@ -87,6 +87,7 @@ pub async fn main() -> Result<()> {
     let database_handler = DatabaseHandler {
         database: db_arc.clone(),
         natsio_handler: natsio_arc.clone(),
+        cache: cache_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
     dbg!("Bin hier!");

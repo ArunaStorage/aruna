@@ -1,5 +1,7 @@
 use super::create_request_types::CreateRequest;
 use super::db_handler::DatabaseHandler;
+use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::token_handler::TokenHandler;
 use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{Hook, TriggerType};
@@ -20,16 +22,16 @@ use std::sync::Arc;
 impl DatabaseHandler {
     pub async fn create_resource(
         &self,
+        authorizer: Arc<PermissionHandler>,
         request: CreateRequest,
         user_id: DieselUlid,
         is_dataproxy: bool,
-        cache: Arc<Cache>,
     ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
 
         // query endpoints
-        let endpoint_ids = request.get_endpoint(cache.clone(), &client).await?;
+        let endpoint_ids = request.get_endpoint(self.cache.clone(), &client).await?;
 
         // check if project exists:
         if request.get_type() == ObjectType::PROJECT {
@@ -55,61 +57,63 @@ impl DatabaseHandler {
         object.create(transaction_client).await?;
 
         // Create internal relation in database && add user permissions for resource
-        let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
-            match request.get_type() {
-                ObjectType::PROJECT => {
-                    user = Some(
-                        self.add_permission_to_user(
-                            user_id,
-                            object.id,
-                            ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
-                        )
-                        .await?,
-                    );
+        let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> = match request
+            .get_type()
+        {
+            ObjectType::PROJECT => {
+                user = Some(
+                    self.add_permission_to_user(
+                        user_id,
+                        object.id,
+                        ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                    )
+                    .await?,
+                );
 
-                    DashMap::default()
-                }
-                _ => {
-                    let parent = request
-                        .get_parent()
-                        .ok_or_else(|| anyhow!("No parent provided"))?;
+                DashMap::default()
+            }
+            _ => {
+                let parent = request
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent provided"))?;
 
-                    let mut ir = InternalRelation {
-                        id: DieselUlid::generate(),
-                        origin_pid: parent.get_id()?,
-                        origin_type: parent.get_type(),
-                        target_pid: object.id,
-                        target_type: object.object_type,
-                        relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
-                        target_name: object.name.to_string(),
-                    };
-                    let result = ir.create(transaction_client).await;
-                    if result.is_err() && is_dataproxy {
-                        transaction.rollback().await?;
-                        if let Some(parent) = cache.get_object(&parent.get_id()?) {
-                            for (id, irel) in parent.outbound_belongs_to.0 {
-                                if irel.target_name == object.name {
-                                    return Ok((
-                                        cache
-                                            .get_object(&id)
-                                            .ok_or_else(|| anyhow!("Cache not synced"))?
-                                            .clone(),
-                                        None,
-                                    ));
-                                }
+                let mut ir = InternalRelation {
+                    id: DieselUlid::generate(),
+                    origin_pid: parent.get_id()?,
+                    origin_type: parent.get_type(),
+                    target_pid: object.id,
+                    target_type: object.object_type,
+                    relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                    target_name: object.name.to_string(),
+                };
+                let result = ir.create(transaction_client).await;
+                if result.is_err() && is_dataproxy {
+                    transaction.rollback().await?;
+                    if let Some(parent) = self.cache.get_object(&parent.get_id()?) {
+                        for (id, irel) in parent.outbound_belongs_to.0 {
+                            if irel.target_name == object.name {
+                                return Ok((
+                                    self.cache
+                                        .get_object(&id)
+                                        .ok_or_else(|| anyhow!("Cache not synced"))?
+                                        .clone(),
+                                    None,
+                                ));
                             }
                         }
-                        return Err(anyhow!(
-                            "Either cache not synced or other database error while creating object"
-                        ));
-                    } else {
-                        result?
                     }
-                    // Trigger hooks
-                    // TODO: self.trigger_on_creation(cache.clone(), parent.clone());
-                    DashMap::from_iter([(parent.get_id()?, ir)])
+                    return Err(anyhow!(
+                        "Either cache not synced or other database error while creating object"
+                    ));
+                } else {
+                    result?
                 }
-            };
+                // Trigger hooks
+                self.trigger_on_creation(authorizer.clone(), parent.clone(), object.id, user_id)
+                    .await?;
+                DashMap::from_iter([(parent.get_id()?, ir)])
+            }
+        };
         transaction.commit().await?;
 
         // Fetch all object paths for the notification subjects

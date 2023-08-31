@@ -69,6 +69,7 @@ impl CreateHook {
                             }),
                             template:
                                 crate::database::dsls::hook_dsl::TemplateVariant::BasicTemplate,
+                            method: crate::database::dsls::hook_dsl::Method::PUT,
                         }),
                     ),
                 })
@@ -86,28 +87,9 @@ impl CreateHook {
                         key: internal_hook.target_id.clone(),
                         value: internal_hook.value.clone(),
                     },
-                    InternalAction::CreateRelation => InternalHook::CreateRelation {
-                        target_id: DieselUlid::from_str(&internal_hook.target_id)?,
-                        relation_type: match internal_hook.value.as_str() {
-                            INTERNAL_RELATION_VARIANT_BELONGS_TO => {
-                                INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string()
-                            }
-                            INTERNAL_RELATION_VARIANT_METADATA => {
-                                INTERNAL_RELATION_VARIANT_METADATA.to_string()
-                            }
-                            INTERNAL_RELATION_VARIANT_POLICY => {
-                                INTERNAL_RELATION_VARIANT_POLICY.to_string()
-                            }
-                            INTERNAL_RELATION_VARIANT_ORIGIN => {
-                                INTERNAL_RELATION_VARIANT_ORIGIN.to_string()
-                            }
-                            _ => {
-                                return Err(anyhow!(
-                                    "Invalid relation type for InternalHook::CreateRelation"
-                                ))
-                            }
-                        },
-                    },
+                    InternalAction::CreateRelation => {
+                        InternalHook::CreateRelation { relation: todo!() }
+                    }
                     _ => return Err(anyhow!("Invalid internal action")),
                 };
                 Ok(Hook {

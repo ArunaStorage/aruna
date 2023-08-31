@@ -3,6 +3,7 @@ use crate::utils::database_utils::create_multi_query;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
+use aruna_rust_api::api::storage::models::v2::relation::Relation;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
@@ -32,6 +33,13 @@ pub struct ExternalHook {
     pub url: String,
     pub credentials: Option<Credentials>,
     pub template: TemplateVariant,
+    pub method: Method,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Method {
+    PUT,
+    POST,
 }
 
 #[allow(non_camel_case_types)]
@@ -43,18 +51,9 @@ pub enum TriggerType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InternalHook {
-    AddLabel {
-        key: String,
-        value: String,
-    },
-    AddHook {
-        key: String,
-        value: String,
-    },
-    CreateRelation {
-        target_id: DieselUlid,
-        relation_type: String,
-    },
+    AddLabel { key: String, value: String },
+    AddHook { key: String, value: String },
+    CreateRelation { relation: Relation },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,7 +72,8 @@ pub struct BasicTemplate {
     pub object: Resource,
     pub secret: String,
     pub download: String,
-    pub upload: String,
+    pub upload_token: String,
+    pub pubkey_serial: i32,
 }
 
 #[async_trait::async_trait]
