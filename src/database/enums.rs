@@ -132,8 +132,8 @@ pub enum DbPermissionLevel {
 )]
 pub enum DataProxyFeature {
     #[default]
-    PROXY,
-    BUNDLER,
+    GRPC,
+    S3,
 }
 #[derive(Serialize, Deserialize, Debug, Default, ToSql, FromSql, Clone, PartialEq, PartialOrd)]
 pub enum EndpointVariant {

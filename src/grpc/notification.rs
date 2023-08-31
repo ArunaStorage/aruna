@@ -379,7 +379,7 @@ impl EventNotificationService for NotificationServiceImpl {
                     // Send message through stream
                     match tx
                         .send(Ok(GetEventMessageStreamResponse {
-                            messages: Some(event_message),
+                            message: Some(event_message),
                         }))
                         .await
                     {

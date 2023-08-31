@@ -209,7 +209,7 @@ impl DatabaseHandler {
                 key_values: Json(req.get_all_kvs(old.clone())?),
                 hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
-                object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                object_status: old.object_status.clone(),
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old)?),
             };
@@ -237,7 +237,7 @@ impl DatabaseHandler {
                 key_values: Json(req.get_add_keyvals(old.clone())?),
                 hashes: old.clone().hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
-                object_status: crate::database::enums::ObjectStatus::AVAILABLE,
+                object_status: old.object_status.clone(),
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old)?),
             };

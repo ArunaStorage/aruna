@@ -1098,8 +1098,8 @@ impl TryFrom<i32> for DataProxyFeature {
     type Error = anyhow::Error;
     fn try_from(var: i32) -> Result<DataProxyFeature> {
         let res = match var {
-            1 => DataProxyFeature::PROXY,
-            2 => DataProxyFeature::BUNDLER,
+            1 => DataProxyFeature::GRPC,
+            2 => DataProxyFeature::S3,
             _ => return Err(anyhow!("Undefined dataproxy feature")),
         };
         Ok(res)
@@ -1159,8 +1159,8 @@ impl From<HostConfigs> for Vec<EndpointHostConfig> {
 impl From<DataProxyFeature> for i32 {
     fn from(feat: DataProxyFeature) -> Self {
         match feat {
-            DataProxyFeature::PROXY => 1,
-            DataProxyFeature::BUNDLER => 2,
+            DataProxyFeature::GRPC => 1,
+            DataProxyFeature::S3 => 2,
         }
     }
 }

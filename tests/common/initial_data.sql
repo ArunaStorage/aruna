@@ -25,7 +25,7 @@ VALUES
 INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status) VALUES (
     '018a03c0-7e8b-293c-eb14-e10dc4b990db', --01H81W0ZMB54YEP5711Q2BK46V
     'default_endpoint',
-    '[{"url": "http://localhost:50052", "is_primary": true, "ssl": false, "public": true, "feature": "PROXY"}]',
+    '[{"url": "http://localhost:50052", "is_primary": true, "ssl": false, "public": true, "feature": "GRPC"}, {"url": "http://localhost:1337", "is_primary": true, "ssl": false, "public": true, "feature": "S3"}]',
     'PERSISTENT',
     't',
     'AVAILABLE' 
