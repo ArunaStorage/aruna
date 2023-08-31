@@ -31,6 +31,7 @@ async fn fetch_object_paths() {
         test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
     let project_003 =
         test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+
     let collection = test_utils::new_object(
         random_user_id,
         DieselUlid::generate(),
@@ -123,6 +124,119 @@ async fn fetch_object_paths() {
     ] {
         assert!(result.contains(&hierarchy))
     }
+}
+
+#[tokio::test]
+async fn fetch_object_subresources() {
+    // Init database connection
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+
+    // Create random user
+    let mut user = test_utils::new_user(vec![]);
+    let random_user_id = user.id;
+    user.create(&client).await.unwrap();
+
+    // Create dummy hierarchy
+    let project_1 =
+        test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_2 =
+        test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+    let project_3 =
+        test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::PROJECT);
+
+    let collection = test_utils::new_object(
+        random_user_id,
+        DieselUlid::generate(),
+        ObjectType::COLLECTION,
+    );
+    let dataset_1 =
+        test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let dataset_2 =
+        test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::DATASET);
+    let object = test_utils::new_object(random_user_id, DieselUlid::generate(), ObjectType::OBJECT);
+
+    let proj_coll_1 = test_utils::new_internal_relation(&project_1, &collection);
+    let proj_coll_2 = test_utils::new_internal_relation(&project_2, &collection);
+    let proj_data = test_utils::new_internal_relation(&project_3, &dataset_2);
+    let coll_data_1 = test_utils::new_internal_relation(&collection, &dataset_1);
+    let coll_data_2 = test_utils::new_internal_relation(&collection, &dataset_2);
+    let data_obj_1 = test_utils::new_internal_relation(&dataset_1, &object);
+    let data_obj_2 = test_utils::new_internal_relation(&dataset_2, &object);
+
+    Object::batch_create(
+        &vec![
+            project_1.clone(),
+            project_2.clone(),
+            project_3.clone(),
+            collection.clone(),
+            dataset_1.clone(),
+            dataset_2.clone(),
+            object.clone(),
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    InternalRelation::batch_create(
+        &vec![
+            proj_coll_1,
+            proj_coll_2,
+            proj_data,
+            coll_data_1,
+            coll_data_2,
+            data_obj_1,
+            data_obj_2,
+        ],
+        &client,
+    )
+    .await
+    .unwrap();
+
+    // Fetch subresources of projects
+    let project_1_sub = project_1.fetch_subresources(&client).await.unwrap();
+    let project_2_sub = project_2.fetch_subresources(&client).await.unwrap();
+    let project_3_sub = project_3.fetch_subresources(&client).await.unwrap();
+
+    assert_eq!(project_1_sub.len(), 4);
+    assert!(project_1_sub.contains(&collection.id));
+    assert!(project_1_sub.contains(&dataset_1.id));
+    assert!(project_1_sub.contains(&dataset_2.id));
+    assert!(project_1_sub.contains(&object.id));
+
+    assert_eq!(project_2_sub.len(), 4);
+    assert!(project_2_sub.contains(&collection.id));
+    assert!(project_2_sub.contains(&dataset_1.id));
+    assert!(project_2_sub.contains(&dataset_2.id));
+    assert!(project_2_sub.contains(&object.id));
+
+    assert_eq!(project_3_sub.len(), 2);
+    assert!(project_2_sub.contains(&dataset_2.id));
+    assert!(project_2_sub.contains(&object.id));
+
+    // Fetch subresources of collection
+    let collection_sub = collection.fetch_subresources(&client).await.unwrap();
+
+    assert_eq!(collection_sub.len(), 3);
+    assert!(collection_sub.contains(&dataset_1.id));
+    assert!(collection_sub.contains(&dataset_2.id));
+    assert!(collection_sub.contains(&object.id));
+
+    // Fetch subresources of datasets
+    let dataset_01_sub = dataset_1.fetch_subresources(&client).await.unwrap();
+    let dataset_02_sub = dataset_2.fetch_subresources(&client).await.unwrap();
+
+    assert_eq!(dataset_01_sub.len(), 1);
+    assert!(dataset_01_sub.contains(&object.id));
+
+    assert_eq!(dataset_02_sub.len(), 1);
+    assert!(dataset_02_sub.contains(&object.id));
+
+    // Fetch subresources of object
+    let object_sub = object.fetch_subresources(&client).await.unwrap();
+
+    assert_eq!(object_sub.len(), 0);
 }
 
 #[tokio::test]

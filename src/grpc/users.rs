@@ -434,7 +434,7 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
-        let user = self.cache.get_all().await;
+        let user = self.cache.get_all_users_proto().await;
 
         let response = GetAllUsersResponse { user };
         return_with_log!(response);
