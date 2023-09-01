@@ -10,7 +10,7 @@ use crate::database::enums::{ObjectMapping, ObjectType}; use crate::middlelayer:
 use crate::middlelayer::hooks_request_types::{CreateHook, Callback};
 use crate::database::crud::CrudDb;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::hooks::services::v2::{HookCallbackRequest, ListHooksRequest};
+use aruna_rust_api::api::hooks::services::v2::ListHooksRequest;
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
 use aruna_rust_api::api::storage::services::v2::{GetDownloadUrlRequest, CreateApiTokenRequest};
 use diesel_ulid::DieselUlid;
@@ -20,7 +20,9 @@ use crate::middlelayer::create_request_types::Parent; use crate::middlelayer::pr
 use crate::middlelayer::token_request_types::CreateToken;
 
 impl DatabaseHandler {
-    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> { let client = self.database.get_client().await?; let mut hook = request.get_hook()?;
+    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> {
+        let client = self.database.get_client().await?;
+        let mut hook = request.get_hook()?;
         hook.create(&client).await?;
         Ok(hook)
     }
@@ -79,6 +81,7 @@ impl DatabaseHandler {
         object_id: DieselUlid,
         user_id: DieselUlid,
     ) -> Result<()> {
+        dbg!("Trigger creation triggered");
         let client = self.database.get_client().await?;
         let parent_id = parent.get_id()?;
         let parents = self.cache.upstream_dfs_iterative(&parent_id)?;
@@ -94,6 +97,7 @@ impl DatabaseHandler {
                     .collect(),
             );
         }
+        dbg!("Projects = {:?}", &projects);
         let hooks = Hook::get_hooks_for_projects(&projects, &client)
             .await?
             .into_iter()
@@ -101,7 +105,8 @@ impl DatabaseHandler {
             .collect();
 
         self.hook_action(authorizer.clone(), hooks, object_id, user_id).await?;
-        return Err(anyhow!("Hook trigger not implemented"));
+        Ok(())
+        //return Err(anyhow!("Hook trigger not implemented"));
     }
 
     pub async fn trigger_on_append_hook(
@@ -121,15 +126,17 @@ impl DatabaseHandler {
     ) -> Result<()> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
-        let client = transaction.client();
+        let transaction_client = transaction.client();
         for hook in hooks {
+            dbg!("Hook: {:?}", &hook);
+            dbg!("ObjectID: {:?}", &object_id);
             match hook.hook.0 {
                 crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
                     match internal_hook {
                         crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
                             Object::add_key_value(
                                 &object_id,
-                                client,
+                                transaction_client,
                                 KeyValue {
                                     key,
                                     value,
@@ -141,7 +148,7 @@ impl DatabaseHandler {
                         crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
                             Object::add_key_value(
                                 &object_id,
-                                client,
+                                transaction_client,
                                 KeyValue {
                                     key,
                                     value,
@@ -156,12 +163,12 @@ impl DatabaseHandler {
                             match relation {
                                 aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
                                     let relation: ExternalRelation = (&external).try_into()?;
-                                    Object::add_external_relations(&object_id, &client, vec![relation]).await?;
+                                    Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
 
                                 },
                                 aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
                                     let mut internal = InternalRelation::from_api(&internal, object_id, self.cache.clone())?;
-                                    internal.create(&client).await?;
+                                    internal.create(transaction_client).await?;
                                 },
                             }
                         }
@@ -242,6 +249,11 @@ impl DatabaseHandler {
                 }
             }
         }
+        transaction.commit().await?;
+        let updated = Object::get_object_with_relations(&object_id, &client).await?;
+        dbg!("Updated triggered: {}", &updated);
+        // TODO: Has no effect, because cache gets overwritten with old object
+        //self.cache.update_object(&object_id, updated);
         Ok(())
     }
 }

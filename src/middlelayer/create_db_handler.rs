@@ -57,68 +57,74 @@ impl DatabaseHandler {
         object.create(transaction_client).await?;
 
         // Create internal relation in database && add user permissions for resource
-        let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> = match request
-            .get_type()
-        {
-            ObjectType::PROJECT => {
-                user = Some(
-                    self.add_permission_to_user(
-                        user_id,
-                        object.id,
-                        ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
-                    )
-                    .await?,
-                );
+        let internal_relation: DashMap<DieselUlid, InternalRelation, RandomState> =
+            match request.get_type() {
+                ObjectType::PROJECT => {
+                    user = Some(
+                        self.add_permission_to_user(
+                            user_id,
+                            object.id,
+                            ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                        )
+                        .await?,
+                    );
 
-                DashMap::default()
-            }
-            _ => {
-                let parent = request
-                    .get_parent()
-                    .ok_or_else(|| anyhow!("No parent provided"))?;
+                    DashMap::default()
+                }
+                _ => {
+                    let parent = request
+                        .get_parent()
+                        .ok_or_else(|| anyhow!("No parent provided"))?;
 
-                let mut ir = InternalRelation {
-                    id: DieselUlid::generate(),
-                    origin_pid: parent.get_id()?,
-                    origin_type: parent.get_type(),
-                    target_pid: object.id,
-                    target_type: object.object_type,
-                    relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
-                    target_name: object.name.to_string(),
-                };
-                let result = ir.create(transaction_client).await;
-                if result.is_err() && is_dataproxy {
-                    transaction.rollback().await?;
-                    if let Some(parent) = self.cache.get_object(&parent.get_id()?) {
-                        for (id, irel) in parent.outbound_belongs_to.0 {
-                            if irel.target_name == object.name {
-                                return Ok((
-                                    self.cache
-                                        .get_object(&id)
-                                        .ok_or_else(|| anyhow!("Cache not synced"))?
-                                        .clone(),
-                                    None,
-                                ));
+                    let mut ir = InternalRelation {
+                        id: DieselUlid::generate(),
+                        origin_pid: parent.get_id()?,
+                        origin_type: parent.get_type(),
+                        target_pid: object.id,
+                        target_type: object.object_type,
+                        relation_name: INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string(),
+                        target_name: object.name.to_string(),
+                    };
+                    let result = ir.create(transaction_client).await;
+                    if result.is_err() && is_dataproxy {
+                        transaction.rollback().await?;
+                        if let Some(parent) = self.cache.get_object(&parent.get_id()?) {
+                            for (id, irel) in parent.outbound_belongs_to.0 {
+                                if irel.target_name == object.name {
+                                    return Ok((
+                                        self.cache
+                                            .get_object(&id)
+                                            .ok_or_else(|| anyhow!("Cache not synced"))?
+                                            .clone(),
+                                        None,
+                                    ));
+                                }
                             }
                         }
+                        return Err(anyhow!(
+                            "Either cache not synced or other database error while creating object"
+                        ));
+                    } else {
+                        result?
                     }
-                    return Err(anyhow!(
-                        "Either cache not synced or other database error while creating object"
-                    ));
-                } else {
-                    result?
-                }
-                // Trigger hooks
-                self.trigger_on_creation(authorizer.clone(), parent.clone(), object.id, user_id)
-                    .await?;
-                DashMap::from_iter([(parent.get_id()?, ir)])
-            }
-        };
-        transaction.commit().await?;
 
+                    DashMap::from_iter([(parent.get_id()?, ir)])
+                }
+            };
+        transaction.commit().await?;
+        // Trigger hooks
+        if object.object_type != ObjectType::PROJECT {
+            dbg!("Reached trigger");
+            let parent = request
+                .get_parent()
+                .ok_or_else(|| anyhow!("No parent found"))?;
+            self.trigger_on_creation(authorizer.clone(), parent.clone(), object.id, user_id)
+                .await?;
+        }
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
 
+        // TODO: Needs to be fetched from db because of hook trigger
         // Create DTO which combines the object and its internal relations
         let object_with_rel = ObjectWithRelations {
             object,

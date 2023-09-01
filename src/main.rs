@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use aruna_rust_api::api::{
+    hooks::services::v2::hooks_service_server::HooksServiceServer,
     notification::services::v2::event_notification_service_server::EventNotificationServiceServer,
     storage::services::v2::{
         authorization_service_server::AuthorizationServiceServer,
@@ -21,7 +22,7 @@ use aruna_server::{
     database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
-        datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl,
+        datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl, hooks::HookServiceImpl,
         info::StorageStatusServiceImpl, notification::NotificationServiceImpl,
         object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
         search::SearchServiceImpl, users::UserServiceImpl,
@@ -231,6 +232,10 @@ pub async fn main() -> Result<()> {
                     cache_arc.clone(),
                 )
                 .await,
+            ))
+            .add_service(HooksServiceServer::new(
+                HookServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
+                    .await,
             ));
     }
 

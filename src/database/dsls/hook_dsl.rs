@@ -157,7 +157,7 @@ impl Hook {
         project_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<Hook>> {
-        let query_one = "SELECT * FROM hooks WHERE id IN";
+        let query_one = "SELECT * FROM hooks WHERE project_id IN";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in project_ids {
             inserts.push(id);

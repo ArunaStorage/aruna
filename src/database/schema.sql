@@ -88,6 +88,16 @@ DO $$
     END
 $$;
 
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TriggerType') THEN
+            CREATE TYPE "TriggerType" AS ENUM (
+                'HOOK_ADDED',
+                'OBJECT_CREATED'
+                );
+        END IF;
+    END
+$$;
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers

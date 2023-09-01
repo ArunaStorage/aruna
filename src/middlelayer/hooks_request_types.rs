@@ -35,7 +35,7 @@ impl CreateHook {
         }
     }
     fn get_timeout(&self) -> Result<NaiveDateTime> {
-        NaiveDateTime::from_timestamp_millis(self.0.timeout as i64)
+        NaiveDateTime::from_timestamp_millis(self.0.timeout.try_into()?)
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_id(&self) -> Result<DieselUlid> {
@@ -123,7 +123,7 @@ impl Callback {
     ) -> Result<()> {
         let (hook_id, object_id) = self.get_ids()?;
         let pubkey_serial = self.0.pubkey_serial.parse()?;
-        let secret = self.0.secret;
+        let secret = self.0.secret.clone();
         authorizer.token_handler.verify_hook_secret(
             cache.clone(),
             secret,
