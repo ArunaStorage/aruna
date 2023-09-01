@@ -7,7 +7,7 @@ use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::enums::{ObjectMapping, ObjectType}; use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::hooks_request_types::CreateHook;
+use crate::middlelayer::hooks_request_types::{CreateHook, Callback};
 use crate::database::crud::CrudDb;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::hooks::services::v2::{HookCallbackRequest, ListHooksRequest};
@@ -40,9 +40,35 @@ impl DatabaseHandler {
         let project_id = Hook::get_project_from_hook(hook_id, &client).await?;
         Ok(project_id)
     }
-    pub async fn hook_callback(&self, request: HookCallbackRequest) -> Result<()> {
-        //let callback: Callback = request.try_into()?;
-        return Err(anyhow!("Hook callback not implemented"));
+    pub async fn hook_callback(&self, request: Callback) -> Result<()> {
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        let (_, object_id) = request.get_ids()?;
+        let (add_kvs, rm_kvs) = request.get_keyvals()?;
+        if !add_kvs.0.is_empty() {
+            for kv in add_kvs.0 {
+                Object::add_key_value(&object_id, transaction_client, kv).await?;
+            }
+        }
+
+        if !rm_kvs.0.is_empty() {
+            let object = Object::get(object_id, transaction_client)
+                .await?
+                .ok_or(anyhow!("Dataset does not exist."))?;
+            for kv in rm_kvs.0 {
+                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                    object.remove_key_value(transaction_client, kv).await?;
+                } else {
+                    return Err(anyhow!("Cannot remove static labels."));
+                }
+            }
+        }
+        transaction.commit().await?;
+        let owr = Object::get_object_with_relations(&object_id, &client).await?;
+        self.cache.update_object(&object_id, owr);
+
+        Ok(())
     }
 
     // TODO : TRANSACTIONS!

@@ -1,6 +1,9 @@
+use crate::auth::permission_handler::PermissionHandler;
+use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
-use crate::database::dsls::object_dsl::KeyValue;
+use crate::database::dsls::object_dsl::{KeyValue, KeyValues};
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::hooks::services::v2::HookCallbackRequest;
 use aruna_rust_api::api::hooks::services::v2::{
     hook::HookType, CreateHookRequest, Hook as APIHook,
 };
@@ -9,19 +12,12 @@ use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct CreateHook(pub CreateHookRequest);
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct Callback {
-    pub success: bool, // to enforce error before timer runs out
-    pub add_key_values: Vec<KeyValue>,
-    pub remove_key_values: Vec<KeyValue>,
-    pub secret: String,
-    pub hook_id: DieselUlid,
-    pub object_id: DieselUlid,
-    pub pubkey_serial: i32,
-}
+pub struct Callback(pub HookCallbackRequest);
 
 impl CreateHook {
     fn get_trigger(&self) -> Result<(TriggerType, String, String)> {
@@ -110,5 +106,38 @@ impl CreateHook {
             }
             _ => Err(anyhow!("Invalid hook provided")),
         }
+    }
+}
+
+impl Callback {
+    pub fn get_keyvals(&self) -> Result<(KeyValues, KeyValues)> {
+        let add = (&self.0.add_key_values).try_into()?;
+        let rm = (&self.0.remove_key_values).try_into()?;
+        Ok((add, rm))
+    }
+
+    pub fn verify_secret(
+        &self,
+        authorizer: Arc<PermissionHandler>,
+        cache: Arc<Cache>,
+    ) -> Result<()> {
+        let (hook_id, object_id) = self.get_ids()?;
+        let pubkey_serial = self.0.pubkey_serial.parse()?;
+        let secret = self.0.secret;
+        authorizer.token_handler.verify_hook_secret(
+            cache.clone(),
+            secret,
+            object_id,
+            hook_id,
+            pubkey_serial,
+        )?;
+        Ok(())
+    }
+
+    pub fn get_ids(&self) -> Result<(DieselUlid, DieselUlid)> {
+        Ok((
+            DieselUlid::from_str(&self.0.hook_id)?,
+            DieselUlid::from_str(&self.0.object_id)?,
+        ))
     }
 }

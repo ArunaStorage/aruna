@@ -501,6 +501,24 @@ impl TokenHandler {
             serial,
         ))
     }
+    pub fn verify_hook_secret(
+        &self,
+        cache: Arc<Cache>,
+        secret: String,
+        object_id: DieselUlid,
+        hook_id: DieselUlid,
+        pubkey_serial: i32,
+    ) -> Result<()> {
+        let key = cache
+            .get_pubkey(pubkey_serial)
+            .ok_or_else(|| anyhow!("No pubkey found"))?
+            .get_key_string();
+        let mut mac = HmacSha256::new_from_slice(key.as_bytes())?;
+        let sign = format!("{}{}", object_id.to_string(), hook_id.to_string());
+        mac.update(sign.as_bytes());
+        mac.verify_slice(&secret.as_bytes())?;
+        Ok(())
+    }
 }
 
 // Token tests

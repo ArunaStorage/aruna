@@ -1,7 +1,6 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::Hook;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::CreateHook;
@@ -118,14 +117,16 @@ impl HooksService for HookServiceImpl {
         request: Request<HookCallbackRequest>,
     ) -> Result<Response<HookCallbackResponse>> {
         log_received!(&request);
-        let request = request.into_inner();
+        let request = crate::middlelayer::hooks_request_types::Callback(request.into_inner());
 
+        tonic_auth!(
+            request.verify_secret(self.authorizer.clone(), self.cache.clone()),
+            "Unauthorized"
+        );
         tonic_internal!(
             self.database_handler.hook_callback(request).await,
             "HookCallback failed"
         );
-
-        return Err(Status::unimplemented("HookCallback not implemented"));
         return_with_log!(HookCallbackResponse {});
     }
 }
