@@ -1,13 +1,10 @@
 use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
-use crate::database::dsls::internal_relation_dsl::{
-    INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
-    INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
-};
 use crate::database::dsls::object_dsl::KeyValue;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::hooks::services::v2::{
-    hook::HookType, CreateHookRequest, Hook as APIHook, InternalAction,
+    hook::HookType, CreateHookRequest, Hook as APIHook,
 };
+use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, AddHook, AddLabel};
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
@@ -78,18 +75,25 @@ impl CreateHook {
                 hook_type: Some(HookType::InternalHook(internal_hook)),
             }) => {
                 let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
-                let internal_hook = match internal_hook.internal_action() {
-                    InternalAction::AddHook => InternalHook::AddHook {
-                        key: internal_hook.target_id.clone(),
-                        value: internal_hook.value.clone(),
-                    },
-                    InternalAction::AddLabel => InternalHook::AddLabel {
-                        key: internal_hook.target_id.clone(),
-                        value: internal_hook.value.clone(),
-                    },
-                    InternalAction::CreateRelation => {
-                        InternalHook::CreateRelation { relation: todo!() }
+                let internal_hook = match &internal_hook.internal_action {
+                    Some(InternalAction::AddLabel(AddLabel { key, value })) => {
+                        InternalHook::AddHook {
+                            key: key.clone(),
+                            value: value.clone(),
+                        }
                     }
+                    Some(InternalAction::AddHook(AddHook { key, value })) => {
+                        InternalHook::AddLabel {
+                            key: key.clone(),
+                            value: value.clone(),
+                        }
+                    }
+                    Some(InternalAction::AddRelation(relation)) => InternalHook::CreateRelation {
+                        relation: relation
+                            .relation
+                            .clone()
+                            .ok_or_else(|| anyhow!("No relation provided"))?,
+                    },
                     _ => return Err(anyhow!("Invalid internal action")),
                 };
                 Ok(Hook {

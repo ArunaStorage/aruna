@@ -1,5 +1,5 @@
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::{BasicTemplate, Hook};
+use crate::database::dsls::hook_dsl::{Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -25,8 +25,9 @@ use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::hooks::services::v2::hook::HookType;
+use aruna_rust_api::api::hooks::services::v2::internal_hook::InternalAction;
 use aruna_rust_api::api::hooks::services::v2::{
-    Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
+    AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
@@ -1193,6 +1194,15 @@ impl From<Hook> for HookInfo {
         }
     }
 }
+
+impl From<&Method> for i32 {
+    fn from(method: &Method) -> Self {
+        match method {
+            Method::PUT => 1,
+            Method::POST => 2,
+        }
+    }
+}
 impl Hook {
     fn into_trigger(&self) -> Trigger {
         Trigger {
@@ -1207,24 +1217,29 @@ impl Hook {
     fn into_api_hook(&self) -> APIHook {
         match &self.hook.0 {
             crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
-                let (internal_action, target_id, value) = match internal_hook {
+                let internal_action = match internal_hook {
                     crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
-                        (1, key.clone(), value.clone())
+                        InternalAction::AddLabel(AddLabel {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })
                     }
                     crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
-                        (2, key.clone(), value.clone())
+                        InternalAction::AddHook(AddHook {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })
                     }
 
                     crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
-                        // (3, target_id.to_string(), relation_type.clone());
-                        todo!()
+                        InternalAction::AddRelation(Relation {
+                            relation: Some(relation.clone()),
+                        })
                     }
                 };
                 APIHook {
                     hook_type: Some(HookType::InternalHook(InternalHook {
-                        internal_action,
-                        target_id,
-                        value,
+                        internal_action: Some(internal_action),
                     })),
                 }
             }
@@ -1250,6 +1265,7 @@ impl Hook {
                             .clone()
                             .map(|c| Credentials { token: c.token }),
                         json_template,
+                        method: (&external_hook.method).into(),
                     })),
                 }
             }

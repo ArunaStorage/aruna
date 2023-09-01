@@ -1,35 +1,26 @@
 use crate::auth::permission_handler::PermissionHandler;
-use crate::auth::token_handler::TokenHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, ExternalHook, Hook, InternalHook, TemplateVariant, TriggerType, Credentials,
+    BasicTemplate, ExternalHook, Hook, TemplateVariant, TriggerType, Credentials,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
-use crate::database::enums::ObjectMapping; use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::database::enums::{ObjectMapping, ObjectType}; use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::CreateHook;
 use crate::database::crud::CrudDb;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::hooks::services::v2::{HookCallbackRequest, ListHooksRequest};
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
 use aruna_rust_api::api::storage::services::v2::{GetDownloadUrlRequest, CreateApiTokenRequest};
-use chrono::{NaiveDateTime, Duration};
 use diesel_ulid::DieselUlid;
-use sha2::Sha256;
 use std::str::FromStr;
 use std::sync::Arc;
-use hmac::{Hmac, Mac};
-
-use super::create_request_types::Parent;
-use super::presigned_url_handler::PresignedDownload;
-use super::token_request_types::CreateToken;
-type HmacSha256 = Hmac<Sha256>;
+use crate::middlelayer::create_request_types::Parent; use crate::middlelayer::presigned_url_handler::PresignedDownload;
+use crate::middlelayer::token_request_types::CreateToken;
 
 impl DatabaseHandler {
-    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> {
-        let client = self.database.get_client().await?;
-        let mut hook = request.get_hook()?;
+    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> { let client = self.database.get_client().await?; let mut hook = request.get_hook()?;
         hook.create(&client).await?;
         Ok(hook)
     }
@@ -86,6 +77,7 @@ impl DatabaseHandler {
         self.hook_action(authorizer.clone(), hooks, object_id, user_id).await?;
         return Err(anyhow!("Hook trigger not implemented"));
     }
+
     pub async fn trigger_on_append_hook(
         &self,
         _cache: Arc<Cache>,
@@ -150,14 +142,21 @@ impl DatabaseHandler {
                     }
                 }
                 crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
+                    // Get Object for response
                     let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
+                    if object.object.object_type != ObjectType::OBJECT {
+                        continue
+                    }
+                    // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+                    // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
                     let download = self.get_presigned_download(self.cache.clone(), authorizer.clone(), request, user_id).await?;
+                    // Create token for upload
                     let resource_id = match object.object.object_type {
                         crate::database::enums::ObjectType::OBJECT => Some( aruna_rust_api::api::storage::models::v2::permission::ResourceId::ObjectId(object_id.to_string())),
                         _ => return Err(anyhow!("Only hooks on objects are allowed"))};
-                    let expiry: prost_wkt_types::Timestamp = chrono::Utc::now().checked_add_signed(Duration::seconds(604800)).ok_or_else(|| anyhow!("Timestamp error"))?.try_into()?;
+                    let expiry: prost_wkt_types::Timestamp = hook.timeout.try_into()?;
                     let token_request = CreateToken(CreateApiTokenRequest{ 
                         name: "HookToken".to_string(), 
                         permission: Some(Permission{ 
@@ -168,6 +167,7 @@ impl DatabaseHandler {
                     }
                     );
                     let (token_id, token) = self.create_token(&user_id, pubkey_serial, token_request).await?;
+                    // Update user with new created short-lived upload token
                     let user = self.cache.get_user(&user_id).ok_or_else(|| anyhow!("User not found"))?;
                     user.attributes.0.tokens.insert(token_id, token.clone());
                     self.cache.update_user(&user_id, user);
@@ -179,6 +179,7 @@ impl DatabaseHandler {
                             &token_id,
                             Some(expiry),
                         )?;
+                    // Put everything into template
                     let template = match template {
                         TemplateVariant::BasicTemplate => 
                             BasicTemplate { 
@@ -190,6 +191,7 @@ impl DatabaseHandler {
                                 pubkey_serial,
                             }
                     };
+                    // Create & send request
                     let client = reqwest::Client::new();
                     match method {
                         crate::database::dsls::hook_dsl::Method::PUT => {
