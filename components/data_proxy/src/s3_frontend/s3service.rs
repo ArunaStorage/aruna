@@ -164,12 +164,36 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
+        if missing_resources.is_some() {};
         let mut object = if let Some((o, _loc)) = object {
-            if o.object_status == Status::Initializing {
-                o
+            if o.object_type == crate::structs::ObjectType::Object {
+                if o.object_status == Status::Initializing {
+                    o
+                } else {
+                    todo!();
+                    // TODO: Update object!
+                }
             } else {
-                todo!();
-                // TODO: Update object!
+                let missing_object_name = missing_resources
+                    .clone()
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+                    .o
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+
+                let new_object = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: missing_object_name.to_string(),
+                    key_values: vec![],
+                    object_status: Status::Initializing,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Object,
+                    hashes: HashMap::default(),
+                    dynamic: false,
+                    children: None,
+                    parents: None,
+                    synced: false,
+                };
+                new_object
             }
         } else {
             let missing_object_name = missing_resources

@@ -133,7 +133,6 @@ impl Cache {
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
-        dbg!("Was here!");
         let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
         let perm = user
@@ -144,17 +143,23 @@ impl Cache {
             .1
             .clone();
 
-        let mut user = self
-            .users
-            .entry(access_key.to_string())
-            .or_try_insert_with(|| {
-                Ok::<_, anyhow::Error>(User {
-                    access_key: access_key.to_string(),
-                    user_id: DieselUlid::from_str(&user.id)?,
-                    secret: "".to_string(),
-                    permissions: perm,
-                })
-            })?;
+        let mut user = loop {
+            let entry = self.users.try_entry(access_key.to_string());
+
+            match entry {
+                Some(e) => {
+                    break e.or_try_insert_with(|| {
+                        Ok::<_, anyhow::Error>(User {
+                            access_key: access_key.to_string(),
+                            user_id: DieselUlid::from_str(&user.id)?,
+                            secret: "".to_string(),
+                            permissions: perm,
+                        })
+                    })?
+                }
+                None => continue,
+            }
+        };
 
         if !user.secret.is_empty() {
             return Ok((user.access_key.clone(), user.secret.clone()));
@@ -166,17 +171,16 @@ impl Cache {
             .map(char::from)
             .collect::<String>();
 
-        {
+        let user = {
             user.pair_mut().1.secret = new_secret.clone();
-        }
+            user.value().clone()
+        };
 
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            user.value()
-                .upsert(&persistence.get_client().await?)
-                .await?;
+            user.upsert(&persistence.get_client().await?).await?;
         }
 
-        dbg!(&self.users);
+        //dbg!(&self.users);
 
         Ok((access_key, new_secret))
     }
