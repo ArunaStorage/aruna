@@ -164,7 +164,6 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
-        if missing_resources.is_some() {};
         let mut object = if let Some((o, _loc)) = object {
             if o.object_type == crate::structs::ObjectType::Object {
                 if o.object_status == Status::Initializing {
@@ -410,7 +409,10 @@ impl S3 for ArunaS3Service {
                     handler
                         .create_and_finish(object.clone(), location, token)
                         .await
-                        .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                        .map_err(|e| {
+                            log::error!("{}", e);
+                            s3_error!(InternalError, "Unable to create object (finish)")
+                        })?;
                 }
             }
         }

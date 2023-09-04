@@ -16,7 +16,7 @@ use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -129,60 +129,62 @@ impl Cache {
 
     /// Requests a secret key from the cache
     pub async fn create_or_get_secret(
-        &self,
+        self: Arc<Self>,
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
-        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+        let cache = self.clone();
+        tokio::spawn(async move {
+            let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
-        let perm = user
-            .extract_access_key_permissions()?
-            .iter()
-            .find(|e| e.0 == access_key.as_str())
-            .ok_or_else(|| anyhow!("Access key not found"))?
-            .1
-            .clone();
+            let perm = user
+                .extract_access_key_permissions()?
+                .iter()
+                .find(|e| e.0 == access_key.as_str())
+                .ok_or_else(|| anyhow!("Access key not found"))?
+                .1
+                .clone();
 
-        let mut user = loop {
-            let entry = self.users.try_entry(access_key.to_string());
+            loop {
+                let entry = cache.users.try_entry(access_key.to_string());
 
-            match entry {
-                Some(e) => {
-                    break e.or_try_insert_with(|| {
-                        Ok::<_, anyhow::Error>(User {
-                            access_key: access_key.to_string(),
-                            user_id: DieselUlid::from_str(&user.id)?,
-                            secret: "".to_string(),
-                            permissions: perm,
-                        })
-                    })?
+                match entry {
+                    Some(e) => {
+                        let mut user = e.or_try_insert_with(|| {
+                            Ok::<_, anyhow::Error>(User {
+                                access_key: access_key.to_string(),
+                                user_id: DieselUlid::from_str(&user.id)?,
+                                secret: "".to_string(),
+                                permissions: perm,
+                            })
+                        })?;
+
+                        if !user.secret.is_empty() {
+                            return Ok((user.access_key.clone(), user.secret.clone()));
+                        }
+
+                        let new_secret = thread_rng()
+                            .sample_iter(&Alphanumeric)
+                            .take(30)
+                            .map(char::from)
+                            .collect::<String>();
+
+                        let user = {
+                            user.pair_mut().1.secret = new_secret.clone();
+                            user.value().clone()
+                        };
+
+                        if let Some(persistence) = cache.persistence.read().await.as_ref() {
+                            user.upsert(&persistence.get_client().await?).await?;
+                        }
+
+                        return Ok((access_key, new_secret));
+                    }
+                    None => continue,
                 }
-                None => continue,
             }
-        };
-
-        if !user.secret.is_empty() {
-            return Ok((user.access_key.clone(), user.secret.clone()));
-        }
-
-        let new_secret = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect::<String>();
-
-        let user = {
-            user.pair_mut().1.secret = new_secret.clone();
-            user.value().clone()
-        };
-
-        if let Some(persistence) = self.persistence.read().await.as_ref() {
-            user.upsert(&persistence.get_client().await?).await?;
-        }
-
-        //dbg!(&self.users);
-
-        Ok((access_key, new_secret))
+        })
+        .await?
     }
 
     pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
@@ -508,40 +510,38 @@ impl Cache {
             .clone())
     }
 
-    pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
+    pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
-        let mut to_insert = Vec::new();
-
-        for mut entry in self.users.iter_mut() {
+        tokio::spawn(async move {
             for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
-                if *entry.key() == key {
-                    entry.value_mut().permissions = perm;
-                    continue;
-                } else {
-                    to_insert.push((key, perm));
-                }
-                if let Some(persistence) = self.persistence.read().await.as_ref() {
-                    entry
-                        .value()
-                        .upsert(&persistence.get_client().await?)
-                        .await?;
-                }
-            }
-        }
+                loop {
+                    if let Some(e) = self.users.try_entry(key.to_string()) {
+                        let user = {
+                            let mut mut_entry = e.or_try_insert_with(|| {
+                                Ok::<_, anyhow::Error>(User {
+                                    access_key: key.to_string(),
+                                    user_id,
+                                    secret: "".to_string(),
+                                    permissions: HashMap::default(),
+                                })
+                            })?;
+                            mut_entry.value_mut().permissions = perm.clone();
 
-        for (key, perm) in to_insert {
-            let user_access = User {
-                access_key: key.to_string(),
-                user_id,
-                secret: "".to_string(),
-                permissions: perm,
-            };
-            if let Some(persistence) = self.persistence.read().await.as_ref() {
-                user_access.upsert(&persistence.get_client().await?).await?;
+                            mut_entry.clone()
+                        };
+                        if let Some(persistence) = self.persistence.read().await.as_ref() {
+                            user.upsert(&persistence.get_client().await?).await?;
+                        }
+                        dbg!("locking !");
+
+                        break;
+                    }
+                }
             }
-            self.users.insert(key.to_string(), user_access);
-        }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await??;
         Ok(())
     }
 

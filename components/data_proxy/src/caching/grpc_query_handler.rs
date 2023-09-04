@@ -389,7 +389,7 @@ impl GrpcQueryHandler {
     pub async fn create_and_finish(
         &self,
         object: DPObject,
-        loc: ObjectLocation,
+        mut loc: ObjectLocation,
         token: &str,
     ) -> Result<DPObject> {
         let mut req = Request::new(CreateObjectRequest::from(object.clone()));
@@ -432,6 +432,7 @@ impl GrpcQueryHandler {
             .object
             .ok_or(anyhow!("unknown project"))?;
         let object = DPObject::try_from(response)?;
+        loc.id = object.id;
         self.cache.upsert_object(object.clone(), Some(loc)).await?;
         Ok(object)
     }
@@ -475,7 +476,7 @@ impl GrpcQueryHandler {
                 Target::GenericResource(GenericResource { resource: Some(r) }) => {
                     resources.push(r);
                 }
-                Target::User(u) => self.cache.upsert_user(u).await?,
+                Target::User(u) => self.cache.clone().upsert_user(u).await?,
                 Target::Pubkey(pk) => {
                     let dec_key = DecodingKey::from_ed_pem(
                         format!(
@@ -568,7 +569,7 @@ impl GrpcQueryHandler {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
                 let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                self.cache.upsert_user(user_info.clone()).await?;
+                self.cache.clone().upsert_user(user_info.clone()).await?;
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
