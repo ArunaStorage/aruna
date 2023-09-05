@@ -1,23 +1,25 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
+use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, ExternalHook, Hook, TemplateVariant, TriggerType, Credentials,
+    BasicTemplate, Credentials, ExternalHook, Hook, TemplateVariant, TriggerType,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
-use crate::database::enums::{ObjectMapping, ObjectType}; use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::hooks_request_types::{CreateHook, Callback};
-use crate::database::crud::CrudDb;
+use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
+use crate::middlelayer::create_request_types::Parent;
+use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::hooks_request_types::{Callback, CreateHook};
+use crate::middlelayer::presigned_url_handler::PresignedDownload;
+use crate::middlelayer::token_request_types::CreateToken;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::hooks::services::v2::ListHooksRequest;
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
-use aruna_rust_api::api::storage::services::v2::{GetDownloadUrlRequest, CreateApiTokenRequest};
+use aruna_rust_api::api::storage::services::v2::{CreateApiTokenRequest, GetDownloadUrlRequest};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::middlelayer::create_request_types::Parent; use crate::middlelayer::presigned_url_handler::PresignedDownload;
-use crate::middlelayer::token_request_types::CreateToken;
 
 impl DatabaseHandler {
     pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> {
@@ -48,43 +50,42 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let (_, object_id) = request.get_ids()?;
         let (add_kvs, rm_kvs) = request.get_keyvals()?;
-        if !add_kvs.0.is_empty() {
-            for kv in add_kvs.0 {
-                Object::add_key_value(&object_id, transaction_client, kv).await?;
-            }
-        }
-
-        if !rm_kvs.0.is_empty() {
-            let object = Object::get(object_id, transaction_client)
-                .await?
-                .ok_or(anyhow!("Dataset does not exist."))?;
-            for kv in rm_kvs.0 {
-                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
-                    object.remove_key_value(transaction_client, kv).await?;
-                } else {
-                    return Err(anyhow!("Cannot remove static labels."));
+        if request.0.success {
+            if !add_kvs.0.is_empty() {
+                for kv in add_kvs.0 {
+                    Object::add_key_value(&object_id, transaction_client, kv).await?;
                 }
             }
-        }
-        transaction.commit().await?;
-        let owr = Object::get_object_with_relations(&object_id, &client).await?;
-        self.cache.update_object(&object_id, owr);
 
+            if !rm_kvs.0.is_empty() {
+                let object = Object::get(object_id, transaction_client)
+                    .await?
+                    .ok_or(anyhow!("Dataset does not exist."))?;
+                for kv in rm_kvs.0 {
+                    if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                        object.remove_key_value(transaction_client, kv).await?;
+                    } else {
+                        return Err(anyhow!("Cannot remove static labels."));
+                    }
+                }
+            }
+            transaction.commit().await?;
+            let owr = Object::get_object_with_relations(&object_id, &client).await?;
+            self.cache.update_object(&object_id, owr);
+        }
         Ok(())
     }
 
-    // TODO : TRANSACTIONS!
     pub async fn trigger_on_creation(
         &self,
         authorizer: Arc<PermissionHandler>,
-        parent: Parent,
         object_id: DieselUlid,
         user_id: DieselUlid,
-    ) -> Result<()> {
+    ) -> Result<Option<ObjectWithRelations>> {
         dbg!("Trigger creation triggered");
         let client = self.database.get_client().await?;
-        let parent_id = parent.get_id()?;
-        let parents = self.cache.upstream_dfs_iterative(&parent_id)?;
+        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
+        dbg!("THRESHOLD");
         let mut projects: Vec<DieselUlid> = Vec::new();
         for branch in parents {
             projects.append(
@@ -98,23 +99,70 @@ impl DatabaseHandler {
             );
         }
         dbg!("Projects = {:?}", &projects);
-        let hooks = Hook::get_hooks_for_projects(&projects, &client)
+        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
             .await?
             .into_iter()
             .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
             .collect();
 
-        self.hook_action(authorizer.clone(), hooks, object_id, user_id).await?;
-        Ok(())
-        //return Err(anyhow!("Hook trigger not implemented"));
+        if hooks.is_empty() {
+            Ok(None)
+        } else {
+            let owr = self
+                .hook_action(authorizer.clone(), hooks, object_id, user_id)
+                .await?;
+            Ok(Some(owr))
+        }
     }
 
     pub async fn trigger_on_append_hook(
         &self,
-        _cache: Arc<Cache>,
-        _object: ObjectWithRelations,
-    ) -> Result<()> {
-        return Err(anyhow!("Hook trigger not implemented"));
+        authorizer: Arc<PermissionHandler>,
+        user_id: DieselUlid,
+        object_id: DieselUlid,
+        keyvals: Vec<KeyValue>,
+    ) -> Result<Option<ObjectWithRelations>> {
+        dbg!("Trigger on append triggered");
+        let client = self.database.get_client().await?;
+        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
+        let mut projects: Vec<DieselUlid> = Vec::new();
+        for branch in parents {
+            projects.append(
+                &mut branch
+                    .iter()
+                    .filter_map(|parent| match parent {
+                        ObjectMapping::PROJECT(id) => Some(*id),
+                        _ => None,
+                    })
+                    .collect(),
+            );
+        }
+        dbg!("Projects = {:?}", &projects);
+        let keyvals: Vec<(String, String)> =
+            keyvals.into_iter().map(|k| (k.key, k.value)).collect();
+        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
+            .await?
+            .into_iter()
+            .filter_map(|h| {
+                if h.trigger_type == TriggerType::HOOK_ADDED {
+                    if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
+                        Some(h)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if hooks.is_empty() {
+            Ok(None)
+        } else {
+            let owr = self
+                .hook_action(authorizer.clone(), hooks, object_id, user_id)
+                .await?;
+            Ok(Some(owr))
+        }
     }
 
     async fn hook_action(
@@ -123,7 +171,7 @@ impl DatabaseHandler {
         hooks: Vec<Hook>,
         object_id: DieselUlid,
         user_id: DieselUlid,
-    ) -> Result<()> {
+    ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -177,7 +225,7 @@ impl DatabaseHandler {
                 crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
                     // Get Object for response
                     let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
-                    if object.object.object_type != ObjectType::OBJECT {
+                    if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
                         continue
                     }
                     // Create secret for callback
@@ -187,7 +235,7 @@ impl DatabaseHandler {
                     let download = self.get_presigned_download(self.cache.clone(), authorizer.clone(), request, user_id).await?;
                     // Create token for upload
                     let resource_id = match object.object.object_type {
-                        crate::database::enums::ObjectType::OBJECT => Some( aruna_rust_api::api::storage::models::v2::permission::ResourceId::ObjectId(object_id.to_string())),
+                        crate::database::enums::ObjectType::OBJECT => Some(aruna_rust_api::api::storage::models::v2::permission::ResourceId::ObjectId(object_id.to_string())),
                         _ => return Err(anyhow!("Only hooks on objects are allowed"))};
                     let expiry: prost_wkt_types::Timestamp = hook.timeout.try_into()?;
                     let token_request = CreateToken(CreateApiTokenRequest{ 
@@ -197,7 +245,7 @@ impl DatabaseHandler {
                             resource_id,
                         }), 
                         expires_at: Some(expiry.clone()) ,
-                    }
+                        }
                     );
                     let (token_id, token) = self.create_token(&user_id, pubkey_serial, token_request).await?;
                     // Update user with new created short-lived upload token
@@ -251,9 +299,6 @@ impl DatabaseHandler {
         }
         transaction.commit().await?;
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
-        dbg!("Updated triggered: {}", &updated);
-        // TODO: Has no effect, because cache gets overwritten with old object
-        //self.cache.update_object(&object_id, updated);
-        Ok(())
+        Ok(updated)
     }
 }

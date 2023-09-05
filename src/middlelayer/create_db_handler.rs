@@ -112,27 +112,30 @@ impl DatabaseHandler {
                 }
             };
         transaction.commit().await?;
-        // Trigger hooks
-        if object.object_type != ObjectType::PROJECT {
-            dbg!("Reached trigger");
-            let parent = request
-                .get_parent()
-                .ok_or_else(|| anyhow!("No parent found"))?;
-            self.trigger_on_creation(authorizer.clone(), parent.clone(), object.id, user_id)
-                .await?;
-        }
-        // Fetch all object paths for the notification subjects
-        let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
-
-        // TODO: Needs to be fetched from db because of hook trigger
-        // Create DTO which combines the object and its internal relations
-        let object_with_rel = ObjectWithRelations {
-            object,
+        let owr = ObjectWithRelations {
+            object: object.clone(),
             inbound: Json(DashMap::default()),
-            inbound_belongs_to: Json(internal_relation),
+            inbound_belongs_to: Json(internal_relation.clone()),
             outbound: Json(DashMap::default()),
             outbound_belongs_to: Json(DashMap::default()),
         };
+        self.cache.add_object(owr.clone());
+        // Trigger hooks
+        let object_with_rel = if object.object_type != ObjectType::PROJECT {
+            dbg!("Reached trigger");
+            match self
+                .trigger_on_creation(authorizer.clone(), object.id, user_id)
+                .await?
+            {
+                Some(owr) => owr,
+                None => owr,
+            }
+        } else {
+            // Create DTO which combines the object and its internal relations
+            owr
+        };
+        // Fetch all object paths for the notification subjects
+        let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object created notification(s)
         if let Err(err) = self

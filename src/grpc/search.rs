@@ -128,7 +128,7 @@ impl SearchService for SearchServiceImpl {
                 .cache
                 .get_object(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Object not found"))?;
-            let mapping_perm = self
+            let mapping_perm = *self
                 .cache
                 .get_user(&user)
                 .ok_or_else(|| Status::not_found("User not found"))?
@@ -136,8 +136,7 @@ impl SearchService for SearchServiceImpl {
                 .0
                 .permissions
                 .get(&resource_ulid)
-                .ok_or_else(|| Status::not_found("No permissions found"))?
-                .clone();
+                .ok_or_else(|| Status::not_found("No permissions found"))?;
             let permission = match mapping_perm {
                 ObjectMapping::OBJECT(perm) => perm.into(),
                 ObjectMapping::COLLECTION(perm) => perm.into(),

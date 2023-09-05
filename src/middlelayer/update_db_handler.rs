@@ -1,6 +1,9 @@
 use super::update_request_types::UpdateObject;
+use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::{KeyValueVariant, Object, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{
+    KeyValue, KeyValueVariant, KeyValues, Object, ObjectWithRelations,
+};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
@@ -12,6 +15,7 @@ use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, Upd
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
+use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -119,12 +123,18 @@ impl DatabaseHandler {
         }
     }
 
-    pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
+    pub async fn update_keyvals(
+        &self,
+        authorizer: Arc<PermissionHandler>,
+        request: KeyValueUpdate,
+        user_id: DieselUlid,
+    ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let id = request.get_id()?;
         let (add_key_values, rm_key_values) = request.get_keyvals()?;
+        let mut hooks = Vec::new();
 
         if add_key_values.0.is_empty() && rm_key_values.0.is_empty() {
             return Err(anyhow!(
@@ -134,6 +144,9 @@ impl DatabaseHandler {
 
         if !add_key_values.0.is_empty() {
             for kv in add_key_values.0 {
+                if kv.variant == KeyValueVariant::HOOK {
+                    hooks.push(kv.clone());
+                }
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
         }
@@ -152,9 +165,20 @@ impl DatabaseHandler {
         }
         transaction.commit().await?;
 
-        // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        // Trigger hook
+        let object_plus = if hooks.is_empty() {
+            Object::get_object_with_relations(&id, &client).await?
+        } else {
+            match self
+                .trigger_on_append_hook(authorizer, user_id, id, hooks)
+                .await?
+            {
+                Some(owr) => owr,
+                None => Object::get_object_with_relations(&id, &client).await?,
+            }
+        };
 
+        // Fetch hierarchies and object relations for notifications
         let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
@@ -175,6 +199,7 @@ impl DatabaseHandler {
 
     pub async fn update_grpc_object(
         &self,
+        authorizer: Arc<PermissionHandler>,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
     ) -> Result<(
@@ -211,7 +236,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old)?),
+                endpoints: Json(req.get_endpoints(old.clone())?),
             };
             create_object.create(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -239,7 +264,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old)?),
+                endpoints: Json(req.get_endpoints(old.clone())?),
             };
             update_object.update(transaction_client).await?;
             if let Some(p) = request.parent {
@@ -252,8 +277,28 @@ impl DatabaseHandler {
         };
         transaction.commit().await?;
 
-        // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        let object_plus = if !req.0.add_key_values.is_empty() && !flag {
+            let kvs: Result<Vec<KeyValue>> = req
+                .0
+                .add_key_values
+                .iter()
+                .map(|kv| kv.try_into())
+                .collect();
+            match self
+                .trigger_on_append_hook(authorizer, user_id, old.id, kvs?)
+                .await?
+            {
+                Some(owr) => owr,
+                None => Object::get_object_with_relations(&id, &client).await?,
+            }
+        } else if flag {
+            match self.trigger_on_creation(authorizer, id, user_id).await? {
+                Some(owr) => owr,
+                None => Object::get_object_with_relations(&id, &client).await?,
+            }
+        } else {
+            Object::get_object_with_relations(&id, &client).await?
+        };
 
         let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
