@@ -1,4 +1,4 @@
-use crate::common::init::init_database_handler_middlelayer;
+use crate::common::init::{init_database_handler_middlelayer, init_permission_handler};
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::create_collection_request::Parent as CollectionParent;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent as DatasetParent;
@@ -27,7 +27,9 @@ fn random_name() -> String {
 async fn create_project() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
-    let cache = Arc::new(Cache::new());
+    //let cache = Arc::new(Cache::new());
+    let authorizer =
+        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -51,7 +53,7 @@ async fn create_project() {
         default_endpoint.to_string(),
     );
     let (proj, _) = db_handler
-        .create_resource(request, user.id, false, cache)
+        .create_resource(authorizer.clone(), request, user.id, false)
         .await
         .unwrap();
 
@@ -83,7 +85,9 @@ async fn create_collection() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
-    let cache = Arc::new(Cache::new());
+    //let cache = Arc::new(Cache::new());
+    let authorizer =
+        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -106,10 +110,10 @@ async fn create_collection() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false, cache.clone())
+        .create_resource(authorizer.clone(), parent, user.id, false)
         .await
         .unwrap();
-    cache.add_object(parent.clone());
+    db_handler.cache.add_object(parent.clone());
 
     // test requests
     let collection_name = random_name();
@@ -122,7 +126,7 @@ async fn create_collection() {
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
     });
     let (coll, _) = db_handler
-        .create_resource(request, user.id, false, cache.clone())
+        .create_resource(authorizer.clone(), request, user.id, false)
         .await
         .unwrap();
 
@@ -155,6 +159,7 @@ async fn create_dataset() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
+    let authorizer = init_permission_handler(db_handler.database.clone(), cache.clone()).await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -176,7 +181,7 @@ async fn create_dataset() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false, cache.clone())
+        .create_resource(authorizer.clone(), parent, user.id, false)
         .await
         .unwrap();
     cache.add_object(parent.clone());
@@ -192,7 +197,7 @@ async fn create_dataset() {
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
     });
     let (ds, _) = db_handler
-        .create_resource(request, user.id, false, cache)
+        .create_resource(authorizer.clone(), request, user.id, false)
         .await
         .unwrap();
 
@@ -225,6 +230,7 @@ async fn create_object() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
+    let authorizer = init_permission_handler(db_handler.database.clone(), cache.clone()).await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -246,7 +252,7 @@ async fn create_object() {
     );
     // Should fail because endpoint does not exist
     assert!(db_handler
-        .create_resource(failing_parent, user.id, false, cache.clone())
+        .create_resource(authorizer.clone(), failing_parent, user.id, false)
         .await
         .is_err());
 
@@ -264,7 +270,7 @@ async fn create_object() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(parent, user.id, false, cache.clone())
+        .create_resource(authorizer.clone(), parent, user.id, false)
         .await
         .unwrap();
     cache.add_object(parent.clone());
@@ -281,7 +287,7 @@ async fn create_object() {
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
     });
     let (obj, _) = db_handler
-        .create_resource(request, user.id, false, cache)
+        .create_resource(authorizer.clone(), request, user.id, false)
         .await
         .unwrap();
 
