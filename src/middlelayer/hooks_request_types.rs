@@ -1,13 +1,13 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
-use crate::database::dsls::object_dsl::{KeyValue, KeyValues};
+use crate::database::dsls::object_dsl::KeyValues;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::hooks::services::v2::HookCallbackRequest;
 use aruna_rust_api::api::hooks::services::v2::{
     hook::HookType, CreateHookRequest, Hook as APIHook,
 };
 use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, AddHook, AddLabel};
+use aruna_rust_api::api::hooks::services::v2::{HookCallbackRequest, Method};
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,13 @@ impl CreateHook {
                             }),
                             template:
                                 crate::database::dsls::hook_dsl::TemplateVariant::BasicTemplate,
-                            method: crate::database::dsls::hook_dsl::Method::PUT,
+                            method: match external_hook.method() {
+                                Method::Unspecified => {
+                                    return Err(anyhow!("Unspecified external hook reply method"))
+                                }
+                                Method::Put => crate::database::dsls::hook_dsl::Method::PUT,
+                                Method::Post => crate::database::dsls::hook_dsl::Method::POST,
+                            },
                         }),
                     ),
                 })
@@ -121,9 +127,14 @@ impl Callback {
         authorizer: Arc<PermissionHandler>,
         cache: Arc<Cache>,
     ) -> Result<()> {
+        dbg!(&self);
         let (hook_id, object_id) = self.get_ids()?;
+        dbg!(&hook_id);
+        dbg!(&object_id);
         let pubkey_serial = self.0.pubkey_serial.parse()?;
+        dbg!(&pubkey_serial);
         let secret = self.0.secret.clone();
+        dbg!(&secret);
         authorizer.token_handler.verify_hook_secret(
             cache.clone(),
             secret,

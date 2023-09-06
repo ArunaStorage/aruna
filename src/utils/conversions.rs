@@ -22,14 +22,12 @@ use crate::database::{
     enums::{DataClass, DataProxyFeature, EndpointStatus, ObjectStatus, ObjectType},
 };
 use crate::middlelayer::create_request_types::Parent;
-use crate::middlelayer::hooks_request_types::Callback;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::hooks::services::v2::hook::HookType;
 use aruna_rust_api::api::hooks::services::v2::internal_hook::InternalAction;
 use aruna_rust_api::api::hooks::services::v2::{
-    AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookCallbackRequest, HookInfo,
-    InternalHook, Trigger,
+    AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,

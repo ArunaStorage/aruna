@@ -1,9 +1,7 @@
 use super::update_request_types::UpdateObject;
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::{
-    KeyValue, KeyValueVariant, KeyValues, Object, ObjectWithRelations,
-};
+use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
@@ -278,6 +276,7 @@ impl DatabaseHandler {
         transaction.commit().await?;
 
         let object_plus = if !req.0.add_key_values.is_empty() && !flag {
+            dbg!("TRIGGER");
             let kvs: Result<Vec<KeyValue>> = req
                 .0
                 .add_key_values

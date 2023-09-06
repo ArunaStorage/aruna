@@ -493,9 +493,13 @@ impl TokenHandler {
             .get_pubkey(serial)
             .ok_or_else(|| anyhow!("Pubkey not found"))?
             .get_key_string();
+        dbg!("KEY: {:?}", &key);
         let mut mac = HmacSha256::new_from_slice(key.as_bytes())?;
-        let sign = format!("{}{}", object_id.to_string(), hook_id.to_string());
+        dbg!("MAC: {:?}", &mac);
+        let sign = format!("{}{}", object_id, hook_id);
+        dbg!("SIGN: {:?}", &sign);
         mac.update(sign.as_bytes());
+        dbg!("UPDATED MAC: {:?}", &mac);
         Ok((
             general_purpose::STANDARD.encode(mac.finalize().into_bytes()),
             serial,
@@ -509,14 +513,20 @@ impl TokenHandler {
         hook_id: DieselUlid,
         pubkey_serial: i32,
     ) -> Result<()> {
+        dbg!("VERIFY START");
         let key = cache
             .get_pubkey(pubkey_serial)
             .ok_or_else(|| anyhow!("No pubkey found"))?
             .get_key_string();
+        dbg!("KEY: {:?}", &key);
         let mut mac = HmacSha256::new_from_slice(key.as_bytes())?;
-        let sign = format!("{}{}", object_id.to_string(), hook_id.to_string());
+        dbg!(&mac);
+        let sign = format!("{}{}", object_id, hook_id);
+        dbg!(&sign);
         mac.update(sign.as_bytes());
-        mac.verify_slice(&secret.as_bytes())?;
+        dbg!("UPDATE: {:?}", &mac);
+        let verify = general_purpose::STANDARD.decode(secret.as_bytes())?;
+        mac.verify_slice(&verify).unwrap();
         Ok(())
     }
 }

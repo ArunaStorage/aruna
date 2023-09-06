@@ -13,7 +13,7 @@ use aruna_rust_api::api::hooks::services::v2::{
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use tonic::{Request, Response, Result, Status};
+use tonic::{Request, Response, Result};
 
 crate::impl_grpc_server!(HookServiceImpl);
 

@@ -65,6 +65,10 @@ impl DatabaseHandler {
 
         let objects_plus = Object::get_objects_with_relations(&affected_ids, &client).await?;
 
+        for object in &objects_plus {
+            self.cache.update_object(&object.object.id, object.clone())
+        }
+
         for object_plus in &objects_plus {
             let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 

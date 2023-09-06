@@ -1,5 +1,4 @@
 use crate::auth::permission_handler::PermissionHandler;
-use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, Hook, TemplateVariant, TriggerType,
@@ -8,7 +7,6 @@ use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
-use crate::middlelayer::create_request_types::Parent;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::{Callback, CreateHook};
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
@@ -140,6 +138,7 @@ impl DatabaseHandler {
         dbg!("Projects = {:?}", &projects);
         let keyvals: Vec<(String, String)> =
             keyvals.into_iter().map(|k| (k.key, k.value)).collect();
+        dbg!("KEYVALS: {:?}", &keyvals);
         let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
             .await?
             .into_iter()
@@ -155,9 +154,12 @@ impl DatabaseHandler {
                 }
             })
             .collect();
+        dbg!("HOOKS: {:?}", &hooks);
         if hooks.is_empty() {
+            dbg!("HOOKS EMPTY");
             Ok(None)
         } else {
+            dbg!("STARTING HOOKS ACTION");
             let owr = self
                 .hook_action(authorizer.clone(), hooks, object_id, user_id)
                 .await?;
@@ -223,6 +225,7 @@ impl DatabaseHandler {
                     }
                 }
                 crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
+                    dbg!("REACHED EXTERNAL TRIGGER");
                     // Get Object for response
                     let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
                     if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
@@ -272,24 +275,29 @@ impl DatabaseHandler {
                                 pubkey_serial,
                             }
                     };
+                    dbg!("TRIGGER EXTERNAL TEMPALTE: {:?}", &template);
                     // Create & send request
                     let client = reqwest::Client::new();
                     match method {
                         crate::database::dsls::hook_dsl::Method::PUT => {
                             match credentials {
                                 Some(Credentials{token}) =>  {
-                                    client.put(url).bearer_auth(token).body(serde_json::to_string(&template)?).send().await?;
+                                    let response = client.put(url).bearer_auth(token).json(&serde_json::to_string(&template)?).send().await?;
+                                    dbg!(&response);
                                 },
-                                None => { client.put(url).body(serde_json::to_string(&template)?).send().await?;
+                                None => { let response = client.put(url).json(&serde_json::to_string(&template)?).send().await?;
+                                    dbg!(&response);
                                 }
                             }
                         },
                         crate::database::dsls::hook_dsl::Method::POST => {
                             match credentials {
                                 Some(Credentials{token}) =>  {
-                                    client.post(url).bearer_auth(token).body(serde_json::to_string(&template)?).send().await?;
+                                    let response = client.post(url).bearer_auth(token).json(&serde_json::to_string(&template)?).send().await?;
+                                    dbg!(&response);
                                 },
-                                None => { client.post(url).body(serde_json::to_string(&template)?).send().await?;
+                                None => {let response = client.post(url).json(&serde_json::to_string(&template)?).send().await?;
+                                    dbg!(&response);
                                 }
                             }
                         }
