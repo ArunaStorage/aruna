@@ -172,5 +172,10 @@ impl Hook {
             .map(Hook::from_row)
             .collect();
         Ok(hooks)
+        //match client.query(&prepared, &inserts).await {
+        //    Ok(rows) => Ok(rows.iter().map(Hook::from_row).collect()),
+        //    Err(_) => Ok(Vec::new()), // TODO: This is not optimal and should be matched against error
+        //                              // types
+        //}
     }
 }

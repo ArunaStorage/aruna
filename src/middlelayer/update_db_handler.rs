@@ -1,6 +1,9 @@
 use super::update_request_types::UpdateObject;
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -207,12 +210,11 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let req = UpdateObject(request.clone());
         let id = req.get_id()?;
-        let old = Object::get(id, &client)
-            .await?
-            .ok_or(anyhow!("Object not found."))?;
+        let owr = Object::get_object_with_relations(&id, &client).await?;
+        let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (id, flag) = if request.name.is_some()
+        let (id, is_new, affected) = if request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
@@ -237,13 +239,121 @@ impl DatabaseHandler {
                 endpoints: Json(req.get_endpoints(old.clone())?),
             };
             create_object.create(transaction_client).await?;
-            if let Some(p) = request.parent {
-                let mut relation =
-                    UpdateObject::add_parent_relation(id, p, create_object.name.to_string())?;
+            let mut relations: Vec<(InternalRelation, (DieselUlid, DieselUlid))> = owr
+                .inbound_belongs_to
+                .0
+                .into_iter()
+                .map(|ir| {
+                    (
+                        InternalRelation {
+                            id: DieselUlid::generate(),
+                            origin_pid: ir.1.origin_pid,
+                            origin_type: ir.1.origin_type,
+                            relation_name: ir.1.relation_name,
+                            target_pid: create_object.id,
+                            target_type: create_object.object_type,
+                            target_name: create_object.name.clone(),
+                        },
+                        (ir.1.id, ir.1.origin_pid),
+                    )
+                })
+                .collect();
+            relations.append(
+                &mut owr
+                    .inbound
+                    .0
+                    .into_iter()
+                    .map(|ir| {
+                        (
+                            InternalRelation {
+                                id: DieselUlid::generate(),
+                                origin_pid: ir.1.origin_pid,
+                                origin_type: ir.1.origin_type,
+                                relation_name: ir.1.relation_name,
+                                target_pid: create_object.id,
+                                target_type: create_object.object_type,
+                                target_name: create_object.name.clone(),
+                            },
+                            (ir.1.id, ir.1.origin_pid),
+                        )
+                    })
+                    .collect(),
+            );
+            relations.append(
+                &mut owr
+                    .outbound_belongs_to
+                    .0
+                    .into_iter()
+                    .map(|ir| {
+                        (
+                            InternalRelation {
+                                id: DieselUlid::generate(),
+                                origin_pid: create_object.id,
+                                origin_type: create_object.object_type,
+                                relation_name: ir.1.relation_name,
+                                target_pid: ir.1.target_pid,
+                                target_type: ir.1.target_type,
+                                target_name: ir.1.target_name,
+                            },
+                            (ir.1.id, ir.1.target_pid),
+                        )
+                    })
+                    .collect(),
+            );
+            relations.append(
+                &mut owr
+                    .outbound
+                    .0
+                    .into_iter()
+                    .map(|ir| {
+                        (
+                            InternalRelation {
+                                id: DieselUlid::generate(),
+                                origin_pid: create_object.id,
+                                origin_type: create_object.object_type,
+                                relation_name: ir.1.relation_name,
+                                target_pid: ir.1.target_pid,
+                                target_type: ir.1.target_type,
+                                target_name: ir.1.target_name,
+                            },
+                            (ir.1.id, ir.1.target_pid),
+                        )
+                    })
+                    .collect(),
+            );
+            let (mut new, (delete, mut affected)): (
+                Vec<InternalRelation>,
+                (Vec<DieselUlid>, Vec<DieselUlid>),
+            ) = relations.into_iter().unzip();
+            let version = InternalRelation {
+                id: DieselUlid::generate(),
+                origin_pid: old.id,
+                origin_type: old.object_type,
+                relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                target_pid: create_object.id,
+                target_type: create_object.object_type,
+                target_name: create_object.name.clone(),
+            };
+            new.push(version);
+            InternalRelation::batch_create(&new, &transaction_client).await?;
+            InternalRelation::batch_delete(&delete, &transaction_client).await?;
+            if let Some(p) = request.parent.clone() {
+                let mut relation = UpdateObject::add_parent_relation(
+                    id,
+                    p.clone(),
+                    create_object.name.to_string(),
+                )?;
                 relation.create(transaction_client).await?;
+                let changed = match p {
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::ProjectId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::CollectionId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::DatasetId(id) => DieselUlid::from_str(&id)?,
+                };
+                affected.push(changed);
             }
+            affected.push(old.id);
 
-            (id, true)
+            (id, true, affected)
         } else {
             // Update in place
             let update_object = Object {
@@ -265,17 +375,40 @@ impl DatabaseHandler {
                 endpoints: Json(req.get_endpoints(old.clone())?),
             };
             update_object.update(transaction_client).await?;
-            if let Some(p) = request.parent {
-                let mut relation =
-                    UpdateObject::add_parent_relation(id, p, update_object.name.to_string())?;
+            let affected = if let Some(p) = request.parent.clone() {
+                let mut relation = UpdateObject::add_parent_relation(
+                    id,
+                    p.clone(),
+                    update_object.name.to_string(),
+                )?;
                 relation.create(transaction_client).await?;
-            }
+                let p_id = match p {
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::ProjectId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::CollectionId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::DatasetId(id) => DieselUlid::from_str(&id)?,
+                };
+                vec![p_id, update_object.id]
+            } else {
+                vec![update_object.id]
+            };
 
-            (id, false)
+            (id, false, affected)
         };
         transaction.commit().await?;
 
-        let object_plus = if !req.0.add_key_values.is_empty() && !flag {
+        if is_new {
+            let owr = Object::get_object_with_relations(&id, &client).await?;
+            self.cache.add_object(owr);
+        }
+        // Update all affected objects in cache
+        if !affected.is_empty() {
+            let affected = Object::get_objects_with_relations(&affected, &client).await?;
+            for o in affected {
+                dbg!(&o);
+                self.cache.update_object(&o.object.id.clone(), o);
+            }
+        }
+        let object_plus = if !req.0.add_key_values.is_empty() && !is_new {
             dbg!("TRIGGER");
             let kvs: Result<Vec<KeyValue>> = req
                 .0
@@ -290,7 +423,23 @@ impl DatabaseHandler {
                 Some(owr) => owr,
                 None => Object::get_object_with_relations(&id, &client).await?,
             }
-        } else if flag {
+        } else if !req.0.add_key_values.is_empty() && is_new {
+            self.trigger_on_creation(authorizer.clone(), id, user_id)
+                .await?;
+            let kvs: Result<Vec<KeyValue>> = req
+                .0
+                .add_key_values
+                .iter()
+                .map(|kv| kv.try_into())
+                .collect();
+            match self
+                .trigger_on_append_hook(authorizer, user_id, id, kvs?)
+                .await?
+            {
+                Some(owr) => owr,
+                None => Object::get_object_with_relations(&id, &client).await?,
+            }
+        } else if is_new {
             match self.trigger_on_creation(authorizer, id, user_id).await? {
                 Some(owr) => owr,
                 None => Object::get_object_with_relations(&id, &client).await?,
@@ -313,7 +462,7 @@ impl DatabaseHandler {
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
             //transaction.commit().await?;
-            Ok((object_plus, flag))
+            Ok((object_plus, is_new))
         }
     }
     pub async fn finish_object(

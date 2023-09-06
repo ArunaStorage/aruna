@@ -82,6 +82,7 @@ impl DatabaseHandler {
     ) -> Result<Option<ObjectWithRelations>> {
         dbg!("Trigger creation triggered");
         let client = self.database.get_client().await?;
+        dbg!(object_id);
         let parents = self.cache.upstream_dfs_iterative(&object_id)?;
         dbg!("THRESHOLD");
         let mut projects: Vec<DieselUlid> = Vec::new();
@@ -123,6 +124,7 @@ impl DatabaseHandler {
         dbg!("Trigger on append triggered");
         let client = self.database.get_client().await?;
         let parents = self.cache.upstream_dfs_iterative(&object_id)?;
+        dbg!(&parents);
         let mut projects: Vec<DieselUlid> = Vec::new();
         for branch in parents {
             projects.append(
