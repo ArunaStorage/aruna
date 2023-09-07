@@ -4,8 +4,9 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
 use aruna_rust_api::api::storage::services::v2::{
-    GetPubkeysRequest, GetPubkeysResponse, GetStorageStatusRequest, GetStorageStatusResponse,
-    GetStorageVersionRequest, GetStorageVersionResponse,
+    GetAnouncementsRequest, GetAnouncementsResponse, GetPubkeysRequest, GetPubkeysResponse,
+    GetStorageStatusRequest, GetStorageStatusResponse, GetStorageVersionRequest,
+    GetStorageVersionResponse, SetAnouncementsRequest, SetAnouncementsResponse,
 };
 use std::sync::Arc;
 use tonic::Response;
@@ -56,5 +57,23 @@ impl StorageStatusService for StorageStatusServiceImpl {
         let response = GetPubkeysResponse { pubkeys };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_anouncements(
+        &self,
+        _request: tonic::Request<GetAnouncementsRequest>,
+    ) -> tonic::Result<Response<GetAnouncementsResponse>> {
+        return Err(tonic::Status::unimplemented(
+            "GetAnouncements currently not implemented",
+        ));
+    }
+
+    async fn set_anouncements(
+        &self,
+        _request: tonic::Request<SetAnouncementsRequest>,
+    ) -> tonic::Result<Response<SetAnouncementsResponse>> {
+        return Err(tonic::Status::unimplemented(
+            "SetAnouncements currently not implemented",
+        ));
     }
 }

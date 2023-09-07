@@ -10,3 +10,4 @@ pub mod projects;
 pub mod relations;
 pub mod search;
 pub mod users;
+pub mod workspaces;

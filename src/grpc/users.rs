@@ -23,9 +23,10 @@ use aruna_rust_api::api::storage::services::v2::{
     DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
     GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
-    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetS3CredentialsUserRequest,
-    GetS3CredentialsUserResponse, GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest,
-    GetUserResponse, RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
+    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
+    GetPersonalNotificationsResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
+    GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
+    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
     UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
@@ -605,5 +606,13 @@ impl UserService for UserServiceImpl {
             token: response_token,
         };
         return_with_log!(response);
+    }
+    async fn get_personal_notifications(
+        &self,
+        _request: Request<GetPersonalNotificationsRequest>,
+    ) -> tonic::Result<Response<GetPersonalNotificationsResponse>> {
+        return Err(Status::unimplemented(
+            "GetPersonalNotifications currently unimplemented",
+        ));
     }
 }

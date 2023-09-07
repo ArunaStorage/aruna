@@ -136,10 +136,10 @@ impl Callback {
                     }
                     aruna_rust_api::api::storage::models::v2::KeyValueVariant::Hook => {
                         KeyValueVariant::HOOK
-                    } // TODO: HOOKSTATUS
-                      // aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
-                      //     Ok(KeyValueVariant::HOOK_STATUS)
-                      // }
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
+                        KeyValueVariant::HOOK_STATUS
+                    }
                 };
                 Ok(KeyValue {
                     key: kv.key,
@@ -166,10 +166,10 @@ impl Callback {
                     }
                     aruna_rust_api::api::storage::models::v2::KeyValueVariant::Hook => {
                         KeyValueVariant::HOOK
-                    } // TODO: HOOKSTATUS
-                      // aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
-                      //     Ok(KeyValueVariant::HOOK_STATUS)
-                      // }
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
+                        KeyValueVariant::HOOK_STATUS
+                    }
                 };
                 Ok(KeyValue {
                     key: kv.key,
@@ -190,7 +190,7 @@ impl Callback {
         let (hook_id, object_id) = self.get_ids()?;
         dbg!(&hook_id);
         dbg!(&object_id);
-        let pubkey_serial = self.0.pubkey_serial.parse()?;
+        let pubkey_serial = self.0.pubkey_serial;
         dbg!(&pubkey_serial);
         let secret = self.0.secret.clone();
         dbg!(&secret);
