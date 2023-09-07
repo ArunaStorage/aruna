@@ -33,7 +33,7 @@ impl HooksService for HookServiceImpl {
         let request = CreateHook(request.into_inner());
         let project_id = tonic_invalid!(request.get_project_id(), "invalid parent");
 
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::APPEND, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
@@ -64,7 +64,7 @@ impl HooksService for HookServiceImpl {
         let request = request.into_inner();
         let project_id =
             tonic_invalid!(DieselUlid::from_str(&request.project_id), "invalid parent");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::READ, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
@@ -99,7 +99,7 @@ impl HooksService for HookServiceImpl {
             "Hook or parent not found"
         );
 
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,

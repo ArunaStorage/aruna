@@ -7,7 +7,7 @@ BEGIN
             'INITIALIZING',
             'VALIDATING',
             'AVAILABLE',
-	        'UNAVAILABLE',
+	    'UNAVAILABLE',
             'ERROR',
             'DELETED'
         );
@@ -188,8 +188,8 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
     config JSONB NOT NULL
 );
 
-/* ----- Hook Service -------------------------------------- */
--- Table for the hook service to persist hooks 
+/* ----- Hooks -------------------------------------- */
+-- Table for persisting hooks 
 CREATE TABLE IF NOT EXISTS hooks (
     id UUID PRIMARY KEY NOT NULL,
     project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
@@ -198,4 +198,15 @@ CREATE TABLE IF NOT EXISTS hooks (
     trigger_value VARCHAR(511) NOT NULL,
     timeout TIMESTAMP NOT NULL, -- needs a sane default
     hook JSONB NOT NULL -- can either be a internal or external hook with configs
+)
+
+/* ----- Workspaces -------------------------------------- */
+-- Table for workspace templates
+CREATE TABLE IF NOT EXISTS workspaces (
+    id UUID PRIMARY KEY NOT NULL,
+    name VARCHAR(511) NOT NULL,
+    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    prefix VARCHAR(511) NOT NULL,
+    key_values JSONB NOT NULL
+    -- maybe a list of created workspaces with this template?
 )

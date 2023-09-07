@@ -31,10 +31,10 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Token authentication error"
         );
 
+        // TODO: Serviceaccount context
+        let ctx = todo!();
         let user_id = tonic_auth!(
-            self.authorizer
-                .check_permissions(&token, vec![Context::default()])
-                .await,
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
@@ -65,6 +65,9 @@ impl WorkspaceService for WorkspaceServiceImpl {
         &self,
         _request: Request<ClaimWorkspaceRequest>,
     ) -> Result<Response<ClaimWorkspaceResponse>> {
+        // TODO:
+        // - Remove all hooks
+        // - Make user account project admin
         return Err(Status::unimplemented(
             "Claiming workspaces is not implemented!",
         ));

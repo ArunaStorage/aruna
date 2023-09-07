@@ -48,9 +48,10 @@ impl ProjectService for ProjectServiceImpl {
             "Token authentication error"
         );
 
+        //let ctx = Context{project_id, DbPermissionLevel::READ, false};
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![Context::default()])
+                .check_permissions_verbose(&token, vec![])
                 .await,
             "Unauthorized"
         );

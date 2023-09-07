@@ -251,6 +251,7 @@ impl DatabaseHandler {
                     let token_request = CreateToken(CreateApiTokenRequest{ 
                         name: "HookToken".to_string(), 
                         permission: Some(Permission{ 
+                            // TODO: Create UploadHookDataset where only append is allowed
                             permission_level: PermissionLevel::Append as i32, 
                             resource_id,
                         }), 
