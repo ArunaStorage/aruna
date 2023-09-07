@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
-use crate::database::dsls::object_dsl::KeyValues;
+use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues};
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::hooks::services::v2::{
     hook::HookType, CreateHookRequest, Hook as APIHook,
@@ -117,9 +117,68 @@ impl CreateHook {
 
 impl Callback {
     pub fn get_keyvals(&self) -> Result<(KeyValues, KeyValues)> {
-        let add = (&self.0.add_key_values).try_into()?;
-        let rm = (&self.0.remove_key_values).try_into()?;
-        Ok((add, rm))
+        // TODO: Needs other conversion, because hook_status can be set here
+        let add = self
+            .0
+            .add_key_values
+            .clone()
+            .into_iter()
+            .map(|kv| -> Result<KeyValue> {
+                let variant = match kv.variant() {
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Unspecified => {
+                        return Err(anyhow!("Unspecified KeyValueVariant"))
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Label => {
+                        KeyValueVariant::LABEL
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::StaticLabel => {
+                        KeyValueVariant::STATIC_LABEL
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Hook => {
+                        KeyValueVariant::HOOK
+                    } // TODO: HOOKSTATUS
+                      // aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
+                      //     Ok(KeyValueVariant::HOOK_STATUS)
+                      // }
+                };
+                Ok(KeyValue {
+                    key: kv.key,
+                    value: kv.value,
+                    variant,
+                })
+            })
+            .collect::<Result<Vec<KeyValue>>>()?;
+        let rm = self
+            .0
+            .remove_key_values
+            .clone()
+            .into_iter()
+            .map(|kv| -> Result<KeyValue> {
+                let variant = match kv.variant() {
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Unspecified => {
+                        return Err(anyhow!("Unspecified KeyValueVariant"))
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Label => {
+                        KeyValueVariant::LABEL
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::StaticLabel => {
+                        KeyValueVariant::STATIC_LABEL
+                    }
+                    aruna_rust_api::api::storage::models::v2::KeyValueVariant::Hook => {
+                        KeyValueVariant::HOOK
+                    } // TODO: HOOKSTATUS
+                      // aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
+                      //     Ok(KeyValueVariant::HOOK_STATUS)
+                      // }
+                };
+                Ok(KeyValue {
+                    key: kv.key,
+                    value: kv.value,
+                    variant,
+                })
+            })
+            .collect::<Result<Vec<KeyValue>>>()?;
+        Ok((KeyValues(add.to_owned()), KeyValues(rm.to_owned())))
     }
 
     pub fn verify_secret(

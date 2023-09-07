@@ -148,6 +148,11 @@ impl DatabaseHandler {
                 if kv.variant == KeyValueVariant::HOOK {
                     hooks.push(kv.clone());
                 }
+                if kv.variant == KeyValueVariant::HOOK_STATUS {
+                    return Err(anyhow!(
+                        "Can't create hook status outside of hook callbacks"
+                    ));
+                }
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
         }
@@ -157,10 +162,14 @@ impl DatabaseHandler {
                 .await?
                 .ok_or(anyhow!("Dataset does not exist."))?;
             for kv in rm_key_values.0 {
-                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
-                    object.remove_key_value(transaction_client, kv).await?;
-                } else {
+                if kv.variant == KeyValueVariant::STATIC_LABEL {
                     return Err(anyhow!("Cannot remove static labels."));
+                } else if kv.variant == KeyValueVariant::HOOK_STATUS {
+                    return Err(anyhow!(
+                        "Cannot remove hook_status outside of hook_callback"
+                    ));
+                } else {
+                    object.remove_key_value(transaction_client, kv).await?;
                 }
             }
         }
@@ -258,9 +267,9 @@ impl DatabaseHandler {
             };
             new.push(version);
             // Create all relations for new_object
-            InternalRelation::batch_create(&new, &transaction_client).await?;
+            InternalRelation::batch_create(&new, transaction_client).await?;
             // Delete all relations for old object
-            InternalRelation::batch_delete(&delete, &transaction_client).await?;
+            InternalRelation::batch_delete(&delete, transaction_client).await?;
             // Add parent if updated
             if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(

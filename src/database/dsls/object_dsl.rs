@@ -25,7 +25,7 @@ pub enum KeyValueVariant {
     HOOK,
     LABEL,
     STATIC_LABEL,
-    // TODO: ERROR,
+    HOOK_STATUS,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
