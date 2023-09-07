@@ -239,92 +239,14 @@ impl DatabaseHandler {
                 endpoints: Json(req.get_endpoints(old.clone())?),
             };
             create_object.create(transaction_client).await?;
-            let mut relations: Vec<(InternalRelation, (DieselUlid, DieselUlid))> = owr
-                .inbound_belongs_to
-                .0
-                .into_iter()
-                .map(|ir| {
-                    (
-                        InternalRelation {
-                            id: DieselUlid::generate(),
-                            origin_pid: ir.1.origin_pid,
-                            origin_type: ir.1.origin_type,
-                            relation_name: ir.1.relation_name,
-                            target_pid: create_object.id,
-                            target_type: create_object.object_type,
-                            target_name: create_object.name.clone(),
-                        },
-                        (ir.1.id, ir.1.origin_pid),
-                    )
-                })
-                .collect();
-            relations.append(
-                &mut owr
-                    .inbound
-                    .0
-                    .into_iter()
-                    .map(|ir| {
-                        (
-                            InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid: ir.1.origin_pid,
-                                origin_type: ir.1.origin_type,
-                                relation_name: ir.1.relation_name,
-                                target_pid: create_object.id,
-                                target_type: create_object.object_type,
-                                target_name: create_object.name.clone(),
-                            },
-                            (ir.1.id, ir.1.origin_pid),
-                        )
-                    })
-                    .collect(),
-            );
-            relations.append(
-                &mut owr
-                    .outbound_belongs_to
-                    .0
-                    .into_iter()
-                    .map(|ir| {
-                        (
-                            InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid: create_object.id,
-                                origin_type: create_object.object_type,
-                                relation_name: ir.1.relation_name,
-                                target_pid: ir.1.target_pid,
-                                target_type: ir.1.target_type,
-                                target_name: ir.1.target_name,
-                            },
-                            (ir.1.id, ir.1.target_pid),
-                        )
-                    })
-                    .collect(),
-            );
-            relations.append(
-                &mut owr
-                    .outbound
-                    .0
-                    .into_iter()
-                    .map(|ir| {
-                        (
-                            InternalRelation {
-                                id: DieselUlid::generate(),
-                                origin_pid: create_object.id,
-                                origin_type: create_object.object_type,
-                                relation_name: ir.1.relation_name,
-                                target_pid: ir.1.target_pid,
-                                target_type: ir.1.target_type,
-                                target_name: ir.1.target_name,
-                            },
-                            (ir.1.id, ir.1.target_pid),
-                        )
-                    })
-                    .collect(),
-            );
+
+            // Clone all relations of old object with new object id
+            let relations = UpdateObject::get_all_relations(owr.clone(), create_object.clone());
             let (mut new, (delete, mut affected)): (
                 Vec<InternalRelation>,
                 (Vec<DieselUlid>, Vec<DieselUlid>),
             ) = relations.into_iter().unzip();
+            // Add version relation for old -> new
             let version = InternalRelation {
                 id: DieselUlid::generate(),
                 origin_pid: old.id,
@@ -335,8 +257,11 @@ impl DatabaseHandler {
                 target_name: create_object.name.clone(),
             };
             new.push(version);
+            // Create all relations for new_object
             InternalRelation::batch_create(&new, &transaction_client).await?;
+            // Delete all relations for old object
             InternalRelation::batch_delete(&delete, &transaction_client).await?;
+            // Add parent if updated
             if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(
                     id,
@@ -351,6 +276,7 @@ impl DatabaseHandler {
                 };
                 affected.push(changed);
             }
+            // Return all affected ids for cache sync
             affected.push(old.id);
 
             (id, true, affected)
@@ -375,6 +301,7 @@ impl DatabaseHandler {
                 endpoints: Json(req.get_endpoints(old.clone())?),
             };
             update_object.update(transaction_client).await?;
+            // Create & return all affected ids for cache sync
             let affected = if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(
                     id,
@@ -396,10 +323,12 @@ impl DatabaseHandler {
         };
         transaction.commit().await?;
 
+        // Cache sync of newly created object
         if is_new {
             let owr = Object::get_object_with_relations(&id, &client).await?;
             self.cache.add_object(owr);
         }
+
         // Update all affected objects in cache
         if !affected.is_empty() {
             let affected = Object::get_objects_with_relations(&affected, &client).await?;
@@ -408,6 +337,12 @@ impl DatabaseHandler {
                 self.cache.update_object(&o.object.id.clone(), o);
             }
         }
+
+        // Trigger hooks for the 4 combinations:
+        // 1. update in place & new key_vals
+        // 2. New object & new key_vals
+        // 3. New object & no added key_vals -> Only old key_vals
+        // 4. update in place & no key_vals
         let object_plus = if !req.0.add_key_values.is_empty() && !is_new {
             dbg!("TRIGGER");
             let kvs: Result<Vec<KeyValue>> = req
@@ -440,6 +375,11 @@ impl DatabaseHandler {
                 None => Object::get_object_with_relations(&id, &client).await?,
             }
         } else if is_new {
+            let kvs = owr.object.key_values.0 .0.clone();
+            if !kvs.is_empty() {
+                self.trigger_on_append_hook(authorizer.clone(), user_id, id, kvs)
+                    .await?;
+            }
             match self.trigger_on_creation(authorizer, id, user_id).await? {
                 Some(owr) => owr,
                 None => Object::get_object_with_relations(&id, &client).await?,
@@ -447,6 +387,11 @@ impl DatabaseHandler {
         } else {
             Object::get_object_with_relations(&id, &client).await?
         };
+        // Update cache again with triggered hooks.
+        // Two cache updates are needed because hooks
+        // must have an updated cache for tree traversal
+        self.cache
+            .update_object(&object_plus.object.id, object_plus.clone());
 
         let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 

@@ -1,7 +1,6 @@
-use crate::common::init::{init_cache, init_database_handler_middlelayer, init_permission_handler};
+use crate::common::init::{init_database_handler_middlelayer, init_permission_handler};
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
-use aruna_rust_api::api::storage::services::v2::update_object_request::Parent;
 use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
     UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest, UpdateDatasetDataClassRequest,

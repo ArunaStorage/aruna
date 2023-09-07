@@ -179,10 +179,11 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+        let mut affected_parents: Vec<DieselUlid> = Vec::new();
         for hook in hooks {
             dbg!("Hook: {:?}", &hook);
             dbg!("ObjectID: {:?}", &object_id);
-            match hook.hook.0 {
+            let affected_parent = match hook.hook.0 {
                 crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
                     match internal_hook {
                         crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
@@ -196,6 +197,7 @@ impl DatabaseHandler {
                                 },
                             )
                             .await?;
+                            None
                         }
                         crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
                             Object::add_key_value(
@@ -208,6 +210,7 @@ impl DatabaseHandler {
                                 },
                             )
                             .await?;
+                            None
                         }
                         crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
                             relation,
@@ -216,11 +219,13 @@ impl DatabaseHandler {
                                 aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
                                     let relation: ExternalRelation = (&external).try_into()?;
                                     Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
-
+                                    None
                                 },
                                 aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
+                                    let affected_parent = Some(DieselUlid::from_str(&internal.resource_id)?);
                                     let mut internal = InternalRelation::from_api(&internal, object_id, self.cache.clone())?;
                                     internal.create(transaction_client).await?;
+                                    affected_parent
                                 },
                             }
                         }
@@ -304,11 +309,21 @@ impl DatabaseHandler {
                             }
                         }
                     }
+                    None
                 }
+            };
+            if let Some(p) = affected_parent {
+                affected_parents.push(p);
             }
         }
         transaction.commit().await?;
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
+        if !affected_parents.is_empty() {
+            let affected = Object::get_objects_with_relations(&affected_parents, &client).await?;
+            for object in affected {
+                self.cache.update_object(&object.object.id.clone(), object);
+            }
+        }
         Ok(updated)
     }
 }
