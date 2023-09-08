@@ -206,8 +206,9 @@ CREATE TABLE IF NOT EXISTS hooks (
 CREATE TABLE IF NOT EXISTS workspaces (
     id UUID PRIMARY KEY NOT NULL,
     name VARCHAR(511) NOT NULL,
-    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    owner UUID REFERENCES users(id) ON DELETE CASCADE,
     prefix VARCHAR(511) NOT NULL,
     key_values JSONB NOT NULL
+    UNIQUE(name)
     -- maybe a list of created workspaces with this template?
 )

@@ -1,6 +1,7 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::workspace_request_types::{CreateTemplate, CreateWorkspace};
 use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
 use aruna_rust_api::api::storage::services::v2::{
     workspace_service_server::WorkspaceService, ClaimWorkspaceRequest, ClaimWorkspaceResponse,
@@ -24,6 +25,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
+        let request = CreateTemplate(inner_request);
 
         // Extract token from request and check permissions
         let token = tonic_auth!(
@@ -31,22 +33,50 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Token authentication error"
         );
 
-        // TODO: Serviceaccount context
-        let ctx = todo!();
+        // Deny service_accounts
+        let mut ctx = Context::self_ctx();
+        ctx.allow_service_account = false;
+
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        return Err(Status::unimplemented(
-            "Creating WorkspaceTemplates is not implemented!",
-        ));
+        // Create template
+        let template_name = tonic_invalid!(
+            self.database_handler
+                .create_workspace_template(request, user_id)
+                .await,
+            "Invalid request"
+        );
+
+        // TODO: Change name into id
+        let response = CreateWorkspaceTemplateResponse { template_name };
+        return_with_log!(response);
     }
+
+    // TODO:
+    // - get_templates_by()
+    // - get_template()
+    // - delete_template()
 
     async fn create_workspace(
         &self,
-        _request: Request<CreateWorkspaceRequest>,
+        request: Request<CreateWorkspaceRequest>,
     ) -> Result<Response<CreateWorkspaceResponse>> {
+        log_received!(&request);
+
+        let request = CreateWorkspace(request.into_inner());
+
+        let endpoint = self.default_endpoint;
+        // Create template
+        let template_name = tonic_invalid!(
+            self.database_handler
+                .create_workspace(request, endpoint)
+                .await,
+            "Invalid request"
+        );
+
         return Err(Status::unimplemented(
             "Creating workspaces is not implemented!",
         ));
