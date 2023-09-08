@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS hooks (
     trigger_value VARCHAR(511) NOT NULL,
     timeout TIMESTAMP NOT NULL, -- needs a sane default
     hook JSONB NOT NULL -- can either be a internal or external hook with configs
-)
+);
 
 /* ----- Workspaces -------------------------------------- */
 -- Table for workspace templates
