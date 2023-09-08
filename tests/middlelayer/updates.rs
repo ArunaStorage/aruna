@@ -456,7 +456,7 @@ async fn update_object_test() {
     };
 
     let (updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), update_request, user.id)
+        .update_grpc_object(authorizer.clone(), update_request, user.id, false)
         .await
         .unwrap();
     assert!(!is_new);
@@ -487,7 +487,7 @@ async fn update_object_test() {
         parent: None,
     };
     let (new, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id)
+        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
         .await
         .unwrap();
     assert!(is_new);
