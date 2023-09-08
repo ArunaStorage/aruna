@@ -212,6 +212,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
+        is_service_account: bool,
     ) -> Result<(
         ObjectWithRelations,
         bool, // Creates revision
@@ -237,7 +238,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: user_id,
-                data_class: req.get_dataclass(old.clone())?,
+                data_class: req.get_dataclass(old.clone(), is_service_account)?,
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
                 key_values: Json(req.get_all_kvs(old.clone())?),
@@ -299,7 +300,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: old.created_by,
-                data_class: req.get_dataclass(old.clone())?,
+                data_class: req.get_dataclass(old.clone(), is_service_account)?,
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
                 key_values: Json(req.get_add_keyvals(old.clone())?),

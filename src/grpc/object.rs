@@ -56,7 +56,18 @@ impl ObjectService for ObjectServiceImpl {
                 .await,
             "Unauthorized"
         );
-
+        let is_service_account = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| tonic::Status::not_found("User not found"))?
+            .attributes
+            .0
+            .service_account;
+        if is_service_account && (request.get_data_class() != 4) {
+            return Err(tonic::Status::invalid_argument(
+                "Workspaces have to be claimed for dataclass changes",
+            ));
+        }
         let (object_plus, _) = tonic_internal!(
             self.database_handler
                 .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
@@ -252,9 +263,18 @@ impl ObjectService for ObjectServiceImpl {
             "Unauthorized"
         );
 
+        // Check if service account changes dataclass
+        let is_service_account = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| Status::not_found("User not found"))?
+            .attributes
+            .0
+            .service_account;
+
         let (object, new_revision) = tonic_internal!(
             self.database_handler
-                .update_grpc_object(self.authorizer.clone(), inner, user_id)
+                .update_grpc_object(self.authorizer.clone(), inner, user_id, is_service_account)
                 .await,
             "Internal database error."
         );
