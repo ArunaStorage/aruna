@@ -15,6 +15,7 @@ use tokio_postgres::Client;
 pub struct Hook {
     pub id: DieselUlid,
     pub project_id: DieselUlid,
+    pub owner: DieselUlid,
     pub trigger_type: TriggerType,
     pub trigger_key: String,
     pub trigger_value: String,
@@ -79,8 +80,8 @@ pub struct BasicTemplate {
 #[async_trait::async_trait]
 impl CrudDb for Hook {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO hooks (id, project_id, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+        let query = "INSERT INTO hooks (id, project_id, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -91,6 +92,7 @@ impl CrudDb for Hook {
                 &[
                     &self.id,
                     &self.project_id,
+                    &self.owner,
                     &self.trigger_type,
                     &self.trigger_key,
                     &self.trigger_value,
@@ -172,10 +174,5 @@ impl Hook {
             .map(Hook::from_row)
             .collect();
         Ok(hooks)
-        //match client.query(&prepared, &inserts).await {
-        //    Ok(rows) => Ok(rows.iter().map(Hook::from_row).collect()),
-        //    Err(_) => Ok(Vec::new()), // TODO: This is not optimal and should be matched against error
-        //                              // types
-        //}
     }
 }

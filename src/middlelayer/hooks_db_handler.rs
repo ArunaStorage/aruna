@@ -20,9 +20,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 impl DatabaseHandler {
-    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> {
+    pub async fn create_hook(&self, request: CreateHook, user_id: DieselUlid) -> Result<Hook> {
         let client = self.database.get_client().await?;
-        let mut hook = request.get_hook()?;
+        let mut hook = request.get_hook(user_id)?;
         hook.create(&client).await?;
         Ok(hook)
     }

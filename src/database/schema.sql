@@ -193,6 +193,7 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
 CREATE TABLE IF NOT EXISTS hooks (
     id UUID PRIMARY KEY NOT NULL,
     project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    owner UUID REFERENCES users(id) ON DELETE CASCADE,
     trigger_type "TriggerType" NOT NULL,
     trigger_key VARCHAR(511) NOT NULL,
     trigger_value VARCHAR(511) NOT NULL,

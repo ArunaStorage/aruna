@@ -41,7 +41,7 @@ impl CreateHook {
     pub fn get_project_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(&self.0.project_id)?)
     }
-    pub fn get_hook(&self) -> Result<Hook> {
+    pub fn get_hook(&self, user_id: DieselUlid) -> Result<Hook> {
         match &self.0.hook {
             Some(APIHook {
                 hook_type: Some(HookType::ExternalHook(external_hook)),
@@ -50,6 +50,7 @@ impl CreateHook {
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     project_id: self.get_project_id()?,
+                    owner: user_id,
                     trigger_type,
                     trigger_key,
                     trigger_value,
