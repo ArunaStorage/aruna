@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
     name VARCHAR(511) NOT NULL,
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
     prefix VARCHAR(511) NOT NULL,
-    key_values JSONB NOT NULL
+    key_values JSONB NOT NULL,
     UNIQUE(name)
     -- maybe a list of created workspaces with this template?
 )
