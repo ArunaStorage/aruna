@@ -102,6 +102,7 @@ impl CreateHook {
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     project_id: self.get_project_id()?,
+                    owner: user_id,
                     trigger_type,
                     trigger_key,
                     trigger_value,

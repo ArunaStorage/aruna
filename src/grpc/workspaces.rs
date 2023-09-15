@@ -68,11 +68,11 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
         let request = CreateWorkspace(request.into_inner());
 
-        let endpoint = self.default_endpoint;
+        let endpoint = self.default_endpoint.clone();
         // Create template
         let template_name = tonic_invalid!(
             self.database_handler
-                .create_workspace(request, endpoint)
+                .create_workspace(self.authorizer.clone(), request, endpoint)
                 .await,
             "Invalid request"
         );

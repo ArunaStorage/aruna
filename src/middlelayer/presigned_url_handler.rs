@@ -204,7 +204,7 @@ impl DatabaseHandler {
         .await
     }
 
-    async fn get_credentials(
+    pub async fn get_credentials(
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
         project_endpoint: Endpoint,

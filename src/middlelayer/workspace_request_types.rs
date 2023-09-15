@@ -1,8 +1,11 @@
-use crate::database::dsls::{
-    object_dsl::Object,
-    user_dsl::{User, UserAttributes},
-    workspaces_dsl::WorkspaceTemplate,
-    Empty,
+use crate::database::{
+    dsls::{
+        object_dsl::Object,
+        user_dsl::{User, UserAttributes},
+        workspaces_dsl::WorkspaceTemplate,
+        Empty,
+    },
+    enums::ObjectMapping,
 };
 use anyhow::Result;
 use aruna_rust_api::api::storage::services::v2::{
@@ -19,9 +22,9 @@ impl CreateTemplate {
     pub fn get_template(&self, owner: DieselUlid) -> Result<WorkspaceTemplate> {
         let workspace = WorkspaceTemplate {
             id: DieselUlid::generate(),
-            name: self.0.name,
+            name: self.0.name.clone(),
             owner,
-            prefix: self.0.prefix,
+            prefix: self.0.prefix.clone(),
             // TODO: Remove key values or implement label validation & enforcement
             key_values: Json((&self.0.key_values).try_into()?),
             // TODO: Missing hooks
@@ -34,7 +37,7 @@ impl CreateTemplate {
 
 impl CreateWorkspace {
     pub fn get_name(&self) -> String {
-        self.0.workspace_template
+        self.0.workspace_template.clone()
     }
 
     pub fn make_project(template: WorkspaceTemplate, endpoint: DieselUlid) -> Object {
@@ -48,7 +51,7 @@ impl CreateWorkspace {
             created_by: template.owner,
             content_len: 0,
             count: 0,
-            key_values: template.key_values, // This is weird
+            key_values: template.key_values, //TODO: Using keyvals this way is weird
             object_status: crate::database::enums::ObjectStatus::AVAILABLE,
             data_class: crate::database::enums::DataClass::WORKSPACE,
             object_type: crate::database::enums::ObjectType::PROJECT,
@@ -63,7 +66,7 @@ impl CreateWorkspace {
         project
     }
 
-    pub fn create_service_account(endpoint: DieselUlid) -> User {
+    pub fn create_service_account(endpoint: DieselUlid, workspace_id: DieselUlid) -> User {
         let user_id = DieselUlid::generate();
         let service_account = User {
             id: user_id,
@@ -78,9 +81,13 @@ impl CreateWorkspace {
                     vec![(endpoint, Empty {})].into_iter(),
                 ),
                 custom_attributes: vec![],
-                permissions: DashMap::from_iter(todo!()),
+                permissions: DashMap::from_iter(vec![(
+                    workspace_id,
+                    ObjectMapping::PROJECT(crate::database::enums::DbPermissionLevel::APPEND),
+                )]),
             }),
             active: true,
         };
+        service_account
     }
 }
