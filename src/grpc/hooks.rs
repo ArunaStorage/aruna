@@ -34,13 +34,13 @@ impl HooksService for HookServiceImpl {
         let project_id = tonic_invalid!(request.get_project_id(), "invalid parent");
 
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::APPEND, true);
-        tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let hook = tonic_internal!(
-            self.database_handler.create_hook(request).await,
+            self.database_handler.create_hook(request, &user_id).await,
             "Error while creating hook"
         );
 

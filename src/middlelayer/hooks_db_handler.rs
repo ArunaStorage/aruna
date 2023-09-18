@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, Credentials, ExternalHook, Hook, TemplateVariant, TriggerType,
+    BasicTemplate, Credentials, ExternalHook, Hook, TemplateVariant, TriggerType, HookStatusValues, HookStatusVariant,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
@@ -16,13 +16,14 @@ use aruna_rust_api::api::hooks::services::v2::ListHooksRequest;
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
 use aruna_rust_api::api::storage::services::v2::{CreateApiTokenRequest, GetDownloadUrlRequest};
 use diesel_ulid::DieselUlid;
+use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
 
 impl DatabaseHandler {
-    pub async fn create_hook(&self, request: CreateHook) -> Result<Hook> {
+    pub async fn create_hook(&self, request: CreateHook, user_id: &DieselUlid) -> Result<Hook> {
         let client = self.database.get_client().await?;
-        let mut hook = request.get_hook()?;
+        let mut hook = request.get_hook(user_id)?;
         hook.create(&client).await?;
         Ok(hook)
     }
@@ -67,9 +68,33 @@ impl DatabaseHandler {
                     }
                 }
             }
+            let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
+            let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
+                let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
+                status.status = HookStatusVariant::FINISHED;
+                let value = serde_json::to_string(&status)?;
+                Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
+            } else { Ok(kv.clone()) }
+            }).collect::<Result<Vec<KeyValue>>>()?;
+            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+            object.update(transaction_client).await?;
             transaction.commit().await?;
+            
             let owr = Object::get_object_with_relations(&object_id, &client).await?;
             self.cache.update_object(&object_id, owr);
+        } else {
+            let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
+            let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
+                let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
+                status.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error
+                                                                              // description in API
+                let value = serde_json::to_string(&status)?;
+                Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
+            } else { Ok(kv.clone()) }
+            }).collect::<Result<Vec<KeyValue>>>()?;
+            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+            object.update(transaction_client).await?;
+            transaction.commit().await?;
         }
         Ok(())
     }
@@ -177,12 +202,24 @@ impl DatabaseHandler {
         user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
         let mut affected_parents: Vec<DieselUlid> = Vec::new();
         for hook in hooks {
             dbg!("Hook: {:?}", &hook);
             dbg!("ObjectID: {:?}", &object_id);
+            // Add HookStatus to object
+            let mut object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?.clone();
+            let status_value = HookStatusValues { 
+                status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING, 
+                trigger_type: hook.trigger_type 
+            };
+            let hook_status = KeyValue { key: hook.id.to_string(), value: serde_json::to_string(&status_value)?, variant: KeyValueVariant::HOOK_STATUS };
+            dbg!("HookStatus: {:?}", &hook_status);
+            object.object.key_values.0.0.push(hook_status.clone());
+            Object::add_key_value(&object_id, &client, hook_status).await?;
+            self.cache.update_object(&object_id, object);
+
+            let transaction = client.transaction().await?;
+            let transaction_client = transaction.client();
             let affected_parent = match hook.hook.0 {
                 crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
                     match internal_hook {
@@ -238,6 +275,9 @@ impl DatabaseHandler {
                     if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
                         continue
                     }
+
+                    Object::add_key_value(&object_id, transaction_client, KeyValue { key: format!("{}-{}", hook.id, DieselUlid::generate()), value: "RUNNING".to_string(), variant: KeyValueVariant::HOOK_STATUS }).await?;
+
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
                     // Create download url for response
@@ -252,7 +292,8 @@ impl DatabaseHandler {
                         name: "HookToken".to_string(), 
                         permission: Some(Permission{ 
                             permission_level: PermissionLevel::Append as i32, 
-                            resource_id,
+                            resource_id, // Should be parent id or a separate upload
+                                         // collection/dataset
                         }), 
                         expires_at: Some(expiry.clone()) ,
                         }
@@ -315,8 +356,8 @@ impl DatabaseHandler {
             if let Some(p) = affected_parent {
                 affected_parents.push(p);
             }
+            transaction.commit().await?;
         }
-        transaction.commit().await?;
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
         if !affected_parents.is_empty() {
             let affected = Object::get_objects_with_relations(&affected_parents, &client).await?;
