@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
+use crate::{
+    data_backends::storage_backend::StorageBackend,
+    s3_frontend::utils::chunked_encoding_transformer::ChunkedEncodingTransformer,
+    structs::ObjectLocation,
+};
 use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
     transformer::{FileContext, ReadWriter},
@@ -106,7 +110,8 @@ pub async fn get_bundle(
         })?)
         .add_transformer(ZstdDec::new())
         .add_transformer(TarEnc::new())
-        .add_transformer(GzipEnc::new());
+        .add_transformer(GzipEnc::new())
+        .add_transformer(ChunkedEncodingTransformer::new());
 
         aruna_stream_writer
             .add_file_context_receiver(file_info_receiver.clone())
