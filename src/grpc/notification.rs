@@ -18,6 +18,8 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
+use std::collections::hash_map::RandomState;
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -368,9 +370,27 @@ impl EventNotificationService for NotificationServiceImpl {
         // Send messages in batches if present
         let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
+            let mut already_seen: HashSet<String, RandomState> = HashSet::default();
             loop {
                 if let Some(Ok(nats_message)) = message_stream.next().await {
                     log::debug!("Sending message to client: {}", nats_message.subject);
+
+                    // Deduplication time
+                    match &nats_message.headers {
+                        Some(header_map) => match header_map.get("block-id") {
+                            Some(header_val) => {
+                                let block_id = header_val.to_string();
+                                if already_seen.contains(&block_id) {
+                                    let _ = nats_message.ack().await; // Acknowledge duplicate messages
+                                    continue;
+                                } else {
+                                    already_seen.insert(block_id);
+                                }
+                            }
+                            None => {} // calculate_payload_hash(&message.payload) as alternative?
+                        },
+                        None => {} // Notifications without header actually shouldn't exist
+                    };
 
                     // Convert Nats.io message to proto message
                     let event_message =

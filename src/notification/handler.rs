@@ -28,6 +28,7 @@ pub trait EventHandler {
     async fn register_event(
         &self,
         message_variant: MessageVariant,
+        message_id: Option<&DieselUlid>,
         subject: String,
     ) -> anyhow::Result<()>;
 
