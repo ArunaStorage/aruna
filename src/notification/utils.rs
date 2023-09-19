@@ -4,6 +4,7 @@ use diesel_ulid::DieselUlid;
 use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::Sha256;
+use xxhash_rust::xxh3::xxh3_128;
 
 use crate::database::{dsls::object_dsl::Hierarchy, enums::ObjectType};
 
@@ -149,6 +150,11 @@ pub fn parse_event_consumer_subject(subject: &str) -> anyhow::Result<EventType> 
 // ----- Reply Validation -------------------- //
 // ------------------------------------------- //
 type HmacSha256 = Hmac<Sha256>;
+
+///ToDo: Rust Doc
+pub fn calculate_base64_xxhash(payload: &[u8]) -> String {
+    general_purpose::STANDARD.encode(xxh3_128(payload).to_le_bytes())
+}
 
 ///ToDo: Rust Doc
 pub fn calculate_reply_hmac(reply_subject: &str, secret: String) -> Reply {
