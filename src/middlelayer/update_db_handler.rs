@@ -43,7 +43,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -73,7 +78,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -106,7 +116,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -160,7 +175,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -260,7 +280,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -272,6 +297,7 @@ impl DatabaseHandler {
             Ok((object_plus, flag))
         }
     }
+
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,

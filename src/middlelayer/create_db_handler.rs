@@ -125,7 +125,12 @@ impl DatabaseHandler {
         // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_with_rel, object_hierarchies, EventVariant::Created)
+            .register_resource_event(
+                &object_with_rel,
+                object_hierarchies,
+                EventVariant::Created,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return

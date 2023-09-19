@@ -1,3 +1,5 @@
+use std::collections::hash_map::RandomState;
+use std::collections::HashSet;
 use std::time::Duration;
 
 use aruna_rust_api::api::notification::services::v2::anouncement_event::EventVariant as AnnouncementVariant;
@@ -8,6 +10,7 @@ use aruna_rust_api::api::notification::services::v2::{
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
 use async_nats::jetstream::consumer::{pull, Config, DeliverPolicy, PullConsumer};
+use async_nats::HeaderMap;
 
 use async_nats::jetstream::{stream::Stream, Context, Message};
 
@@ -55,14 +58,25 @@ impl EventHandler for NatsIoHandler {
     async fn register_event(
         &self,
         message_variant: MessageVariant,
+        message_id: Option<&DieselUlid>,
         subject: String,
     ) -> anyhow::Result<()> {
         // Encode message
         let json_message = serde_json::to_string_pretty(&message_variant)?;
         let message_bytes = Bytes::from(json_message);
 
+        // Create header with block_id for deduplication
+        let mut message_header: HeaderMap = HeaderMap::new();
+        if let Some(msg_id) = message_id {
+            message_header.append("block-id", msg_id.to_string().as_str())
+        }
+
         // Publish message on stream
-        match self.jetstream_context.publish(subject, message_bytes).await {
+        match self
+            .jetstream_context
+            .publish_with_headers(subject, message_header, message_bytes)
+            .await
+        {
             Ok(_) => Ok(()),
             Err(err) => {
                 log::error!("{}", err);
@@ -118,22 +132,37 @@ impl EventHandler for NatsIoHandler {
             Err(err) => return Err(anyhow::anyhow!(err)),
         };
 
-        // Fetch message batch from consumer
-        let mut batch = consumer
-            .batch()
-            .expires(Duration::from_millis(250))
-            .max_messages(batch_size as usize)
+        // Fetch all messages and deduplicate via the block_id in the header
+        let mut fetch = consumer
+            .fetch()
+            .max_messages(i64::MAX as usize)
             .messages()
             .await?;
 
-        // Convert Batch to vector of Message
         let mut messages = Vec::new();
-        while let Some(Ok(message)) = batch.next().await {
-            messages.push(message);
+        let mut already_seen: HashSet<String, RandomState> = HashSet::default();
+        while let Some(Ok(message)) = fetch.next().await {
+            match &message.headers {
+                Some(header_map) => match header_map.get("block-id") {
+                    Some(header_val) => {
+                        let block_id = header_val.to_string();
+                        if already_seen.contains(&block_id) {
+                            let _ = message.ack().await; // Acknowledge duplicate messages
+                        } else {
+                            already_seen.insert(block_id);
+                            messages.push(message)
+                        }
+                    }
+                    None => messages.push(message), // calculate_payload_hash(&message.payload) as alternative?
+                },
+                None => messages.push(message), // Notifications without header actually shouldn't exist
+            };
         }
 
-        // Return vector
-        return Ok(messages);
+        // Shorten vector to requested batch size
+        messages.truncate(batch_size as usize);
+
+        Ok(messages)
     }
 
     //ToDo: Rust Doc
@@ -294,6 +323,7 @@ impl NatsIoHandler {
         object: &ObjectWithRelations,
         object_hierarchies: Vec<Hierarchy>,
         event_variant: EventVariant,
+        message_id: Option<&DieselUlid>,
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
         let resource_checksum = tonic_internal!(
@@ -326,7 +356,7 @@ impl NatsIoHandler {
 
         // Emit resource event messages
         for subject in subjects {
-            self.register_event(message_variant.clone(), subject)
+            self.register_event(message_variant.clone(), message_id, subject)
                 .await?
         }
 
@@ -362,6 +392,7 @@ impl NatsIoHandler {
                     checksum: user_checksum.clone(),
                     reply: None,
                 }),
+                None,
                 subject,
             )
             .await?
@@ -384,6 +415,7 @@ impl NatsIoHandler {
                 reply: None,
                 event_variant: Some(announcement_type),
             }),
+            None,
             subject,
         )
         .await?;
