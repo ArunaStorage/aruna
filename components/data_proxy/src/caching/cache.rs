@@ -498,7 +498,7 @@ impl Cache {
                 }
                 Ok(res)
             }
-            ObjectType::Bundle => return Err(anyhow!("Bundles do not have paths / trees")),
+            ObjectType::Bundle => Err(anyhow!("Bundles do not have paths / trees")),
         }
     }
 
@@ -702,7 +702,7 @@ impl Cache {
                                 result.push(ResourceIds::Dataset(*parent_id, None, object.id))
                             }
                             TypedRelation::Collection(parent_id) => {
-                                if let Some(resource) = self.resources.get(&parent_id) {
+                                if let Some(resource) = self.resources.get(parent_id) {
                                     let (collection_object, _) = resource.value();
 
                                     for parent_parent in collection_object
@@ -743,7 +743,7 @@ impl Cache {
                                 result.push(ResourceIds::Object(*parent_id, None, None, object.id))
                             }
                             TypedRelation::Collection(parent_id) => {
-                                if let Some(resource) = self.resources.get(&parent_id) {
+                                if let Some(resource) = self.resources.get(parent_id) {
                                     let (collection_object, _) = resource.value();
 
                                     for parent_parent in collection_object
@@ -770,7 +770,7 @@ impl Cache {
                                 }
                             }
                             TypedRelation::Dataset(parent_id) => {
-                                if let Some(resource) = self.resources.get(&parent_id) {
+                                if let Some(resource) = self.resources.get(parent_id) {
                                     let (dataset_object, _) = resource.value();
 
                                     for parent_parent in dataset_object
@@ -790,7 +790,7 @@ impl Cache {
 
                                             TypedRelation::Collection(collection_id) => {
                                                 if let Some(resource) =
-                                                    self.resources.get(&collection_id)
+                                                    self.resources.get(collection_id)
                                                 {
                                                     let (collection_object, _) = resource.value();
 
@@ -862,7 +862,7 @@ impl Cache {
                 queue.push_back(("".to_string(), x.get_id()));
             }
         } else {
-            queue.push_back(("".to_string(), init.0.id.clone()));
+            queue.push_back(("".to_string(), init.0.id));
         };
 
         dbg!(&queue);
@@ -880,23 +880,21 @@ impl Cache {
                 name = format!("{}/{}", name, resource.0.name);
                 name = name.trim_matches('/').to_string();
                 finished.push((name, resource.1.clone()));
-            } else {
-                if let Some(child) = resource.0.children.as_ref() {
-                    if child.is_empty() {
-                        name = format!("{}/{}", name, resource.0.name);
-                        name = name.trim_matches('/').to_string();
-                        finished.push((name, resource.1.clone()));
-                    } else {
-                        for x in child {
-                            name = name.trim_matches('/').to_string();
-                            queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
-                        }
-                    }
-                } else {
+            } else if let Some(child) = resource.0.children.as_ref() {
+                if child.is_empty() {
                     name = format!("{}/{}", name, resource.0.name);
                     name = name.trim_matches('/').to_string();
                     finished.push((name, resource.1.clone()));
+                } else {
+                    for x in child {
+                        name = name.trim_matches('/').to_string();
+                        queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
+                    }
                 }
+            } else {
+                name = format!("{}/{}", name, resource.0.name);
+                name = name.trim_matches('/').to_string();
+                finished.push((name, resource.1.clone()));
             }
         }
 

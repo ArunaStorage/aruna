@@ -239,7 +239,7 @@ impl TryInto<GenericBytes<i16>> for PubKey {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -264,7 +264,7 @@ impl TryInto<GenericBytes<DieselUlid>> for Object {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -289,7 +289,7 @@ impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -316,7 +316,7 @@ impl TryInto<GenericBytes<String>> for User {
         let data = bincode::serialize(&user)?;
         Ok(GenericBytes {
             id: user.access_key,
-            data: data,
+            data,
             table: Self::get_table(),
         })
     }

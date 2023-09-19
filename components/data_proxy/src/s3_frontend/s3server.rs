@@ -87,7 +87,7 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
 impl AsRef<S3Service> for WrappingService {
     fn as_ref(&self) -> &S3Service {
-        &self.0.as_ref()
+        self.0.as_ref()
     }
 }
 

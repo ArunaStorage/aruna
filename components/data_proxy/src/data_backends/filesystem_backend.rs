@@ -35,7 +35,7 @@ impl FSBackend {
     }
 
     pub async fn check_and_create_bucket(&self, bucket: String) -> Result<()> {
-        let path = Path::new(&self.base_path).join(&bucket);
+        let path = Path::new(&self.base_path).join(bucket);
         if !path.exists() {
             std::fs::create_dir_all(path)?;
         }
@@ -66,7 +66,7 @@ impl StorageBackend for FSBackend {
 
         while let Some(data) = recv.next().await {
             let data = data?;
-            file.write(&data).await?;
+            file.write_all(&data).await?;
         }
         Ok(())
     }
@@ -90,7 +90,7 @@ impl StorageBackend for FSBackend {
         let mut reader = tokio::io::BufReader::new(file);
         let mut buf = BytesMut::with_capacity(1024 * 16);
 
-        while let Ok(_) = reader.read_buf(&mut buf).await {
+        while (reader.read_buf(&mut buf).await).is_ok() {
             sender.send(Ok(buf.split().freeze())).await?;
         }
         Ok(())
@@ -145,7 +145,7 @@ impl StorageBackend for FSBackend {
         while let Some(data) = recv.next().await {
             let data = data?;
             md5.update(&data);
-            file.write(&data).await?;
+            file.write_all(&data).await?;
         }
         return Ok(PartETag {
             part_number,

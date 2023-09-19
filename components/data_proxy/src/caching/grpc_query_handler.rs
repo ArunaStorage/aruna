@@ -628,7 +628,7 @@ impl GrpcQueryHandler {
     }
 }
 
-pub fn sort_resources(res: &mut Vec<Resource>) {
+pub fn sort_resources(res: &mut [Resource]) {
     res.sort_by(|x, y| match (x, y) {
         (Resource::Project(_), Resource::Project(_)) => std::cmp::Ordering::Equal,
         (Resource::Project(_), Resource::Collection(_))

@@ -179,7 +179,7 @@ impl S3 for ArunaS3Service {
                     .o
                     .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-                let new_object = ProxyObject {
+                ProxyObject {
                     id: DieselUlid::generate(),
                     name: missing_object_name.to_string(),
                     key_values: vec![],
@@ -191,8 +191,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: None,
                     synced: false,
-                };
-                new_object
+                }
             }
         } else {
             let missing_object_name = missing_resources
@@ -201,7 +200,7 @@ impl S3 for ArunaS3Service {
                 .o
                 .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-            let new_object = ProxyObject {
+            ProxyObject {
                 id: DieselUlid::generate(),
                 name: missing_object_name.to_string(),
                 key_values: vec![],
@@ -213,8 +212,7 @@ impl S3 for ArunaS3Service {
                 children: None,
                 parents: None,
                 synced: false,
-            };
-            new_object
+            }
         };
         let mut location = self
             .backend

@@ -46,7 +46,7 @@ pub async fn get_bundle(
                             input_size: location.disk_content_len as u64,
                             file_size: location.raw_content_len as u64,
                             skip_decompression: !location.compressed,
-                            skip_decryption: !location.encryption_key.is_some(),
+                            skip_decryption: location.encryption_key.is_none(),
                             encryption_key: location
                                 .encryption_key
                                 .as_ref()
