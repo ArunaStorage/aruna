@@ -376,21 +376,17 @@ impl EventNotificationService for NotificationServiceImpl {
                     log::debug!("Sending message to client: {}", nats_message.subject);
 
                     // Deduplication time
-                    match &nats_message.headers {
-                        Some(header_map) => match header_map.get("block-id") {
-                            Some(header_val) => {
-                                let block_id = header_val.to_string();
-                                if already_seen.contains(&block_id) {
-                                    let _ = nats_message.ack().await; // Acknowledge duplicate messages
-                                    continue;
-                                } else {
-                                    already_seen.insert(block_id);
-                                }
+                    if let Some(header_map) = &nats_message.headers {
+                        if let Some(header_val) = header_map.get("block-id") {
+                            let block_id = header_val.to_string();
+                            if already_seen.contains(&block_id) {
+                                let _ = nats_message.ack().await; // Acknowledge duplicate messages
+                                continue;
+                            } else {
+                                already_seen.insert(block_id);
                             }
-                            None => {} // calculate_payload_hash(&message.payload) as alternative?
-                        },
-                        None => {} // Notifications without header actually shouldn't exist
-                    };
+                        }
+                    }
 
                     // Convert Nats.io message to proto message
                     let event_message =
