@@ -1127,7 +1127,7 @@ impl S3 for ArunaS3Service {
                     last_modified: None,
                     owner: None,
                     size: e.size,
-                    storage_class: None, // TODO: Use dataclass here
+                    ..Default::default()
                 })
                 .collect(),
         );
@@ -1145,6 +1145,7 @@ impl S3 for ArunaS3Service {
             next_continuation_token: new_continuation_token,
             prefix,
             start_after: Some(start_after),
+            ..Default::default()
         };
         log::debug!("{:?}", &result);
         Ok(S3Response::new(result))
