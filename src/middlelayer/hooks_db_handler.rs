@@ -54,8 +54,6 @@ impl DatabaseHandler {
 
         // Client creation
         let mut client = self.database.get_client().await?;
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
 
         //let object = Object::get(object_id, &client).await?.ok_or_else(||anyhow!("Object not found"))?;
         let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
@@ -63,9 +61,10 @@ impl DatabaseHandler {
         dbg!(&object);
         let status = object.key_values.0.0.iter().find(|kv| kv.key == request.0.hook_id).ok_or_else(|| anyhow!("Hook status not found"))?;
         dbg!("HOOK_STATUS: {:?}", &status);
-        object.remove_key_value(transaction_client, status.clone()).await?;
+        object.remove_key_value(&client, status.clone()).await?;
         let mut value: HookStatusValues = serde_json::from_str(&status.value)?;
-        
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
 
 
         if request.0.success {
@@ -307,7 +306,6 @@ impl DatabaseHandler {
                         crate::database::enums::ObjectType::OBJECT => Some(aruna_rust_api::api::storage::models::v2::permission::ResourceId::ObjectId(object_id.to_string())),
                         _ => return Err(anyhow!("Only hooks on objects are allowed"))};
                     let expiry: prost_wkt_types::Timestamp = hook.timeout.try_into()?;
-                    // TODO: Replace token with s3 creds
                     let token_request = CreateToken(CreateApiTokenRequest{ 
                         name: "HookToken".to_string(), 
                         permission: Some(Permission{ 
