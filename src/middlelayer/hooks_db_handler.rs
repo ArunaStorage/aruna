@@ -44,22 +44,39 @@ impl DatabaseHandler {
         Ok(project_id)
     }
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
+
+        // Parsing
+        let (_, object_id) = request.get_ids()?;
+        let (add_kvs, rm_kvs) = request.get_keyvals()?;
+        dbg!(&object_id);
+        dbg!(&add_kvs);
+        dbg!(&rm_kvs);
+
+        // Client creation
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (_, object_id) = request.get_ids()?;
-        let (add_kvs, rm_kvs) = request.get_keyvals()?;
+
+        //let object = Object::get(object_id, &client).await?.ok_or_else(||anyhow!("Object not found"))?;
+        let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
+        let object = owr.object.clone();
+        dbg!(&object);
+        let status = object.key_values.0.0.iter().find(|kv| kv.key == request.0.hook_id).ok_or_else(|| anyhow!("Hook status not found"))?;
+        dbg!("HOOK_STATUS: {:?}", &status);
+        object.remove_key_value(transaction_client, status.clone()).await?;
+        let mut value: HookStatusValues = serde_json::from_str(&status.value)?;
+        
+
+
         if request.0.success {
+            // Adding kvs from callback
             if !add_kvs.0.is_empty() {
                 for kv in add_kvs.0 {
                     Object::add_key_value(&object_id, transaction_client, kv).await?;
                 }
             }
-
+            // Removing kvs from callback
             if !rm_kvs.0.is_empty() {
-                let object = Object::get(object_id, transaction_client)
-                    .await?
-                    .ok_or(anyhow!("Dataset does not exist."))?;
                 for kv in rm_kvs.0 {
                     if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
                         object.remove_key_value(transaction_client, kv).await?;
@@ -68,34 +85,35 @@ impl DatabaseHandler {
                     }
                 }
             }
-            let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
-            let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
-                let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
-                status.status = HookStatusVariant::FINISHED;
-                let value = serde_json::to_string(&status)?;
-                Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
-            } else { Ok(kv.clone()) }
-            }).collect::<Result<Vec<KeyValue>>>()?;
-            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
-            object.update(transaction_client).await?;
-            transaction.commit().await?;
-            
-            let owr = Object::get_object_with_relations(&object_id, &client).await?;
-            self.cache.update_object(&object_id, owr);
+
+           value.status = HookStatusVariant::FINISHED;
+
         } else {
-            let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
-            let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
-                let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
-                status.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error
-                                                                              // description in API
-                let value = serde_json::to_string(&status)?;
-                Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
-            } else { Ok(kv.clone()) }
-            }).collect::<Result<Vec<KeyValue>>>()?;
-            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
-            object.update(transaction_client).await?;
-            transaction.commit().await?;
+            // Update status error
+           // let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
+           // let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
+           //     let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
+           //     status.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error
+           //     let value = serde_json::to_string(&status)?;
+           //     Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
+           // } else { Ok(kv.clone()) }
+           // }).collect::<Result<Vec<KeyValue>>>()?;
+           // object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+           // object.update(transaction_client).await?;
+
+           value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
         }
+
+        let updated_status = KeyValue { key: status.key.clone(), value: serde_json::to_string(&value)?, variant: KeyValueVariant::HOOK_STATUS};
+        dbg!("MODIFIED_STATUS: {:?}", &updated_status);
+        Object::add_key_value(&object_id, transaction_client, updated_status).await?;
+
+        transaction.commit().await?;
+
+        // Update object in cache
+        let owr = Object::get_object_with_relations(&object_id, &client).await?;
+        self.cache.update_object(&object_id, owr);
+
         Ok(())
     }
 
@@ -209,6 +227,7 @@ impl DatabaseHandler {
             // Add HookStatus to object
             let mut object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?.clone();
             let status_value = HookStatusValues { 
+                name: hook.name,
                 status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING, 
                 trigger_type: hook.trigger_type 
             };
@@ -288,6 +307,7 @@ impl DatabaseHandler {
                         crate::database::enums::ObjectType::OBJECT => Some(aruna_rust_api::api::storage::models::v2::permission::ResourceId::ObjectId(object_id.to_string())),
                         _ => return Err(anyhow!("Only hooks on objects are allowed"))};
                     let expiry: prost_wkt_types::Timestamp = hook.timeout.try_into()?;
+                    // TODO: Replace token with s3 creds
                     let token_request = CreateToken(CreateApiTokenRequest{ 
                         name: "HookToken".to_string(), 
                         permission: Some(Permission{ 

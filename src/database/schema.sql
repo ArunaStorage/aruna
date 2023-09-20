@@ -25,14 +25,6 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'KeyValueType') THEN
-        CREATE TYPE "KeyValueType" AS ENUM ('LABEL', 'STATIC_LABEL', 'HOOK', 'STATIC_HOOK');
-    END IF;
-END
-$$;
-
-DO $$
-BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PermissionLevel') THEN
         CREATE TYPE "PermissionLevel" AS ENUM ('DENY', 'NONE', 'READ', 'APPEND', 'WRITE', 'ADMIN');
     END IF;
@@ -192,7 +184,10 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
 -- Table for the hook service to persist hooks 
 CREATE TABLE IF NOT EXISTS hooks (
     id UUID PRIMARY KEY NOT NULL,
+    name VARCHAR(511) NOT NULL,
+    description VARCHAR(1023) NOT NULL,
     project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    owner UUID REFERENCES users(id) ON DELETE CASCADE,
     trigger_type "TriggerType" NOT NULL,
     trigger_key VARCHAR(511) NOT NULL,
     trigger_value VARCHAR(511) NOT NULL,

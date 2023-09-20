@@ -186,7 +186,8 @@ impl Object {
         WHERE id = $2;";
 
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&element, &self.id]).await?;
+        let execute = client.execute(&prepared, &[&element, &self.id]).await?;
+        dbg!(execute);
         Ok(())
     }
 

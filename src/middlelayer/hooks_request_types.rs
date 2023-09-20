@@ -16,6 +16,12 @@ use std::sync::Arc;
 
 pub struct CreateHook(pub CreateHookRequest);
 
+pub struct ListHook(pub ListBy);
+pub enum ListBy {
+    PROJECT(DieselUlid), // TODO: Replace with API request
+    OWNER(DieselUlid),   // TODO: Replace with API request
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Callback(pub HookCallbackRequest);
 
@@ -50,6 +56,7 @@ impl CreateHook {
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     name: "PLACEHOLDER_NAME".to_string(), //TODO: API hook name
+                    description: "PLACEHOLDER_DESCRIPTION".to_string(), //TODO: API hook description
                     project_id: self.get_project_id()?,
                     owner: *user_id,
                     trigger_type,
@@ -103,6 +110,7 @@ impl CreateHook {
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     name: "PLACEHOLDER_NAME".to_string(), // TODO: Add name to API
+                    description: "PLACEHOLDER_DESCRIPTION".to_string(), // TODO: Add description to API
                     project_id: self.get_project_id()?,
                     owner: *user_id,
                     trigger_type,
