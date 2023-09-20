@@ -110,8 +110,8 @@ pub async fn get_bundle(
         })?)
         .add_transformer(ZstdDec::new())
         .add_transformer(TarEnc::new())
-        .add_transformer(GzipEnc::new())
-        .add_transformer(ChunkedEncodingTransformer::new());
+        .add_transformer(GzipEnc::new());
+        //.add_transformer(ChunkedEncodingTransformer::new());
 
         aruna_stream_writer
             .add_file_context_receiver(file_info_receiver.clone())

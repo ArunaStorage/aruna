@@ -533,8 +533,6 @@ impl Cache {
                         if let Some(persistence) = self.persistence.read().await.as_ref() {
                             user.upsert(&persistence.get_client().await?).await?;
                         }
-                        dbg!("locking !");
-
                         break;
                     }
                 }
@@ -870,11 +868,17 @@ impl Cache {
 
         let mut finished = Vec::with_capacity(10_000);
 
+        for res in self.resources.iter() {
+            dbg!(&res.value().0);
+        }
+
         while let Some((mut name, id)) = queue.pop_front() {
             let resource = self
                 .resources
                 .get(&id)
                 .ok_or_else(|| anyhow!("Resource not found"))?;
+
+            dbg!(&resource.0);
 
             if resource.0.object_type == ObjectType::Object {
                 name = format!("{}/{}", name, resource.0.name);

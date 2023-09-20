@@ -812,6 +812,11 @@ impl S3 for ArunaS3Service {
                 HeaderValue::from_static("chunked"),
             );
 
+            resp.headers.insert(
+                hyper::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/octet-stream"),
+            );
+
             return Ok(resp);
         }
 

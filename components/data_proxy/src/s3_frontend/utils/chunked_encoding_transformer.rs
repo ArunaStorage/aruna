@@ -5,12 +5,14 @@ use aruna_file::{
 };
 
 #[derive(Default)]
-pub struct ChunkedEncodingTransformer {}
+pub struct ChunkedEncodingTransformer {
+    finished: bool,
+}
 
 impl ChunkedEncodingTransformer {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        ChunkedEncodingTransformer {}
+        ChunkedEncodingTransformer { finished: false }
     }
 }
 
@@ -29,8 +31,11 @@ impl Transformer for ChunkedEncodingTransformer {
             chunk.extend_from_slice(b"\r\n");
             buf.clear();
             buf.extend_from_slice(&chunk);
+        } else if finished {
+            buf.extend_from_slice("0\r\n\r\n".as_bytes());
+            self.finished = true;
         }
-        Ok(finished)
+        Ok(self.finished)
     }
     #[allow(unused_variables)]
     async fn notify(&mut self, message: &Message) -> Result<Response> {

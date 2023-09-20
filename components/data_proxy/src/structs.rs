@@ -385,6 +385,8 @@ impl TryFrom<Project> for Object {
             })
             .partition(|(_, e)| *e);
 
+        dbg!(&inbound, &outbound);
+
         let inbounds = inbound
             .into_iter()
             .map(|(id, _)| id)
