@@ -2,6 +2,7 @@ use aruna_server::auth::permission_handler::PermissionHandler;
 use aruna_server::auth::token_handler::TokenHandler;
 use aruna_server::caching::cache::Cache;
 use aruna_server::database::connection::Database;
+use aruna_server::grpc::collections::CollectionServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
@@ -178,4 +179,27 @@ pub async fn init_project_service() -> ProjectServiceImpl {
         DEFAULT_ENDPOINT_ULID.to_string(),
     )
     .await
+}
+
+#[allow(dead_code)]
+pub async fn init_project_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+    ep: String,
+) -> ProjectServiceImpl {
+    // Init project service
+    ProjectServiceImpl::new(db, auth, cache, search, ep).await
+}
+
+#[allow(dead_code)]
+pub async fn init_collection_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+) -> CollectionServiceImpl {
+    // Init collection service
+    CollectionServiceImpl::new(db, auth, cache, search).await
 }
