@@ -11,6 +11,7 @@ use super::object_dsl::KeyValues;
 pub struct WorkspaceTemplate {
     pub id: DieselUlid,
     pub name: String,
+    pub description: String,
     pub owner: DieselUlid,
     pub prefix: String,
     pub key_values: Json<KeyValues>,
