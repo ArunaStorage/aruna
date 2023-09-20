@@ -57,11 +57,10 @@ impl DatabaseHandler {
 
         //let object = Object::get(object_id, &client).await?.ok_or_else(||anyhow!("Object not found"))?;
         let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
-        let object = owr.object.clone();
+        let mut object = owr.object.clone();
         dbg!(&object);
-        let status = object.key_values.0.0.iter().find(|kv| kv.key == request.0.hook_id).ok_or_else(|| anyhow!("Hook status not found"))?;
+        let status = object.key_values.0.0.iter().find(|kv| kv.key == request.0.hook_id).ok_or_else(|| anyhow!("Hook status not found"))?.clone();
         dbg!("HOOK_STATUS: {:?}", &status);
-        object.remove_key_value(&client, status.clone()).await?;
         let mut value: HookStatusValues = serde_json::from_str(&status.value)?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -88,29 +87,24 @@ impl DatabaseHandler {
            value.status = HookStatusVariant::FINISHED;
 
         } else {
-            // Update status error
-           // let mut object = Object::get(object_id, transaction_client).await?.ok_or_else(||anyhow!("Object not found"))?;
-           // let kvs = object.key_values.0.0.iter_mut().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
-           //     let mut status: HookStatusValues = serde_json::from_str(&kv.value)?;
-           //     status.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error
-           //     let value = serde_json::to_string(&status)?;
-           //     Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
-           // } else { Ok(kv.clone()) }
-           // }).collect::<Result<Vec<KeyValue>>>()?;
-           // object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
-           // object.update(transaction_client).await?;
-
-           value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
+            value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
         }
-
-        let updated_status = KeyValue { key: status.key.clone(), value: serde_json::to_string(&value)?, variant: KeyValueVariant::HOOK_STATUS};
-        dbg!("MODIFIED_STATUS: {:?}", &updated_status);
-        Object::add_key_value(&object_id, transaction_client, updated_status).await?;
+        let kvs = object.key_values.0.0.iter().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
+            let value = serde_json::to_string(&value)?;
+            Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
+        } else { Ok(kv.clone()) }
+        }).collect::<Result<Vec<KeyValue>>>()?;
+        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+        object.update(transaction_client).await?;
+        // let updated_status = KeyValue { key: status.key.clone(), value: serde_json::to_string(&value)?, variant: KeyValueVariant::HOOK_STATUS};
+        // dbg!("MODIFIED_STATUS: {:?}", &updated_status);
+        // Object::add_key_value(&object_id, transaction_client, updated_status).await?;
 
         transaction.commit().await?;
 
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
+        dbg!(&owr);
         self.cache.update_object(&object_id, owr);
 
         Ok(())
@@ -121,7 +115,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         object_id: DieselUlid,
         user_id: DieselUlid,
-    ) -> Result<Option<ObjectWithRelations>> {
+    ) -> Result<()> {
         dbg!("Trigger creation triggered");
         let client = self.database.get_client().await?;
         dbg!(object_id);
@@ -147,12 +141,14 @@ impl DatabaseHandler {
             .collect();
 
         if hooks.is_empty() {
-            Ok(None)
+            Ok(())
         } else {
-            let owr = self
-                .hook_action(authorizer.clone(), hooks, object_id, user_id)
-                .await?;
-            Ok(Some(owr))
+            self.hook_action(authorizer.clone(), hooks, object_id, user_id).await?;
+            Ok(())
+            //let owr = self
+            //    .hook_action(authorizer.clone(), hooks, object_id, user_id)
+            //    .await?;
+            //Ok(Some(owr))
         }
     }
 
@@ -162,7 +158,7 @@ impl DatabaseHandler {
         user_id: DieselUlid,
         object_id: DieselUlid,
         keyvals: Vec<KeyValue>,
-    ) -> Result<Option<ObjectWithRelations>> {
+    ) -> Result<()> {
         dbg!("Trigger on append triggered");
         let client = self.database.get_client().await?;
         let parents = self.cache.upstream_dfs_iterative(&object_id)?;
@@ -198,16 +194,13 @@ impl DatabaseHandler {
                 }
             })
             .collect();
-        dbg!("HOOKS: {:?}", &hooks);
         if hooks.is_empty() {
-            dbg!("HOOKS EMPTY");
-            Ok(None)
+            Ok(())
         } else {
-            dbg!("STARTING HOOKS ACTION");
-            let owr = self
+            self
                 .hook_action(authorizer.clone(), hooks, object_id, user_id)
                 .await?;
-            Ok(Some(owr))
+            Ok(())
         }
     }
 
@@ -217,7 +210,7 @@ impl DatabaseHandler {
         hooks: Vec<Hook>,
         object_id: DieselUlid,
         user_id: DieselUlid,
-    ) -> Result<ObjectWithRelations> {
+    ) -> Result<()> {
         let mut client = self.database.get_client().await?;
         let mut affected_parents: Vec<DieselUlid> = Vec::new();
         for hook in hooks {
@@ -293,8 +286,6 @@ impl DatabaseHandler {
                     if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
                         continue
                     }
-
-                    Object::add_key_value(&object_id, transaction_client, KeyValue { key: format!("{}-{}", hook.id, DieselUlid::generate()), value: "RUNNING".to_string(), variant: KeyValueVariant::HOOK_STATUS }).await?;
 
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
@@ -378,11 +369,12 @@ impl DatabaseHandler {
         }
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
         if !affected_parents.is_empty() {
-            let affected = Object::get_objects_with_relations(&affected_parents, &client).await?;
+            let mut affected = Object::get_objects_with_relations(&affected_parents, &client).await?;
+            affected.push(updated);
             for object in affected {
                 self.cache.update_object(&object.object.id.clone(), object);
             }
         }
-        Ok(updated)
+        Ok(())
     }
 }
