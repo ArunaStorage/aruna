@@ -149,8 +149,7 @@ impl DatabaseHandler {
                 db_handler
                     .trigger_on_creation(authorizer.clone(), object.id, user_id)
                     .await
-            })
-            .await??;
+            });
         };
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;

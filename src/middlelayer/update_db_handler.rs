@@ -187,8 +187,7 @@ impl DatabaseHandler {
                 db_handler
                     .trigger_on_append_hook(authorizer, user_id, id, hooks)
                     .await
-            })
-            .await??;
+            });
         };
 
         // Fetch hierarchies and object relations for notifications
@@ -370,8 +369,7 @@ impl DatabaseHandler {
                 db_handler
                     .trigger_on_append_hook(authorizer, user_id, id, kvs)
                     .await
-            })
-            .await??;
+            });
         } else if !req.0.add_key_values.is_empty() && is_new {
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
@@ -379,8 +377,7 @@ impl DatabaseHandler {
                 cache: self.cache.clone(),
             };
             let auth2 = authorizer.clone();
-            tokio::spawn(async move { db_handler.trigger_on_creation(auth2, id, user_id).await })
-                .await??;
+            tokio::spawn(async move { db_handler.trigger_on_creation(auth2, id, user_id).await });
             let kvs = req
                 .0
                 .add_key_values
@@ -396,8 +393,7 @@ impl DatabaseHandler {
                 db_handler
                     .trigger_on_append_hook(authorizer.clone(), id, user_id, kvs)
                     .await
-            })
-            .await??;
+            });
         } else if is_new {
             let kvs = owr.object.key_values.0 .0.clone();
             let db_handler = DatabaseHandler {
@@ -411,8 +407,7 @@ impl DatabaseHandler {
                     db_handler
                         .trigger_on_append_hook(auth2, user_id, id, kvs)
                         .await
-                })
-                .await??;
+                });
             }
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
@@ -423,8 +418,7 @@ impl DatabaseHandler {
                 db_handler
                     .trigger_on_creation(authorizer, id, user_id)
                     .await
-            })
-            .await??;
+            });
         } else {
             ()
         };
