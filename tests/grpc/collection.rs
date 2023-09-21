@@ -7,8 +7,8 @@ use aruna_rust_api::api::storage::{
     },
     services::v2::{
         collection_service_server::CollectionService, create_collection_request::Parent,
-        CreateCollectionRequest, GetCollectionRequest, UpdateCollectionDescriptionRequest,
-        UpdateCollectionNameRequest,
+        CreateCollectionRequest, GetCollectionRequest, UpdateCollectionDataClassRequest,
+        UpdateCollectionDescriptionRequest, UpdateCollectionNameRequest,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -323,6 +323,95 @@ async fn grpc_update_collection_description() {
 
     assert_eq!(collection.id, proto_collection.id);
     assert_eq!(&proto_collection.description, "Updated description");
+}
+
+#[tokio::test]
+async fn grpc_update_collection_dataclass() {
+    // Init gRPC services
+    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+
+    // Create random Project + Collection
+    let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
+    let collection = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        Parent::ProjectId(project.id.clone()),
+    )
+    .await;
+
+    // Create user/resource ulids
+    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+
+    // Change dataclass of non-existing collection
+    let mut inner_request = UpdateCollectionDataClassRequest {
+        collection_id: DieselUlid::generate().to_string(),
+        data_class: DataClass::Public as i32,
+    };
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = collection_service
+        .update_collection_data_class(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Change dataclass without token
+    inner_request.collection_id = collection_ulid.to_string();
+
+    let grpc_request = Request::new(inner_request.clone());
+
+    let response = collection_service
+        .update_collection_data_class(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Change dataclass without sufficient permissions
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service
+        .update_collection_data_class(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Change to stricter dataclass with sufficient permissions
+    inner_request.data_class = DataClass::Confidential as i32;
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service
+        .update_collection_data_class(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Change to more relaxed dataclass with sufficient permissions
+    inner_request.data_class = DataClass::Public as i32;
+
+    fast_track_grpc_permission_add(
+        &auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &collection_ulid,
+        DbPermissionLevel::WRITE,
+    )
+    .await;
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let proto_collection = collection_service
+        .update_collection_data_class(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap();
+
+    assert_eq!(collection.id, proto_collection.id);
+    assert_eq!(proto_collection.data_class, DataClass::Public as i32);
 }
 
 #[tokio::test]
