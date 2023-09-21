@@ -1,6 +1,11 @@
 use aruna_rust_api::api::storage::{
-    models::v2::{DataClass as ApiDataClass, Project},
-    services::v2::{project_service_server::ProjectService, CreateProjectRequest},
+    models::v2::{Collection, DataClass as ApiDataClass, PermissionLevel, Project},
+    services::v2::{
+        authorization_service_server::AuthorizationService,
+        collection_service_server::CollectionService, create_collection_request::Parent,
+        project_service_server::ProjectService, CreateAuthorizationRequest,
+        CreateCollectionRequest, CreateProjectRequest,
+    },
 };
 use aruna_server::{
     database::{
@@ -11,7 +16,10 @@ use aruna_server::{
         },
         enums::{DataClass, DbPermissionLevel, ObjectMapping, ObjectStatus, ObjectType},
     },
-    grpc::projects::ProjectServiceImpl,
+    grpc::{
+        authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
+        projects::ProjectServiceImpl,
+    },
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -180,4 +188,62 @@ pub async fn fast_track_grpc_project_create(
     assert_eq!(proto_project.name, project_name);
 
     proto_project
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_collection_create(
+    collection_service: &CollectionServiceImpl,
+    token: &str,
+    parent: Parent,
+) -> Collection {
+    // Create request with admin token
+    let collection_name = rand_string(32);
+
+    let create_request = CreateCollectionRequest {
+        name: collection_name.to_string(),
+        description: "".to_string(),
+        key_values: vec![],
+        external_relations: vec![],
+        data_class: ApiDataClass::Private as i32,
+        parent: Some(parent),
+    };
+
+    let grpc_request = add_token(Request::new(create_request), token);
+
+    // Create project via gRPC service
+    let create_response = collection_service
+        .create_collection(grpc_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let proto_collection = create_response.collection.unwrap();
+
+    assert!(!proto_collection.id.is_empty());
+    assert_eq!(proto_collection.name, collection_name);
+
+    proto_collection
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_permission_add(
+    auth_service: &AuthorizationServiceImpl,
+    token: &str,
+    user_ulid: &DieselUlid,
+    resource_ulid: &DieselUlid,
+    permission_level: DbPermissionLevel,
+) {
+    // Create request with admin token
+    let inner_request = CreateAuthorizationRequest {
+        resource_id: resource_ulid.to_string(),
+        user_id: user_ulid.to_string(),
+        permission_level: PermissionLevel::from(permission_level) as i32,
+    };
+    let grpc_request = add_token(Request::new(inner_request), token);
+
+    // Add permission to user
+    auth_service
+        .create_authorization(grpc_request)
+        .await
+        .unwrap();
 }

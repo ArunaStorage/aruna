@@ -2,6 +2,7 @@ use aruna_server::auth::permission_handler::PermissionHandler;
 use aruna_server::auth::token_handler::TokenHandler;
 use aruna_server::caching::cache::Cache;
 use aruna_server::database::connection::Database;
+use aruna_server::grpc::authorization::AuthorizationServiceImpl;
 use aruna_server::grpc::collections::CollectionServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
@@ -179,6 +180,16 @@ pub async fn init_project_service() -> ProjectServiceImpl {
         DEFAULT_ENDPOINT_ULID.to_string(),
     )
     .await
+}
+
+#[allow(dead_code)]
+pub async fn init_auth_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+) -> AuthorizationServiceImpl {
+    // Init authorization service
+    AuthorizationServiceImpl::new(db, auth, cache).await
 }
 
 #[allow(dead_code)]

@@ -3,12 +3,11 @@ use std::str::FromStr;
 use aruna_rust_api::api::storage::{
     models::v2::{
         relation::Relation::Internal, DataClass, DataEndpoint, InternalRelation,
-        InternalRelationVariant, KeyValue, KeyValueVariant, Relation, RelationDirection,
-        ResourceVariant, Status,
+        InternalRelationVariant, Relation, RelationDirection, ResourceVariant, Status,
     },
     services::v2::{
         collection_service_server::CollectionService, create_collection_request::Parent,
-        CreateCollectionRequest,
+        CreateCollectionRequest, GetCollectionRequest,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -16,15 +15,16 @@ use tonic::Request;
 
 use crate::common::{
     init::{
-        init_cache, init_collection_service_manual, init_database, init_database_handler,
-        init_nats_client, init_permission_handler, init_project_service_manual, init_search_client,
+        init_auth_service_manual, init_cache, init_collection_service_manual, init_database,
+        init_database_handler, init_nats_client, init_permission_handler,
+        init_project_service_manual, init_search_client,
     },
     test_utils::{
-        add_token, fast_track_grpc_project_create, rand_string, ADMIN_OIDC_TOKEN,
-        DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_permission_add,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
     },
 };
-use aruna_server::database::{crud::CrudDb, dsls::object_dsl::Object, enums::ObjectStatus};
+use aruna_server::database::enums::DbPermissionLevel;
 
 #[tokio::test]
 async fn grpc_create_collection() {
@@ -107,6 +107,9 @@ async fn grpc_get_collections() {
     let auth = init_permission_handler(db.clone(), cache.clone()).await;
     let search = init_search_client().await;
 
+    let auth_service =
+        init_auth_service_manual(db_handler.clone(), auth.clone(), cache.clone()).await;
+
     let project_service = init_project_service_manual(
         db_handler.clone(),
         auth.clone(),
@@ -115,12 +118,92 @@ async fn grpc_get_collections() {
         DEFAULT_ENDPOINT_ULID.to_string(),
     )
     .await;
-    let collection_service = init_collection_service_manual(db_handler, auth, cache, search).await;
+
+    let collection_service =
+        init_collection_service_manual(db_handler.clone(), auth, cache, search).await;
+
+    // Get normal user id as DieselUlid
+    let user_ulid = DieselUlid::from_str("01H8KWYY5MTAH1YZGPYVS7PQWD").unwrap();
 
     // Create random project and collection
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
 
     // Create collection
+    let collection = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        Parent::ProjectId(project.id.clone()),
+    )
+    .await;
+    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+
+    // Try get Collection that does not exist
+    let mut get_request = GetCollectionRequest {
+        collection_id: DieselUlid::generate().to_string(),
+    };
+
+    let tokenless_request = add_token(tonic::Request::new(get_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = collection_service.get_collection(tokenless_request).await;
+
+    assert!(response.is_err());
+
+    // Try get Collection without token
+    get_request.collection_id = collection.id.clone();
+
+    let response = collection_service
+        .get_collection(tonic::Request::new(get_request.clone()))
+        .await;
+
+    assert!(response.is_err());
+
+    // Get Collection without permissions
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service.get_collection(grpc_request).await;
+
+    assert!(response.is_err());
+
+    // Get Collection with permissions
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+
+    fast_track_grpc_permission_add(
+        &auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &collection_ulid,
+        DbPermissionLevel::READ,
+    )
+    .await;
+
+    let proto_collection = collection_service
+        .get_collection(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap();
+
+    // Validate returned collection
+    assert_eq!(collection.id, proto_collection.id);
+    assert_eq!(collection.name, proto_collection.name);
+    assert_eq!(collection.description, proto_collection.description);
+    assert_eq!(collection.key_values, proto_collection.key_values);
+    assert_eq!(
+        proto_collection.relations,
+        vec![Relation {
+            relation: Some(Internal(InternalRelation {
+                resource_id: project.id.to_string(),
+                resource_variant: ResourceVariant::Project as i32,
+                defined_variant: InternalRelationVariant::BelongsTo as i32,
+                custom_variant: None,
+                direction: RelationDirection::Inbound as i32,
+            }))
+        }]
+    );
+    assert_eq!(collection.data_class, proto_collection.data_class);
+    assert_eq!(collection.status, proto_collection.status);
+    assert_eq!(collection.dynamic, proto_collection.dynamic);
 }
 
 #[tokio::test]
