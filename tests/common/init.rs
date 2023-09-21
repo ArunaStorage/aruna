@@ -4,7 +4,10 @@ use aruna_server::caching::cache::Cache;
 use aruna_server::database::connection::Database;
 use aruna_server::grpc::authorization::AuthorizationServiceImpl;
 use aruna_server::grpc::collections::CollectionServiceImpl;
+use aruna_server::grpc::datasets::DatasetServiceImpl;
+use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
+use aruna_server::grpc::relations::RelationsServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
 use aruna_server::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
@@ -213,4 +216,90 @@ pub async fn init_collection_service_manual(
 ) -> CollectionServiceImpl {
     // Init collection service
     CollectionServiceImpl::new(db, auth, cache, search).await
+}
+
+#[allow(dead_code)]
+pub async fn init_dataset_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+) -> DatasetServiceImpl {
+    // Init collection service
+    DatasetServiceImpl::new(db, auth, cache, search).await
+}
+
+#[allow(dead_code)]
+pub async fn init_object_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+) -> ObjectServiceImpl {
+    // Init collection service
+    ObjectServiceImpl::new(db, auth, cache, search).await
+}
+
+#[allow(dead_code)]
+pub async fn init_relation_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+) -> RelationsServiceImpl {
+    // Init collection service
+    RelationsServiceImpl::new(db, auth, cache, search).await
+}
+
+#[allow(dead_code)]
+pub async fn init_grpc_services() -> (
+    AuthorizationServiceImpl,
+    ProjectServiceImpl,
+    CollectionServiceImpl,
+    DatasetServiceImpl,
+    ObjectServiceImpl,
+    RelationsServiceImpl,
+) {
+    // Init internal components
+    let db = init_database().await;
+    let nats = init_nats_client().await;
+    let db_handler = init_database_handler(db.clone(), nats).await;
+    let cache = init_cache(db.clone(), true).await;
+    let auth = init_permission_handler(db.clone(), cache.clone()).await;
+    let search = init_search_client().await;
+
+    // Init gRPC service implementations
+    (
+        init_auth_service_manual(db_handler.clone(), auth.clone(), cache.clone()).await,
+        init_project_service_manual(
+            db_handler.clone(),
+            auth.clone(),
+            cache.clone(),
+            search.clone(),
+            DEFAULT_ENDPOINT_ULID.to_string(),
+        )
+        .await,
+        init_collection_service_manual(
+            db_handler.clone(),
+            auth.clone(),
+            cache.clone(),
+            search.clone(),
+        )
+        .await,
+        init_dataset_service_manual(
+            db_handler.clone(),
+            auth.clone(),
+            cache.clone(),
+            search.clone(),
+        )
+        .await,
+        init_object_service_manual(
+            db_handler.clone(),
+            auth.clone(),
+            cache.clone(),
+            search.clone(),
+        )
+        .await,
+        init_relation_service_manual(db_handler, auth, cache, search).await,
+    )
 }
