@@ -1,11 +1,12 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, Credentials, ExternalHook, Hook, TemplateVariant, TriggerType, HookStatusValues, HookStatusVariant,
+    BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
+    TemplateVariant, TriggerType,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::object_dsl::Object;
+use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
 use crate::database::dsls::user_dsl::APIToken;
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -44,7 +45,6 @@ impl DatabaseHandler {
         Ok(project_id)
     }
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
-
         // Parsing
         let (_, object_id) = request.get_ids()?;
         let (add_kvs, rm_kvs) = request.get_keyvals()?;
@@ -55,16 +55,24 @@ impl DatabaseHandler {
         // Client creation
         let mut client = self.database.get_client().await?;
 
-        let mut object = Object::get(object_id, &client).await?.ok_or_else(||anyhow!("Object not found"))?;
+        let mut object = Object::get(object_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Object not found"))?;
         //let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
         //let mut object = owr.object.clone();
         dbg!(&object);
-        let status = object.key_values.0.0.iter().find(|kv| kv.key == request.0.hook_id).ok_or_else(|| anyhow!("Hook status not found"))?.clone();
+        let status = object
+            .key_values
+            .0
+             .0
+            .iter()
+            .find(|kv| kv.key == request.0.hook_id)
+            .ok_or_else(|| anyhow!("Hook status not found"))?
+            .clone();
         dbg!("HOOK_STATUS: {:?}", &status);
         let mut value: HookStatusValues = serde_json::from_str(&status.value)?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-
 
         // TODO: Wait for API change and match status
         if request.0.success {
@@ -85,17 +93,29 @@ impl DatabaseHandler {
                 }
             }
 
-           value.status = HookStatusVariant::FINISHED;
-
+            value.status = HookStatusVariant::FINISHED;
         } else {
             value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
         }
         // Update status
-        let kvs = object.key_values.0.0.iter().map(| kv | -> Result<KeyValue> {if kv.key ==  request.0.hook_id {
-            let value = serde_json::to_string(&value)?;
-            Ok(KeyValue { key: kv.key.clone(), value, variant: KeyValueVariant::HOOK_STATUS })
-        } else { Ok(kv.clone()) }
-        }).collect::<Result<Vec<KeyValue>>>()?;
+        let kvs = object
+            .key_values
+            .0
+             .0
+            .iter()
+            .map(|kv| -> Result<KeyValue> {
+                if kv.key == request.0.hook_id {
+                    let value = serde_json::to_string(&value)?;
+                    Ok(KeyValue {
+                        key: kv.key.clone(),
+                        value,
+                        variant: KeyValueVariant::HOOK_STATUS,
+                    })
+                } else {
+                    Ok(kv.clone())
+                }
+            })
+            .collect::<Result<Vec<KeyValue>>>()?;
         object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
         object.update(transaction_client).await?;
 
@@ -142,7 +162,8 @@ impl DatabaseHandler {
         if hooks.is_empty() {
             Ok(())
         } else {
-            self.hook_action(authorizer.clone(), hooks, object_id, user_id).await?;
+            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
+                .await?;
             Ok(())
         }
     }
@@ -192,8 +213,7 @@ impl DatabaseHandler {
         if hooks.is_empty() {
             Ok(())
         } else {
-            self
-                .hook_action(authorizer.clone(), hooks, object_id, user_id)
+            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
                 .await?;
             Ok(())
         }
@@ -212,15 +232,23 @@ impl DatabaseHandler {
             dbg!("Hook: {:?}", &hook);
             dbg!("ObjectID: {:?}", &object_id);
             // Add HookStatus to object
-            let mut object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?.clone();
-            let status_value = HookStatusValues { 
+            let mut object = self
+                .cache
+                .get_object(&object_id)
+                .ok_or_else(|| anyhow!("Object not found"))?
+                .clone();
+            let status_value = HookStatusValues {
                 name: hook.name,
-                status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING, 
-                trigger_type: hook.trigger_type 
+                status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING,
+                trigger_type: hook.trigger_type,
             };
-            let hook_status = KeyValue { key: hook.id.to_string(), value: serde_json::to_string(&status_value)?, variant: KeyValueVariant::HOOK_STATUS };
+            let hook_status = KeyValue {
+                key: hook.id.to_string(),
+                value: serde_json::to_string(&status_value)?,
+                variant: KeyValueVariant::HOOK_STATUS,
+            };
             dbg!("HookStatus: {:?}", &hook_status);
-            object.object.key_values.0.0.push(hook_status.clone());
+            object.object.key_values.0 .0.push(hook_status.clone());
             Object::add_key_value(&object_id, &client, hook_status).await?;
             self.cache.update_object(&object_id, object);
 
@@ -284,7 +312,6 @@ impl DatabaseHandler {
 
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
-                    
                     // Create append only s3-credentials
                     let append_only_token = APIToken {
                        pub_key: pubkey_serial,
@@ -311,29 +338,17 @@ impl DatabaseHandler {
                     let base_request = match method {
                         crate::database::dsls::hook_dsl::Method::PUT => {
                             match credentials {
-                                Some(Credentials{token}) =>  {
-                                    //let response = 
-                                        client.put(url).bearer_auth(token) //.json(&serde_json::to_string(&template)?).send().await?;
-                                },
-                                None => { //let response = 
-                                    client.put(url) //.json(&serde_json::to_string(&template)?).send().await?;
-                                    //dbg!(&response);
-                                }
+                                Some(Credentials{token}) => client.put(url).bearer_auth(token),
+                                None => client.put(url),
                             }
                         },
                         crate::database::dsls::hook_dsl::Method::POST => {
                             match credentials {
                                 Some(Credentials{token}) =>  {
-                                    //let response = 
-                                        client.post(url).bearer_auth(token)
-                                            //.json(&serde_json::to_string(&template)?).send().await?;
-                                    //dbg!(&response);
+                                    client.post(url).bearer_auth(token)
                                 },
                                 None => {
-                                    //let response = 
                                     client.post(url)
-                                        //.json(&serde_json::to_string(&template)?).send().await?;
-                                    //dbg!(&response);
                                 }
                             }
                         }
@@ -341,11 +356,11 @@ impl DatabaseHandler {
                     // Put everything into template
                     match template {
                         TemplateVariant::Basic => {
-                            let json = serde_json::to_string(&BasicTemplate { 
-                                hook_id: hook.id, 
-                                object: object.try_into()?, 
+                            let json = serde_json::to_string(&BasicTemplate {
+                                hook_id: hook.id,
+                                object: object.try_into()?,
                                 secret,
-                                download, 
+                                download,
                                 pubkey_serial,
                                 access_key: upload_credentials.access_key,
                                 secret_key: upload_credentials.secret_key,
@@ -370,7 +385,8 @@ impl DatabaseHandler {
         }
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
         if !affected_parents.is_empty() {
-            let mut affected = Object::get_objects_with_relations(&affected_parents, &client).await?;
+            let mut affected =
+                Object::get_objects_with_relations(&affected_parents, &client).await?;
             affected.push(updated);
             for object in affected {
                 self.cache.update_object(&object.object.id.clone(), object);
