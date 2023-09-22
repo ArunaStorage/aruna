@@ -23,7 +23,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
         log_received!(&request);
 
         // Consume gRPC request into its parts
-        let (request_metadata, _, inner_request) = request.into_parts();
+        let (request_metadata, _, _inner_request) = request.into_parts();
 
         // Extract token from request and check permissions
         let token = tonic_auth!(
@@ -31,7 +31,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Token authentication error"
         );
 
-        let user_id = tonic_auth!(
+        let _user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![Context::default()])
                 .await,

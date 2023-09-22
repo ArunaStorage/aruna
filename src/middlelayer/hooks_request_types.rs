@@ -129,7 +129,7 @@ impl CreateHook {
     }
 
     fn verify_template(input: String) -> Result<bool> {
-        let re = RegexSet::new(&[
+        let re = RegexSet::new([
             r"\{\{secret\}\}",
             r"\{\{object_id\}\}",
             r"\{\{hook_id\}\}",
