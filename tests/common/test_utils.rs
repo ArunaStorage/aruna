@@ -4,7 +4,7 @@ use aruna_rust_api::api::storage::{
         authorization_service_server::AuthorizationService,
         collection_service_server::CollectionService, create_collection_request::Parent,
         project_service_server::ProjectService, CreateAuthorizationRequest,
-        CreateCollectionRequest, CreateObjectRequest, CreateProjectRequest, GetCollectionRequest,
+        CreateCollectionRequest, CreateProjectRequest, GetCollectionRequest,
     },
 };
 use aruna_server::{
@@ -18,7 +18,7 @@ use aruna_server::{
     },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
-        object::ObjectServiceImpl, projects::ProjectServiceImpl,
+        projects::ProjectServiceImpl,
     },
 };
 use dashmap::DashMap;

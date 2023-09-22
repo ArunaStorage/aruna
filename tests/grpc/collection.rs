@@ -9,8 +9,9 @@ use aruna_rust_api::api::storage::{
     services::v2::{
         collection_service_server::CollectionService, create_collection_request::Parent,
         CreateCollectionRequest, DeleteCollectionRequest, GetCollectionRequest,
-        UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
-        UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest,
+        SnapshotCollectionRequest, UpdateCollectionDataClassRequest,
+        UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
+        UpdateCollectionNameRequest,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -19,9 +20,9 @@ use tonic::Request;
 use crate::common::{
     init::init_grpc_services,
     test_utils::{
-        add_token, fast_track_grpc_collection_create, fast_track_grpc_get_collection,
-        fast_track_grpc_permission_add, fast_track_grpc_project_create, ADMIN_OIDC_TOKEN,
-        DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID, USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_permission_add,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID,
+        USER_OIDC_TOKEN,
     },
 };
 use aruna_server::database::enums::DbPermissionLevel;
@@ -659,7 +660,7 @@ async fn grpc_delete_collection() {
 
     let response = collection_service.delete_collection(grpc_request).await;
 
-    assert!(response.is_ok()); // Just nothing gets "deleted"
+    assert!(response.is_ok()); // Just nothing got "deleted"
 
     // Delete Collection without token
     inner_request.collection_id = collection_ulid.to_string();
@@ -709,4 +710,80 @@ async fn grpc_delete_collection() {
 }
 
 #[tokio::test]
-async fn grpc_snapshot_collection() {}
+async fn grpc_snapshot_collection() {
+    // Init gRPC services
+    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+
+    // Create random Project + Collection
+    let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
+    let collection = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        Parent::ProjectId(project.id.clone()),
+    )
+    .await;
+
+    // Create user/resource ulids
+    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+
+    // Snapshot non-existing Collection
+    let mut inner_request = SnapshotCollectionRequest {
+        collection_id: DieselUlid::generate().to_string(),
+    };
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = collection_service.snapshot_collection(grpc_request).await;
+
+    assert!(response.is_err());
+
+    // Snapshot Collection without token
+    inner_request.collection_id = collection_ulid.to_string();
+
+    let grpc_request = Request::new(inner_request.clone());
+
+    let response = collection_service.snapshot_collection(grpc_request).await;
+
+    assert!(response.is_err());
+
+    // Snapshot Collection without sufficient permissions
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service.snapshot_collection(grpc_request).await;
+
+    assert!(response.is_err());
+
+    //ToDo: Snapshot Collection with sufficient permissions
+    fast_track_grpc_permission_add(
+        &auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &collection_ulid,
+        DbPermissionLevel::ADMIN,
+    )
+    .await;
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let proto_collection = collection_service
+        .snapshot_collection(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap();
+
+    assert_ne!(collection.id, proto_collection.id);
+    assert!(collection.dynamic);
+    assert!(!proto_collection.dynamic);
+    assert!(proto_collection.relations.contains(&Relation {
+        relation: Some(Internal(InternalRelation {
+            resource_id: collection.id,
+            resource_variant: ResourceVariant::Collection as i32,
+            defined_variant: InternalRelationVariant::Version as i32,
+            custom_variant: None,
+            direction: RelationDirection::Outbound as i32,
+        }))
+    }))
+}
