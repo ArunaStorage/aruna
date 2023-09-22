@@ -36,7 +36,6 @@ impl Database {
 
     pub async fn initialize_db(&self) -> Result<()> {
         let client = self.connection_pool.get().await?;
-        dbg!(&client);
 
         let initial = tokio::fs::read_to_string("./src/database/schema.sql").await?;
         client.batch_execute(&initial).await?;

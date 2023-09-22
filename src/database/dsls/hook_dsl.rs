@@ -14,6 +14,8 @@ use tokio_postgres::Client;
 #[derive(FromRow, Debug, Clone)]
 pub struct Hook {
     pub id: DieselUlid,
+    pub name: String,
+    pub description: String,
     pub project_id: DieselUlid,
     pub owner: DieselUlid,
     pub trigger_type: TriggerType,
@@ -64,7 +66,8 @@ pub struct Credentials {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TemplateVariant {
-    BasicTemplate,
+    Basic,
+    Custom(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,15 +76,30 @@ pub struct BasicTemplate {
     pub object: Resource,
     pub secret: String,
     pub download: String,
-    pub upload_token: String,
     pub pubkey_serial: i32,
+    pub access_key: String,
+    pub secret_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HookStatusValues {
+    pub name: String,
+    pub status: HookStatusVariant,
+    pub trigger_type: TriggerType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum HookStatusVariant {
+    RUNNING,
+    FINISHED,
+    ERROR(String),
 }
 
 #[async_trait::async_trait]
 impl CrudDb for Hook {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO hooks (id, project_id, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8
+        let query = "INSERT INTO hooks (id, name, description, project_id, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -91,6 +109,8 @@ impl CrudDb for Hook {
                 &prepared,
                 &[
                     &self.id,
+                    &self.name,
+                    &self.description,
                     &self.project_id,
                     &self.owner,
                     &self.trigger_type,
@@ -134,6 +154,12 @@ impl Hook {
         let query = "SELECT * FROM hooks WHERE project_id = $1";
         let prepared = client.prepare(query).await?;
         let rows = client.query(&prepared, &[project_id]).await?;
+        Ok(rows.iter().map(Hook::from_row).collect::<Vec<_>>())
+    }
+    pub async fn list_owned(owner: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
+        let query = "SELECT * FROM hooks WHERE owner = $1";
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[owner]).await?;
         Ok(rows.iter().map(Hook::from_row).collect::<Vec<_>>())
     }
     pub async fn delete_by_id(hook_id: &DieselUlid, client: &Client) -> Result<()> {

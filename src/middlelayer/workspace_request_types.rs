@@ -23,6 +23,7 @@ impl CreateTemplate {
         let workspace = WorkspaceTemplate {
             id: DieselUlid::generate(),
             name: self.0.name.clone(),
+            description: "PLACEHOLDER".to_string(), //TODO: Workspace descriptions
             owner,
             prefix: self.0.prefix.clone(),
             // TODO: Remove key values or implement label validation & enforcement

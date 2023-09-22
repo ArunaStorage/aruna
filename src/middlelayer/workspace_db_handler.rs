@@ -97,7 +97,7 @@ impl DatabaseHandler {
                 access_key,
                 secret_key,
             },
-        ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, endpoint).await?;
+        ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, None, endpoint).await?;
 
         Ok((workspace.id, access_key, secret_key, token_secret))
     }

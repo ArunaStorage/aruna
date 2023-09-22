@@ -42,6 +42,7 @@ impl DatabaseHandler {
             }
         };
 
+        // Commit transaction
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -49,10 +50,16 @@ impl DatabaseHandler {
 
         for object_plus in &objects_plus {
             let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+            let block_id = DieselUlid::generate();
 
             if let Err(err) = self
                 .natsio_handler
-                .register_resource_event(object_plus, hierarchies, EventVariant::Deleted)
+                .register_resource_event(
+                    object_plus,
+                    hierarchies,
+                    EventVariant::Deleted,
+                    Some(&block_id),
+                )
                 .await
             {
                 // Log error, rollback transaction and return

@@ -65,7 +65,7 @@ impl PubKey {
             .map(|e| PubKey::from_row(&e)))
     }
 
-    /// As the primary ke is a auto incrementing serial it is stupid to provide a id for inserts...
+    /// As the primary key is a auto incrementing serial it is unnecessary to provide an id for inserts...
     pub async fn create_or_get_without_id(
         proxy: Option<DieselUlid>,
         pubkey: &str,

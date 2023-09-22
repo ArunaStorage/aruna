@@ -1,5 +1,3 @@
-use super::create_request_types::CreateRequest;
-use super::db_handler::DatabaseHandler;
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
@@ -8,6 +6,8 @@ use crate::database::dsls::internal_relation_dsl::{
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
+use crate::middlelayer::create_request_types::CreateRequest;
+use crate::middlelayer::db_handler::DatabaseHandler;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
@@ -125,6 +125,33 @@ impl DatabaseHandler {
             }
         };
         transaction.commit().await?;
+
+        // If created resource has parent emit notification for updated parent
+        if let Some(parent) = request.get_parent() {
+            if let Some(parent_plus) = self.cache.get_object(&parent.get_id()?) {
+                let parent_hierachies =
+                    parent_plus.object.fetch_object_hierarchies(&client).await?;
+
+                // Try to emit object created notification(s)
+                if let Err(err) = self
+                    .natsio_handler
+                    .register_resource_event(
+                        &parent_plus,
+                        parent_hierachies,
+                        EventVariant::Updated,
+                        Some(&DieselUlid::generate()), // block_id for deduplication
+                    )
+                    .await
+                {
+                    // Log error and return
+                    log::error!("{}", err);
+                    //transaction.rollback().await?;
+                    return Err(anyhow::anyhow!("Notification emission failed: {err}"));
+                }
+            }
+        }
+
+        // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {
             object: object.clone(),
             inbound: Json(DashMap::default()),
@@ -137,18 +164,18 @@ impl DatabaseHandler {
             self.cache.update_object(&p.object.id, p.clone());
         };
         // Trigger hooks
-        let object_with_rel = if object.object_type != ObjectType::PROJECT {
+        if object.object_type != ObjectType::PROJECT {
             dbg!("Reached trigger");
-            match self
-                .trigger_on_creation(authorizer.clone(), object.id, user_id)
-                .await?
-            {
-                Some(owr) => owr,
-                None => owr,
-            }
-        } else {
-            // Create DTO which combines the object and its internal relations
-            owr
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_creation(authorizer.clone(), object.id, user_id)
+                    .await
+            });
         };
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
@@ -156,17 +183,22 @@ impl DatabaseHandler {
         // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_with_rel, object_hierarchies, EventVariant::Created)
+            .register_resource_event(
+                &owr,
+                object_hierarchies,
+                EventVariant::Created,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
             //transaction.rollback().await?;
-            Err(anyhow::anyhow!("Notification emission failed"))
+            Err(anyhow::anyhow!("Notification emission failed: {err}"))
         } else {
             // Commit transaction and return
             //transaction.commit().await?;
-            Ok((object_with_rel, user))
+            Ok((owr, user))
         }
     }
 }

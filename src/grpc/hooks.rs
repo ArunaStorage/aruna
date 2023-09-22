@@ -33,14 +33,14 @@ impl HooksService for HookServiceImpl {
         let request = CreateHook(request.into_inner());
         let project_id = tonic_invalid!(request.get_project_id(), "invalid parent");
 
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::APPEND, true);
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let hook = tonic_internal!(
-            self.database_handler.create_hook(request, user_id).await,
+            self.database_handler.create_hook(request, &user_id).await,
             "Error while creating hook"
         );
 
@@ -123,6 +123,8 @@ impl HooksService for HookServiceImpl {
             request.verify_secret(self.authorizer.clone(), self.cache.clone()),
             "Unauthorized"
         );
+        dbg!("Verified secret");
+
         tonic_internal!(
             self.database_handler.hook_callback(request).await,
             "HookCallback failed"

@@ -128,7 +128,7 @@ async fn delete_stream_consumer() {
 }
 
 #[tokio::test]
-async fn notification_test() {
+async fn resource_notification_test() {
     // Init Nats.io connection
     let nats_client = async_nats::connect("0.0.0.0:4222").await.unwrap();
     let nats_handler = NatsIoHandler::new(nats_client, "ThisIsASecretToken".to_string(), None)
@@ -241,7 +241,12 @@ async fn notification_test() {
 
     let now = Instant::now();
     nats_handler
-        .register_resource_event(&object_plus, object_hierarchies, EventVariant::Created)
+        .register_resource_event(
+            &object_plus,
+            object_hierarchies,
+            EventVariant::Created,
+            Some(&DieselUlid::generate()),
+        )
         .await
         .unwrap();
     let elapsed = now.elapsed();
@@ -252,14 +257,14 @@ async fn notification_test() {
         .get_event_consumer_messages(proj_001_consumer_id.to_string(), 10)
         .await
         .unwrap();
-    assert_eq!(proj_001_messages.len(), 2);
+    assert_eq!(proj_001_messages.len(), 1); // Actually 2 were send but deduplicated
 
     let proj_002_messages = nats_handler
         .get_event_consumer_messages(proj_002_consumer_id.to_string(), 10)
         .await
         .unwrap();
 
-    assert_eq!(proj_002_messages.len(), 2);
+    assert_eq!(proj_002_messages.len(), 1); // Actually 2 were send but deduplicated
 
     let proj_003_messages = nats_handler
         .get_event_consumer_messages(proj_003_consumer_id.to_string(), 10)

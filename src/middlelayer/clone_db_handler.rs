@@ -67,11 +67,17 @@ impl DatabaseHandler {
         // Fetch all object paths for the notification subjects
         for object_plus in objects_plus.values() {
             let object_hierarchies = clone.fetch_object_hierarchies(&client).await?;
+            let block_id = DieselUlid::generate();
 
             // Try to emit object created notification(s)
             if let Err(err) = self
                 .natsio_handler
-                .register_resource_event(object_plus, object_hierarchies, EventVariant::Created)
+                .register_resource_event(
+                    object_plus,
+                    object_hierarchies,
+                    EventVariant::Created,
+                    Some(&block_id),
+                )
                 .await
             {
                 // Log and return error

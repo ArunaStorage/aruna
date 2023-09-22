@@ -48,7 +48,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -78,7 +83,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -111,7 +121,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -176,16 +191,18 @@ impl DatabaseHandler {
         transaction.commit().await?;
 
         // Trigger hook
-        let object_plus = if hooks.is_empty() {
-            Object::get_object_with_relations(&id, &client).await?
-        } else {
-            match self
-                .trigger_on_append_hook(authorizer, user_id, id, hooks)
-                .await?
-            {
-                Some(owr) => owr,
-                None => Object::get_object_with_relations(&id, &client).await?,
-            }
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        if !hooks.is_empty() {
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer, user_id, id, hooks)
+                    .await
+            });
         };
 
         // Fetch hierarchies and object relations for notifications
@@ -194,7 +211,12 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
@@ -334,10 +356,8 @@ impl DatabaseHandler {
         transaction.commit().await?;
 
         // Cache sync of newly created object
-        if is_new {
-            let owr = Object::get_object_with_relations(&id, &client).await?;
-            self.cache.add_object(owr);
-        }
+        let owr = Object::get_object_with_relations(&id, &client).await?;
+        self.cache.add_object(owr.clone());
 
         // Update all affected objects in cache
         if !affected.is_empty() {
@@ -353,62 +373,92 @@ impl DatabaseHandler {
         // 2. New object & new key_vals
         // 3. New object & no added key_vals -> Only old key_vals
         // 4. update in place & no key_vals
-        let object_plus = if !req.0.add_key_values.is_empty() && !is_new {
+        if !req.0.add_key_values.is_empty() && !is_new {
             dbg!("TRIGGER");
-            let kvs: Result<Vec<KeyValue>> = req
+            let kvs: Vec<KeyValue> = req
                 .0
                 .add_key_values
                 .iter()
                 .map(|kv| kv.try_into())
-                .collect();
-            match self
-                .trigger_on_append_hook(authorizer, user_id, old.id, kvs?)
-                .await?
-            {
-                Some(owr) => owr,
-                None => Object::get_object_with_relations(&id, &client).await?,
-            }
+                .collect::<Result<Vec<KeyValue>>>()?;
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer, user_id, id, kvs)
+                    .await
+            });
         } else if !req.0.add_key_values.is_empty() && is_new {
-            self.trigger_on_creation(authorizer.clone(), id, user_id)
-                .await?;
-            let kvs: Result<Vec<KeyValue>> = req
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            let auth2 = authorizer.clone();
+            tokio::spawn(async move { db_handler.trigger_on_creation(auth2, id, user_id).await });
+            let kvs = req
                 .0
                 .add_key_values
                 .iter()
                 .map(|kv| kv.try_into())
-                .collect();
-            match self
-                .trigger_on_append_hook(authorizer, user_id, id, kvs?)
-                .await?
-            {
-                Some(owr) => owr,
-                None => Object::get_object_with_relations(&id, &client).await?,
-            }
+                .collect::<Result<Vec<KeyValue>>>()?;
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer.clone(), id, user_id, kvs)
+                    .await
+            });
         } else if is_new {
             let kvs = owr.object.key_values.0 .0.clone();
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            let auth2 = authorizer.clone();
             if !kvs.is_empty() {
-                self.trigger_on_append_hook(authorizer.clone(), user_id, id, kvs)
-                    .await?;
+                tokio::spawn(async move {
+                    db_handler
+                        .trigger_on_append_hook(auth2, user_id, id, kvs)
+                        .await
+                });
             }
-            match self.trigger_on_creation(authorizer, id, user_id).await? {
-                Some(owr) => owr,
-                None => Object::get_object_with_relations(&id, &client).await?,
-            }
-        } else {
-            Object::get_object_with_relations(&id, &client).await?
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_creation(authorizer, id, user_id)
+                    .await
+            });
         };
         // Update cache again with triggered hooks.
         // Two cache updates are needed because hooks
         // must have an updated cache for tree traversal
-        self.cache
-            .update_object(&object_plus.object.id, object_plus.clone());
+        //self.cache
+        //    .update_object(&object_plus.object.id, object_plus.clone());
 
-        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+        let hierarchies = owr.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&object_plus, hierarchies, EventVariant::Updated)
+            .register_resource_event(
+                &owr,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            //>>>>>>> feat/version2.0rework
             .await
         {
             // Log error, rollback transaction and return
@@ -417,9 +467,10 @@ impl DatabaseHandler {
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
             //transaction.commit().await?;
-            Ok((object_plus, is_new))
+            Ok((owr, is_new))
         }
     }
+
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,

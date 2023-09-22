@@ -9,6 +9,7 @@ use crate::middlelayer::relations_request_types::{
 use ahash::HashSet;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
+use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
 impl DatabaseHandler {
@@ -71,10 +72,16 @@ impl DatabaseHandler {
 
         for object_plus in &objects_plus {
             let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+            let block_id = DieselUlid::generate();
 
             if let Err(err) = self
                 .natsio_handler
-                .register_resource_event(object_plus, hierarchies, EventVariant::Updated)
+                .register_resource_event(
+                    object_plus,
+                    hierarchies,
+                    EventVariant::Updated,
+                    Some(&block_id),
+                )
                 .await
             {
                 // Log error, rollback transaction and return
