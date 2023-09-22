@@ -622,7 +622,7 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
 }
 
 pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Relation {
-    let (direction, resource_variant) = if inbound {
+    let (direction, resource_variant, resource_id) = if inbound {
         (
             1,
             match internal.origin_type {
@@ -631,6 +631,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
                 ObjectType::DATASET => 3,
                 ObjectType::OBJECT => 4,
             },
+            internal.origin_pid.to_string(),
         )
     } else {
         (
@@ -641,6 +642,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
                 ObjectType::DATASET => 3,
                 ObjectType::OBJECT => 4,
             },
+            internal.target_pid.to_string(),
         )
     };
     let (defined_variant, custom_variant) = match internal.relation_name.as_str() {
@@ -654,7 +656,7 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
 
     Relation {
         relation: Some(RelationEnum::Internal(APIInternalRelation {
-            resource_id: internal.origin_pid.to_string(),
+            resource_id,
             resource_variant,
             direction, // 1 for inbound, 2 for outbound
             defined_variant,
