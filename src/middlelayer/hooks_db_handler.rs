@@ -124,7 +124,7 @@ impl DatabaseHandler {
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
         dbg!(&owr);
-        self.cache.update_object(&object_id, owr);
+        self.cache.upsert_object(&object_id, owr);
 
         Ok(())
     }
@@ -250,7 +250,7 @@ impl DatabaseHandler {
             dbg!("HookStatus: {:?}", &hook_status);
             object.object.key_values.0 .0.push(hook_status.clone());
             Object::add_key_value(&object_id, &client, hook_status).await?;
-            self.cache.update_object(&object_id, object);
+            self.cache.upsert_object(&object_id, object);
 
             let transaction = client.transaction().await?;
             let transaction_client = transaction.client();
@@ -389,7 +389,7 @@ impl DatabaseHandler {
                 Object::get_objects_with_relations(&affected_parents, &client).await?;
             affected.push(updated);
             for object in affected {
-                self.cache.update_object(&object.object.id.clone(), object);
+                self.cache.upsert_object(&object.object.id.clone(), object);
             }
         }
         Ok(())

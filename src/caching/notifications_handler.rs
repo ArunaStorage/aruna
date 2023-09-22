@@ -185,7 +185,7 @@ async fn process_resource_event(
 
                     if proto_checksum != resource.checksum {
                         // Update updated object in cache and search index
-                        cache.update_object(&res_ulid, object_plus);
+                        cache.upsert_object(&res_ulid, object_plus);
 
                         // Update resource search index
                         search_client

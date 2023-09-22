@@ -161,7 +161,7 @@ impl DatabaseHandler {
         };
         self.cache.add_object(owr.clone());
         if let Some(p) = parent {
-            self.cache.update_object(&p.object.id, p.clone());
+            self.cache.upsert_object(&p.object.id, p.clone());
         };
         // Trigger hooks
         if object.object_type != ObjectType::PROJECT {

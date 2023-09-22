@@ -120,10 +120,12 @@ impl Cache {
         None
     }
 
-    pub fn update_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
+    pub fn upsert_object(&self, id: &DieselUlid, object: ObjectWithRelations) {
         self.check_lock();
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
+        } else {
+            self.object_cache.insert(object.object.id, object);
         }
     }
     pub fn update_relations(&self, relations: Vec<InternalRelation>) {

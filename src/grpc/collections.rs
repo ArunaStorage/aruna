@@ -225,7 +225,7 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&collection.object.id, collection.clone());
+            .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
         grpc_utils::update_search_index(
@@ -268,7 +268,7 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&collection.object.id, collection.clone());
+            .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
         grpc_utils::update_search_index(
@@ -313,7 +313,7 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&collection.object.id, collection.clone());
+            .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
         grpc_utils::update_search_index(
@@ -355,7 +355,7 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&collection.object.id, collection.clone());
+            .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
         grpc_utils::update_search_index(
@@ -400,7 +400,7 @@ impl CollectionService for CollectionServiceImpl {
         let mut search_update: Vec<ObjectDocument> = vec![];
         for resource in resources {
             self.cache
-                .update_object(&resource.object.id, resource.clone());
+                .upsert_object(&resource.object.id, resource.clone());
             search_update.push(ObjectDocument::from(resource.object))
         }
 

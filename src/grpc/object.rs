@@ -215,7 +215,7 @@ impl ObjectService for ObjectServiceImpl {
             "Internal database error."
         );
 
-        self.cache.update_object(&object.object.id, object.clone());
+        self.cache.upsert_object(&object.object.id, object.clone());
 
         // Add or update object in search index
         grpc_utils::update_search_index(
@@ -259,7 +259,7 @@ impl ObjectService for ObjectServiceImpl {
             "Internal database error."
         );
 
-        self.cache.update_object(&object.object.id, object.clone());
+        self.cache.upsert_object(&object.object.id, object.clone());
 
         // Add or update object in search index
         grpc_utils::update_search_index(
