@@ -27,6 +27,7 @@ pub enum CreateRequest {
     Object(CreateObjectRequest),
 }
 
+#[derive(Clone)]
 pub enum Parent {
     Project(String),
     Collection(String),

@@ -59,7 +59,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let (object_plus, _) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
+                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );
@@ -254,7 +254,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let (object, new_revision) = tonic_internal!(
             self.database_handler
-                .update_grpc_object(inner, user_id)
+                .update_grpc_object(self.authorizer.clone(), inner, user_id)
                 .await,
             "Internal database error."
         );

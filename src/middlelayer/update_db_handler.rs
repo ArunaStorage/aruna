@@ -1,6 +1,10 @@
 use super::update_request_types::UpdateObject;
+use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
-use crate::database::dsls::object_dsl::{KeyValueVariant, Object, ObjectWithRelations};
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
+};
+use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
@@ -12,6 +16,7 @@ use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, Upd
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
+use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -134,12 +139,18 @@ impl DatabaseHandler {
         }
     }
 
-    pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
+    pub async fn update_keyvals(
+        &self,
+        authorizer: Arc<PermissionHandler>,
+        request: KeyValueUpdate,
+        user_id: DieselUlid,
+    ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let id = request.get_id()?;
         let (add_key_values, rm_key_values) = request.get_keyvals()?;
+        let mut hooks = Vec::new();
 
         if add_key_values.0.is_empty() && rm_key_values.0.is_empty() {
             return Err(anyhow!(
@@ -149,6 +160,14 @@ impl DatabaseHandler {
 
         if !add_key_values.0.is_empty() {
             for kv in add_key_values.0 {
+                if kv.variant == KeyValueVariant::HOOK {
+                    hooks.push(kv.clone());
+                }
+                if kv.variant == KeyValueVariant::HOOK_STATUS {
+                    return Err(anyhow!(
+                        "Can't create hook status outside of hook callbacks"
+                    ));
+                }
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
         }
@@ -158,18 +177,35 @@ impl DatabaseHandler {
                 .await?
                 .ok_or(anyhow!("Dataset does not exist."))?;
             for kv in rm_key_values.0 {
-                if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
-                    object.remove_key_value(transaction_client, kv).await?;
-                } else {
+                if kv.variant == KeyValueVariant::STATIC_LABEL {
                     return Err(anyhow!("Cannot remove static labels."));
+                } else if kv.variant == KeyValueVariant::HOOK_STATUS {
+                    return Err(anyhow!(
+                        "Cannot remove hook_status outside of hook_callback"
+                    ));
+                } else {
+                    object.remove_key_value(transaction_client, kv).await?;
                 }
             }
         }
         transaction.commit().await?;
 
-        // Fetch hierarchies and object relations for notifications
+        // Trigger hook
         let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        if !hooks.is_empty() {
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer, user_id, id, hooks)
+                    .await
+            });
+        };
 
+        // Fetch hierarchies and object relations for notifications
         let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
@@ -195,6 +231,7 @@ impl DatabaseHandler {
 
     pub async fn update_grpc_object(
         &self,
+        authorizer: Arc<PermissionHandler>,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
     ) -> Result<(
@@ -204,12 +241,11 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let req = UpdateObject(request.clone());
         let id = req.get_id()?;
-        let old = Object::get(id, &client)
-            .await?
-            .ok_or(anyhow!("Object not found."))?;
+        let owr = Object::get_object_with_relations(&id, &client).await?;
+        let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (id, flag) = if request.name.is_some()
+        let (id, is_new, affected) = if request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
@@ -231,16 +267,50 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old)?),
+                endpoints: Json(req.get_endpoints(old.clone())?),
             };
             create_object.create(transaction_client).await?;
-            if let Some(p) = request.parent {
-                let mut relation =
-                    UpdateObject::add_parent_relation(id, p, create_object.name.to_string())?;
-                relation.create(transaction_client).await?;
-            }
 
-            (id, true)
+            // Clone all relations of old object with new object id
+            let relations = UpdateObject::get_all_relations(owr.clone(), create_object.clone());
+            let (mut new, (delete, mut affected)): (
+                Vec<InternalRelation>,
+                (Vec<DieselUlid>, Vec<DieselUlid>),
+            ) = relations.into_iter().unzip();
+            // Add version relation for old -> new
+            let version = InternalRelation {
+                id: DieselUlid::generate(),
+                origin_pid: old.id,
+                origin_type: old.object_type,
+                relation_name: INTERNAL_RELATION_VARIANT_VERSION.to_string(),
+                target_pid: create_object.id,
+                target_type: create_object.object_type,
+                target_name: create_object.name.clone(),
+            };
+            new.push(version);
+            // Create all relations for new_object
+            InternalRelation::batch_create(&new, transaction_client).await?;
+            // Delete all relations for old object
+            InternalRelation::batch_delete(&delete, transaction_client).await?;
+            // Add parent if updated
+            if let Some(p) = request.parent.clone() {
+                let mut relation = UpdateObject::add_parent_relation(
+                    id,
+                    p.clone(),
+                    create_object.name.to_string(),
+                )?;
+                relation.create(transaction_client).await?;
+                let changed = match p {
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::ProjectId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::CollectionId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::DatasetId(id) => DieselUlid::from_str(&id)?,
+                };
+                affected.push(changed);
+            }
+            // Return all affected ids for cache sync
+            affected.push(old.id);
+
+            (id, true, affected)
         } else {
             // Update in place
             let update_object = Object {
@@ -259,33 +329,135 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old)?),
+                endpoints: Json(req.get_endpoints(old.clone())?),
             };
             update_object.update(transaction_client).await?;
-            if let Some(p) = request.parent {
-                let mut relation =
-                    UpdateObject::add_parent_relation(id, p, update_object.name.to_string())?;
+            // Create & return all affected ids for cache sync
+            let affected = if let Some(p) = request.parent.clone() {
+                let mut relation = UpdateObject::add_parent_relation(
+                    id,
+                    p.clone(),
+                    update_object.name.to_string(),
+                )?;
                 relation.create(transaction_client).await?;
-            }
+                let p_id = match p {
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::ProjectId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::CollectionId(id) => DieselUlid::from_str(&id)?,
+                    aruna_rust_api::api::storage::services::v2::update_object_request::Parent::DatasetId(id) => DieselUlid::from_str(&id)?,
+                };
+                vec![p_id, update_object.id]
+            } else {
+                vec![update_object.id]
+            };
 
-            (id, false)
+            (id, false, affected)
         };
         transaction.commit().await?;
 
-        // Fetch hierarchies and object relations for notifications
-        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        // Cache sync of newly created object
+        let owr = Object::get_object_with_relations(&id, &client).await?;
+        self.cache.add_object(owr.clone());
 
-        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+        // Update all affected objects in cache
+        if !affected.is_empty() {
+            let affected = Object::get_objects_with_relations(&affected, &client).await?;
+            for o in affected {
+                dbg!(&o);
+                self.cache.update_object(&o.object.id.clone(), o);
+            }
+        }
+
+        // Trigger hooks for the 4 combinations:
+        // 1. update in place & new key_vals
+        // 2. New object & new key_vals
+        // 3. New object & no added key_vals -> Only old key_vals
+        // 4. update in place & no key_vals
+        if !req.0.add_key_values.is_empty() && !is_new {
+            dbg!("TRIGGER");
+            let kvs: Vec<KeyValue> = req
+                .0
+                .add_key_values
+                .iter()
+                .map(|kv| kv.try_into())
+                .collect::<Result<Vec<KeyValue>>>()?;
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer, user_id, id, kvs)
+                    .await
+            });
+        } else if !req.0.add_key_values.is_empty() && is_new {
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            let auth2 = authorizer.clone();
+            tokio::spawn(async move { db_handler.trigger_on_creation(auth2, id, user_id).await });
+            let kvs = req
+                .0
+                .add_key_values
+                .iter()
+                .map(|kv| kv.try_into())
+                .collect::<Result<Vec<KeyValue>>>()?;
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_append_hook(authorizer.clone(), id, user_id, kvs)
+                    .await
+            });
+        } else if is_new {
+            let kvs = owr.object.key_values.0 .0.clone();
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            let auth2 = authorizer.clone();
+            if !kvs.is_empty() {
+                tokio::spawn(async move {
+                    db_handler
+                        .trigger_on_append_hook(auth2, user_id, id, kvs)
+                        .await
+                });
+            }
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_creation(authorizer, id, user_id)
+                    .await
+            });
+        };
+        // Update cache again with triggered hooks.
+        // Two cache updates are needed because hooks
+        // must have an updated cache for tree traversal
+        //self.cache
+        //    .update_object(&object_plus.object.id, object_plus.clone());
+
+        let hierarchies = owr.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
             .natsio_handler
             .register_resource_event(
-                &object_plus,
+                &owr,
                 hierarchies,
                 EventVariant::Updated,
                 Some(&DieselUlid::generate()), // block_id for deduplication
             )
+            //>>>>>>> feat/version2.0rework
             .await
         {
             // Log error, rollback transaction and return
@@ -294,7 +466,7 @@ impl DatabaseHandler {
             Err(anyhow::anyhow!("Notification emission failed"))
         } else {
             //transaction.commit().await?;
-            Ok((object_plus, flag))
+            Ok((owr, is_new))
         }
     }
 

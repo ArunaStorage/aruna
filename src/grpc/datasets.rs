@@ -62,7 +62,7 @@ impl DatasetService for DatasetServiceImpl {
 
         let (dataset, _) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
+                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );
@@ -300,13 +300,15 @@ impl DatasetService for DatasetServiceImpl {
         let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
-        tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let dataset = tonic_internal!(
-            self.database_handler.update_keyvals(request).await,
+            self.database_handler
+                .update_keyvals(self.authorizer.clone(), request, user_id)
+                .await,
             "Internal database error."
         );
         self.cache
