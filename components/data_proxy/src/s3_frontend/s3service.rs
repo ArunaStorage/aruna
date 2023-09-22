@@ -1013,27 +1013,6 @@ impl S3 for ArunaS3Service {
             }));
         }
 
-        // // TODO: Special bucket
-        // let id = if req.input.bucket == "NON_HIERARCHY_BUCKET_NAME_PLACEHOLDER" {
-        //     DieselUlid::from_str(&req.input.key)
-        //         .map_err(|_| s3_error!(NoSuchKey, "No object found"))?
-        // } else {
-        //     match req
-        //         .extensions
-        //         .get::<Option<(ResourceIds, String, Option<String>)>>()
-        //         .cloned()
-        //         .flatten()
-        //     {
-        //         Some((ids, _, _)) => match ids {
-        //             ResourceIds::Project(id) => Ok(id),
-        //             ResourceIds::Collection(_, id) => Ok(id),
-        //             ResourceIds::Dataset(_, _, id) => Ok(id),
-        //             ResourceIds::Object(_, _, _, id) => Ok(id),
-        //         },
-        //         None => Err(s3_error!(NoSuchKey, "No object found")),
-        //     }?
-        // };
-
         let (object, location) = object.ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?;
 
         let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();

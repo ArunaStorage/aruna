@@ -290,6 +290,6 @@ impl S3Backend {
             .take(2)
             .map(char::from)
             .collect();
-        format!("{}-{}", self.endpoint_id, bucket)
+        format!("{}-{}", self.endpoint_id, bucket).to_ascii_lowercase()
     }
 }

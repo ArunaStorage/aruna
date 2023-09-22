@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     data_backends::storage_backend::StorageBackend,
-    s3_frontend::utils::chunked_encoding_transformer::ChunkedEncodingTransformer,
+    //s3_frontend::utils::chunked_encoding_transformer::ChunkedEncodingTransformer,
     structs::ObjectLocation,
 };
 use aruna_file::{
@@ -20,19 +20,11 @@ pub async fn get_bundle(
     path_level_vec: Vec<(String, Option<ObjectLocation>)>,
     backend: Arc<Box<dyn StorageBackend>>,
 ) -> Option<StreamingBlob> {
-    // if !file_name.ends_with(".tar.gz") {
-    //     return Err(RequestError(anyhow::anyhow!(
-    //         "Only .tar.gz is currently supported"
-    //     )));
-    // }
-
     let (file_info_sender, file_info_receiver) = async_channel::bounded(10);
     let (data_tx, data_sx) = async_channel::bounded(10);
     let (final_sender, final_receiver) = async_channel::bounded(10);
     let final_sender_clone = final_sender.clone();
     let final_receiver_clone = final_receiver.clone();
-
-    dbg!(&path_level_vec);
 
     tokio::spawn(async move {
         let mut counter = 0;

@@ -45,8 +45,8 @@ impl From<&Method> for DbPermissionLevel {
     fn from(method: &Method) -> Self {
         match *method {
             Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
-            Method::POST => DbPermissionLevel::Append,
-            Method::PUT | Method::DELETE => DbPermissionLevel::Write,
+            Method::POST | Method::PUT => DbPermissionLevel::Append,
+            Method::DELETE => DbPermissionLevel::Write,
             _ => DbPermissionLevel::Admin,
         }
     }
