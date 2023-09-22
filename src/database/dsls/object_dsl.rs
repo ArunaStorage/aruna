@@ -395,6 +395,11 @@ impl Object {
         ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<ObjectWithRelations>> {
+        // Fast return if no ids are provided
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let query_one = "SELECT o.*,
         COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
         COALESCE(JSON_OBJECT_AGG(ir1.origin_pid, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND ir1.relation_name = 'BELONGS_TO'), '{}') inbound_belongs_to,
