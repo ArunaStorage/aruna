@@ -4,7 +4,7 @@ use aruna_rust_api::api::storage::{
         authorization_service_server::AuthorizationService,
         collection_service_server::CollectionService, create_collection_request::Parent,
         project_service_server::ProjectService, CreateAuthorizationRequest,
-        CreateCollectionRequest, CreateProjectRequest,
+        CreateCollectionRequest, CreateObjectRequest, CreateProjectRequest, GetCollectionRequest,
     },
 };
 use aruna_server::{
@@ -18,7 +18,7 @@ use aruna_server::{
     },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
-        projects::ProjectServiceImpl,
+        object::ObjectServiceImpl, projects::ProjectServiceImpl,
     },
 };
 use dashmap::DashMap;
@@ -161,11 +161,35 @@ pub fn rand_string(length: usize) -> String {
 /* ----- Resource create convenience functions ---------- */
 
 #[allow(dead_code)]
+pub async fn fast_track_grpc_get_collection(
+    collection_service: &CollectionServiceImpl,
+    token: &str,
+    collection_id: &str,
+) -> Collection {
+    // Create request with token
+    let get_request = add_token(
+        Request::new(GetCollectionRequest {
+            collection_id: collection_id.to_string(),
+        }),
+        token,
+    );
+
+    // Fetch collection vie gRPC service
+    collection_service
+        .get_collection(get_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap()
+}
+
+#[allow(dead_code)]
 pub async fn fast_track_grpc_project_create(
     project_service: &ProjectServiceImpl,
     token: &str,
 ) -> Project {
-    // Create request with admin token
+    // Create request with token
     let project_name = rand_string(32);
 
     let create_request = CreateProjectRequest {
@@ -200,7 +224,7 @@ pub async fn fast_track_grpc_collection_create(
     token: &str,
     parent: Parent,
 ) -> Collection {
-    // Create request with admin token
+    // Create request with token
     let collection_name = rand_string(32);
 
     let create_request = CreateCollectionRequest {
@@ -237,7 +261,7 @@ pub async fn fast_track_grpc_permission_add(
     resource_ulid: &DieselUlid,
     permission_level: DbPermissionLevel,
 ) {
-    // Create request with admin token
+    // Create request with token
     let inner_request = CreateAuthorizationRequest {
         resource_id: resource_ulid.to_string(),
         user_id: user_ulid.to_string(),
