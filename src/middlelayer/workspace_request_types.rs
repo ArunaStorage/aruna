@@ -73,7 +73,7 @@ impl CreateWorkspace {
             id: user_id,
             display_name: ["SERVICE_ACCOUNT".to_string(), user_id.to_string()].join("#"),
             external_id: None,
-            email: "".to_string(),
+            email: String::new(),
             attributes: Json(UserAttributes {
                 global_admin: false,
                 service_account: true,
