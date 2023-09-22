@@ -41,6 +41,10 @@ impl DatabaseHandler {
 
         // Execute archive/snapshot
         let result = snapshot_resources.snapshot(client).await?;
+        // Update cache
+        for o in &result {
+            self.cache.update_object(&o.object.id, o.clone());
+        }
 
         // Notifications
         let client = self.database.get_client().await?; // Refresh database connection ...

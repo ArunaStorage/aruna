@@ -1,4 +1,5 @@
 use crate::caching::cache::Cache;
+use crate::database::dsls::hook_dsl::{Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -23,6 +24,11 @@ use crate::database::{
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
+use aruna_rust_api::api::hooks::services::v2::hook::HookType;
+use aruna_rust_api::api::hooks::services::v2::internal_hook::InternalAction;
+use aruna_rust_api::api::hooks::services::v2::{
+    AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
+};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
     Status, Token, User as ApiUser, UserAttributes,
@@ -38,6 +44,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use serde_json::json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::MetadataMap;
@@ -113,6 +120,9 @@ impl TryFrom<i32> for KeyValueVariant {
             1 => Ok(KeyValueVariant::LABEL),
             2 => Ok(KeyValueVariant::STATIC_LABEL),
             3 => Ok(KeyValueVariant::HOOK),
+            4 => Err(anyhow!(
+                "Can't create HookStatus without outside of hook callbacks"
+            )),
             _ => Err(anyhow!("KeyValue variant not defined.")),
         }
     }
@@ -223,6 +233,7 @@ impl From<KeyValues> for Vec<KeyValue> {
                     KeyValueVariant::LABEL => 1,
                     KeyValueVariant::STATIC_LABEL => 2,
                     KeyValueVariant::HOOK => 3,
+                    KeyValueVariant::HOOK_STATUS => 4,
                 },
             })
             .collect()
@@ -1173,5 +1184,95 @@ impl TryFrom<i32> for EndpointVariant {
             2 => EndpointVariant::VOLATILE,
             _ => return Err(anyhow!("Undefined endpoint variant")),
         })
+    }
+}
+
+impl From<Hook> for HookInfo {
+    fn from(hook: Hook) -> HookInfo {
+        let trigger = Some(hook.into_trigger());
+        HookInfo {
+            hook_id: hook.id.to_string(),
+            hook: Some(hook.into_api_hook()),
+            trigger,
+            timeout: hook.timeout.timestamp_millis() as u64,
+        }
+    }
+}
+
+impl From<&Method> for i32 {
+    fn from(method: &Method) -> Self {
+        match method {
+            Method::PUT => 1,
+            Method::POST => 2,
+        }
+    }
+}
+impl Hook {
+    fn into_trigger(&self) -> Trigger {
+        Trigger {
+            trigger_type: match self.trigger_type {
+                crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
+                crate::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED => 2,
+            },
+            key: self.trigger_key.clone(),
+            value: self.trigger_value.clone(),
+        }
+    }
+    fn into_api_hook(&self) -> APIHook {
+        match &self.hook.0 {
+            crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
+                let internal_action = match internal_hook {
+                    crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
+                        InternalAction::AddLabel(AddLabel {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })
+                    }
+                    crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
+                        InternalAction::AddHook(AddHook {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })
+                    }
+
+                    crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
+                        InternalAction::AddRelation(Relation {
+                            relation: Some(relation.clone()),
+                        })
+                    }
+                };
+                APIHook {
+                    hook_type: Some(HookType::InternalHook(InternalHook {
+                        internal_action: Some(internal_action),
+                    })),
+                }
+            }
+            crate::database::dsls::hook_dsl::HookVariant::External(external_hook) => {
+                let json_template = match &external_hook.template {
+                    crate::database::dsls::hook_dsl::TemplateVariant::Basic => json!({
+                        "hook_id": "ULID_PLACEHOLDER",
+                        "object": "RESOURCE_PLACEHOLDER",
+                        "secret": "SECRET_PLACEHOLDER",
+                        "download": "DONWLOAD_URL_PLACEHOLDER",
+                        "upload": "UPLOAD_URL_PLACEHOLDER"
+                    })
+                    .to_string(),
+                    crate::database::dsls::hook_dsl::TemplateVariant::Custom(string) => {
+                        string.clone()
+                    }
+                };
+                APIHook {
+                    hook_type: Some(HookType::ExternalHook(ExternalHook {
+                        url: external_hook.url.clone(),
+                        credentials: external_hook
+                            .credentials
+                            .clone()
+                            .map(|c| Credentials { token: c.token }),
+                        json_template,
+                        method: (&external_hook.method).into(),
+                    })),
+                }
+            }
+        }
     }
 }

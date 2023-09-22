@@ -60,7 +60,7 @@ impl ProjectService for ProjectServiceImpl {
 
         let (project, user) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy, self.cache.clone())
+                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );
@@ -297,13 +297,15 @@ impl ProjectService for ProjectServiceImpl {
         let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
-        tonic_auth!(
+        let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let project = tonic_internal!(
-            self.database_handler.update_keyvals(request).await,
+            self.database_handler
+                .update_keyvals(self.authorizer.clone(), request, user_id)
+                .await,
             "Internal database error."
         );
         self.cache

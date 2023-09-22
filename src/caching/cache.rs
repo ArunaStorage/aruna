@@ -4,6 +4,8 @@ use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO;
 use crate::database::dsls::object_dsl::get_all_objects_with_relations;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
@@ -122,6 +124,37 @@ impl Cache {
         self.check_lock();
         if let Some(mut x) = self.object_cache.get_mut(id) {
             *x.value_mut() = object;
+        }
+    }
+    pub fn update_relations(&self, relations: Vec<InternalRelation>) {
+        self.check_lock();
+
+        let zip = relations
+            .iter()
+            .map(|ir| (ir.origin_pid, ir.target_pid, ir));
+        for (origin_id, target_id, relation) in zip {
+            if let Some(mut origin) = self.object_cache.get_mut(&origin_id) {
+                match relation.relation_name.as_ref() {
+                    INTERNAL_RELATION_VARIANT_BELONGS_TO => origin
+                        .outbound_belongs_to
+                        .0
+                        .insert(target_id, relation.clone()),
+                    _ => origin.outbound.0.insert(target_id, relation.clone()),
+                };
+                let clone = origin.clone();
+                *origin.value_mut() = clone;
+            }
+            if let Some(mut target) = self.object_cache.get_mut(&target_id) {
+                match relation.relation_name.as_ref() {
+                    INTERNAL_RELATION_VARIANT_BELONGS_TO => target
+                        .inbound_belongs_to
+                        .0
+                        .insert(target_id, relation.clone()),
+                    _ => target.inbound.0.insert(origin_id, relation.clone()),
+                };
+                let clone = target.clone();
+                *target.value_mut() = clone;
+            }
         }
     }
 

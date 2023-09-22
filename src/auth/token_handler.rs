@@ -5,6 +5,7 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
+use hmac::{Hmac, Mac};
 use jsonwebtoken::encode;
 use jsonwebtoken::Algorithm;
 use jsonwebtoken::EncodingKey;
@@ -12,6 +13,7 @@ use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -85,6 +87,7 @@ pub struct Intent {
     pub target: DieselUlid,
     pub action: Action,
 }
+type HmacSha256 = Hmac<Sha256>;
 
 impl Serialize for Intent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -478,6 +481,53 @@ impl TokenHandler {
         *lck = Some(dec_key.clone());
 
         Ok(dec_key)
+    }
+    pub async fn sign_hook_secret(
+        &self,
+        cache: Arc<Cache>,
+        object_id: DieselUlid,
+        hook_id: DieselUlid,
+    ) -> Result<(String, i32)> {
+        let serial = self.get_current_pubkey_serial() as i32;
+        let key = cache
+            .get_pubkey(serial)
+            .ok_or_else(|| anyhow!("Pubkey not found"))?
+            .get_key_string();
+        dbg!("KEY: {:?}", &key);
+        let mut mac = HmacSha256::new_from_slice(key.as_bytes())?;
+        dbg!("MAC: {:?}", &mac);
+        let sign = format!("{}{}", object_id, hook_id);
+        dbg!("SIGN: {:?}", &sign);
+        mac.update(sign.as_bytes());
+        dbg!("UPDATED MAC: {:?}", &mac);
+        Ok((
+            general_purpose::STANDARD.encode(mac.finalize().into_bytes()),
+            serial,
+        ))
+    }
+    pub fn verify_hook_secret(
+        &self,
+        cache: Arc<Cache>,
+        secret: String,
+        object_id: DieselUlid,
+        hook_id: DieselUlid,
+        pubkey_serial: i32,
+    ) -> Result<()> {
+        dbg!("VERIFY START");
+        let key = cache
+            .get_pubkey(pubkey_serial)
+            .ok_or_else(|| anyhow!("No pubkey found"))?
+            .get_key_string();
+        dbg!("KEY: {:?}", &key);
+        let mut mac = HmacSha256::new_from_slice(key.as_bytes())?;
+        dbg!(&mac);
+        let sign = format!("{}{}", object_id, hook_id);
+        dbg!(&sign);
+        mac.update(sign.as_bytes());
+        dbg!("UPDATE: {:?}", &mac);
+        let verify = general_purpose::STANDARD.decode(secret.as_bytes())?;
+        mac.verify_slice(&verify).unwrap();
+        Ok(())
     }
 }
 

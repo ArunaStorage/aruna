@@ -54,7 +54,6 @@ impl DatabaseHandler {
         }
         if !relations_remove.internal.is_empty() {
             InternalRelation::batch_delete(
-                // This does not work because the conversion cannot guess diesel ulids
                 &relations_remove.internal.iter().map(|r| r.id).collect(),
                 transaction_client,
             )
@@ -66,6 +65,10 @@ impl DatabaseHandler {
         let affected_ids = Vec::from_iter(affected_objects);
 
         let objects_plus = Object::get_objects_with_relations(&affected_ids, &client).await?;
+
+        for object in &objects_plus {
+            self.cache.update_object(&object.object.id, object.clone())
+        }
 
         for object_plus in &objects_plus {
             let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
