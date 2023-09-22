@@ -1248,19 +1248,19 @@ impl Hook {
                 }
             }
             crate::database::dsls::hook_dsl::HookVariant::External(external_hook) => {
-                // TODO: This needs to be modified when templating gets implemented
-                let json_template = match external_hook.template {
-                    crate::database::dsls::hook_dsl::TemplateVariant::BasicTemplate => {
-                        json!({
-                            "hook_id": "ULID_PLACEHOLDER",
-                            "object": "RESOURCE_PLACEHOLDER",
-                            "secret": "SECRET_PLACEHOLDER",
-                            "download": "DONWLOAD_URL_PLACEHOLDER",
-                            "upload": "UPLOAD_URL_PLACEHOLDER"
-                        })
+                let json_template = match &external_hook.template {
+                    crate::database::dsls::hook_dsl::TemplateVariant::Basic => json!({
+                        "hook_id": "ULID_PLACEHOLDER",
+                        "object": "RESOURCE_PLACEHOLDER",
+                        "secret": "SECRET_PLACEHOLDER",
+                        "download": "DONWLOAD_URL_PLACEHOLDER",
+                        "upload": "UPLOAD_URL_PLACEHOLDER"
+                    })
+                    .to_string(),
+                    crate::database::dsls::hook_dsl::TemplateVariant::Custom(string) => {
+                        string.clone()
                     }
-                }
-                .to_string();
+                };
                 APIHook {
                     hook_type: Some(HookType::ExternalHook(ExternalHook {
                         url: external_hook.url.clone(),

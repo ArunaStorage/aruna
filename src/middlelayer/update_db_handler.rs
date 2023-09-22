@@ -419,8 +419,6 @@ impl DatabaseHandler {
                     .trigger_on_creation(authorizer, id, user_id)
                     .await
             });
-        } else {
-            ()
         };
         // Update cache again with triggered hooks.
         // Two cache updates are needed because hooks

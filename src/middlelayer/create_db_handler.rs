@@ -1,5 +1,3 @@
-use super::create_request_types::CreateRequest;
-use super::db_handler::DatabaseHandler;
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
@@ -8,7 +6,8 @@ use crate::database::dsls::internal_relation_dsl::{
 use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
-use crate::middlelayer::db_handler;
+use crate::middlelayer::create_request_types::CreateRequest;
+use crate::middlelayer::db_handler::DatabaseHandler;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;

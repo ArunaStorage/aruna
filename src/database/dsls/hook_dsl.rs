@@ -66,7 +66,8 @@ pub struct Credentials {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TemplateVariant {
-    BasicTemplate,
+    Basic,
+    Custom(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -75,8 +76,9 @@ pub struct BasicTemplate {
     pub object: Resource,
     pub secret: String,
     pub download: String,
-    pub upload_token: String,
     pub pubkey_serial: i32,
+    pub access_key: String,
+    pub secret_key: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
