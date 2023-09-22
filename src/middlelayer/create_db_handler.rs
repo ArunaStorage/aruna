@@ -125,6 +125,33 @@ impl DatabaseHandler {
             }
         };
         transaction.commit().await?;
+
+        // If created resource has parent emit notification for updated parent
+        if let Some(parent) = request.get_parent() {
+            if let Some(parent_plus) = self.cache.get_object(&parent.get_id()?) {
+                let parent_hierachies =
+                    parent_plus.object.fetch_object_hierarchies(&client).await?;
+
+                // Try to emit object created notification(s)
+                if let Err(err) = self
+                    .natsio_handler
+                    .register_resource_event(
+                        &parent_plus,
+                        parent_hierachies,
+                        EventVariant::Updated,
+                        Some(&DieselUlid::generate()), // block_id for deduplication
+                    )
+                    .await
+                {
+                    // Log error and return
+                    log::error!("{}", err);
+                    //transaction.rollback().await?;
+                    return Err(anyhow::anyhow!("Notification emission failed: {err}"));
+                }
+            }
+        }
+
+        // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {
             object: object.clone(),
             inbound: Json(DashMap::default()),
@@ -156,13 +183,18 @@ impl DatabaseHandler {
         // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler
-            .register_resource_event(&owr, object_hierarchies, EventVariant::Created)
+            .register_resource_event(
+                &owr,
+                object_hierarchies,
+                EventVariant::Created,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
             .await
         {
             // Log error, rollback transaction and return
             log::error!("{}", err);
             //transaction.rollback().await?;
-            Err(anyhow::anyhow!("Notification emission failed"))
+            Err(anyhow::anyhow!("Notification emission failed: {err}"))
         } else {
             // Commit transaction and return
             //transaction.commit().await?;

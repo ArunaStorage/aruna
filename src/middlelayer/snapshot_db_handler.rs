@@ -57,6 +57,7 @@ impl DatabaseHandler {
                         obj,
                         obj.object.fetch_object_hierarchies(&client).await?,
                         EventVariant::Updated,
+                        DieselUlid::generate(), // block_id for deduplication
                     ))
                 }
 
@@ -69,6 +70,7 @@ impl DatabaseHandler {
                         &resource,
                         resource.object.fetch_object_hierarchies(&client).await?,
                         EventVariant::Updated,
+                        DieselUlid::generate(), // block_id for deduplication
                     ),
                     (
                         &result[0],
@@ -77,30 +79,33 @@ impl DatabaseHandler {
                             .fetch_object_hierarchies(&client)
                             .await?,
                         EventVariant::Snapshotted,
+                        DieselUlid::generate(), // block_id for deduplication
                     ),
                 ]
             }
             SnapshotResponse::SnapshotDataset(snapshot) => {
-                //  - Dataset snapshot    -> Old Object updated, New Object snapshotted
+                //  - Dataset snapshot -> Old Object updated, New Object snapshotted
                 vec![
                     (
                         &resource,
                         resource.object.fetch_object_hierarchies(&client).await?,
                         EventVariant::Updated,
+                        DieselUlid::generate(), // block_id for deduplication
                     ),
                     (
                         &result[0],
                         snapshot.dataset.fetch_object_hierarchies(&client).await?,
                         EventVariant::Snapshotted,
+                        DieselUlid::generate(), // block_id for deduplication
                     ),
                 ]
             }
         };
 
-        for (object_plus, hierarchies, event_variant) in emissions {
+        for (object_plus, hierarchies, event_variant, block_id) in emissions {
             if let Err(err) = self
                 .natsio_handler
-                .register_resource_event(object_plus, hierarchies, event_variant)
+                .register_resource_event(object_plus, hierarchies, event_variant, Some(&block_id))
                 .await
             {
                 // Log error, rollback transaction and return

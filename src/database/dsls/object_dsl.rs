@@ -250,6 +250,68 @@ impl Object {
     }
 
     ///ToDo: Rust Doc
+    pub async fn fetch_subresources(&self, client: &Client) -> Result<Vec<DieselUlid>> {
+        // Return the obvious case before unnecessary query
+        if self.object_type == ObjectType::OBJECT {
+            return Ok(vec![]);
+        }
+
+        let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+        WITH RECURSIVE paths AS (
+            SELECT ir.*
+              FROM internal_relations ir WHERE ir.origin_pid = $1 
+            UNION 
+            SELECT ir2.*
+              FROM paths, internal_relations ir2 WHERE ir2.origin_pid = paths.target_pid 
+        ) SELECT DISTINCT(paths.target_pid) FROM paths;";
+
+        // Execute query and convert rows to InternalRelations
+        let prepared = client.prepare(query).await?;
+        let subresource_ids: Vec<DieselUlid> = client
+            .query(&prepared, &[&self.id])
+            .await?
+            .iter()
+            .map(|row| {
+                let id: DieselUlid = row.get(0);
+                id
+                //DieselUlid::from_str(id)
+            })
+            .collect();
+
+        Ok(subresource_ids)
+    }
+
+    ///ToDo: Rust Doc
+    pub async fn fetch_subresources_by_id(
+        resource_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<DieselUlid>> {
+        let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+        WITH RECURSIVE paths AS (
+            SELECT ir.*
+              FROM internal_relations ir WHERE ir.origin_pid = $1 
+            UNION 
+            SELECT ir2.*
+              FROM paths, internal_relations ir2 WHERE ir2.origin_pid = paths.target_pid 
+        ) SELECT DISTINCT(paths.target_pid) FROM paths;";
+
+        // Execute query and convert rows to InternalRelations
+        let prepared = client.prepare(query).await?;
+        let subresource_ids: Vec<DieselUlid> = client
+            .query(&prepared, &[&resource_id])
+            .await?
+            .iter()
+            .map(|row| {
+                let id: DieselUlid = row.get(0);
+                id
+                //DieselUlid::from_str(id)
+            })
+            .collect();
+
+        Ok(subresource_ids)
+    }
+
+    ///ToDo: Rust Doc
     pub async fn fetch_object_hierarchies(&self, client: &Client) -> Result<Vec<Hierarchy>> {
         // Return the obvious case before unnecessary query
         if self.object_type == ObjectType::PROJECT {
