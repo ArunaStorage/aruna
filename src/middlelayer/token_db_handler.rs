@@ -8,6 +8,40 @@ use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
 
 impl DatabaseHandler {
+    pub async fn create_hook_token(
+        &self,
+        user_id: &DieselUlid,
+        token: APIToken,
+    ) -> Result<DieselUlid> {
+        // Init database transaction
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let client = transaction.client();
+
+        // Add token to user attributes
+        let token_ulid = DieselUlid::generate();
+        let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
+        token_map.insert(token_ulid, &token);
+        User::add_user_token(client, user_id, token_map).await?;
+        let user = User::get(*user_id, client)
+            .await?
+            .ok_or_else(|| anyhow!("User not found"))?;
+        self.cache.update_user(&user_id, user.clone());
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        // Return token_id and token
+        Ok(token_ulid)
+    }
     pub async fn create_token(
         &self,
         user_id: &DieselUlid,

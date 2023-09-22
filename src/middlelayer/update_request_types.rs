@@ -1,7 +1,9 @@
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Hashes, KeyValue as DBKeyValue, KeyValues, Object};
+use crate::database::dsls::object_dsl::{
+    Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
+};
 use crate::database::enums::{DataClass, ObjectType};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -192,5 +194,93 @@ impl UpdateObject {
             target_type: ObjectType::OBJECT,
             target_name: name,
         })
+    }
+    pub fn get_all_relations(
+        old_object: ObjectWithRelations,
+        new_object: Object,
+    ) -> Vec<(InternalRelation, (DieselUlid, DieselUlid))> {
+        let mut relations: Vec<(InternalRelation, (DieselUlid, DieselUlid))> = old_object
+            .inbound_belongs_to
+            .0
+            .into_iter()
+            .map(|ir| {
+                (
+                    InternalRelation {
+                        id: DieselUlid::generate(),
+                        origin_pid: ir.1.origin_pid,
+                        origin_type: ir.1.origin_type,
+                        relation_name: ir.1.relation_name,
+                        target_pid: new_object.id,
+                        target_type: new_object.object_type,
+                        target_name: new_object.name.clone(),
+                    },
+                    (ir.1.id, ir.1.origin_pid),
+                )
+            })
+            .collect();
+        relations.append(
+            &mut old_object
+                .inbound
+                .0
+                .into_iter()
+                .map(|ir| {
+                    (
+                        InternalRelation {
+                            id: DieselUlid::generate(),
+                            origin_pid: ir.1.origin_pid,
+                            origin_type: ir.1.origin_type,
+                            relation_name: ir.1.relation_name,
+                            target_pid: new_object.id,
+                            target_type: new_object.object_type,
+                            target_name: new_object.name.clone(),
+                        },
+                        (ir.1.id, ir.1.origin_pid),
+                    )
+                })
+                .collect(),
+        );
+        relations.append(
+            &mut old_object
+                .outbound_belongs_to
+                .0
+                .into_iter()
+                .map(|ir| {
+                    (
+                        InternalRelation {
+                            id: DieselUlid::generate(),
+                            origin_pid: new_object.id,
+                            origin_type: new_object.object_type,
+                            relation_name: ir.1.relation_name,
+                            target_pid: ir.1.target_pid,
+                            target_type: ir.1.target_type,
+                            target_name: ir.1.target_name,
+                        },
+                        (ir.1.id, ir.1.target_pid),
+                    )
+                })
+                .collect(),
+        );
+        relations.append(
+            &mut old_object
+                .outbound
+                .0
+                .into_iter()
+                .map(|ir| {
+                    (
+                        InternalRelation {
+                            id: DieselUlid::generate(),
+                            origin_pid: new_object.id,
+                            origin_type: new_object.object_type,
+                            relation_name: ir.1.relation_name,
+                            target_pid: ir.1.target_pid,
+                            target_type: ir.1.target_type,
+                            target_name: ir.1.target_name,
+                        },
+                        (ir.1.id, ir.1.target_pid),
+                    )
+                })
+                .collect(),
+        );
+        relations
     }
 }

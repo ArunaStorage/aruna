@@ -1,12 +1,16 @@
 use crate::caching::cache::Cache;
-use crate::database::dsls::object_dsl::KeyValues;
-use crate::database::enums::DataClass;
+use crate::database::dsls::object_dsl::{KeyValues, ObjectWithRelations};
+use crate::database::enums::{DataClass, ObjectMapping};
 use crate::{auth::permission_handler::PermissionHandler, database::enums::DbPermissionLevel};
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
+use aruna_rust_api::api::storage::models::v2::PermissionLevel;
+use aruna_rust_api::api::storage::services::v2::{
+    GetResourcesRequest, GetResourcesResponse, ResourceWithPermission,
+};
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
     services::v2::{
-        search_service_server::SearchService, GetPublicResourceRequest, GetPublicResourceResponse,
+        search_service_server::SearchService, GetResourceRequest, GetResourceResponse,
         SearchResourcesRequest, SearchResourcesResponse,
     },
 };
@@ -95,20 +99,14 @@ impl SearchService for SearchServiceImpl {
     }
 
     ///ToDo: Rust Doc
-    async fn get_public_resource(
+    async fn get_resource(
         &self,
-        request: tonic::Request<GetPublicResourceRequest>,
-    ) -> Result<tonic::Response<GetPublicResourceResponse>, Status> {
+        request: tonic::Request<GetResourceRequest>,
+    ) -> Result<tonic::Response<GetResourceResponse>, Status> {
         log_received!(&request);
 
         // Consumer gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
-
-        // Extract token and check permissions with empty context
-        let token = tonic_auth!(
-            get_token_from_md(&request_metadata),
-            "Token extraction failed"
-        );
 
         // Validate format of provided id
         let resource_ulid = tonic_invalid!(
@@ -116,48 +114,199 @@ impl SearchService for SearchServiceImpl {
             "Invalid resource id format"
         );
 
-        // Check permissions
-        let ctx = Context::res_ctx(resource_ulid, DbPermissionLevel::READ, true);
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
-            "Permission denied"
-        );
+        let (object_plus, permission) = if request_metadata.get("Authorization").is_some() {
+            // Extract token and check permissions with empty context
+            let token = tonic_auth!(
+                get_token_from_md(&request_metadata),
+                "Token extraction failed"
+            );
 
-        // Get Object from cache
-        let mut object_plus = self
-            .cache
-            .get_object(&resource_ulid)
-            .ok_or_else(|| Status::not_found("Object not found"))?;
+            // Check permissions
+            let ctx = Context::res_ctx(resource_ulid, DbPermissionLevel::READ, true);
+            let user = tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Permission denied"
+            );
+            let object = self
+                .cache
+                .get_object(&resource_ulid)
+                .ok_or_else(|| Status::not_found("Object not found"))?;
+            let mapping_perm = *self
+                .cache
+                .get_user(&user)
+                .ok_or_else(|| Status::not_found("User not found"))?
+                .attributes
+                .0
+                .permissions
+                .get(&resource_ulid)
+                .ok_or_else(|| Status::not_found("No permissions found"))?;
+            let permission = match mapping_perm {
+                ObjectMapping::OBJECT(perm) => perm.into(),
+                ObjectMapping::COLLECTION(perm) => perm.into(),
+                ObjectMapping::DATASET(perm) => perm.into(),
+                ObjectMapping::PROJECT(perm) => perm.into(),
+            };
+            (object, permission)
+        } else {
+            // Get Object from cache
+            let mut object_plus = self
+                .cache
+                .get_object(&resource_ulid)
+                .ok_or_else(|| Status::not_found("Object not found"))?;
 
-        // Check if object metadata is publicly available
-        match object_plus.object.data_class {
-            DataClass::PUBLIC | DataClass::PRIVATE => {}
-            _ => return Err(Status::invalid_argument("Resource is not public")),
-        }
+            // Check if object metadata is publicly available
+            match object_plus.object.data_class {
+                DataClass::PUBLIC => {}
+                DataClass::PRIVATE => {
+                    // TODO: Redacted object operations
+                }
+                _ => return Err(Status::invalid_argument("Resource is not public")),
+            }
 
-        // Strip infos
-        let stripped_labels = object_plus
-            .object
-            .key_values
-            .0
-             .0
-            .into_iter()
-            .filter(|kv| kv.key.contains("app.aruna-storage"))
-            .filter(|kv| kv.key.contains("private"))
-            .collect::<Vec<_>>();
+            // Strip infos
+            let stripped_labels = object_plus
+                .object
+                .key_values
+                .0
+                 .0
+                .into_iter()
+                .filter(|kv| kv.key.contains("app.aruna-storage"))
+                .filter(|kv| kv.key.contains("private"))
+                .collect::<Vec<_>>();
 
-        object_plus.object.key_values = Json(KeyValues(stripped_labels));
-        object_plus.object.endpoints = Json(DashMap::default());
+            object_plus.object.key_values = Json(KeyValues(stripped_labels));
+            object_plus.object.endpoints = Json(DashMap::default());
+            (object_plus, PermissionLevel::Read)
+        };
 
         // Convert to proto resource
         let generic_object: Resource = tonic_invalid!(object_plus.try_into(), "Invalid object");
 
         // Create response and return with log
-        let response = GetPublicResourceResponse {
-            resources: Some(GenericResource {
-                resource: Some(generic_object),
+        let response = GetResourceResponse {
+            resource: Some(ResourceWithPermission {
+                resource: Some(GenericResource {
+                    resource: Some(generic_object),
+                }),
+                permission: permission.into(),
             }),
         };
+
+        return_with_log!(response);
+    }
+
+    async fn get_resources(
+        &self,
+        request: tonic::Request<GetResourcesRequest>,
+    ) -> tonic::Result<tonic::Response<GetResourcesResponse>> {
+        log_received!(&request);
+
+        // Consumer gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Validate format of provided id
+        let resource_ids = tonic_invalid!(
+            inner_request
+                .resource_ids
+                .into_iter()
+                .map(|id| DieselUlid::from_str(&id)
+                    .map_err(|_| tonic::Status::invalid_argument("Invalid id")))
+                .collect::<Result<Vec<DieselUlid>, Status>>()
+                .clone(),
+            "Invalid resource id format"
+        );
+
+        let objects = if request_metadata.get("Authorization").is_some() {
+            // Extract token and check permissions with empty context
+            let token = tonic_auth!(
+                get_token_from_md(&request_metadata),
+                "Token extraction failed"
+            );
+
+            // Check permissions
+            let ctx = resource_ids
+                .iter()
+                .map(|id| Context::res_ctx(*id, DbPermissionLevel::READ, true))
+                .collect();
+            let user = tonic_auth!(
+                self.authorizer.check_permissions(&token, ctx).await,
+                "Permission denied"
+            );
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel)> = Vec::new();
+            for id in resource_ids {
+                let object = self
+                    .cache
+                    .get_object(&id)
+                    .ok_or_else(|| Status::not_found("Object not found"))?;
+                let mapping_perm = *self
+                    .cache
+                    .get_user(&user)
+                    .ok_or_else(|| Status::not_found("User not found"))?
+                    .attributes
+                    .0
+                    .permissions
+                    .get(&id)
+                    .ok_or_else(|| Status::not_found("No permissions found"))?;
+                let permission = match mapping_perm {
+                    ObjectMapping::OBJECT(perm) => perm.into(),
+                    ObjectMapping::COLLECTION(perm) => perm.into(),
+                    ObjectMapping::DATASET(perm) => perm.into(),
+                    ObjectMapping::PROJECT(perm) => perm.into(),
+                };
+                objects.push((object, permission));
+            }
+            objects
+        } else {
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel)> = Vec::new();
+            for id in resource_ids {
+                // Get Object from cache
+                let mut object_plus = self
+                    .cache
+                    .get_object(&id)
+                    .ok_or_else(|| Status::not_found("Object not found"))?;
+
+                // Check if object metadata is publicly available
+                match object_plus.object.data_class {
+                    DataClass::PUBLIC => {}
+                    DataClass::PRIVATE => {
+                        //TODO: Redacted object
+                    }
+                    _ => return Err(Status::invalid_argument("Resource is not public")),
+                }
+
+                // Strip infos
+                let stripped_labels = object_plus
+                    .object
+                    .key_values
+                    .0
+                     .0
+                    .into_iter()
+                    .filter(|kv| kv.key.contains("app.aruna-storage"))
+                    .filter(|kv| kv.key.contains("private"))
+                    .collect::<Vec<_>>();
+
+                object_plus.object.key_values = Json(KeyValues(stripped_labels));
+                object_plus.object.endpoints = Json(DashMap::default());
+                objects.push((object_plus, PermissionLevel::Read));
+            }
+            objects
+        };
+
+        // Convert resources
+        let resources = objects
+            .into_iter()
+            .map(|(object, permission)| {
+                Ok::<ResourceWithPermission, tonic::Status>(ResourceWithPermission {
+                    resource: Some(GenericResource {
+                        resource: Some(tonic_invalid!(object.try_into(), "Invalid object")),
+                    }),
+                    permission: tonic_invalid!(permission.try_into(), "Invalid permission"),
+                })
+            })
+            .collect::<Result<Vec<ResourceWithPermission>, tonic::Status>>()?;
+
+        // Create response and return with log
+        let response = GetResourcesResponse { resources };
 
         return_with_log!(response);
     }

@@ -86,10 +86,13 @@ pub async fn init_search_client() -> Arc<MeilisearchClient> {
 
 #[allow(dead_code)]
 pub async fn init_database_handler_middlelayer() -> DatabaseHandler {
+    let database = init_database().await;
+    let natsio_handler = init_nats_client().await;
     // Init DatabaseHandler
     DatabaseHandler {
-        database: init_database().await,
-        natsio_handler: init_nats_client().await,
+        database: database.clone(),
+        natsio_handler,
+        cache: init_cache(database, true).await,
     }
 }
 
@@ -100,8 +103,9 @@ pub async fn init_database_handler(
 ) -> Arc<DatabaseHandler> {
     // Init DatabaseHandler
     Arc::new(DatabaseHandler {
-        database: db_conn,
+        database: db_conn.clone(),
         natsio_handler: nats_handler,
+        cache: init_cache(db_conn, true).await,
     })
 }
 

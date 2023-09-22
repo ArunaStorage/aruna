@@ -25,14 +25,6 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'KeyValueType') THEN
-        CREATE TYPE "KeyValueType" AS ENUM ('LABEL', 'STATIC_LABEL', 'HOOK', 'STATIC_HOOK');
-    END IF;
-END
-$$;
-
-DO $$
-BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PermissionLevel') THEN
         CREATE TYPE "PermissionLevel" AS ENUM ('DENY', 'NONE', 'READ', 'APPEND', 'WRITE', 'ADMIN');
     END IF;
@@ -88,6 +80,16 @@ DO $$
     END
 $$;
 
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TriggerType') THEN
+            CREATE TYPE "TriggerType" AS ENUM (
+                'HOOK_ADDED',
+                'OBJECT_CREATED'
+                );
+        END IF;
+    END
+$$;
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
@@ -177,3 +179,18 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
     user_id UUID REFERENCES users(id),
     config JSONB NOT NULL
 );
+
+/* ----- Hook Service -------------------------------------- */
+-- Table for the hook service to persist hooks 
+CREATE TABLE IF NOT EXISTS hooks (
+    id UUID PRIMARY KEY NOT NULL,
+    name VARCHAR(511) NOT NULL,
+    description VARCHAR(1023) NOT NULL,
+    project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    owner UUID REFERENCES users(id) ON DELETE CASCADE,
+    trigger_type "TriggerType" NOT NULL,
+    trigger_key VARCHAR(511) NOT NULL,
+    trigger_value VARCHAR(511) NOT NULL,
+    timeout TIMESTAMP NOT NULL, -- needs a sane default
+    hook JSONB NOT NULL -- can either be a internal or external hook with configs
+)
