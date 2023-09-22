@@ -156,7 +156,7 @@ impl SearchService for SearchServiceImpl {
 
             // Check if object metadata is publicly available
             match object_plus.object.data_class {
-                DataClass::PUBLIC => {}
+                DataClass::PUBLIC | DataClass::PRIVATE => {}
                 _ => return Err(Status::invalid_argument("Resource is not public")),
             }
 
@@ -264,7 +264,7 @@ impl SearchService for SearchServiceImpl {
 
                 // Check if object metadata is publicly available
                 match object_plus.object.data_class {
-                    DataClass::PUBLIC => {}
+                    DataClass::PUBLIC | DataClass::PRIVATE => {}
                     _ => return Err(Status::invalid_argument("Resource is not public")),
                 }
 
