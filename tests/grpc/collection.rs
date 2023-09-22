@@ -9,7 +9,7 @@ use aruna_rust_api::api::storage::{
     services::v2::{
         collection_service_server::CollectionService, create_collection_request::Parent,
         CreateCollectionRequest, DeleteCollectionRequest, GetCollectionRequest,
-        SnapshotCollectionRequest, UpdateCollectionDataClassRequest,
+        GetCollectionsRequest, SnapshotCollectionRequest, UpdateCollectionDataClassRequest,
         UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
         UpdateCollectionNameRequest,
     },
@@ -20,9 +20,9 @@ use tonic::Request;
 use crate::common::{
     init::init_grpc_services,
     test_utils::{
-        add_token, fast_track_grpc_collection_create, fast_track_grpc_permission_add,
-        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID,
-        USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_get_collection,
+        fast_track_grpc_permission_add, fast_track_grpc_project_create, ADMIN_OIDC_TOKEN,
+        DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID, USER_OIDC_TOKEN,
     },
 };
 use aruna_server::database::enums::DbPermissionLevel;
@@ -84,7 +84,7 @@ async fn grpc_create_collection() {
 }
 
 #[tokio::test]
-async fn grpc_get_collections() {
+async fn grpc_get_collection() {
     // Init gRPC services
     let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
 
@@ -170,6 +170,113 @@ async fn grpc_get_collections() {
     assert_eq!(collection.data_class, proto_collection.data_class);
     assert_eq!(collection.status, proto_collection.status);
     assert_eq!(collection.dynamic, proto_collection.dynamic);
+}
+
+#[tokio::test]
+async fn grpc_get_collections() {
+    // Init gRPC services
+    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+
+    // Get normal user id as DieselUlid
+    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+
+    // Create random project and collection
+    let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
+
+    // Create collections
+    let collection_01 = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        Parent::ProjectId(project.id.clone()),
+    )
+    .await;
+    let collection_02 = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        Parent::ProjectId(project.id.clone()),
+    )
+    .await;
+    let collection_01_ulid = DieselUlid::from_str(&collection_01.id).unwrap();
+    let collection_02_ulid = DieselUlid::from_str(&collection_02.id).unwrap();
+
+    // Try get Collections that does not exist
+    let mut inner_request = GetCollectionsRequest {
+        collection_ids: vec![
+            DieselUlid::generate().to_string(),
+            DieselUlid::generate().to_string(),
+        ],
+    };
+
+    let tokenless_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = collection_service.get_collections(tokenless_request).await;
+
+    assert!(response.is_err());
+
+    // Try get Collections without token
+    inner_request.collection_ids = vec![
+        collection_01_ulid.to_string(),
+        collection_02_ulid.to_string(),
+    ];
+
+    let response = collection_service
+        .get_collections(tonic::Request::new(inner_request.clone()))
+        .await;
+
+    assert!(response.is_err());
+
+    // Get Collection without permissions
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service.get_collections(grpc_request).await;
+
+    assert!(response.is_err());
+
+    // Get Collections with one collection without sufficient permissions
+    fast_track_grpc_permission_add(
+        &auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &collection_01_ulid,
+        DbPermissionLevel::READ,
+    )
+    .await;
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = collection_service.get_collections(grpc_request).await;
+
+    assert!(response.is_err());
+
+    // Get Collections with one collection without sufficient permissions
+    fast_track_grpc_permission_add(
+        &auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &collection_02_ulid,
+        DbPermissionLevel::READ,
+    )
+    .await;
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let proto_collections = collection_service
+        .get_collections(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .collections;
+
+    // Validate returned collections
+    assert_eq!(proto_collections.len(), 2);
+
+    for collection_id in vec![&collection_01.id, &collection_02.id] {
+        let collection =
+            fast_track_grpc_get_collection(&collection_service, ADMIN_OIDC_TOKEN, collection_id)
+                .await;
+
+        assert!(proto_collections.contains(&collection))
+    }
 }
 
 #[tokio::test]
