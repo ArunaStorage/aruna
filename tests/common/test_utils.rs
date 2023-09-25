@@ -1,10 +1,12 @@
 use aruna_rust_api::api::storage::{
-    models::v2::{Collection, DataClass as ApiDataClass, PermissionLevel, Project},
+    models::v2::{Collection, DataClass as ApiDataClass, Dataset, PermissionLevel, Project},
     services::v2::{
         authorization_service_server::AuthorizationService,
-        collection_service_server::CollectionService, create_collection_request::Parent,
+        collection_service_server::CollectionService, create_collection_request,
+        create_dataset_request, dataset_service_server::DatasetService,
         project_service_server::ProjectService, CreateAuthorizationRequest,
-        CreateCollectionRequest, CreateProjectRequest, GetCollectionRequest,
+        CreateCollectionRequest, CreateDatasetRequest, CreateProjectRequest, GetCollectionRequest,
+        GetDatasetRequest,
     },
 };
 use aruna_server::{
@@ -18,7 +20,7 @@ use aruna_server::{
     },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
-        projects::ProjectServiceImpl,
+        datasets::DatasetServiceImpl, projects::ProjectServiceImpl,
     },
 };
 use dashmap::DashMap;
@@ -159,7 +161,6 @@ pub fn rand_string(length: usize) -> String {
 }
 
 /* ----- Resource create convenience functions ---------- */
-
 #[allow(dead_code)]
 pub async fn fast_track_grpc_get_collection(
     collection_service: &CollectionServiceImpl,
@@ -181,6 +182,30 @@ pub async fn fast_track_grpc_get_collection(
         .unwrap()
         .into_inner()
         .collection
+        .unwrap()
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_get_dataset(
+    dataset_service: &DatasetServiceImpl,
+    token: &str,
+    datset_id: &str,
+) -> Dataset {
+    // Create request with token
+    let get_request = add_token(
+        Request::new(GetDatasetRequest {
+            dataset_id: datset_id.to_string(),
+        }),
+        token,
+    );
+
+    // Fetch collection vie gRPC service
+    dataset_service
+        .get_dataset(get_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .dataset
         .unwrap()
 }
 
@@ -222,7 +247,7 @@ pub async fn fast_track_grpc_project_create(
 pub async fn fast_track_grpc_collection_create(
     collection_service: &CollectionServiceImpl,
     token: &str,
-    parent: Parent,
+    parent: create_collection_request::Parent,
 ) -> Collection {
     // Create request with token
     let collection_name = rand_string(32);
@@ -251,6 +276,41 @@ pub async fn fast_track_grpc_collection_create(
     assert_eq!(proto_collection.name, collection_name);
 
     proto_collection
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_dataset_create(
+    dataset_service: &DatasetServiceImpl,
+    token: &str,
+    parent: create_dataset_request::Parent,
+) -> Dataset {
+    // Create request with token
+    let dataset_name = rand_string(32);
+
+    let create_request = CreateDatasetRequest {
+        name: dataset_name.to_string(),
+        description: "".to_string(),
+        key_values: vec![],
+        external_relations: vec![],
+        data_class: ApiDataClass::Private as i32,
+        parent: Some(parent),
+    };
+
+    let grpc_request = add_token(Request::new(create_request), token);
+
+    // Create project via gRPC service
+    let create_response = dataset_service
+        .create_dataset(grpc_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let proto_dataset = create_response.dataset.unwrap();
+
+    assert!(!proto_dataset.id.is_empty());
+    assert_eq!(proto_dataset.name, dataset_name);
+
+    proto_dataset
 }
 
 #[allow(dead_code)]

@@ -7,11 +7,10 @@ use aruna_rust_api::api::storage::{
         ResourceVariant, Status,
     },
     services::v2::{
-        collection_service_server::CollectionService, create_collection_request::Parent,
-        CreateCollectionRequest, DeleteCollectionRequest, GetCollectionRequest,
-        GetCollectionsRequest, SnapshotCollectionRequest, UpdateCollectionDataClassRequest,
-        UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
-        UpdateCollectionNameRequest,
+        create_dataset_request::Parent, dataset_service_server::DatasetService,
+        CreateDatasetRequest, DeleteDatasetRequest, GetDatasetRequest, GetDatasetsRequest,
+        SnapshotDatasetRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
+        UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest, create_collection_request,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -20,47 +19,49 @@ use tonic::Request;
 use crate::common::{
     init::init_grpc_services,
     test_utils::{
-        add_token, fast_track_grpc_collection_create, fast_track_grpc_get_collection,
-        fast_track_grpc_permission_add, fast_track_grpc_project_create, ADMIN_OIDC_TOKEN,
-        DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID, USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_dataset_create,
+        fast_track_grpc_get_dataset, fast_track_grpc_permission_add,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID,
+        USER_OIDC_TOKEN,
     },
 };
 use aruna_server::database::enums::DbPermissionLevel;
 
 #[tokio::test]
-async fn grpc_create_collection() {
+async fn grpc_create_dataset() {
     // Init gRPC services
-    let (_, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (_, project_service, collection_service, dataset_service, _, _) =
+        init_grpc_services().await;
 
     // Create random project
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
 
     // Create request with OIDC token in header
-    let create_request = CreateCollectionRequest {
-        name: "test-collection".to_string(),
+    let mut inner_request = CreateDatasetRequest {
+        name: "test-dataset".to_string(),
         description: "Test Description".to_string(),
         key_values: vec![],
         external_relations: vec![],
         data_class: DataClass::Private as i32,
         parent: Some(Parent::ProjectId(project.id.to_string())),
     };
-    let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    // Create project via gRPC service
-    let create_response = collection_service
-        .create_collection(grpc_request)
+    // Create dataset in project via gRPC service
+    let create_response = dataset_service
+        .create_dataset(grpc_request)
         .await
         .unwrap()
         .into_inner();
 
-    let proto_collection = create_response.collection.unwrap();
+    let proto_dataset = create_response.dataset.unwrap();
 
-    assert!(!proto_collection.id.is_empty());
-    assert_eq!(proto_collection.name, "test-collection");
-    assert_eq!(&proto_collection.description, "Test Description");
-    assert_eq!(proto_collection.key_values, vec![]);
+    assert!(!proto_dataset.id.is_empty());
+    assert_eq!(proto_dataset.name, "test-dataset");
+    assert_eq!(&proto_dataset.description, "Test Description");
+    assert_eq!(proto_dataset.key_values, vec![]);
     assert_eq!(
-        proto_collection.relations,
+        proto_dataset.relations,
         vec![Relation {
             relation: Some(Internal(InternalRelation {
                 resource_id: project.id.to_string(),
@@ -71,11 +72,58 @@ async fn grpc_create_collection() {
             }))
         }]
     );
-    assert_eq!(proto_collection.data_class, 2);
-    assert_eq!(proto_collection.status, Status::Available as i32);
-    assert!(proto_collection.dynamic);
+    assert_eq!(proto_dataset.data_class, 2);
+    assert_eq!(proto_dataset.status, Status::Available as i32);
+    assert!(proto_dataset.dynamic);
     assert_eq!(
-        proto_collection.endpoints,
+        proto_dataset.endpoints,
+        vec![DataEndpoint {
+            id: DEFAULT_ENDPOINT_ULID.to_string(),
+            full_synced: true,
+        }]
+    );
+
+    // Create dataset in collection via gRPC service
+    let collection = fast_track_grpc_collection_create(
+        &collection_service,
+        ADMIN_OIDC_TOKEN,
+        create_collection_request::Parent::ProjectId(project.id),
+    )
+    .await;
+
+    inner_request.parent = Some(Parent::CollectionId(collection.id.to_string()));
+
+    let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let create_response = dataset_service
+        .create_dataset(grpc_request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    let proto_dataset = create_response.dataset.unwrap();
+
+    assert!(!proto_dataset.id.is_empty());
+    assert_eq!(proto_dataset.name, "test-dataset");
+    assert_eq!(&proto_dataset.description, "Test Description");
+    assert_eq!(proto_dataset.key_values, vec![]);
+    assert_eq!(
+        proto_dataset.relations,
+        vec![Relation {
+            relation: Some(Internal(InternalRelation {
+                resource_id: collection.id.to_string(),
+                resource_variant: ResourceVariant::Collection as i32,
+                defined_variant: InternalRelationVariant::BelongsTo as i32,
+                custom_variant: None,
+                direction: RelationDirection::Inbound as i32,
+            }))
+        }]
+    );
+    assert_eq!(proto_dataset.data_class, 2);
+    assert_eq!(proto_dataset.status, Status::Available as i32);
+    assert!(proto_dataset.dynamic);
+    assert_eq!(
+        proto_dataset.endpoints,
         vec![DataEndpoint {
             id: DEFAULT_ENDPOINT_ULID.to_string(),
             full_synced: true,
@@ -84,79 +132,79 @@ async fn grpc_create_collection() {
 }
 
 #[tokio::test]
-async fn grpc_get_collection() {
+async fn grpc_get_dataset() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
 
-    // Create random project and collection
+    // Create random project and dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
 
-    // Create collection
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    // Create dataset
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
     .await;
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Try get Collection that does not exist
-    let mut get_request = GetCollectionRequest {
-        collection_id: DieselUlid::generate().to_string(),
+    // Try get Dataset that does not exist
+    let mut get_request = GetDatasetRequest {
+        dataset_id: DieselUlid::generate().to_string(),
     };
 
     let tokenless_request = add_token(tonic::Request::new(get_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service.get_collection(tokenless_request).await;
+    let response = dataset_service.get_dataset(tokenless_request).await;
 
     assert!(response.is_err());
 
-    // Try get Collection without token
-    get_request.collection_id = collection.id.clone();
+    // Try get Dataset without token
+    get_request.dataset_id = dataset.id.clone();
 
-    let response = collection_service
-        .get_collection(tonic::Request::new(get_request.clone()))
+    let response = dataset_service
+        .get_dataset(tonic::Request::new(get_request.clone()))
         .await;
 
     assert!(response.is_err());
 
-    // Get Collection without permissions
+    // Get Dataset without permissions
     let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service.get_collection(grpc_request).await;
+    let response = dataset_service.get_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Get Collection with permissions
+    // Get Dataset with permissions
     let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
 
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::READ,
     )
     .await;
 
-    let proto_collection = collection_service
-        .get_collection(grpc_request)
+    let proto_dataset = dataset_service
+        .get_dataset(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    // Validate returned collection
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(collection.name, proto_collection.name);
-    assert_eq!(collection.description, proto_collection.description);
-    assert_eq!(collection.key_values, proto_collection.key_values);
+    // Validate returned dataset
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(dataset.name, proto_dataset.name);
+    assert_eq!(dataset.description, proto_dataset.description);
+    assert_eq!(dataset.key_values, proto_dataset.key_values);
     assert_eq!(
-        proto_collection.relations,
+        proto_dataset.relations,
         vec![Relation {
             relation: Some(Internal(InternalRelation {
                 resource_id: project.id.to_string(),
@@ -167,41 +215,41 @@ async fn grpc_get_collection() {
             }))
         }]
     );
-    assert_eq!(collection.data_class, proto_collection.data_class);
-    assert_eq!(collection.status, proto_collection.status);
-    assert_eq!(collection.dynamic, proto_collection.dynamic);
+    assert_eq!(dataset.data_class, proto_dataset.data_class);
+    assert_eq!(dataset.status, proto_dataset.status);
+    assert_eq!(dataset.dynamic, proto_dataset.dynamic);
 }
 
 #[tokio::test]
-async fn grpc_get_collections() {
+async fn grpc_get_datasets() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
 
-    // Create random project and collection
+    // Create random project and dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
 
-    // Create collections
-    let collection_01 = fast_track_grpc_collection_create(
-        &collection_service,
+    // Create datasets
+    let dataset_01 = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
     .await;
-    let collection_02 = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset_02 = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
     .await;
-    let collection_01_ulid = DieselUlid::from_str(&collection_01.id).unwrap();
-    let collection_02_ulid = DieselUlid::from_str(&collection_02.id).unwrap();
+    let dataset_01_ulid = DieselUlid::from_str(&dataset_01.id).unwrap();
+    let dataset_02_ulid = DieselUlid::from_str(&dataset_02.id).unwrap();
 
-    // Try get Collections that does not exist
-    let mut inner_request = GetCollectionsRequest {
-        collection_ids: vec![
+    // Try get Datasets that does not exist
+    let mut inner_request = GetDatasetsRequest {
+        dataset_ids: vec![
             DieselUlid::generate().to_string(),
             DieselUlid::generate().to_string(),
         ],
@@ -209,85 +257,81 @@ async fn grpc_get_collections() {
 
     let tokenless_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service.get_collections(tokenless_request).await;
+    let response = dataset_service.get_datasets(tokenless_request).await;
 
     assert!(response.is_err());
 
-    // Try get Collections without token
-    inner_request.collection_ids = vec![
-        collection_01_ulid.to_string(),
-        collection_02_ulid.to_string(),
-    ];
+    // Try get Datasets without token
+    inner_request.dataset_ids = vec![dataset_01_ulid.to_string(), dataset_02_ulid.to_string()];
 
-    let response = collection_service
-        .get_collections(tonic::Request::new(inner_request.clone()))
+    let response = dataset_service
+        .get_datasets(tonic::Request::new(inner_request.clone()))
         .await;
 
     assert!(response.is_err());
 
-    // Get Collection without permissions
+    // Get Dataset without permissions
     let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service.get_collections(grpc_request).await;
+    let response = dataset_service.get_datasets(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Get Collections with one collection without sufficient permissions
+    // Get Datasets with one dataset without sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_01_ulid,
+        &dataset_01_ulid,
         DbPermissionLevel::READ,
     )
     .await;
 
     let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service.get_collections(grpc_request).await;
+    let response = dataset_service.get_datasets(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Get Collections with one collection without sufficient permissions
+    // Get Datasets with one dataset without sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_02_ulid,
+        &dataset_02_ulid,
         DbPermissionLevel::READ,
     )
     .await;
 
     let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collections = collection_service
-        .get_collections(grpc_request)
+    let proto_datasets = dataset_service
+        .get_datasets(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collections;
+        .datasets;
 
-    // Validate returned collections
-    assert_eq!(proto_collections.len(), 2);
+    // Validate returned datasets
+    assert_eq!(proto_datasets.len(), 2);
 
-    for collection_id in vec![&collection_01.id, &collection_02.id] {
-        let collection =
-            fast_track_grpc_get_collection(&collection_service, ADMIN_OIDC_TOKEN, collection_id)
-                .await;
+    for dataset_id in vec![&dataset_01.id, &dataset_02.id] {
+        let dataset =
+            fast_track_grpc_get_dataset(&dataset_service, ADMIN_OIDC_TOKEN, dataset_id).await;
 
-        assert!(proto_collections.contains(&collection))
+        assert!(proto_datasets.contains(&dataset))
     }
 }
 
 #[tokio::test]
-async fn grpc_update_collection_name() {
+async fn grpc_update_dataset_name() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -295,77 +339,71 @@ async fn grpc_update_collection_name() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Update Collection without token
-    let mut inner_request = UpdateCollectionNameRequest {
-        collection_id: collection.id.to_string(),
+    // Update Dataset without token
+    let mut inner_request = UpdateDatasetNameRequest {
+        dataset_id: dataset.id.to_string(),
         name: "updated-name".to_string(),
     };
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service
-        .update_collection_name(grpc_request)
-        .await;
+    let response = dataset_service.update_dataset_name(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Update non-existing Collection
-    inner_request.collection_id = DieselUlid::generate().to_string();
+    // Update non-existing Dataset
+    inner_request.dataset_id = DieselUlid::generate().to_string();
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_name(grpc_request)
-        .await;
+    let response = dataset_service.update_dataset_name(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Update Collection without sufficient permissions
-    inner_request.collection_id = collection.id.to_string();
+    // Update Dataset without sufficient permissions
+    inner_request.dataset_id = dataset.id.to_string();
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_name(grpc_request)
-        .await;
+    let response = dataset_service.update_dataset_name(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Update Collection with sufficient permissions
+    // Update Dataset with sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::WRITE,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_name(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_name(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(&proto_collection.name, "updated-name");
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(&proto_dataset.name, "updated-name");
 }
 
 #[tokio::test]
-async fn grpc_update_collection_description() {
+async fn grpc_update_dataset_description() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -373,77 +411,77 @@ async fn grpc_update_collection_description() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Update Collection without token
-    let mut inner_request = UpdateCollectionDescriptionRequest {
-        collection_id: collection.id.to_string(),
+    // Update Dataset without token
+    let mut inner_request = UpdateDatasetDescriptionRequest {
+        dataset_id: dataset.id.to_string(),
         description: "Updated description".to_string(),
     };
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service
-        .update_collection_description(grpc_request)
+    let response = dataset_service
+        .update_dataset_description(grpc_request)
         .await;
 
     assert!(response.is_err());
 
-    // Update non-existing Collection
-    inner_request.collection_id = DieselUlid::generate().to_string();
+    // Update non-existing Dataset
+    inner_request.dataset_id = DieselUlid::generate().to_string();
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_description(grpc_request)
+    let response = dataset_service
+        .update_dataset_description(grpc_request)
         .await;
 
     assert!(response.is_err());
 
-    // Update Collection without sufficient permissions
-    inner_request.collection_id = collection.id.to_string();
+    // Update Dataset without sufficient permissions
+    inner_request.dataset_id = dataset.id.to_string();
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_description(grpc_request)
+    let response = dataset_service
+        .update_dataset_description(grpc_request)
         .await;
 
     assert!(response.is_err());
 
-    // Update Collection with sufficient permissions
+    // Update Dataset with sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::WRITE,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_description(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_description(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(&proto_collection.description, "Updated description");
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(&proto_dataset.description, "Updated description");
 }
 
 #[tokio::test]
-async fn grpc_update_collection_dataclass() {
+async fn grpc_update_dataset_dataclass() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -451,29 +489,29 @@ async fn grpc_update_collection_dataclass() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Change dataclass of non-existing collection
-    let mut inner_request = UpdateCollectionDataClassRequest {
-        collection_id: DieselUlid::generate().to_string(),
+    // Change dataclass of non-existing dataset
+    let mut inner_request = UpdateDatasetDataClassRequest {
+        dataset_id: DieselUlid::generate().to_string(),
         data_class: DataClass::Public as i32,
     };
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_data_class(grpc_request)
+    let response = dataset_service
+        .update_dataset_data_class(grpc_request)
         .await;
 
     assert!(response.is_err());
 
     // Change dataclass without token
-    inner_request.collection_id = collection_ulid.to_string();
+    inner_request.dataset_id = dataset_ulid.to_string();
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service
-        .update_collection_data_class(grpc_request)
+    let response = dataset_service
+        .update_dataset_data_class(grpc_request)
         .await;
 
     assert!(response.is_err());
@@ -481,8 +519,8 @@ async fn grpc_update_collection_dataclass() {
     // Change dataclass without sufficient permissions
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_data_class(grpc_request)
+    let response = dataset_service
+        .update_dataset_data_class(grpc_request)
         .await;
 
     assert!(response.is_err());
@@ -492,8 +530,8 @@ async fn grpc_update_collection_dataclass() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_data_class(grpc_request)
+    let response = dataset_service
+        .update_dataset_data_class(grpc_request)
         .await;
 
     assert!(response.is_err());
@@ -505,34 +543,34 @@ async fn grpc_update_collection_dataclass() {
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::WRITE,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_data_class(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_data_class(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(proto_collection.data_class, DataClass::Public as i32);
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(proto_dataset.data_class, DataClass::Public as i32);
 }
 
 #[tokio::test]
-async fn grpc_update_collection_keyvalues() {
+async fn grpc_update_dataset_keyvalues() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -540,11 +578,11 @@ async fn grpc_update_collection_keyvalues() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Change key-values of non-existing Collection
-    let mut inner_request = UpdateCollectionKeyValuesRequest {
-        collection_id: DieselUlid::generate().to_string(),
+    // Change key-values of non-existing Dataset
+    let mut inner_request = UpdateDatasetKeyValuesRequest {
+        dataset_id: DieselUlid::generate().to_string(),
         add_key_values: vec![KeyValue {
             key: "SomeKey".to_string(),
             value: "SomeValue".to_string(),
@@ -555,19 +593,19 @@ async fn grpc_update_collection_keyvalues() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_key_values(grpc_request)
+    let response = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await;
 
     assert!(response.is_err());
 
     // Change key-values without token
-    inner_request.collection_id = collection_ulid.to_string();
+    inner_request.dataset_id = dataset_ulid.to_string();
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service
-        .update_collection_key_values(grpc_request)
+    let response = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await;
 
     assert!(response.is_err());
@@ -575,8 +613,8 @@ async fn grpc_update_collection_keyvalues() {
     // Change key-values without sufficient permissions
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service
-        .update_collection_key_values(grpc_request)
+    let response = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await;
 
     assert!(response.is_err());
@@ -590,17 +628,17 @@ async fn grpc_update_collection_keyvalues() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_key_values(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(proto_collection.key_values.len(), 2);
-    for kv in proto_collection.key_values {
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(proto_dataset.key_values.len(), 2);
+    for kv in proto_dataset.key_values {
         assert_eq!(
             kv,
             KeyValue {
@@ -621,18 +659,18 @@ async fn grpc_update_collection_keyvalues() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_key_values(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert_eq!(proto_collection.key_values.len(), 1);
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert_eq!(proto_dataset.key_values.len(), 1);
     assert_eq!(
-        proto_collection.key_values,
+        proto_dataset.key_values,
         vec![KeyValue {
             key: "SomeKey".to_string(),
             value: "SomeValue".to_string(),
@@ -652,28 +690,28 @@ async fn grpc_update_collection_keyvalues() {
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::WRITE,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_key_values(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
-    assert!(proto_collection.key_values.contains(&KeyValue {
+    assert_eq!(dataset.id, proto_dataset.id);
+    assert!(proto_dataset.key_values.contains(&KeyValue {
         key: "SomeKey".to_string(),
         value: "SomeValue".to_string(),
         variant: KeyValueVariant::Label as i32,
     }));
-    assert!(proto_collection.key_values.contains(&KeyValue {
+    assert!(proto_dataset.key_values.contains(&KeyValue {
         key: "SomeKey".to_string(),
         value: "SomeValue2".to_string(),
         variant: KeyValueVariant::Label as i32,
@@ -689,17 +727,17 @@ async fn grpc_update_collection_keyvalues() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_key_values(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
+    assert_eq!(dataset.id, proto_dataset.id);
     assert_eq!(
-        proto_collection.key_values,
+        proto_dataset.key_values,
         vec![KeyValue {
             key: "SomeKey".to_string(),
             value: "SomeValue2".to_string(),
@@ -721,17 +759,17 @@ async fn grpc_update_collection_keyvalues() {
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .update_collection_key_values(grpc_request)
+    let proto_dataset = dataset_service
+        .update_dataset_key_values(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_eq!(collection.id, proto_collection.id);
+    assert_eq!(dataset.id, proto_dataset.id);
     assert_eq!(
-        proto_collection.key_values,
+        proto_dataset.key_values,
         vec![KeyValue {
             key: "SomeKey".to_string(),
             value: "SomeValue3".to_string(),
@@ -741,14 +779,14 @@ async fn grpc_update_collection_keyvalues() {
 }
 
 #[tokio::test]
-async fn grpc_delete_collection() {
+async fn grpc_delete_dataset() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -756,56 +794,53 @@ async fn grpc_delete_collection() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Delete non-existing Collection
-    let mut inner_request = DeleteCollectionRequest {
-        collection_id: DieselUlid::generate().to_string(),
+    // Delete non-existing Dataset
+    let mut inner_request = DeleteDatasetRequest {
+        dataset_id: DieselUlid::generate().to_string(),
     };
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service.delete_collection(grpc_request).await;
+    let response = dataset_service.delete_dataset(grpc_request).await;
 
     assert!(response.is_ok()); // Just nothing got "deleted"
 
-    // Delete Collection without token
-    inner_request.collection_id = collection_ulid.to_string();
+    // Delete Dataset without token
+    inner_request.dataset_id = dataset_ulid.to_string();
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service.delete_collection(grpc_request).await;
+    let response = dataset_service.delete_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Delete Collection without sufficient permissions
+    // Delete Dataset without sufficient permissions
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service.delete_collection(grpc_request).await;
+    let response = dataset_service.delete_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Delete Collection with sufficient permissions
+    // Delete Dataset with sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::ADMIN,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    collection_service
-        .delete_collection(grpc_request)
-        .await
-        .unwrap();
+    dataset_service.delete_dataset(grpc_request).await.unwrap();
 
-    let response = collection_service
-        .get_collection(add_token(
-            Request::new(GetCollectionRequest {
-                collection_id: collection_ulid.to_string(),
+    let response = dataset_service
+        .get_dataset(add_token(
+            Request::new(GetDatasetRequest {
+                dataset_id: dataset_ulid.to_string(),
             }),
             USER_OIDC_TOKEN,
         ))
@@ -813,18 +848,18 @@ async fn grpc_delete_collection() {
 
     assert!(response.is_err()); // Object is deleted in cache
 
-    //ToDo: Try delete non-empty Collection
+    //ToDo: Try delete non-empty Dataset
 }
 
 #[tokio::test]
-async fn grpc_snapshot_collection() {
+async fn grpc_snapshot_dataset() {
     // Init gRPC services
-    let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
+    let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
-    // Create random Project + Collection
+    // Create random Project + Dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
-    let collection = fast_track_grpc_collection_create(
-        &collection_service,
+    let dataset = fast_track_grpc_dataset_create(
+        &dataset_service,
         ADMIN_OIDC_TOKEN,
         Parent::ProjectId(project.id.clone()),
     )
@@ -832,67 +867,67 @@ async fn grpc_snapshot_collection() {
 
     // Create user/resource ulids
     let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
-    let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
+    let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
-    // Snapshot non-existing Collection
-    let mut inner_request = SnapshotCollectionRequest {
-        collection_id: DieselUlid::generate().to_string(),
+    // Snapshot non-existing Dataset
+    let mut inner_request = SnapshotDatasetRequest {
+        dataset_id: DieselUlid::generate().to_string(),
     };
 
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
-    let response = collection_service.snapshot_collection(grpc_request).await;
+    let response = dataset_service.snapshot_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Snapshot Collection without token
-    inner_request.collection_id = collection_ulid.to_string();
+    // Snapshot Dataset without token
+    inner_request.dataset_id = dataset_ulid.to_string();
 
     let grpc_request = Request::new(inner_request.clone());
 
-    let response = collection_service.snapshot_collection(grpc_request).await;
+    let response = dataset_service.snapshot_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Snapshot Collection without sufficient permissions
+    // Snapshot Dataset without sufficient permissions
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let response = collection_service.snapshot_collection(grpc_request).await;
+    let response = dataset_service.snapshot_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
-    // Snapshot Collection with sufficient permissions
+    // Snapshot Dataset with sufficient permissions
     fast_track_grpc_permission_add(
         &auth_service,
         ADMIN_OIDC_TOKEN,
         &user_ulid,
-        &collection_ulid,
+        &dataset_ulid,
         DbPermissionLevel::ADMIN,
     )
     .await;
 
     let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
 
-    let proto_collection = collection_service
-        .snapshot_collection(grpc_request)
+    let proto_dataset = dataset_service
+        .snapshot_dataset(grpc_request)
         .await
         .unwrap()
         .into_inner()
-        .collection
+        .dataset
         .unwrap();
 
-    assert_ne!(collection.id, proto_collection.id);
-    assert!(collection.dynamic);
-    assert!(!proto_collection.dynamic);
-    assert!(proto_collection.relations.contains(&Relation {
+    assert_ne!(dataset.id, proto_dataset.id);
+    assert!(dataset.dynamic);
+    assert!(!proto_dataset.dynamic);
+    assert!(proto_dataset.relations.contains(&Relation {
         relation: Some(Internal(InternalRelation {
-            resource_id: collection.id,
-            resource_variant: ResourceVariant::Collection as i32,
+            resource_id: dataset.id,
+            resource_variant: ResourceVariant::Dataset as i32,
             defined_variant: InternalRelationVariant::Version as i32,
             custom_variant: None,
             direction: RelationDirection::Outbound as i32,
         }))
     }))
 
-    //ToDo: Snapshot non-empty collection
+    //ToDo: Snapshot non-empty dataset
 }
