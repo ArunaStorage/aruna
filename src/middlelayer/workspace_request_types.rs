@@ -43,7 +43,7 @@ impl CreateWorkspace {
 
     pub fn make_project(template: WorkspaceTemplate, endpoint: DieselUlid) -> Object {
         let id = DieselUlid::generate();
-        let project = Object {
+        Object {
             id,
             revision_number: 0,
             name: [template.prefix, id.to_string()].join("-"),
@@ -61,15 +61,13 @@ impl CreateWorkspace {
             )),
             hashes: Json(crate::database::dsls::object_dsl::Hashes(Vec::new())),
             dynamic: true,
-            endpoints: Json(DashMap::from_iter(vec![(endpoint, true)].into_iter())),
-        };
-
-        project
+            endpoints: Json(DashMap::from_iter(vec![(endpoint, true)])),
+        }
     }
 
     pub fn create_service_account(endpoint: DieselUlid, workspace_id: DieselUlid) -> User {
         let user_id = DieselUlid::generate();
-        let service_account = User {
+        User {
             id: user_id,
             display_name: ["SERVICE_ACCOUNT".to_string(), user_id.to_string()].join("#"),
             external_id: None,
@@ -78,9 +76,7 @@ impl CreateWorkspace {
                 global_admin: false,
                 service_account: true,
                 tokens: DashMap::default(),
-                trusted_endpoints: dashmap::DashMap::from_iter(
-                    vec![(endpoint, Empty {})].into_iter(),
-                ),
+                trusted_endpoints: dashmap::DashMap::from_iter(vec![(endpoint, Empty {})]),
                 custom_attributes: vec![],
                 permissions: DashMap::from_iter(vec![(
                     workspace_id,
@@ -88,7 +84,6 @@ impl CreateWorkspace {
                 )]),
             }),
             active: true,
-        };
-        service_account
+        }
     }
 }

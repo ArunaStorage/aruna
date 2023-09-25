@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::services::v2::{
     MoveWorkspaceDataRequest, MoveWorkspaceDataResponse,
 };
 
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result, Status};
 crate::impl_grpc_server!(WorkspaceServiceImpl, default_endpoint: String);
@@ -54,11 +55,6 @@ impl WorkspaceService for WorkspaceServiceImpl {
         return_with_log!(response);
     }
 
-    // TODO:
-    // - get_templates_by()
-    // - get_template()
-    // - delete_template()
-
     async fn create_workspace(
         &self,
         request: Request<CreateWorkspaceRequest>,
@@ -69,25 +65,54 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
         let endpoint = self.default_endpoint.clone();
         // Create template
-        let template_name = tonic_invalid!(
+        let (workspace_id, access_key, secret_key, token) = tonic_invalid!(
             self.database_handler
                 .create_workspace(self.authorizer.clone(), request, endpoint)
                 .await,
             "Invalid request"
         );
 
-        return Err(Status::unimplemented(
-            "Creating workspaces is not implemented!",
-        ));
+        let response = CreateWorkspaceResponse {
+            workspace_id: workspace_id.to_string(),
+            access_key,
+            secret_key,
+            token,
+        };
+        return_with_log!(response);
     }
 
     async fn delete_workspace(
         &self,
-        _request: Request<DeleteWorkspaceRequest>,
+        request: Request<DeleteWorkspaceRequest>,
     ) -> Result<Response<DeleteWorkspaceResponse>> {
-        return Err(Status::unimplemented(
-            "Deleting workspaces is not implemented!",
-        ));
+        log_received!(&request);
+        let (metadata, _, request) = request.into_parts();
+
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let id = tonic_invalid!(
+            diesel_ulid::DieselUlid::from_str(&request.workspace_id),
+            "Invalid workspace id"
+        );
+
+        // Deny service_accounts
+        let ctx = Context::res_ctx(
+            id,
+            //TODO: allow service accounts to delete their own workspaces?
+            crate::database::enums::DbPermissionLevel::ADMIN,
+            false,
+        );
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        tonic_internal!(
+            self.database_handler.delete_workspace(id).await,
+            "Internal error for DeleteWorkspaceRequest"
+        );
+
+        return_with_log!(DeleteWorkspaceResponse {});
     }
 
     async fn claim_workspace(

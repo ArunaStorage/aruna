@@ -1,10 +1,8 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::token_handler::{Action, Intent};
 use crate::database::dsls::endpoint_dsl::Endpoint;
-use crate::database::dsls::user_dsl::{APIToken, User, UserAttributes};
+use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
-use crate::database::dsls::Empty;
-use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::token_request_types::CreateToken;
 use crate::middlelayer::workspace_request_types::{CreateTemplate, CreateWorkspace};
 use crate::{database::crud::CrudDb, middlelayer::db_handler::DatabaseHandler};
@@ -13,13 +11,10 @@ use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCre
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
 use aruna_rust_api::api::storage::services::v2::CreateApiTokenRequest;
 use diesel_ulid::DieselUlid;
-use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::Request;
-
-use super::endpoints_request_types::GetEP;
 
 impl DatabaseHandler {
     pub async fn create_workspace_template(
@@ -100,5 +95,14 @@ impl DatabaseHandler {
         ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, None, endpoint).await?;
 
         Ok((workspace.id, access_key, secret_key, token_secret))
+    }
+
+    pub async fn delete_workspace(&self, workspace_id: DieselUlid) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let workspace = Object::get(workspace_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Workspace not found"))?;
+        workspace.delete(&client).await?;
+        Ok(())
     }
 }

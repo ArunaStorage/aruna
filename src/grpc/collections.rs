@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
-use crate::database::enums::{DataClass, DbPermissionLevel};
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
