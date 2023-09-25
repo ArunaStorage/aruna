@@ -7,10 +7,11 @@ use aruna_rust_api::api::storage::{
         ResourceVariant, Status,
     },
     services::v2::{
-        create_dataset_request::Parent, dataset_service_server::DatasetService,
-        CreateDatasetRequest, DeleteDatasetRequest, GetDatasetRequest, GetDatasetsRequest,
-        SnapshotDatasetRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
-        UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest, create_collection_request,
+        create_collection_request, create_dataset_request::Parent,
+        dataset_service_server::DatasetService, CreateDatasetRequest, DeleteDatasetRequest,
+        GetDatasetRequest, GetDatasetsRequest, SnapshotDatasetRequest,
+        UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
+        UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -315,7 +316,7 @@ async fn grpc_get_datasets() {
     // Validate returned datasets
     assert_eq!(proto_datasets.len(), 2);
 
-    for dataset_id in vec![&dataset_01.id, &dataset_02.id] {
+    for dataset_id in [&dataset_01.id, &dataset_02.id] {
         let dataset =
             fast_track_grpc_get_dataset(&dataset_service, ADMIN_OIDC_TOKEN, dataset_id).await;
 

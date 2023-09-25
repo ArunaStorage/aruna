@@ -270,7 +270,7 @@ async fn grpc_get_collections() {
     // Validate returned collections
     assert_eq!(proto_collections.len(), 2);
 
-    for collection_id in vec![&collection_01.id, &collection_02.id] {
+    for collection_id in [&collection_01.id, &collection_02.id] {
         let collection =
             fast_track_grpc_get_collection(&collection_service, ADMIN_OIDC_TOKEN, collection_id)
                 .await;
