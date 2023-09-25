@@ -39,10 +39,10 @@ impl DatabaseHandler {
         Hook::delete_by_id(&hook_id, &client).await?;
         Ok(())
     }
-    pub async fn get_project_by_hook(&self, hook_id: &DieselUlid) -> Result<DieselUlid> {
+    pub async fn get_project_by_hook(&self, hook_id: &DieselUlid) -> Result<Vec<DieselUlid>> {
         let client = self.database.get_client().await?;
-        let project_id = Hook::get_project_from_hook(hook_id, &client).await?;
-        Ok(project_id)
+        let project_ids = Hook::get_project_from_hook(hook_id, &client).await?;
+        Ok(project_ids)
     }
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
         // Parsing
@@ -302,7 +302,7 @@ impl DatabaseHandler {
                         }
                     }
                 }
-                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
+                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method , result_meta_object}) => {
                     dbg!("REACHED EXTERNAL TRIGGER");
                     // Get Object for response
                     let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
@@ -313,25 +313,36 @@ impl DatabaseHandler {
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
                     // Create append only s3-credentials
-                    let append_only_token = APIToken {
-                       pub_key: pubkey_serial,
-                       name: format!("{}-append_only", hook.id.to_string()),
-                       created_at: chrono::Utc::now().naive_utc(),
-                       expires_at: hook.timeout
-                       ,
-                       // TODO: Append only object parent
-                       object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                       user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                    let token_id = match result_meta_object {
+                        Some(object_mapping) => { 
+
+                        let append_only_token = APIToken{
+                          pub_key: pubkey_serial,
+                          name: format!("{}-append_only", hook.id.to_string()),
+                          created_at: chrono::Utc::now().naive_utc(),
+                          expires_at: hook.timeout
+                          ,
+                          // TODO: Append only object parent
+                          object_id: Some(object_mapping),
+                          user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                        };
+                        dbg!("Trigger token: {:?}", &append_only_token);
+                        let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+                        dbg!("Trigger token id: {:?}", &token_id);
+                        Some(token_id)
+                        }, 
+                        None => None,
                     };
 
-                    dbg!("Trigger token: {:?}", &append_only_token);
-                    let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-                    dbg!("Trigger token id: {:?}", &token_id);
                     // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
                     let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, token_id).await?;
                     dbg!("Presigned download: {:?}", &download);
-                    dbg!("Upload creds: {:?}", &upload_credentials);
+                    let (access_key, secret_key) = match upload_credentials {
+                        Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
+                        None => (None, None)
+                    };
+                    dbg!("Upload creds: ({}, {})", &access_key, &secret_key);
 
                     // Create & send request
                     let client = reqwest::Client::new();
@@ -354,6 +365,7 @@ impl DatabaseHandler {
                         }
                     };
                     // Put everything into template
+                    
                     match template {
                         TemplateVariant::Basic => {
                             let json = serde_json::to_string(&BasicTemplate {
@@ -362,8 +374,8 @@ impl DatabaseHandler {
                                 secret,
                                 download,
                                 pubkey_serial,
-                                access_key: upload_credentials.access_key,
-                                secret_key: upload_credentials.secret_key,
+                                access_key,
+                                secret_key,
                             })?;
                             dbg!("Template: {json}");
                             let response = base_request.json(&json).send().await?;

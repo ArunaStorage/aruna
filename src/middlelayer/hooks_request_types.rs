@@ -47,8 +47,9 @@ impl CreateHook {
         NaiveDateTime::from_timestamp_millis(self.0.timeout.try_into()?)
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
-    pub fn get_project_id(&self) -> Result<DieselUlid> {
-        Ok(DieselUlid::from_str(&self.0.project_id)?)
+    pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
+        // TODO: for id in self.0.project_ids {}
+        Ok(vec![DieselUlid::from_str(&self.0.project_id)?])
     }
 
     pub fn get_hook(&self, user_id: &DieselUlid) -> Result<Hook> {
@@ -61,7 +62,7 @@ impl CreateHook {
                     id: DieselUlid::generate(),
                     name: "PLACEHOLDER_NAME".to_string(), //TODO: API hook name
                     description: "PLACEHOLDER_DESCRIPTION".to_string(), //TODO: API hook description
-                    project_id: self.get_project_id()?,
+                    project_ids: self.get_project_ids()?,
                     owner: *user_id,
                     trigger_type,
                     trigger_key,
@@ -81,6 +82,7 @@ impl CreateHook {
                                 Method::Put => crate::database::dsls::hook_dsl::Method::PUT,
                                 Method::Post => crate::database::dsls::hook_dsl::Method::POST,
                             },
+                            result_meta_object: todo!(), // TODO: API Change
                         }),
                     ),
                 })
@@ -114,7 +116,7 @@ impl CreateHook {
                     id: DieselUlid::generate(),
                     name: "PLACEHOLDER_NAME".to_string(), // TODO: Add name to API
                     description: "PLACEHOLDER_DESCRIPTION".to_string(), // TODO: Add description to API
-                    project_id: self.get_project_id()?,
+                    project_ids: self.get_project_ids()?,
                     owner: *user_id,
                     trigger_type,
                     trigger_key,
@@ -253,7 +255,7 @@ impl CustomTemplate {
         object: &Object,
         secret: String,
         download_url: String,
-        upload_credentials: GetCredentialsResponse,
+        upload_credentials: Option<GetCredentialsResponse>,
         pubkey_serial: i32,
     ) -> Result<String> {
         let object_status = match object.object_status {
@@ -269,6 +271,10 @@ impl CustomTemplate {
             DataClass::PRIVATE => "PRIVATE".to_string(),
             DataClass::WORKSPACE => "WORKSPACE".to_string(),
             DataClass::CONFIDENTIAL => "CONFIDENTIAL".to_string(),
+        };
+        let (access_key, secret_key) = match upload_credentials {
+            Some(creds) => (creds.access_key, creds.secret_key),
+            None => (String::new(), String::new()),
         };
         let replacement_pairs = [
             (r"\{\{secret\}\}", secret),
@@ -291,8 +297,8 @@ impl CustomTemplate {
                 serde_json::to_string(&object.endpoints.0)?,
             ),
             (r"\{\{download_url\}\}", download_url),
-            (r"\{\{access_key\}\}", upload_credentials.access_key),
-            (r"\{\{secret_key\}\}", upload_credentials.secret_key),
+            (r"\{\{access_key\}\}", access_key),
+            (r"\{\{secret_key\}\}", secret_key),
         ];
 
         let mut input = input.clone();

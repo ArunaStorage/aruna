@@ -117,8 +117,40 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
     async fn claim_workspace(
         &self,
-        _request: Request<ClaimWorkspaceRequest>,
+        request: Request<ClaimWorkspaceRequest>,
     ) -> Result<Response<ClaimWorkspaceResponse>> {
+        log_received!(&request);
+        let (metadata, _, request) = request.into_parts();
+
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let id = tonic_invalid!(
+            diesel_ulid::DieselUlid::from_str(&request.workspace_id),
+            "Invalid workspace id"
+        );
+
+        // Check if user is valid
+        let user_ctx = Context::user_ctx(id, crate::database::enums::DbPermissionLevel::NONE);
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![user_ctx])
+                .await,
+            "Unauthorized"
+        );
+        // Probably does not work, because new user is not assoiciated with workspace project
+        // TODO: Use request_token
+        let res_ctx = Context::res_ctx(
+            id,
+            crate::database::enums::DbPermissionLevel::APPEND, // Must be append, because
+            // workspaces are APPEND only for
+            // service accounts
+            false,
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(&request.token, vec![res_ctx])
+                .await,
+            "Unauthorized"
+        );
         // TODO:
         // - Remove all hooks
         // - Make user account project admin

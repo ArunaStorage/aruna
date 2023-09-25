@@ -33,8 +33,8 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: PresignedDownload,
         user_id: DieselUlid,
-        token_id: DieselUlid,
-    ) -> Result<(String, GetCredentialsResponse)> {
+        token_id: Option<DieselUlid>,
+    ) -> Result<(String, Option<GetCredentialsResponse>)> {
         dbg!("Starting ");
         let object_id = request.get_id()?;
         let (project_id, bucket_name, key) =
@@ -71,13 +71,19 @@ impl DatabaseHandler {
             &key,
             &endpoint_s3_url,
         )?;
-        let (_, _, _, credentials) = DatabaseHandler::get_credentials(
-            authorizer.clone(),
-            user_id,
-            Some(token_id),
-            endpoint.clone(),
-        )
-        .await?;
+        let credentials = match token_id {
+            Some(_) => {
+                let (_, _, _, credentials) = DatabaseHandler::get_credentials(
+                    authorizer.clone(),
+                    user_id,
+                    token_id,
+                    endpoint.clone(),
+                )
+                .await?;
+                Some(credentials)
+            }
+            None => None,
+        };
         dbg!("done");
         Ok((url, credentials))
     }

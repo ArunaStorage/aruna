@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::token_handler::{Action, Intent};
 use crate::database::dsls::endpoint_dsl::Endpoint;
+use crate::database::dsls::hook_dsl::Hook;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::middlelayer::token_request_types::CreateToken;
@@ -9,7 +10,7 @@ use crate::{database::crud::CrudDb, middlelayer::db_handler::DatabaseHandler};
 use anyhow::{anyhow, Ok, Result};
 use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCredentialsResponse};
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
-use aruna_rust_api::api::storage::services::v2::CreateApiTokenRequest;
+use aruna_rust_api::api::storage::services::v2::{ClaimWorkspaceRequest, CreateApiTokenRequest};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -104,5 +105,21 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("Workspace not found"))?;
         workspace.delete(&client).await?;
         Ok(())
+    }
+    pub async fn claim_workspace(&self, request: ClaimWorkspaceRequest) -> Result<()> {
+        let workspace_id = DieselUlid::from_str(&request.workspace_id)?;
+        let mut client = self.database.get_client().await?;
+        // All get requests
+        let mut project = Object::get_object_with_relations(&workspace_id, &client).await?;
+        let subresources = project.object.fetch_subresources(&client).await?;
+        let subresource = Object::get_objects_with_relations(&subresources, &client).await?;
+        let hooks = Hook::get_hooks_for_projects(&vec![workspace_id], &client).await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        // TODO:
+        // - Remove all hooks
+        // - Make user account project admin
+        // - Change DataClass from workspace to confidential
+        Err(anyhow!("Not implemented"))
     }
 }

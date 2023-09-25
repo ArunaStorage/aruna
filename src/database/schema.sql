@@ -186,13 +186,13 @@ CREATE TABLE IF NOT EXISTS hooks (
     id UUID PRIMARY KEY NOT NULL,
     name VARCHAR(511) NOT NULL,
     description VARCHAR(1023) NOT NULL,
-    project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    project_id UUID[],
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
     trigger_type "TriggerType" NOT NULL,
     trigger_key VARCHAR(511) NOT NULL,
     trigger_value VARCHAR(511) NOT NULL,
-    timeout TIMESTAMP NOT NULL, -- needs a sane default
-    hook JSONB NOT NULL -- can either be a internal or external hook with configs
+    timeout TIMESTAMP NOT NULL,
+    hook JSONB NOT NULL
 );
 
 /* ----- Workspaces -------------------------------------- */
@@ -205,5 +205,4 @@ CREATE TABLE IF NOT EXISTS workspaces (
     prefix VARCHAR(511) NOT NULL,
     key_values JSONB NOT NULL,
     UNIQUE(name)
-    -- maybe a list of created workspaces with this template?
 )
