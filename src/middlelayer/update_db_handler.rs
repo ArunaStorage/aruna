@@ -363,7 +363,7 @@ impl DatabaseHandler {
             let affected = Object::get_objects_with_relations(&affected, &client).await?;
             for o in affected {
                 dbg!(&o);
-                self.cache.update_object(&o.object.id.clone(), o);
+                self.cache.upsert_object(&o.object.id.clone(), o);
             }
         }
 

@@ -43,7 +43,7 @@ impl DatabaseHandler {
         let result = snapshot_resources.snapshot(client).await?;
         // Update cache
         for o in &result {
-            self.cache.update_object(&o.object.id, o.clone());
+            self.cache.upsert_object(&o.object.id, o.clone());
         }
 
         // Notifications
