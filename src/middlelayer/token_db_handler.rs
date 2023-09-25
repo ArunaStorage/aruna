@@ -26,7 +26,7 @@ impl DatabaseHandler {
         let user = User::get(*user_id, client)
             .await?
             .ok_or_else(|| anyhow!("User not found"))?;
-        self.cache.update_user(&user_id, user.clone());
+        self.cache.update_user(user_id, user.clone());
         // Try to emit user updated notification(s)
         if let Err(err) = self
             .natsio_handler

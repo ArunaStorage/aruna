@@ -80,7 +80,7 @@ impl DatabaseHandler {
         // Create creds
         let slt = authorizer.token_handler.sign_dataproxy_slt(
             &user.id,
-            Some(token_ulid),
+            Some(token_ulid.to_string()),
             Some(Intent {
                 target: endpoint_id,
                 action: Action::CreateSecrets,

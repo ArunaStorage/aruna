@@ -12,7 +12,6 @@ use aruna_rust_api::api::storage::services::v2::{
 
 use std::sync::Arc;
 use tonic::{Request, Response, Result, Status};
-
 crate::impl_grpc_server!(WorkspaceServiceImpl, default_endpoint: String);
 
 #[tonic::async_trait]

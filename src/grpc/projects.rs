@@ -224,7 +224,7 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&project.object.id, project.clone());
+            .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
         grpc_utils::update_search_index(
@@ -266,7 +266,7 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&project.object.id, project.clone());
+            .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
         grpc_utils::update_search_index(
@@ -311,7 +311,7 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&project.object.id, project.clone());
+            .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
         grpc_utils::update_search_index(
@@ -355,7 +355,7 @@ impl ProjectService for ProjectServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&project.object.id, project.clone());
+            .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
         grpc_utils::update_search_index(
@@ -401,7 +401,7 @@ impl ProjectService for ProjectServiceImpl {
         let mut search_update: Vec<ObjectDocument> = vec![];
         for resource in resources {
             self.cache
-                .update_object(&resource.object.id, resource.clone());
+                .upsert_object(&resource.object.id, resource.clone());
             search_update.push(ObjectDocument::from(resource.object))
         }
 

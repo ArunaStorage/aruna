@@ -27,6 +27,9 @@ async fn create_hook() {
     let hook_id = DieselUlid::generate();
     let mut hook = Hook {
         id: hook_id,
+        name: "HookName".to_string(),
+        description: "SOME_DESCRIPTION".to_string(),
+        owner: user.id,
         project_id: proj_id,
         trigger_type: TriggerType::HOOK_ADDED,
         trigger_key: "TEST_KEY".to_string(),
@@ -42,14 +45,14 @@ async fn create_hook() {
             },
         )),
     };
-    hook.create(&client).await.unwrap();
 
     let mut create_project = test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
     let obj_id = DieselUlid::generate();
     let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
     create_project.create(&client).await.unwrap();
-    create_object.create(&client).await.unwrap();
+    hook.create(&client).await.unwrap();
 
+    create_object.create(&client).await.unwrap();
     assert!(Object::get(obj_id, &client)
         .await
         .unwrap()

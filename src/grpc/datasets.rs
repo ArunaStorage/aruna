@@ -238,7 +238,7 @@ impl DatasetService for DatasetServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&dataset.object.id, dataset.clone());
+            .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
         grpc_utils::update_search_index(
@@ -281,7 +281,7 @@ impl DatasetService for DatasetServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&dataset.object.id, dataset.clone());
+            .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
         grpc_utils::update_search_index(
@@ -325,7 +325,7 @@ impl DatasetService for DatasetServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&dataset.object.id, dataset.clone());
+            .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
         grpc_utils::update_search_index(
@@ -369,7 +369,7 @@ impl DatasetService for DatasetServiceImpl {
             "Internal database error."
         );
         self.cache
-            .update_object(&dataset.object.id, dataset.clone());
+            .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
         grpc_utils::update_search_index(
@@ -413,7 +413,7 @@ impl DatasetService for DatasetServiceImpl {
 
         // For datasets, this vector only contains one entry
         self.cache
-            .update_object(&dataset[0].object.id, dataset[0].clone());
+            .upsert_object(&dataset[0].object.id, dataset[0].clone());
 
         // Add or update dataset in search index
         grpc_utils::update_search_index(
