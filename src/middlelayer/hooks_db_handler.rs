@@ -13,7 +13,7 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::{Callback, CreateHook, CustomTemplate};
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::hooks::services::v2::Finished;
+
 use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
@@ -34,12 +34,12 @@ impl DatabaseHandler {
         let hooks = match request {
         ListBy::PROJECT(_) => {
             let project_id = request.get_id()?;
-            let hooks = Hook::list_hooks(&project_id, &client).await?;
-            hooks
+            
+            Hook::list_hooks(&project_id, &client).await?
         }, 
         ListBy::OWNER(id) => {
-            let hooks = Hook::list_owned(&id, &client).await?;
-            hooks
+            
+            Hook::list_owned(&id, &client).await?
         }
         };
         Ok(hooks)
@@ -327,7 +327,7 @@ impl DatabaseHandler {
                     // Create append only s3-credentials
                     let append_only_token = APIToken{
                           pub_key: pubkey_serial,
-                          name: format!("{}-append_only", hook.id.to_string()),
+                          name: format!("{}-append_only", hook.id),
                           created_at: chrono::Utc::now().naive_utc(),
                           expires_at: hook.timeout
                           ,

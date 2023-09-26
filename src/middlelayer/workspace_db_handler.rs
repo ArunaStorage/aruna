@@ -110,12 +110,12 @@ impl DatabaseHandler {
         let workspace_id = DieselUlid::from_str(&request.workspace_id)?;
         let mut client = self.database.get_client().await?;
         // All get requests
-        let mut project = Object::get_object_with_relations(&workspace_id, &client).await?;
+        let project = Object::get_object_with_relations(&workspace_id, &client).await?;
         let subresources = project.object.fetch_subresources(&client).await?;
-        let subresource = Object::get_objects_with_relations(&subresources, &client).await?;
-        let hooks = Hook::get_hooks_for_projects(&vec![workspace_id], &client).await?;
+        let _subresource = Object::get_objects_with_relations(&subresources, &client).await?;
+        let _hooks = Hook::get_hooks_for_projects(&vec![workspace_id], &client).await?;
         let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
+        let _transaction_client = transaction.client();
         // TODO:
         // - Remove all hooks
         // - Make user account project admin

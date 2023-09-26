@@ -134,7 +134,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
         // Check if user is valid
         let user_ctx = Context::user_ctx(id, crate::database::enums::DbPermissionLevel::NONE);
-        let user_id = tonic_auth!(
+        let _user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![user_ctx])
                 .await,
@@ -162,7 +162,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
     }
     async fn get_workspace_template(
         &self,
-        request: Request<GetWorkspaceTemplateRequest>,
+        _request: Request<GetWorkspaceTemplateRequest>,
     ) -> Result<Response<GetWorkspaceTemplateResponse>> {
         Err(tonic::Status::unimplemented(
             "GetWorkspaceTemplate is currently unimplemented",
@@ -170,7 +170,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
     }
     async fn list_owned_workspace_templates(
         &self,
-        request: Request<ListOwnedWorkspaceTemplatesRequest>,
+        _request: Request<ListOwnedWorkspaceTemplatesRequest>,
     ) -> Result<Response<ListOwnedWorkspaceTemplatesResponse>> {
         Err(tonic::Status::unimplemented(
             "ListOwnedWorkspaceTemplates is currently unimplemented",
@@ -178,7 +178,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
     }
     async fn delete_workspace_template(
         &self,
-        request: Request<DeleteWorkspaceTemplateRequest>,
+        _request: Request<DeleteWorkspaceTemplateRequest>,
     ) -> Result<Response<DeleteWorkspaceTemplateResponse>> {
         Err(tonic::Status::unimplemented(
             "DeleteWorkspaceTemplate is currently unimplemented",

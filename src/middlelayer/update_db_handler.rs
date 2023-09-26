@@ -246,7 +246,8 @@ impl DatabaseHandler {
         let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (id, is_new, affected) = if request.name.is_some()
+        let (id, is_new, affected) = if request.force_revision
+            || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
@@ -289,10 +290,10 @@ impl DatabaseHandler {
                 target_name: create_object.name.clone(),
             };
             new.push(version);
-            // Create all relations for new_object
-            InternalRelation::batch_create(&new, transaction_client).await?;
             // Delete all relations for old object
             InternalRelation::batch_delete(&delete, transaction_client).await?;
+            // Create all relations for new_object
+            InternalRelation::batch_create(&new, transaction_client).await?;
             // Add parent if updated
             if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(

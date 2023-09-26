@@ -313,7 +313,7 @@ impl SearchService for SearchServiceImpl {
     }
     async fn request_resource_access(
         &self,
-        request: tonic::Request<RequestResourceAccessRequest>,
+        _request: tonic::Request<RequestResourceAccessRequest>,
     ) -> tonic::Result<tonic::Response<RequestResourceAccessResponse>> {
         Err(tonic::Status::unimplemented(
             "RequestResourceAccess is currently unimplemented",

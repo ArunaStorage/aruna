@@ -453,6 +453,7 @@ async fn update_object_test() {
         data_class: 1,
         hashes: vec![],
         parent: None,
+        force_revision: false,
     };
 
     let (updated, is_new) = db_handler
@@ -485,6 +486,7 @@ async fn update_object_test() {
             hash: "dd98d701915b2bc5aad5dc9190194844".to_string(),
         }],
         parent: None,
+        force_revision: false,
     };
     let (new, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
@@ -499,4 +501,26 @@ async fn update_object_test() {
         variant: KeyValueVariant::LABEL,
     }));
     assert!(!new.object.hashes.0 .0.is_empty());
+    let force_new_revision = UpdateObjectRequest {
+        object_id: new.object.id.to_string(),
+        name: None,
+        description: None,
+        add_key_values: vec![],
+        remove_key_values: vec![],
+        data_class: 0,
+        hashes: vec![],
+        parent: None,
+        force_revision: true,
+    };
+    let (new_2, is_new_2) = db_handler
+        .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
+        .await
+        .unwrap();
+    dbg!(&new);
+    dbg!(&new_2);
+    assert!(is_new_2);
+    assert_eq!(
+        new_2.object.revision_number,
+        (new.object.revision_number + 1)
+    )
 }

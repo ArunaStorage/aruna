@@ -184,7 +184,7 @@ impl HooksService for HookServiceImpl {
     }
     async fn add_projects_to_hook(
         &self,
-        request: Request<AddProjectsToHookRequest>,
+        _request: Request<AddProjectsToHookRequest>,
     ) -> Result<Response<AddProjectsToHookResponse>> {
         Err(tonic::Status::unimplemented(
             "Adding projects to hooks is currently unimplemented",

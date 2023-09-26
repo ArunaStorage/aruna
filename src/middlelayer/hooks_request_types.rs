@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{
-    ExternalHook, Hook, HookStatusVariant, InternalHook, TriggerType,
+    ExternalHook, Hook, InternalHook, TriggerType,
 };
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
@@ -12,9 +12,9 @@ use aruna_rust_api::api::hooks::services::v2::{
 };
 use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, AddHook, AddLabel};
 use aruna_rust_api::api::hooks::services::v2::{
-    HookCallbackRequest, ListOwnedHooksRequest, ListProjectHooksRequest, Method,
+    HookCallbackRequest, ListProjectHooksRequest, Method,
 };
-use aruna_rust_api::api::storage::models::v2::context::Context;
+
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use regex::{Regex, RegexSet};
@@ -61,12 +61,12 @@ impl CreateHook {
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
-        Ok(self
+        self
             .0
             .project_ids
             .iter()
             .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
-            .collect::<Result<Vec<DieselUlid>>>()?)
+            .collect::<Result<Vec<DieselUlid>>>()
     }
 
     pub fn get_hook(&self, user_id: &DieselUlid) -> Result<Hook> {
