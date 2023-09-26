@@ -8,12 +8,31 @@ use aruna_server::grpc::datasets::DatasetServiceImpl;
 use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::grpc::relations::RelationsServiceImpl;
+use aruna_server::grpc::users::UserServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
 use aruna_server::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
 use std::sync::Arc;
 
 use super::test_utils::DEFAULT_ENDPOINT_ULID;
+
+pub struct ServiceBlock {
+    // Internal components
+    pub db_conn: Arc<Database>,
+    pub db_handler: Arc<DatabaseHandler>,
+    pub cache: Arc<Cache>,
+    pub token_handler: Arc<TokenHandler>,
+    pub auth_handler: Arc<PermissionHandler>,
+    pub nats_handler: Arc<NatsIoHandler>,
+    pub search_handler: Arc<MeilisearchClient>,
+    // gRPC services
+    pub user_service: UserServiceImpl,
+    pub auth_service: AuthorizationServiceImpl,
+    pub project_service: ProjectServiceImpl,
+    pub collection_service: CollectionServiceImpl,
+    pub database_service: DatasetServiceImpl,
+    pub object_service: ObjectServiceImpl,
+}
 
 #[allow(dead_code)]
 pub async fn init_database() -> Arc<Database> {
@@ -115,31 +134,28 @@ pub async fn init_database_handler(
 }
 
 #[allow(dead_code)]
-pub async fn init_permission_handler(
-    db: Arc<Database>,
-    cache: Arc<Cache>,
-) -> Arc<PermissionHandler> {
-    // Load env
-    dotenvy::from_filename(".env").unwrap();
-
-    // Init TokenHandler
-    let token_handler = TokenHandler::new(
-        cache.clone(),
-        db.clone(),
-        dotenvy::var("OAUTH_REALMINFO").unwrap(),
-        dotenvy::var("ENCODING_KEY").unwrap(),
-        dotenvy::var("DECODING_KEY").unwrap(),
+pub async fn init_token_handler(db_conn: Arc<Database>, cache: Arc<Cache>) -> Arc<TokenHandler> {
+    // Init DatabaseHandler
+    Arc::new(
+        TokenHandler::new(
+            cache,
+            db_conn,
+            dotenvy::var("OAUTH_REALMINFO").unwrap(),
+            dotenvy::var("ENCODING_KEY").unwrap(),
+            dotenvy::var("DECODING_KEY").unwrap(),
+        )
+        .await
+        .unwrap(),
     )
-    .await
-    .unwrap();
+}
 
-    let token_handler_arc = Arc::new(token_handler);
-
+#[allow(dead_code)]
+pub async fn init_permission_handler(
+    cache: Arc<Cache>,
+    token_handler: Arc<TokenHandler>,
+) -> Arc<PermissionHandler> {
     // Init PermissionHandler
-    Arc::new(PermissionHandler::new(
-        cache.clone(),
-        token_handler_arc.clone(),
-    ))
+    Arc::new(PermissionHandler::new(cache, token_handler))
 }
 
 #[allow(dead_code)]
@@ -187,6 +203,17 @@ pub async fn init_project_service() -> ProjectServiceImpl {
         DEFAULT_ENDPOINT_ULID.to_string(),
     )
     .await
+}
+
+#[allow(dead_code)]
+pub async fn init_user_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    token_handler: Arc<TokenHandler>,
+) -> UserServiceImpl {
+    // Init authorization service
+    UserServiceImpl::new(db, auth, cache, token_handler).await
 }
 
 #[allow(dead_code)]
@@ -269,7 +296,8 @@ pub async fn init_grpc_services() -> (
     let nats = init_nats_client().await;
     let db_handler = init_database_handler(db.clone(), nats).await;
     let cache = init_cache(db.clone(), true).await;
-    let auth = init_permission_handler(db.clone(), cache.clone()).await;
+    let token_handler = init_token_handler(db.clone(), cache.clone()).await;
+    let auth = init_permission_handler(cache.clone(), token_handler).await;
     let search = init_search_client().await;
 
     // Init gRPC service implementations
@@ -306,4 +334,69 @@ pub async fn init_grpc_services() -> (
         .await,
         init_relation_service_manual(db_handler, auth, cache, search).await,
     )
+}
+
+#[allow(dead_code)]
+pub async fn init_service_block() -> ServiceBlock {
+    // Init internal components
+    let db_conn = init_database().await;
+    let nats_handler = init_nats_client().await;
+    let db_handler = init_database_handler(db_conn.clone(), nats_handler.clone()).await;
+    let cache = init_cache(db_conn.clone(), true).await;
+    let token_handler = init_token_handler(db_conn.clone(), cache.clone()).await;
+    let auth_handler = init_permission_handler(cache.clone(), token_handler.clone()).await;
+    let search_handler = init_search_client().await;
+
+    // Init gRPC service implementations
+    ServiceBlock {
+        db_conn,
+        db_handler: db_handler.clone(),
+        cache: cache.clone(),
+        token_handler: token_handler.clone(),
+        auth_handler: auth_handler.clone(),
+        nats_handler: nats_handler.clone(),
+        search_handler: search_handler.clone(),
+        user_service: init_user_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            token_handler,
+        )
+        .await,
+        auth_service: init_auth_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+        )
+        .await,
+        project_service: init_project_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            search_handler.clone(),
+            DEFAULT_ENDPOINT_ULID.to_string(),
+        )
+        .await,
+        collection_service: init_collection_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            search_handler.clone(),
+        )
+        .await,
+        database_service: init_dataset_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            search_handler.clone(),
+        )
+        .await,
+        object_service: init_object_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            search_handler.clone(),
+        )
+        .await,
+    }
 }

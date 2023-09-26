@@ -1,4 +1,6 @@
-use crate::common::init::{init_database_handler_middlelayer, init_permission_handler};
+use crate::common::init::{
+    init_database_handler_middlelayer, init_permission_handler, init_token_handler,
+};
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
 use aruna_rust_api::api::storage::services::v2::{
@@ -233,9 +235,11 @@ async fn test_update_description() {
 async fn test_update_keyvals() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    //let cache = init_cache(db_handler.database.clone(), true).await;
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -409,8 +413,11 @@ async fn test_update_keyvals() {
 async fn update_object_test() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
     let object_id = DieselUlid::generate();
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();
