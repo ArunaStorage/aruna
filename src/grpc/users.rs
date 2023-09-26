@@ -18,6 +18,7 @@ use aruna_rust_api::api::storage::models::v2::context::Context as ProtoContext;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint as ApiEndpointEnum;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
+    AcknowledgePersonalNotificationsRequest, AcknowledgePersonalNotificationsResponse,
     ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
     DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
     DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
@@ -613,6 +614,14 @@ impl UserService for UserServiceImpl {
     ) -> tonic::Result<Response<GetPersonalNotificationsResponse>> {
         return Err(Status::unimplemented(
             "GetPersonalNotifications currently unimplemented",
+        ));
+    }
+    async fn acknowledge_personal_notifications(
+        &self,
+        _request: Request<AcknowledgePersonalNotificationsRequest>,
+    ) -> tonic::Result<Response<AcknowledgePersonalNotificationsResponse>> {
+        return Err(Status::unimplemented(
+            "AcknowledgePersonalNotifications currently unimplemented",
         ));
     }
 }

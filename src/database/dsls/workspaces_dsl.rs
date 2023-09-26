@@ -5,8 +5,6 @@ use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql};
 use tokio_postgres::Client;
 
-use super::object_dsl::KeyValues;
-
 #[derive(FromSql, ToSql, Debug, FromRow)]
 pub struct WorkspaceTemplate {
     pub id: DieselUlid,
@@ -14,13 +12,14 @@ pub struct WorkspaceTemplate {
     pub description: String,
     pub owner: DieselUlid,
     pub prefix: String,
-    pub key_values: Json<KeyValues>,
+    pub hook_ids: Json<Vec<DieselUlid>>,
+    pub endpoint_ids: Json<Vec<DieselUlid>>,
 }
 
 #[async_trait::async_trait]
 impl CrudDb for WorkspaceTemplate {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO workspaces (id, name, owner, prefix, key_values) VALUES (
+        let query = "INSERT INTO workspaces (id, name, description, owner, prefix, hook_ids, endpoint_ids ) VALUES (
             $1, $2, $3, $4, $5
         ) RETURNING *;";
 
@@ -32,9 +31,11 @@ impl CrudDb for WorkspaceTemplate {
                 &[
                     &self.id,
                     &self.name,
+                    &self.description,
                     &self.owner,
                     &self.prefix,
-                    &self.key_values,
+                    &self.hook_ids,
+                    &self.endpoint_ids,
                 ],
             )
             .await?;

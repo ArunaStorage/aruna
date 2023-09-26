@@ -38,7 +38,6 @@ pub struct ExternalHook {
     pub credentials: Option<Credentials>,
     pub template: TemplateVariant,
     pub method: Method,
-    pub result_meta_object: Option<ObjectMapping<DieselUlid>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,6 +94,21 @@ pub enum HookStatusVariant {
     RUNNING,
     FINISHED,
     ERROR(String),
+}
+
+#[derive(Clone, Debug, FromSql, FromRow)]
+pub struct HookWithAssociatedProject {
+    pub id: DieselUlid,
+    pub name: String,
+    pub description: String,
+    pub project_ids: Vec<DieselUlid>,
+    pub owner: DieselUlid,
+    pub trigger_type: TriggerType,
+    pub trigger_key: String,
+    pub trigger_value: String,
+    pub timeout: NaiveDateTime,
+    pub hook: Json<HookVariant>,
+    pub project_id: DieselUlid,
 }
 
 #[async_trait::async_trait]
@@ -187,14 +201,25 @@ impl Hook {
     pub async fn get_hooks_for_projects(
         project_ids: &Vec<DieselUlid>,
         client: &Client,
-    ) -> Result<Vec<Hook>> {
-        let query = "SELECT * FROM hooks WHERE $1 = ANY (project_ids)";
+    ) -> Result<Vec<HookWithAssociatedProject>> {
+        let query = "SELECT q.id, q.name, q.description, q.project_id, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
+        (
+	        SELECT UNNEST(p_ids) 
+            INTERSECT 
+            SELECT UNNEST(arr)
+        ) AS project_id
+        FROM (
+            SELECT project_id AS p_ids, 
+            ARRAY$1::uuid[] AS arr, *
+            FROM hooks
+            ) q
+        WHERE p_ids && arr;".to_string();
         let prepared = client.prepare(&query).await?;
         let hooks = client
             .query(&prepared, &[project_ids])
             .await?
             .iter()
-            .map(Hook::from_row)
+            .map(HookWithAssociatedProject::from_row)
             .collect();
         Ok(hooks)
     }

@@ -4,11 +4,15 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::CreateHook;
+use crate::middlelayer::hooks_request_types::ListBy;
 use crate::utils::conversions::get_token_from_md;
 use aruna_rust_api::api::hooks::services::v2::hooks_service_server::HooksService;
+use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookRequest;
+use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookResponse;
 use aruna_rust_api::api::hooks::services::v2::{
     CreateHookRequest, CreateHookResponse, DeleteHookRequest, DeleteHookResponse,
-    HookCallbackRequest, HookCallbackResponse, ListHooksRequest, ListHooksResponse,
+    HookCallbackRequest, HookCallbackResponse, ListOwnedHooksRequest, ListOwnedHooksResponse,
+    ListProjectHooksRequest, ListProjectHooksResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -54,10 +58,11 @@ impl HooksService for HookServiceImpl {
 
         return_with_log!(response);
     }
-    async fn list_hooks(
+
+    async fn list_project_hooks(
         &self,
-        request: Request<ListHooksRequest>,
-    ) -> Result<Response<ListHooksResponse>> {
+        request: Request<ListProjectHooksRequest>,
+    ) -> Result<Response<ListProjectHooksResponse>> {
         log_received!(&request);
 
         let token = tonic_auth!(
@@ -65,9 +70,8 @@ impl HooksService for HookServiceImpl {
             "Token authentication error"
         );
 
-        let request = request.into_inner();
-        let project_id =
-            tonic_invalid!(DieselUlid::from_str(&request.project_id), "invalid parent");
+        let request = ListBy::PROJECT(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "invalid parent");
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -79,7 +83,47 @@ impl HooksService for HookServiceImpl {
             "Internal error while listing hooks"
         );
 
-        let response = ListHooksResponse {
+        let response = ListProjectHooksResponse {
+            infos: hooks.into_iter().map(|h| h.into()).collect(),
+        };
+
+        return_with_log!(response);
+    }
+
+    async fn list_owned_hooks(
+        &self,
+        request: Request<ListOwnedHooksRequest>,
+    ) -> Result<Response<ListOwnedHooksResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = request.into_inner();
+        let request = if request.user_id.is_empty() {
+            let ctx = Context::self_ctx();
+            let owner = tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            );
+            ListBy::OWNER(owner)
+        } else {
+            let id = tonic_invalid!(DieselUlid::from_str(&request.user_id), "Invalid user_id");
+            let ctx = Context::user_ctx(id, DbPermissionLevel::ADMIN);
+            tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            );
+            ListBy::OWNER(id)
+        };
+        let hooks = tonic_internal!(
+            self.database_handler.list_hook(request).await,
+            "Internal error while listing hooks"
+        );
+
+        let response = ListOwnedHooksResponse {
             infos: hooks.into_iter().map(|h| h.into()).collect(),
         };
 
@@ -137,5 +181,13 @@ impl HooksService for HookServiceImpl {
             "HookCallback failed"
         );
         return_with_log!(HookCallbackResponse {});
+    }
+    async fn add_projects_to_hook(
+        &self,
+        request: Request<AddProjectsToHookRequest>,
+    ) -> Result<Response<AddProjectsToHookResponse>> {
+        Err(tonic::Status::unimplemented(
+            "Adding projects to hooks is currently unimplemented",
+        ))
     }
 }

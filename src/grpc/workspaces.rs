@@ -7,7 +7,11 @@ use aruna_rust_api::api::storage::services::v2::{
     workspace_service_server::WorkspaceService, ClaimWorkspaceRequest, ClaimWorkspaceResponse,
     CreateWorkspaceRequest, CreateWorkspaceResponse, CreateWorkspaceTemplateRequest,
     CreateWorkspaceTemplateResponse, DeleteWorkspaceRequest, DeleteWorkspaceResponse,
-    MoveWorkspaceDataRequest, MoveWorkspaceDataResponse,
+};
+use aruna_rust_api::api::storage::services::v2::{
+    DeleteWorkspaceTemplateRequest, DeleteWorkspaceTemplateResponse, GetWorkspaceTemplateRequest,
+    GetWorkspaceTemplateResponse, ListOwnedWorkspaceTemplatesRequest,
+    ListOwnedWorkspaceTemplatesResponse,
 };
 
 use std::str::FromStr;
@@ -43,7 +47,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
         );
 
         // Create template
-        let template_name = tonic_invalid!(
+        let template_id = tonic_invalid!(
             self.database_handler
                 .create_workspace_template(request, user_id)
                 .await,
@@ -51,7 +55,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
         );
 
         // TODO: Change name into id
-        let response = CreateWorkspaceTemplateResponse { template_name };
+        let response = CreateWorkspaceTemplateResponse { template_id };
         return_with_log!(response);
     }
 
@@ -151,20 +155,33 @@ impl WorkspaceService for WorkspaceServiceImpl {
                 .await,
             "Unauthorized"
         );
-        // TODO:
-        // - Remove all hooks
-        // - Make user account project admin
+
         return Err(Status::unimplemented(
             "Claiming workspaces is not implemented!",
         ));
     }
-
-    async fn move_workspace_data(
+    async fn get_workspace_template(
         &self,
-        _request: Request<MoveWorkspaceDataRequest>,
-    ) -> Result<Response<MoveWorkspaceDataResponse>> {
-        return Err(Status::unimplemented(
-            "Moving workspaces is not implemented!",
-        ));
+        request: Request<GetWorkspaceTemplateRequest>,
+    ) -> Result<Response<GetWorkspaceTemplateResponse>> {
+        Err(tonic::Status::unimplemented(
+            "GetWorkspaceTemplate is currently unimplemented",
+        ))
+    }
+    async fn list_owned_workspace_templates(
+        &self,
+        request: Request<ListOwnedWorkspaceTemplatesRequest>,
+    ) -> Result<Response<ListOwnedWorkspaceTemplatesResponse>> {
+        Err(tonic::Status::unimplemented(
+            "ListOwnedWorkspaceTemplates is currently unimplemented",
+        ))
+    }
+    async fn delete_workspace_template(
+        &self,
+        request: Request<DeleteWorkspaceTemplateRequest>,
+    ) -> Result<Response<DeleteWorkspaceTemplateResponse>> {
+        Err(tonic::Status::unimplemented(
+            "DeleteWorkspaceTemplate is currently unimplemented",
+        ))
     }
 }

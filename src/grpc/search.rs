@@ -5,7 +5,8 @@ use crate::{auth::permission_handler::PermissionHandler, database::enums::DbPerm
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::services::v2::{
-    GetResourcesRequest, GetResourcesResponse, ResourceWithPermission,
+    GetResourcesRequest, GetResourcesResponse, RequestResourceAccessRequest,
+    RequestResourceAccessResponse, ResourceWithPermission,
 };
 use aruna_rust_api::api::storage::{
     models::v2::GenericResource,
@@ -309,5 +310,13 @@ impl SearchService for SearchServiceImpl {
         let response = GetResourcesResponse { resources };
 
         return_with_log!(response);
+    }
+    async fn request_resource_access(
+        &self,
+        request: tonic::Request<RequestResourceAccessRequest>,
+    ) -> tonic::Result<tonic::Response<RequestResourceAccessResponse>> {
+        Err(tonic::Status::unimplemented(
+            "RequestResourceAccess is currently unimplemented",
+        ))
     }
 }

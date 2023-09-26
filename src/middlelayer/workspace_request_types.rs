@@ -7,6 +7,7 @@ use crate::database::{
     },
     enums::ObjectMapping,
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::services::v2::{
     CreateWorkspaceRequest, CreateWorkspaceTemplateRequest,
@@ -14,6 +15,7 @@ use aruna_rust_api::api::storage::services::v2::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use std::str::FromStr;
 
 pub struct CreateTemplate(pub CreateWorkspaceTemplateRequest);
 pub struct CreateWorkspace(pub CreateWorkspaceRequest);
@@ -23,14 +25,23 @@ impl CreateTemplate {
         let workspace = WorkspaceTemplate {
             id: DieselUlid::generate(),
             name: self.0.name.clone(),
-            description: "PLACEHOLDER".to_string(), //TODO: Workspace descriptions
+            description: self.0.description.clone(), //TODO: Workspace descriptions
             owner,
             prefix: self.0.prefix.clone(),
-            // TODO: Remove key values or implement label validation & enforcement
-            key_values: Json((&self.0.key_values).try_into()?),
-            // TODO: Missing hooks
-            // TODO: Add option to specify endpoint
-            // TODO (optional): Add subresource structure
+            hook_ids: Json(
+                self.0
+                    .hook_ids
+                    .iter()
+                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
+                    .collect::<Result<Vec<DieselUlid>>>()?,
+            ),
+            endpoint_ids: Json(
+                self.0
+                    .endpoint_id
+                    .iter()
+                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
+                    .collect::<Result<Vec<DieselUlid>>>()?,
+            ),
         };
         Ok(workspace)
     }
@@ -43,16 +54,23 @@ impl CreateWorkspace {
 
     pub fn make_project(template: WorkspaceTemplate, endpoint: DieselUlid) -> Object {
         let id = DieselUlid::generate();
+        let endpoints = if template.endpoint_ids.0.is_empty() {
+            Json(DashMap::from_iter(vec![(endpoint, true)]))
+        } else {
+            Json(DashMap::from_iter(
+                template.endpoint_ids.0.iter().map(|id| (*id, true)),
+            ))
+        };
         Object {
             id,
             revision_number: 0,
             name: [template.prefix, id.to_string()].join("-"),
-            description: "".to_string(), // TODO: Add template descriptions
+            description: template.description,
             created_at: None,
             created_by: template.owner,
             content_len: 0,
             count: 0,
-            key_values: template.key_values, //TODO: Using keyvals this way is weird
+            key_values: Json(crate::database::dsls::object_dsl::KeyValues(Vec::new())),
             object_status: crate::database::enums::ObjectStatus::AVAILABLE,
             data_class: crate::database::enums::DataClass::WORKSPACE,
             object_type: crate::database::enums::ObjectType::PROJECT,
@@ -61,7 +79,7 @@ impl CreateWorkspace {
             )),
             hashes: Json(crate::database::dsls::object_dsl::Hashes(Vec::new())),
             dynamic: true,
-            endpoints: Json(DashMap::from_iter(vec![(endpoint, true)])),
+            endpoints,
         }
     }
 

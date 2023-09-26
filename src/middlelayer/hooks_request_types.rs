@@ -1,6 +1,8 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
+use crate::database::dsls::hook_dsl::{
+    ExternalHook, Hook, HookStatusVariant, InternalHook, TriggerType,
+};
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
 use anyhow::{anyhow, Result};
@@ -9,7 +11,10 @@ use aruna_rust_api::api::hooks::services::v2::{
     hook::HookType, CreateHookRequest, Hook as APIHook,
 };
 use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, AddHook, AddLabel};
-use aruna_rust_api::api::hooks::services::v2::{HookCallbackRequest, Method};
+use aruna_rust_api::api::hooks::services::v2::{
+    HookCallbackRequest, ListOwnedHooksRequest, ListProjectHooksRequest, Method,
+};
+use aruna_rust_api::api::storage::models::v2::context::Context;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use regex::{Regex, RegexSet};
@@ -19,10 +24,18 @@ use std::sync::Arc;
 
 pub struct CreateHook(pub CreateHookRequest);
 
-pub struct ListHook(pub ListBy);
 pub enum ListBy {
-    PROJECT(DieselUlid), // TODO: Replace with API request
-    OWNER(DieselUlid),   // TODO: Replace with API request
+    PROJECT(ListProjectHooksRequest),
+    OWNER(DieselUlid),
+}
+
+impl ListBy {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        Ok(match self {
+            Self::PROJECT(req) => DieselUlid::from_str(&req.project_id)?,
+            Self::OWNER(id) => *id,
+        })
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -48,8 +61,12 @@ impl CreateHook {
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
-        // TODO: for id in self.0.project_ids {}
-        Ok(vec![DieselUlid::from_str(&self.0.project_id)?])
+        Ok(self
+            .0
+            .project_ids
+            .iter()
+            .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
+            .collect::<Result<Vec<DieselUlid>>>()?)
     }
 
     pub fn get_hook(&self, user_id: &DieselUlid) -> Result<Hook> {
@@ -60,8 +77,8 @@ impl CreateHook {
                 let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
                 Ok(Hook {
                     id: DieselUlid::generate(),
-                    name: "PLACEHOLDER_NAME".to_string(), //TODO: API hook name
-                    description: "PLACEHOLDER_DESCRIPTION".to_string(), //TODO: API hook description
+                    name: self.0.name.clone(),
+                    description: self.0.description.clone(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
                     trigger_type,
@@ -82,7 +99,9 @@ impl CreateHook {
                                 Method::Put => crate::database::dsls::hook_dsl::Method::PUT,
                                 Method::Post => crate::database::dsls::hook_dsl::Method::POST,
                             },
-                            result_meta_object: todo!(), // TODO: API Change
+                            // TODO: This is broken and should be
+                            // removed next API release
+                            // --> result_meta_object: None
                         }),
                     ),
                 })
@@ -150,11 +169,13 @@ impl CreateHook {
 }
 
 impl Callback {
-    pub fn get_keyvals(&self) -> Result<(KeyValues, KeyValues)> {
-        // TODO: Needs other conversion, because hook_status can be set here
-        let add = self
-            .0
-            .add_key_values
+    pub fn get_keyvals(
+        aruna_rust_api::api::hooks::services::v2::Finished {
+            add_key_values,
+            remove_key_values,
+        }: aruna_rust_api::api::hooks::services::v2::Finished,
+    ) -> Result<(KeyValues, KeyValues)> {
+        let add = add_key_values
             .clone()
             .into_iter()
             .map(|kv| -> Result<KeyValue> {
@@ -182,9 +203,7 @@ impl Callback {
                 })
             })
             .collect::<Result<Vec<KeyValue>>>()?;
-        let rm = self
-            .0
-            .remove_key_values
+        let rm = remove_key_values
             .clone()
             .into_iter()
             .map(|kv| -> Result<KeyValue> {

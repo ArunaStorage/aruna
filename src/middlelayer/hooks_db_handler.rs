@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
-    TemplateVariant, TriggerType,
+    TemplateVariant, TriggerType, HookWithAssociatedProject,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
@@ -13,13 +13,14 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::{Callback, CreateHook, CustomTemplate};
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::hooks::services::v2::ListHooksRequest;
+use aruna_rust_api::api::hooks::services::v2::Finished;
 use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
+use crate::middlelayer::hooks_request_types::ListBy;
 
 impl DatabaseHandler {
     pub async fn create_hook(&self, request: CreateHook, user_id: &DieselUlid) -> Result<Hook> {
@@ -28,10 +29,19 @@ impl DatabaseHandler {
         hook.create(&client).await?;
         Ok(hook)
     }
-    pub async fn list_hook(&self, request: ListHooksRequest) -> Result<Vec<Hook>> {
+    pub async fn list_hook(&self, request: ListBy) -> Result<Vec<Hook>> {
         let client = self.database.get_client().await?;
-        let project_id = DieselUlid::from_str(&request.project_id)?;
-        let hooks = Hook::list_hooks(&project_id, &client).await?;
+        let hooks = match request {
+        ListBy::PROJECT(_) => {
+            let project_id = request.get_id()?;
+            let hooks = Hook::list_hooks(&project_id, &client).await?;
+            hooks
+        }, 
+        ListBy::OWNER(id) => {
+            let hooks = Hook::list_owned(&id, &client).await?;
+            hooks
+        }
+        };
         Ok(hooks)
     }
     pub async fn delete_hook(&self, hook_id: DieselUlid) -> Result<()> {
@@ -47,10 +57,7 @@ impl DatabaseHandler {
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
         // Parsing
         let (_, object_id) = request.get_ids()?;
-        let (add_kvs, rm_kvs) = request.get_keyvals()?;
         dbg!(&object_id);
-        dbg!(&add_kvs);
-        dbg!(&rm_kvs);
 
         // Client creation
         let mut client = self.database.get_client().await?;
@@ -74,17 +81,18 @@ impl DatabaseHandler {
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
 
-        // TODO: Wait for API change and match status
-        if request.0.success {
+        match request.0.status {
+            Some(aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Finished(req)) => {
+            let (add, rm) = Callback::get_keyvals(req)?;
             // Adding kvs from callback
-            if !add_kvs.0.is_empty() {
-                for kv in add_kvs.0 {
+            if !add.0.is_empty() {
+                for kv in add.0 {
                     Object::add_key_value(&object_id, transaction_client, kv).await?;
                 }
             }
             // Removing kvs from callback
-            if !rm_kvs.0.is_empty() {
-                for kv in rm_kvs.0 {
+            if !rm.0.is_empty() {
+                for kv in rm.0 {
                     if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
                         object.remove_key_value(transaction_client, kv).await?;
                     } else {
@@ -94,9 +102,12 @@ impl DatabaseHandler {
             }
 
             value.status = HookStatusVariant::FINISHED;
-        } else {
-            value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
-        }
+            },
+            Some(aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Error(aruna_rust_api::api::hooks::services::v2::Error{error})) => {
+                value.status = HookStatusVariant::ERROR(error);
+            },
+            None => return Err(anyhow!("No status provided"))
+        };
         // Update status
         let kvs = object
             .key_values
@@ -153,7 +164,7 @@ impl DatabaseHandler {
             );
         }
         dbg!("Projects = {:?}", &projects);
-        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
+        let hooks: Vec<HookWithAssociatedProject> = Hook::get_hooks_for_projects(&projects, &client)
             .await?
             .into_iter()
             .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
@@ -195,7 +206,7 @@ impl DatabaseHandler {
         let keyvals: Vec<(String, String)> =
             keyvals.into_iter().map(|k| (k.key, k.value)).collect();
         dbg!("KEYVALS: {:?}", &keyvals);
-        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
+        let hooks: Vec<HookWithAssociatedProject> = Hook::get_hooks_for_projects(&projects, &client)
             .await?
             .into_iter()
             .filter_map(|h| {
@@ -222,7 +233,7 @@ impl DatabaseHandler {
     async fn hook_action(
         &self,
         authorizer: Arc<PermissionHandler>,
-        hooks: Vec<Hook>,
+        hooks: Vec<HookWithAssociatedProject>,
         object_id: DieselUlid,
         user_id: DieselUlid,
     ) -> Result<()> {
@@ -302,7 +313,7 @@ impl DatabaseHandler {
                         }
                     }
                 }
-                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method , result_meta_object}) => {
+                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
                     dbg!("REACHED EXTERNAL TRIGGER");
                     // Get Object for response
                     let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
@@ -312,31 +323,25 @@ impl DatabaseHandler {
 
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+                    // TODO: Only create token when specified in custom template
                     // Create append only s3-credentials
-                    let token_id = match result_meta_object {
-                        Some(object_mapping) => { 
-
-                        let append_only_token = APIToken{
+                    let append_only_token = APIToken{
                           pub_key: pubkey_serial,
                           name: format!("{}-append_only", hook.id.to_string()),
                           created_at: chrono::Utc::now().naive_utc(),
                           expires_at: hook.timeout
                           ,
-                          // TODO: Append only object parent
-                          object_id: Some(object_mapping),
+                          object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
                           user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-                        };
-                        dbg!("Trigger token: {:?}", &append_only_token);
-                        let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-                        dbg!("Trigger token id: {:?}", &token_id);
-                        Some(token_id)
-                        }, 
-                        None => None,
                     };
+                    dbg!("Trigger token: {:?}", &append_only_token);
+                    let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+                    dbg!("Trigger token id: {:?}", &token_id);
+                   
 
                     // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
-                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, token_id).await?;
+                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
                     dbg!("Presigned download: {:?}", &download);
                     let (access_key, secret_key) = match upload_credentials {
                         Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
