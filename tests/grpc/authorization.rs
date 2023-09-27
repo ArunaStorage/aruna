@@ -4,8 +4,8 @@ use aruna_rust_api::api::storage::{
     models::v2::{permission::ResourceId, Permission, PermissionLevel},
     services::v2::{
         authorization_service_server::AuthorizationService, create_collection_request,
-        user_service_server::UserService, CreateAuthorizationRequest, GetAuthorizationsRequest,
-        GetUserRequest, UserPermission,
+        user_service_server::UserService, CreateAuthorizationRequest, DeleteAuthorizationRequest,
+        GetAuthorizationsRequest, GetUserRequest, UserPermission,
     },
 };
 use aruna_server::database::{
@@ -241,7 +241,7 @@ async fn grpc_get_authorization() {
     )
     .await;
 
-    // Add separate
+    // Add separate permission for subresource
     fast_track_grpc_permission_add(
         &service_block.auth_service,
         ADMIN_OIDC_TOKEN,
@@ -290,4 +290,102 @@ async fn grpc_get_authorization() {
 }
 
 #[tokio::test]
-async fn grpc_delete_authorization() {}
+async fn grpc_delete_authorization() {
+    // Init gRPC services
+    let service_block = init_service_block().await;
+
+    // Create random project
+    let project =
+        fast_track_grpc_project_create(&service_block.project_service, ADMIN_OIDC_TOKEN).await;
+
+    // Create ULID from user id
+    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+
+    // Add permission for another user to project
+    fast_track_grpc_permission_add(
+        &service_block.auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &DieselUlid::from_str(&project.id).unwrap(),
+        DbPermissionLevel::WRITE,
+    )
+    .await;
+
+    let user = service_block.cache.get_user(&user_ulid).unwrap();
+    assert_eq!(
+        user.attributes
+            .0
+            .permissions
+            .get(&DieselUlid::from_str(&project.id).unwrap())
+            .unwrap()
+            .value(),
+        &ObjectMapping::PROJECT(DbPermissionLevel::WRITE)
+    );
+
+    // Remove permission for user who does not exist
+    let mut inner_request = DeleteAuthorizationRequest {
+        resource_id: project.id.clone(),
+        user_id: DieselUlid::generate().to_string(),
+    };
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = service_block
+        .auth_service
+        .delete_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Remove permission for resource which does not exist
+    inner_request.resource_id = DieselUlid::generate().to_string();
+    inner_request.user_id = user_ulid.to_string();
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let _ = service_block
+        .auth_service
+        .delete_authorization(grpc_request)
+        .await
+        .unwrap();
+
+    // Remove permission without token
+    inner_request.resource_id = project.id.clone();
+
+    let grpc_request = tonic::Request::new(inner_request.clone());
+
+    let response = service_block
+        .auth_service
+        .delete_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Remove permission without sufficient permissions
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = service_block
+        .auth_service
+        .delete_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Remove permission with sufficient permissions
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let _ = service_block
+        .auth_service
+        .delete_authorization(grpc_request)
+        .await
+        .unwrap();
+
+    let user = service_block.cache.get_user(&user_ulid).unwrap();
+
+    assert!(user
+        .attributes
+        .0
+        .permissions
+        .get(&DieselUlid::from_str(&project.id).unwrap())
+        .is_none());
+}
