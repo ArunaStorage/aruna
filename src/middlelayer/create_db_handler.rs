@@ -126,11 +126,6 @@ impl DatabaseHandler {
         };
         transaction.commit().await?;
 
-        // If created resource has parent emit notification for updated parent
-        if let Some(parent) = request.get_parent() {
-            if let Some(parent_plus) = self.cache.get_object(&parent.get_id()?) {}
-        }
-
         // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {
             object: object.clone(),
@@ -143,6 +138,8 @@ impl DatabaseHandler {
         if let Some(parent_plus) = parent {
             self.cache
                 .upsert_object(&parent_plus.object.id, parent_plus.clone());
+
+            // If created resource has parent emit notification for updated parent
             let parent_hierachies = parent_plus.object.fetch_object_hierarchies(&client).await?;
 
             // Try to emit object created notification(s)

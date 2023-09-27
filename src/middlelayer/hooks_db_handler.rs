@@ -186,8 +186,7 @@ impl DatabaseHandler {
         object_id: DieselUlid,
         keyvals: Vec<KeyValue>,
     ) -> Result<()> {
-        dbg!("Trigger on append triggered");
-        let client = self.database.get_client().await?;
+        dbg!("ON_APPEND TRIGGERED");
         let parents = self.cache.upstream_dfs_iterative(&object_id)?;
         dbg!(&parents);
         let mut projects: Vec<DieselUlid> = Vec::new();
@@ -206,9 +205,11 @@ impl DatabaseHandler {
         let keyvals: Vec<(String, String)> =
             keyvals.into_iter().map(|k| (k.key, k.value)).collect();
         dbg!("KEYVALS: {:?}", &keyvals);
+        let client = self.database.get_client().await?;
         let hooks: Vec<HookWithAssociatedProject> = Hook::get_hooks_for_projects(&projects, &client)
-            .await?
-            .into_iter()
+            .await?;
+        dbg!("UNFILTERED: {:?}", &hooks);
+        let hooks: Vec<HookWithAssociatedProject> = hooks.into_iter()
             .filter_map(|h| {
                 if h.trigger_type == TriggerType::HOOK_ADDED {
                     if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
@@ -221,6 +222,7 @@ impl DatabaseHandler {
                 }
             })
             .collect();
+        dbg!("FILTERED: {:?}", &hooks);
         if hooks.is_empty() {
             Ok(())
         } else {

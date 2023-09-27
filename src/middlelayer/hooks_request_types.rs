@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{
-    ExternalHook, Hook, InternalHook, TriggerType,
+    ExternalHook, Hook, InternalHook, TemplateVariant, TriggerType,
 };
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
@@ -61,8 +61,7 @@ impl CreateHook {
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
-        self
-            .0
+        self.0
             .project_ids
             .iter()
             .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
@@ -91,7 +90,15 @@ impl CreateHook {
                             credentials: external_hook.credentials.clone().map(|c| {
                                 crate::database::dsls::hook_dsl::Credentials { token: c.token }
                             }),
-                            template: crate::database::dsls::hook_dsl::TemplateVariant::Basic, // TODO: Match & verify CustomTemplate
+                            template: match &external_hook.custom_template {
+                                Some(t) => {
+                                    if !CreateHook::verify_template(t.clone())? {
+                                        return Err(anyhow!("Invalid template"));
+                                    };
+                                    TemplateVariant::Custom(t.clone())
+                                }
+                                None => TemplateVariant::Basic,
+                            },
                             method: match external_hook.method() {
                                 Method::Unspecified => {
                                     return Err(anyhow!("Unspecified external hook reply method"))
@@ -133,8 +140,8 @@ impl CreateHook {
                 };
                 Ok(Hook {
                     id: DieselUlid::generate(),
-                    name: "PLACEHOLDER_NAME".to_string(), // TODO: Add name to API
-                    description: "PLACEHOLDER_DESCRIPTION".to_string(), // TODO: Add description to API
+                    name: self.0.name.clone(),
+                    description: self.0.description.to_string(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
                     trigger_type,

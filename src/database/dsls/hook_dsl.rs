@@ -1,6 +1,5 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 
-
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -202,16 +201,19 @@ impl Hook {
         project_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<HookWithAssociatedProject>> {
-        let query = "SELECT q.id, q.name, q.description, q.project_id, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
-        (
-	        SELECT UNNEST(p_ids) 
-            INTERSECT 
-            SELECT UNNEST(arr)
-        ) AS project_id
-        FROM (
-            SELECT project_id AS p_ids, 
-            ARRAY$1::uuid[] AS arr, *
-            FROM hooks
+        let query = 
+        "SELECT 
+            q.id, q.name, q.description, q.project_ids, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
+            (
+	            SELECT UNNEST(p_ids) 
+                INTERSECT 
+                SELECT UNNEST(arr)
+            ) AS project_id
+        FROM 
+            (
+                SELECT project_ids AS p_ids, 
+                $1::uuid[] AS arr, *
+                FROM hooks
             ) q
         WHERE p_ids && arr;".to_string();
         let prepared = client.prepare(&query).await?;
