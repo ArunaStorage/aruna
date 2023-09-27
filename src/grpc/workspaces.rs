@@ -92,26 +92,23 @@ impl WorkspaceService for WorkspaceServiceImpl {
         let (metadata, _, request) = request.into_parts();
 
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
         let id = tonic_invalid!(
             diesel_ulid::DieselUlid::from_str(&request.workspace_id),
             "Invalid workspace id"
         );
 
-        // Deny service_accounts
-        let ctx = Context::res_ctx(
-            id,
-            //TODO: allow service accounts to delete their own workspaces?
-            crate::database::enums::DbPermissionLevel::ADMIN,
-            false,
-        );
-
-        tonic_auth!(
+        let ctx = Context::res_ctx(id, crate::database::enums::DbPermissionLevel::APPEND, true);
+        let service_account_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         tonic_internal!(
-            self.database_handler.delete_workspace(id).await,
+            // Deletes workspace and user
+            self.database_handler
+                .delete_workspace(id, service_account_id)
+                .await,
             "Internal error for DeleteWorkspaceRequest"
         );
 
@@ -132,27 +129,33 @@ impl WorkspaceService for WorkspaceServiceImpl {
         );
 
         // Check if user is valid
-        let user_ctx = Context::user_ctx(id, crate::database::enums::DbPermissionLevel::NONE);
-        let _user_id = tonic_auth!(
+        let user_ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![user_ctx])
                 .await,
             "Unauthorized"
         );
-        // Probably does not work, because new user is not assoiciated with workspace project
-        // TODO: Use request_token
+        // Check if token is valid and has permissions for workspace
         let res_ctx = Context::res_ctx(
             id,
-            crate::database::enums::DbPermissionLevel::APPEND, // Must be append, because
-            // workspaces are APPEND only for
-            // service accounts
-            false,
+            crate::database::enums::DbPermissionLevel::APPEND,
+            // Must be append, because workspaces
+            // are APPEND only for service accounts
+            true,
         );
         tonic_auth!(
             self.authorizer
                 .check_permissions(&request.token, vec![res_ctx])
                 .await,
             "Unauthorized"
+        );
+
+        tonic_internal!(
+            self.database_handler
+                .claim_workspace(request, user_id)
+                .await,
+            "Internal database error"
         );
 
         return Err(Status::unimplemented(
