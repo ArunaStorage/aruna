@@ -1,6 +1,5 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 
-
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;

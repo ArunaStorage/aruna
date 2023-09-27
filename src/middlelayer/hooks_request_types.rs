@@ -1,8 +1,6 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::{
-    ExternalHook, Hook, InternalHook, TriggerType,
-};
+use crate::database::dsls::hook_dsl::{ExternalHook, Hook, InternalHook, TriggerType};
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
 use anyhow::{anyhow, Result};
@@ -61,8 +59,7 @@ impl CreateHook {
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
-        self
-            .0
+        self.0
             .project_ids
             .iter()
             .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
