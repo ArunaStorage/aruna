@@ -1,5 +1,6 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use crate::utils::database_utils::create_multi_query;
+
+
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -16,7 +17,7 @@ pub struct Hook {
     pub id: DieselUlid,
     pub name: String,
     pub description: String,
-    pub project_id: DieselUlid,
+    pub project_ids: Vec<DieselUlid>,
     pub owner: DieselUlid,
     pub trigger_type: TriggerType,
     pub trigger_key: String,
@@ -77,8 +78,8 @@ pub struct BasicTemplate {
     pub secret: String,
     pub download: String,
     pub pubkey_serial: i32,
-    pub access_key: String,
-    pub secret_key: String,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,10 +96,25 @@ pub enum HookStatusVariant {
     ERROR(String),
 }
 
+#[derive(Clone, Debug, FromSql, FromRow)]
+pub struct HookWithAssociatedProject {
+    pub id: DieselUlid,
+    pub name: String,
+    pub description: String,
+    pub project_ids: Vec<DieselUlid>,
+    pub owner: DieselUlid,
+    pub trigger_type: TriggerType,
+    pub trigger_key: String,
+    pub trigger_value: String,
+    pub timeout: NaiveDateTime,
+    pub hook: Json<HookVariant>,
+    pub project_id: DieselUlid,
+}
+
 #[async_trait::async_trait]
 impl CrudDb for Hook {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO hooks (id, name, description, project_id, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
+        let query = "INSERT INTO hooks (id, name, description, project_ids, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
         ) RETURNING *;";
 
@@ -111,7 +127,7 @@ impl CrudDb for Hook {
                     &self.id,
                     &self.name,
                     &self.description,
-                    &self.project_id,
+                    &self.project_ids,
                     &self.owner,
                     &self.trigger_type,
                     &self.trigger_key,
@@ -151,9 +167,10 @@ impl CrudDb for Hook {
 }
 impl Hook {
     pub async fn list_hooks(project_id: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
-        let query = "SELECT * FROM hooks WHERE project_id = $1";
+        let ids = vec![project_id];
+        let query = "SELECT * FROM hooks WHERE $1 = ANY (project_ids)";
         let prepared = client.prepare(query).await?;
-        let rows = client.query(&prepared, &[project_id]).await?;
+        let rows = client.query(&prepared, &[&ids]).await?;
         Ok(rows.iter().map(Hook::from_row).collect::<Vec<_>>())
     }
     pub async fn list_owned(owner: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
@@ -171,7 +188,7 @@ impl Hook {
     pub async fn get_project_from_hook(
         hook_id: &DieselUlid,
         client: &Client,
-    ) -> Result<DieselUlid> {
+    ) -> Result<Vec<DieselUlid>> {
         let query = "SELECT * FROM hooks WHERE id = $1";
         let prepared = client.prepare(query).await?;
         let hook = client
@@ -179,25 +196,30 @@ impl Hook {
             .await?
             .map(|e| Hook::from_row(&e))
             .ok_or_else(|| anyhow!("Hook not found"))?;
-        Ok(hook.project_id)
+        Ok(hook.project_ids)
     }
     pub async fn get_hooks_for_projects(
         project_ids: &Vec<DieselUlid>,
         client: &Client,
-    ) -> Result<Vec<Hook>> {
-        let query_one = "SELECT * FROM hooks WHERE project_id IN";
-        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
-        for id in project_ids {
-            inserts.push(id);
-        }
-        let query_two = create_multi_query(&inserts);
-        let query = format!("{}{}", query_one, query_two);
+    ) -> Result<Vec<HookWithAssociatedProject>> {
+        let query = "SELECT q.id, q.name, q.description, q.project_id, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
+        (
+	        SELECT UNNEST(p_ids) 
+            INTERSECT 
+            SELECT UNNEST(arr)
+        ) AS project_id
+        FROM (
+            SELECT project_id AS p_ids, 
+            ARRAY$1::uuid[] AS arr, *
+            FROM hooks
+            ) q
+        WHERE p_ids && arr;".to_string();
         let prepared = client.prepare(&query).await?;
         let hooks = client
-            .query(&prepared, &inserts)
+            .query(&prepared, &[project_ids])
             .await?
             .iter()
-            .map(Hook::from_row)
+            .map(HookWithAssociatedProject::from_row)
             .collect();
         Ok(hooks)
     }

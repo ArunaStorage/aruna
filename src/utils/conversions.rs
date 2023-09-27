@@ -44,7 +44,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use serde_json::json;
+
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::MetadataMap;
@@ -1193,10 +1193,13 @@ impl From<Hook> for HookInfo {
     fn from(hook: Hook) -> HookInfo {
         let trigger = Some(hook.into_trigger());
         HookInfo {
+            name: hook.name.clone(),
+            description: hook.description.clone(),
             hook_id: hook.id.to_string(),
             hook: Some(hook.into_api_hook()),
             trigger,
             timeout: hook.timeout.timestamp_millis() as u64,
+            project_ids: hook.project_ids.iter().map(|id| id.to_string()).collect(),
         }
     }
 }
@@ -1250,17 +1253,10 @@ impl Hook {
                 }
             }
             crate::database::dsls::hook_dsl::HookVariant::External(external_hook) => {
-                let json_template = match &external_hook.template {
-                    crate::database::dsls::hook_dsl::TemplateVariant::Basic => json!({
-                        "hook_id": "ULID_PLACEHOLDER",
-                        "object": "RESOURCE_PLACEHOLDER",
-                        "secret": "SECRET_PLACEHOLDER",
-                        "download": "DONWLOAD_URL_PLACEHOLDER",
-                        "upload": "UPLOAD_URL_PLACEHOLDER"
-                    })
-                    .to_string(),
+                let custom_template = match &external_hook.template {
+                    crate::database::dsls::hook_dsl::TemplateVariant::Basic => None,
                     crate::database::dsls::hook_dsl::TemplateVariant::Custom(string) => {
-                        string.clone()
+                        Some(string.clone())
                     }
                 };
                 APIHook {
@@ -1270,8 +1266,9 @@ impl Hook {
                             .credentials
                             .clone()
                             .map(|c| Credentials { token: c.token }),
-                        json_template,
+                        custom_template,
                         method: (&external_hook.method).into(),
+                        result_object: None, //TODO: Remove from API
                     })),
                 }
             }

@@ -234,6 +234,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
+        is_service_account: bool,
     ) -> Result<(
         ObjectWithRelations,
         bool, // Creates revision
@@ -245,7 +246,8 @@ impl DatabaseHandler {
         let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (id, is_new, affected) = if request.name.is_some()
+        let (id, is_new, affected) = if request.force_revision
+            || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
         {
@@ -259,7 +261,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: user_id,
-                data_class: req.get_dataclass(old.clone())?,
+                data_class: req.get_dataclass(old.clone(), is_service_account)?,
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
                 key_values: Json(req.get_all_kvs(old.clone())?),
@@ -288,10 +290,10 @@ impl DatabaseHandler {
                 target_name: create_object.name.clone(),
             };
             new.push(version);
-            // Create all relations for new_object
-            InternalRelation::batch_create(&new, transaction_client).await?;
             // Delete all relations for old object
             InternalRelation::batch_delete(&delete, transaction_client).await?;
+            // Create all relations for new_object
+            InternalRelation::batch_create(&new, transaction_client).await?;
             // Add parent if updated
             if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(
@@ -321,7 +323,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: old.created_by,
-                data_class: req.get_dataclass(old.clone())?,
+                data_class: req.get_dataclass(old.clone(), is_service_account)?,
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
                 key_values: Json(req.get_add_keyvals(old.clone())?),

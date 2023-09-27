@@ -61,9 +61,9 @@ checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
 name = "aruna-rust-api"
-version = "2.0.0-beta.3"
+version = "2.0.0-beta.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4909b5553d3b149150c112502fa5da2887b8e7b070b4ab3268e674cd68d9cad2"
+checksum = "5e665f1e1ccb2bdc260c1e55445da56142ae134d7aa9044b8dc7ca5aa183202c"
 dependencies = [
  "prost",
  "prost-types",
