@@ -5,7 +5,7 @@ use aruna_rust_api::api::storage::{
     services::v2::{
         authorization_service_server::AuthorizationService, create_collection_request,
         user_service_server::UserService, CreateAuthorizationRequest, DeleteAuthorizationRequest,
-        GetAuthorizationsRequest, GetUserRequest, UserPermission,
+        GetAuthorizationsRequest, GetUserRequest, UpdateAuthorizationRequest, UserPermission,
     },
 };
 use aruna_server::database::{
@@ -287,6 +287,130 @@ async fn grpc_get_authorization() {
             )
         }
     }
+}
+
+#[tokio::test]
+async fn grpc_update_authorization() {
+    // Init gRPC services
+    let service_block = init_service_block().await;
+
+    // Create random project
+    let project =
+        fast_track_grpc_project_create(&service_block.project_service, ADMIN_OIDC_TOKEN).await;
+    let project_ulid = DieselUlid::from_str(&project.id).unwrap();
+
+    // Create ULID from user id
+    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let admin_ulid = DieselUlid::from_str(ADMIN_USER_ULID).unwrap();
+
+    // Update authorization with non-existing user
+    let mut inner_request = UpdateAuthorizationRequest {
+        resource_id: project.id.clone(),
+        user_id: DieselUlid::generate().to_string(),
+        permission_level: PermissionLevel::Read as i32,
+    };
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = service_block
+        .auth_service
+        .update_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Update authorization to non-existing resource
+    inner_request.resource_id = DieselUlid::generate().to_string();
+    inner_request.user_id = admin_ulid.to_string();
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+
+    let response = service_block
+        .auth_service
+        .update_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Update authorization without token
+    inner_request.resource_id = project_ulid.to_string();
+
+    let grpc_request = tonic::Request::new(inner_request.clone());
+
+    let response = service_block
+        .auth_service
+        .update_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Update authorization without sufficient permissions
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let response = service_block
+        .auth_service
+        .update_authorization(grpc_request)
+        .await;
+
+    assert!(response.is_err());
+
+    // Update authorization with sufficient permissions
+    fast_track_grpc_permission_add(
+        &service_block.auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &DieselUlid::from_str(&project.id).unwrap(),
+        DbPermissionLevel::ADMIN,
+    )
+    .await;
+
+    let user = service_block.cache.get_user(&user_ulid).unwrap();
+    assert_eq!(
+        user.attributes
+            .0
+            .permissions
+            .get(&DieselUlid::from_str(&project.id).unwrap())
+            .unwrap()
+            .value(),
+        &ObjectMapping::PROJECT(DbPermissionLevel::ADMIN)
+    );
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let authorization = service_block
+        .auth_service
+        .update_authorization(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .user_permission
+        .unwrap();
+
+    let admin_user = service_block.cache.get_user(&admin_ulid).unwrap();
+    assert_eq!(
+        authorization,
+        UserPermission {
+            user_id: admin_ulid.to_string(),
+            user_name: admin_user.display_name,
+            permission_level: PermissionLevel::Read as i32
+        }
+    );
+
+    assert!(admin_user
+        .attributes
+        .0
+        .permissions
+        .contains_key(&project_ulid));
+    assert_eq!(
+        admin_user
+            .attributes
+            .0
+            .permissions
+            .get(&project_ulid)
+            .unwrap()
+            .value(),
+        &ObjectMapping::PROJECT(DbPermissionLevel::READ)
+    );
 }
 
 #[tokio::test]
