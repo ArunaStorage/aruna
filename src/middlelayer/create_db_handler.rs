@@ -85,6 +85,7 @@ impl DatabaseHandler {
                     target_name: object.name.to_string(),
                 };
                 let result = ir.create(transaction_client).await;
+
                 if result.is_err() && is_dataproxy {
                     dbg!(&result);
                     dbg!(&is_dataproxy);
@@ -126,31 +127,6 @@ impl DatabaseHandler {
         };
         transaction.commit().await?;
 
-        // If created resource has parent emit notification for updated parent
-        if let Some(parent) = request.get_parent() {
-            if let Some(parent_plus) = self.cache.get_object(&parent.get_id()?) {
-                let parent_hierachies =
-                    parent_plus.object.fetch_object_hierarchies(&client).await?;
-
-                // Try to emit object created notification(s)
-                if let Err(err) = self
-                    .natsio_handler
-                    .register_resource_event(
-                        &parent_plus,
-                        parent_hierachies,
-                        EventVariant::Updated,
-                        Some(&DieselUlid::generate()), // block_id for deduplication
-                    )
-                    .await
-                {
-                    // Log error and return
-                    log::error!("{}", err);
-                    //transaction.rollback().await?;
-                    return Err(anyhow::anyhow!("Notification emission failed: {err}"));
-                }
-            }
-        }
-
         // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {
             object: object.clone(),
@@ -159,13 +135,15 @@ impl DatabaseHandler {
             outbound: Json(DashMap::default()),
             outbound_belongs_to: Json(DashMap::default()),
         };
+
+        // Update cache
         self.cache.add_object(owr.clone());
-        if let Some(p) = parent {
+        if let Some(p) = &parent {
             self.cache.upsert_object(&p.object.id, p.clone());
         };
+
         // Trigger hooks
         if object.object_type != ObjectType::PROJECT {
-            dbg!("Reached trigger");
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
@@ -177,6 +155,29 @@ impl DatabaseHandler {
                     .await
             });
         };
+
+        // If created resource has parent emit notification for updated parent
+        if let Some(parent_plus) = parent {
+            let parent_hierachies = parent_plus.object.fetch_object_hierarchies(&client).await?;
+
+            // Try to emit object created notification(s)
+            if let Err(err) = self
+                .natsio_handler
+                .register_resource_event(
+                    &parent_plus,
+                    parent_hierachies,
+                    EventVariant::Updated,
+                    Some(&DieselUlid::generate()), // block_id for deduplication
+                )
+                .await
+            {
+                // Log error and return
+                log::error!("{}", err);
+                //transaction.rollback().await?;
+                return Err(anyhow::anyhow!("Notification emission failed: {err}"));
+            }
+        }
+
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
 
