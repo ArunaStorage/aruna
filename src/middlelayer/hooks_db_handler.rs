@@ -337,7 +337,6 @@ impl DatabaseHandler {
                     dbg!("Trigger token: {:?}", &append_only_token);
                     let token_id = self.create_hook_token(&user_id, append_only_token).await?;
                     dbg!("Trigger token id: {:?}", &token_id);
-                   
 
                     // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
@@ -370,7 +369,6 @@ impl DatabaseHandler {
                         }
                     };
                     // Put everything into template
-                    
                     match template {
                         TemplateVariant::Basic => {
                             let json = serde_json::to_string(&BasicTemplate {
