@@ -184,6 +184,18 @@ impl Hook {
         client.execute(&prepared, &[hook_id]).await?;
         Ok(())
     }
+    pub async fn add_projects_to_hook(
+        projects: &Vec<DieselUlid>,
+        hook_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE hooks
+        SET project_ids = project_ids || $1::uuid[]
+        WHERE id = $2;";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[projects, hook_id]).await?;
+        Ok(())
+    }
     pub async fn get_project_from_hook(
         hook_id: &DieselUlid,
         client: &Client,
@@ -197,11 +209,12 @@ impl Hook {
             .ok_or_else(|| anyhow!("Hook not found"))?;
         Ok(hook.project_ids)
     }
+
     pub async fn get_hooks_for_projects(
         project_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<HookWithAssociatedProject>> {
-        let query = 
+        let query =
         "SELECT 
             q.id, q.name, q.description, q.project_ids, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
             (

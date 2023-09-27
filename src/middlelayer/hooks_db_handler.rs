@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
-    TemplateVariant, TriggerType, HookWithAssociatedProject,
+    HookWithAssociatedProject, TemplateVariant, TriggerType,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
@@ -14,13 +14,14 @@ use crate::middlelayer::hooks_request_types::{Callback, CreateHook, CustomTempla
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
 use anyhow::{anyhow, Result};
 
+use crate::middlelayer::hooks_request_types::ListBy;
+use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookRequest;
 use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::middlelayer::hooks_request_types::ListBy;
 
 impl DatabaseHandler {
     pub async fn create_hook(&self, request: CreateHook, user_id: &DieselUlid) -> Result<Hook> {
@@ -32,15 +33,12 @@ impl DatabaseHandler {
     pub async fn list_hook(&self, request: ListBy) -> Result<Vec<Hook>> {
         let client = self.database.get_client().await?;
         let hooks = match request {
-        ListBy::PROJECT(_) => {
-            let project_id = request.get_id()?;
-            
-            Hook::list_hooks(&project_id, &client).await?
-        }, 
-        ListBy::OWNER(id) => {
-            
-            Hook::list_owned(&id, &client).await?
-        }
+            ListBy::PROJECT(_) => {
+                let project_id = request.get_id()?;
+
+                Hook::list_hooks(&project_id, &client).await?
+            }
+            ListBy::OWNER(id) => Hook::list_owned(&id, &client).await?,
         };
         Ok(hooks)
     }
@@ -53,6 +51,18 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let project_ids = Hook::get_project_from_hook(hook_id, &client).await?;
         Ok(project_ids)
+    }
+
+    pub async fn append_project_to_hook(&self, request: AddProjectsToHookRequest) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let projects = request
+            .project_ids
+            .iter()
+            .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid project id")))
+            .collect::<Result<Vec<_>>>()?;
+        let hook_id = DieselUlid::from_str(&request.hook_id)?;
+        Hook::add_projects_to_hook(&projects, &hook_id, &client).await?;
+        Ok(())
     }
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
         // Parsing
@@ -82,31 +92,39 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
 
         match request.0.status {
-            Some(aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Finished(req)) => {
-            let (add, rm) = Callback::get_keyvals(req)?;
-            // Adding kvs from callback
-            if !add.0.is_empty() {
-                for kv in add.0 {
-                    Object::add_key_value(&object_id, transaction_client, kv).await?;
-                }
-            }
-            // Removing kvs from callback
-            if !rm.0.is_empty() {
-                for kv in rm.0 {
-                    if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
-                        object.remove_key_value(transaction_client, kv).await?;
-                    } else {
-                        return Err(anyhow!("Cannot remove static labels."));
+            Some(
+                aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Finished(
+                    req,
+                ),
+            ) => {
+                let (add, rm) = Callback::get_keyvals(req)?;
+                // Adding kvs from callback
+                if !add.0.is_empty() {
+                    for kv in add.0 {
+                        Object::add_key_value(&object_id, transaction_client, kv).await?;
                     }
                 }
-            }
+                // Removing kvs from callback
+                if !rm.0.is_empty() {
+                    for kv in rm.0 {
+                        if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                            object.remove_key_value(transaction_client, kv).await?;
+                        } else {
+                            return Err(anyhow!("Cannot remove static labels."));
+                        }
+                    }
+                }
 
-            value.status = HookStatusVariant::FINISHED;
-            },
-            Some(aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Error(aruna_rust_api::api::hooks::services::v2::Error{error})) => {
+                value.status = HookStatusVariant::FINISHED;
+            }
+            Some(
+                aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Error(
+                    aruna_rust_api::api::hooks::services::v2::Error { error },
+                ),
+            ) => {
                 value.status = HookStatusVariant::ERROR(error);
-            },
-            None => return Err(anyhow!("No status provided"))
+            }
+            None => return Err(anyhow!("No status provided")),
         };
         // Update status
         let kvs = object
@@ -164,11 +182,12 @@ impl DatabaseHandler {
             );
         }
         dbg!("Projects = {:?}", &projects);
-        let hooks: Vec<HookWithAssociatedProject> = Hook::get_hooks_for_projects(&projects, &client)
-            .await?
-            .into_iter()
-            .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
-            .collect();
+        let hooks: Vec<HookWithAssociatedProject> =
+            Hook::get_hooks_for_projects(&projects, &client)
+                .await?
+                .into_iter()
+                .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
+                .collect();
 
         if hooks.is_empty() {
             Ok(())
@@ -206,10 +225,11 @@ impl DatabaseHandler {
             keyvals.into_iter().map(|k| (k.key, k.value)).collect();
         dbg!("KEYVALS: {:?}", &keyvals);
         let client = self.database.get_client().await?;
-        let hooks: Vec<HookWithAssociatedProject> = Hook::get_hooks_for_projects(&projects, &client)
-            .await?;
+        let hooks: Vec<HookWithAssociatedProject> =
+            Hook::get_hooks_for_projects(&projects, &client).await?;
         dbg!("UNFILTERED: {:?}", &hooks);
-        let hooks: Vec<HookWithAssociatedProject> = hooks.into_iter()
+        let hooks: Vec<HookWithAssociatedProject> = hooks
+            .into_iter()
             .filter_map(|h| {
                 if h.trigger_type == TriggerType::HOOK_ADDED {
                     if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
@@ -339,7 +359,6 @@ impl DatabaseHandler {
                     dbg!("Trigger token: {:?}", &append_only_token);
                     let token_id = self.create_hook_token(&user_id, append_only_token).await?;
                     dbg!("Trigger token id: {:?}", &token_id);
-                   
 
                     // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
@@ -372,7 +391,7 @@ impl DatabaseHandler {
                         }
                     };
                     // Put everything into template
-                    
+
                     match template {
                         TemplateVariant::Basic => {
                             let json = serde_json::to_string(&BasicTemplate {
