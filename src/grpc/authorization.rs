@@ -8,7 +8,7 @@ use aruna_rust_api::api::storage::services::v2::authorization_service_server::Au
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,
     DeleteAuthorizationResponse, GetAuthorizationsRequest, GetAuthorizationsResponse,
-    ResourceAuthorization, UpdateAuthorizationRequest, UpdateAuthorizationResponse,
+    ResourceAuthorization, UpdateAuthorizationRequest, UpdateAuthorizationResponse, UserPermission,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -233,20 +233,24 @@ impl AuthorizationService for AuthorizationServiceImpl {
             .ok_or_else(|| tonic::Status::not_found("Object does not exist"))?
             .into_object_mapping::<DbPermissionLevel>(permission_level);
 
-        // Remove resource permission from user
+        // Update resource permission of user
         let user = tonic_internal!(
             self.database_handler
                 .update_permission_from_user(user_id, resource_id, permission)
                 .await,
-            "Permission removal failed"
+            "Permission update failed"
         );
 
         // Update local cache
-        self.cache.update_user(&user.id.clone(), user);
+        self.cache.update_user(&user.id.clone(), user.clone());
 
         // Return found authorizations
         let response = UpdateAuthorizationResponse {
-            user_permission: None,
+            user_permission: Some(UserPermission {
+                user_id: user_id.to_string(),
+                user_name: user.display_name,
+                permission_level: inner_request.permission_level,
+            }),
         };
         return_with_log!(response);
     }
