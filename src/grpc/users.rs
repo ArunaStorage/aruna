@@ -471,17 +471,16 @@ impl UserService for UserServiceImpl {
             .get_user(&user_id)
             .ok_or_else(|| tonic::Status::not_found("User not found"))?;
         // Service accounts are not allowed to get additional trusted endpoints
-        if user.attributes.0.service_account {
-            if !user
+        if user.attributes.0.service_account
+            && !user
                 .attributes
                 .0
                 .trusted_endpoints
                 .contains_key(&endpoint_ulid)
-            {
-                return Err(tonic::Status::unauthenticated(
-                    "Service accounts are not allowed to add non-predefined endpoints",
-                ));
-            }
+        {
+            return Err(tonic::Status::unauthenticated(
+                "Service accounts are not allowed to add non-predefined endpoints",
+            ));
         }
 
         // Fetch endpoint from cache/database

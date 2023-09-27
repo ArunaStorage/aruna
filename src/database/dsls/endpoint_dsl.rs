@@ -1,11 +1,10 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use crate::database::enums::{DataProxyFeature, EndpointStatus, EndpointVariant};
-use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_from_row::FromRow;
-use postgres_types::{Json, ToSql};
+use postgres_types::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tokio_postgres::Client;
