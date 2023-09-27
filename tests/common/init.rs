@@ -124,12 +124,13 @@ pub async fn init_database_handler_middlelayer() -> DatabaseHandler {
 pub async fn init_database_handler(
     db_conn: Arc<Database>,
     nats_handler: Arc<NatsIoHandler>,
+    cache: Arc<Cache>,
 ) -> Arc<DatabaseHandler> {
     // Init DatabaseHandler
     Arc::new(DatabaseHandler {
-        database: db_conn.clone(),
+        database: db_conn,
         natsio_handler: nats_handler,
-        cache: init_cache(db_conn, true).await,
+        cache,
     })
 }
 
@@ -192,7 +193,8 @@ pub async fn init_project_service() -> ProjectServiceImpl {
     let nats_client = init_nats_client().await;
 
     // Init DatabaseHandler
-    let database_handler = init_database_handler(db_conn.clone(), nats_client.clone()).await;
+    let database_handler =
+        init_database_handler(db_conn.clone(), nats_client.clone(), cache.clone()).await;
 
     // Init project service
     ProjectServiceImpl::new(
@@ -294,8 +296,8 @@ pub async fn init_grpc_services() -> (
     // Init internal components
     let db = init_database().await;
     let nats = init_nats_client().await;
-    let db_handler = init_database_handler(db.clone(), nats).await;
     let cache = init_cache(db.clone(), true).await;
+    let db_handler = init_database_handler(db.clone(), nats, cache.clone()).await;
     let token_handler = init_token_handler(db.clone(), cache.clone()).await;
     let auth = init_permission_handler(cache.clone(), token_handler).await;
     let search = init_search_client().await;
@@ -341,8 +343,9 @@ pub async fn init_service_block() -> ServiceBlock {
     // Init internal components
     let db_conn = init_database().await;
     let nats_handler = init_nats_client().await;
-    let db_handler = init_database_handler(db_conn.clone(), nats_handler.clone()).await;
     let cache = init_cache(db_conn.clone(), true).await;
+    let db_handler =
+        init_database_handler(db_conn.clone(), nats_handler.clone(), cache.clone()).await;
     let token_handler = init_token_handler(db_conn.clone(), cache.clone()).await;
     let auth_handler = init_permission_handler(cache.clone(), token_handler.clone()).await;
     let search_handler = init_search_client().await;
