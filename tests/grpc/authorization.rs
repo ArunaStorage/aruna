@@ -3,8 +3,9 @@ use std::str::FromStr;
 use aruna_rust_api::api::storage::{
     models::v2::{permission::ResourceId, Permission, PermissionLevel},
     services::v2::{
-        authorization_service_server::AuthorizationService, user_service_server::UserService,
-        CreateAuthorizationRequest, GetAuthorizationsRequest, GetUserRequest, UserPermission,
+        authorization_service_server::AuthorizationService, create_collection_request,
+        user_service_server::UserService, CreateAuthorizationRequest, GetAuthorizationsRequest,
+        GetUserRequest, UserPermission,
     },
 };
 use aruna_server::database::{
@@ -17,8 +18,9 @@ use diesel_ulid::DieselUlid;
 use crate::common::{
     init::init_service_block,
     test_utils::{
-        add_token, fast_track_grpc_permission_add, fast_track_grpc_project_create,
-        ADMIN_OIDC_TOKEN, ADMIN_USER_ULID, GENERIC_USER_ULID, USER_OIDC_TOKEN,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_permission_add,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, ADMIN_USER_ULID, GENERIC_USER_ULID,
+        USER_OIDC_TOKEN,
     },
 };
 
@@ -229,8 +231,62 @@ async fn grpc_get_authorization() {
         permission_level: PermissionLevel::Admin as i32,
     }));
 
-    //ToDo: Get authorization of resource and its subresources
-    //inner_request.recursive = true;
+    // Get authorization of resource and its subresources
+    inner_request.recursive = true;
+
+    let collection = fast_track_grpc_collection_create(
+        &service_block.collection_service,
+        USER_OIDC_TOKEN,
+        create_collection_request::Parent::ProjectId(project_ulid.to_string()),
+    )
+    .await;
+
+    // Add separate
+    fast_track_grpc_permission_add(
+        &service_block.auth_service,
+        ADMIN_OIDC_TOKEN,
+        &user_ulid,
+        &DieselUlid::from_str(&collection.id).unwrap(),
+        DbPermissionLevel::READ,
+    )
+    .await;
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+
+    let authorizations = service_block
+        .auth_service
+        .get_authorizations(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .authorizations;
+
+    assert_eq!(authorizations.len(), 2);
+    for authorization in authorizations {
+        if authorization.resource_id == project_ulid.to_string() {
+            assert!(authorization.user_permission.contains(&UserPermission {
+                user_id: GENERIC_USER_ULID.to_string(),
+                user_name: "test-user".to_string(),
+                permission_level: PermissionLevel::Admin as i32,
+            }));
+            assert!(authorization.user_permission.contains(&UserPermission {
+                user_id: ADMIN_USER_ULID.to_string(),
+                user_name: "test-admin".to_string(),
+                permission_level: PermissionLevel::Admin as i32,
+            }));
+        } else if authorization.resource_id == collection.id {
+            assert!(authorization.user_permission.contains(&UserPermission {
+                user_id: GENERIC_USER_ULID.to_string(),
+                user_name: "test-user".to_string(),
+                permission_level: PermissionLevel::Read as i32,
+            }));
+        } else {
+            panic!(
+                "Authorizations should not contain this id {}",
+                authorization.resource_id
+            )
+        }
+    }
 }
 
 #[tokio::test]
