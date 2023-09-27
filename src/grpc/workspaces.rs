@@ -54,7 +54,6 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Invalid request"
         );
 
-        // TODO: Change name into id
         let response = CreateWorkspaceTemplateResponse { template_id };
         return_with_log!(response);
     }

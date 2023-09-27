@@ -1,10 +1,11 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use crate::database::enums::{DataProxyFeature, EndpointStatus, EndpointVariant};
+use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_from_row::FromRow;
-use postgres_types::Json;
+use postgres_types::{Json, ToSql};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tokio_postgres::Client;
@@ -89,7 +90,6 @@ impl Endpoint {
             .await?
             .map(|e| Endpoint::from_row(&e)))
     }
-
     pub async fn delete_by_id(id: &DieselUlid, client: &Client) -> Result<()> {
         let query = "DELETE FROM endpoints WHERE id = $1;";
         let prepared = client.prepare(query).await?;

@@ -36,21 +36,31 @@ impl DatabaseHandler {
     ) -> Result<(DieselUlid, String, String, String)> // (ProjectID, Token, AccessKey, SecretKey)
     {
         let mut client = self.database.get_client().await?;
-        let endpoint_id = DieselUlid::from_str(&endpoint)?;
-        let endpoint = Endpoint::get(endpoint_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("Endpoint not found"))?;
+
         let template = WorkspaceTemplate::get_by_name(request.get_name(), &client)
             .await?
             .ok_or_else(|| anyhow!("WorkspaceTemplate not found"))?;
 
+        // If no endpoint configured for template -> default endpoint
+        // else if configured
+        //      -> ServiceAccount gets all endpoints as trusted
+        //      -> Project gets all endpoints
+        //      -> S3 creds are returned for first endpoint in list
+        let mut endpoints = template.endpoint_ids.0.clone();
+        if template.endpoint_ids.0.is_empty() {
+            let default_ep = DieselUlid::from_str(&endpoint)?;
+            endpoints.push(default_ep);
+        }
+        let default = Endpoint::get(endpoints[0], &client)
+            .await?
+            .ok_or_else(|| anyhow!("Default endpoint not found"))?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let mut workspace = CreateWorkspace::make_project(template, endpoint_id);
+        let mut workspace = CreateWorkspace::make_project(template, endpoints.clone());
 
         workspace.create(transaction_client).await?;
         // Create service account
-        let user = CreateWorkspace::create_service_account(endpoint_id, workspace.id);
+        let user = CreateWorkspace::create_service_account(endpoints, workspace.id);
         // Create token
         let (token_ulid, token) = self
             .create_token(
@@ -78,7 +88,7 @@ impl DatabaseHandler {
             &user.id,
             Some(token_ulid.to_string()),
             Some(Intent {
-                target: endpoint_id,
+                target: default.id,
                 action: Action::CreateSecrets,
             }),
         )?;
@@ -93,7 +103,7 @@ impl DatabaseHandler {
                 access_key,
                 secret_key,
             },
-        ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, None, endpoint).await?;
+        ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, None, default).await?;
 
         Ok((workspace.id, access_key, secret_key, token_secret))
     }

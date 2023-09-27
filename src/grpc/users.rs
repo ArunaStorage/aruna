@@ -466,6 +466,23 @@ impl UserService for UserServiceImpl {
             DieselUlid::from_str(&inner_request.endpoint_id),
             "Invalid endpoint id format"
         );
+        let user = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| tonic::Status::not_found("User not found"))?;
+        // Service accounts are not allowed to get additional trusted endpoints
+        if user.attributes.0.service_account {
+            if !user
+                .attributes
+                .0
+                .trusted_endpoints
+                .contains_key(&endpoint_ulid)
+            {
+                return Err(tonic::Status::unauthenticated(
+                    "Service accounts are not allowed to add non-predefined endpoints",
+                ));
+            }
+        }
 
         // Fetch endpoint from cache/database
         let endpoint = tonic_invalid!(
