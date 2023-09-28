@@ -203,7 +203,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
     description VARCHAR(1023) NOT NULL,
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
     prefix VARCHAR(511) NOT NULL,
-    key_values JSONB NOT NULL,
+    hook_ids JSONB,
+    endpoint_ids JSONB,
     UNIQUE(name)
 );
 

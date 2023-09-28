@@ -20,7 +20,7 @@ pub struct WorkspaceTemplate {
 impl CrudDb for WorkspaceTemplate {
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO workspaces (id, name, description, owner, prefix, hook_ids, endpoint_ids ) VALUES (
-            $1, $2, $3, $4, $5
+            $1, $2, $3, $4, $5, $6, $7
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
