@@ -48,9 +48,14 @@ impl ProjectService for ProjectServiceImpl {
             "Token authentication error"
         );
 
+        let ctx = Context {
+            allow_service_account: false,
+            ..Default::default()
+        };
+
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![Context::default()])
+                .check_permissions_verbose(&token, vec![ctx])
                 .await,
             "Unauthorized"
         );
@@ -173,7 +178,7 @@ impl ProjectService for ProjectServiceImpl {
         let request = DeleteRequest::Project(request.into_inner());
         let id = tonic_invalid!(request.get_id(), "Invalid project id");
 
-        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, true);
+        let ctx = Context::res_ctx(id, DbPermissionLevel::ADMIN, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -210,7 +215,7 @@ impl ProjectService for ProjectServiceImpl {
 
         let request = NameUpdate::Project(request.into_inner());
         let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -340,7 +345,8 @@ impl ProjectService for ProjectServiceImpl {
 
         let request = DataClassUpdate::Project(request.into_inner());
         let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
+        // Project dataclass cannot be changed by service accounts/ non-admins
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -382,7 +388,7 @@ impl ProjectService for ProjectServiceImpl {
 
         let request = SnapshotRequest::Project(request.into_inner());
         let project_id = tonic_invalid!(request.get_id(), "Invalid project id.");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, true);
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::ADMIN, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,

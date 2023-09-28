@@ -163,10 +163,18 @@ impl UpdateObject {
             None => old.name,
         }
     }
-    pub fn get_dataclass(&self, old: Object) -> Result<DataClass> {
+    pub fn get_dataclass(&self, old: Object, is_service_account: bool) -> Result<DataClass> {
         let new = self.0.data_class;
-        let old: i32 = old.data_class.into();
-        if old < new {
+        let old_converted: i32 = old.data_class.clone().into();
+        if is_service_account {
+            if (new != 0) || (new != 4) {
+                return Err(anyhow!("Workspaces need to be claimed for status updates"));
+            } else {
+                return Ok(DataClass::WORKSPACE);
+            }
+        } else if new == 0 {
+            return Ok(old.data_class);
+        } else if old_converted < new {
             return Err(anyhow!("Dataclass can only be relaxed."));
         }
         new.try_into()

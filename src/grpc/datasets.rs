@@ -60,6 +60,19 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
+        let is_service_account = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| tonic::Status::not_found("User not found"))?
+            .attributes
+            .0
+            .service_account;
+        if is_service_account && (request.get_data_class() != 4) {
+            return Err(tonic::Status::invalid_argument(
+                "Workspaces have to be claimed for dataclass changes",
+            ));
+        }
+
         let (dataset, _) = tonic_internal!(
             self.database_handler
                 .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
@@ -343,7 +356,8 @@ impl DatasetService for DatasetServiceImpl {
 
         let request = DataClassUpdate::Dataset(request.into_inner());
         let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
-        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
+        // Dataclass can only be set by non-serivceaccounts
+        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,

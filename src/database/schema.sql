@@ -7,7 +7,7 @@ BEGIN
             'INITIALIZING',
             'VALIDATING',
             'AVAILABLE',
-	        'UNAVAILABLE',
+	    'UNAVAILABLE',
             'ERROR',
             'DELETED'
         );
@@ -157,8 +157,8 @@ CREATE TABLE IF NOT EXISTS internal_relations (
     target_name VARCHAR(511) NOT NULL,
     FOREIGN KEY (origin_pid, origin_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
     FOREIGN KEY (target_pid, target_type) REFERENCES objects(id, object_type) ON DELETE CASCADE,
-    UNIQUE(origin_pid, relation_name, target_pid),
-    UNIQUE(origin_pid, relation_name, target_name)
+    UNIQUE(origin_pid, relation_name, target_pid)
+    --UNIQUE(origin_pid, relation_name, target_name)
 );
 
 CREATE INDEX IF NOT EXISTS origin_pid_idx ON internal_relations (origin_pid);
@@ -180,17 +180,34 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
     config JSONB NOT NULL
 );
 
-/* ----- Hook Service -------------------------------------- */
--- Table for the hook service to persist hooks 
+/* ----- Hooks -------------------------------------- */
+-- Table for persisting hooks 
 CREATE TABLE IF NOT EXISTS hooks (
     id UUID PRIMARY KEY NOT NULL,
     name VARCHAR(511) NOT NULL,
     description VARCHAR(1023) NOT NULL,
-    project_id UUID REFERENCES objects(id) ON DELETE CASCADE,
+    project_ids UUID[],
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
     trigger_type "TriggerType" NOT NULL,
     trigger_key VARCHAR(511) NOT NULL,
     trigger_value VARCHAR(511) NOT NULL,
-    timeout TIMESTAMP NOT NULL, -- needs a sane default
-    hook JSONB NOT NULL -- can either be a internal or external hook with configs
+    timeout TIMESTAMP NOT NULL,
+    hook JSONB NOT NULL
+);
+
+/* ----- Workspaces -------------------------------------- */
+-- Table for workspace templates
+CREATE TABLE IF NOT EXISTS workspaces (
+    id UUID PRIMARY KEY NOT NULL,
+    name VARCHAR(511) NOT NULL,
+    description VARCHAR(1023) NOT NULL,
+    owner UUID REFERENCES users(id) ON DELETE CASCADE,
+    prefix VARCHAR(511) NOT NULL,
+    key_values JSONB NOT NULL,
+    UNIQUE(name)
 )
+
+-- Insert predefined relation types
+-- INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY');
+-- Create partial unique index for BELONGS_TO relations only
+-- CREATE UNIQUE INDEX belongs_to ON internal_relations (origin_pid, relation_name, target_name) WHERE relation_name = ('BELONGS_TO')

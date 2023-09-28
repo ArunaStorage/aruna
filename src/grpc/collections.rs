@@ -61,6 +61,19 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
+        let is_service_account = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| tonic::Status::not_found("User not found"))?
+            .attributes
+            .0
+            .service_account;
+        if is_service_account && (request.get_data_class() != 4) {
+            return Err(tonic::Status::invalid_argument(
+                "Workspaces have to be claimed for dataclass changes",
+            ));
+        }
+
         let (collection, _) = tonic_internal!(
             self.database_handler
                 .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy,)
@@ -343,7 +356,8 @@ impl CollectionService for CollectionServiceImpl {
 
         let request = DataClassUpdate::Collection(request.into_inner());
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
+        // Dataclass can only be changed by non-servcieaccounts
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,

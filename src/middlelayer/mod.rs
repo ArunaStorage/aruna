@@ -21,3 +21,5 @@ pub mod update_db_handler;
 pub mod update_request_types;
 pub mod user_db_handler;
 pub mod user_request_types;
+pub mod workspace_db_handler;
+pub mod workspace_request_types;

@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
-    TemplateVariant, TriggerType,
+    HookWithAssociatedProject, TemplateVariant, TriggerType,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::object_dsl::Object;
@@ -13,7 +13,8 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::{Callback, CreateHook, CustomTemplate};
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::hooks::services::v2::ListHooksRequest;
+
+use crate::middlelayer::hooks_request_types::ListBy;
 use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
@@ -28,10 +29,16 @@ impl DatabaseHandler {
         hook.create(&client).await?;
         Ok(hook)
     }
-    pub async fn list_hook(&self, request: ListHooksRequest) -> Result<Vec<Hook>> {
+    pub async fn list_hook(&self, request: ListBy) -> Result<Vec<Hook>> {
         let client = self.database.get_client().await?;
-        let project_id = DieselUlid::from_str(&request.project_id)?;
-        let hooks = Hook::list_hooks(&project_id, &client).await?;
+        let hooks = match request {
+            ListBy::PROJECT(_) => {
+                let project_id = request.get_id()?;
+
+                Hook::list_hooks(&project_id, &client).await?
+            }
+            ListBy::OWNER(id) => Hook::list_owned(&id, &client).await?,
+        };
         Ok(hooks)
     }
     pub async fn delete_hook(&self, hook_id: DieselUlid) -> Result<()> {
@@ -39,18 +46,15 @@ impl DatabaseHandler {
         Hook::delete_by_id(&hook_id, &client).await?;
         Ok(())
     }
-    pub async fn get_project_by_hook(&self, hook_id: &DieselUlid) -> Result<DieselUlid> {
+    pub async fn get_project_by_hook(&self, hook_id: &DieselUlid) -> Result<Vec<DieselUlid>> {
         let client = self.database.get_client().await?;
-        let project_id = Hook::get_project_from_hook(hook_id, &client).await?;
-        Ok(project_id)
+        let project_ids = Hook::get_project_from_hook(hook_id, &client).await?;
+        Ok(project_ids)
     }
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
         // Parsing
         let (_, object_id) = request.get_ids()?;
-        let (add_kvs, rm_kvs) = request.get_keyvals()?;
         dbg!(&object_id);
-        dbg!(&add_kvs);
-        dbg!(&rm_kvs);
 
         // Client creation
         let mut client = self.database.get_client().await?;
@@ -74,29 +78,41 @@ impl DatabaseHandler {
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
 
-        // TODO: Wait for API change and match status
-        if request.0.success {
-            // Adding kvs from callback
-            if !add_kvs.0.is_empty() {
-                for kv in add_kvs.0 {
-                    Object::add_key_value(&object_id, transaction_client, kv).await?;
-                }
-            }
-            // Removing kvs from callback
-            if !rm_kvs.0.is_empty() {
-                for kv in rm_kvs.0 {
-                    if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
-                        object.remove_key_value(transaction_client, kv).await?;
-                    } else {
-                        return Err(anyhow!("Cannot remove static labels."));
+        match request.0.status {
+            Some(
+                aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Finished(
+                    req,
+                ),
+            ) => {
+                let (add, rm) = Callback::get_keyvals(req)?;
+                // Adding kvs from callback
+                if !add.0.is_empty() {
+                    for kv in add.0 {
+                        Object::add_key_value(&object_id, transaction_client, kv).await?;
                     }
                 }
-            }
+                // Removing kvs from callback
+                if !rm.0.is_empty() {
+                    for kv in rm.0 {
+                        if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                            object.remove_key_value(transaction_client, kv).await?;
+                        } else {
+                            return Err(anyhow!("Cannot remove static labels."));
+                        }
+                    }
+                }
 
-            value.status = HookStatusVariant::FINISHED;
-        } else {
-            value.status = HookStatusVariant::ERROR("TODO".to_string()); // TODO: Error API side
-        }
+                value.status = HookStatusVariant::FINISHED;
+            }
+            Some(
+                aruna_rust_api::api::hooks::services::v2::hook_callback_request::Status::Error(
+                    aruna_rust_api::api::hooks::services::v2::Error { error },
+                ),
+            ) => {
+                value.status = HookStatusVariant::ERROR(error);
+            }
+            None => return Err(anyhow!("No status provided")),
+        };
         // Update status
         let kvs = object
             .key_values
@@ -153,11 +169,12 @@ impl DatabaseHandler {
             );
         }
         dbg!("Projects = {:?}", &projects);
-        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
-            .await?
-            .into_iter()
-            .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
-            .collect();
+        let hooks: Vec<HookWithAssociatedProject> =
+            Hook::get_hooks_for_projects(&projects, &client)
+                .await?
+                .into_iter()
+                .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
+                .collect();
 
         if hooks.is_empty() {
             Ok(())
@@ -195,21 +212,22 @@ impl DatabaseHandler {
         let keyvals: Vec<(String, String)> =
             keyvals.into_iter().map(|k| (k.key, k.value)).collect();
         dbg!("KEYVALS: {:?}", &keyvals);
-        let hooks: Vec<Hook> = Hook::get_hooks_for_projects(&projects, &client)
-            .await?
-            .into_iter()
-            .filter_map(|h| {
-                if h.trigger_type == TriggerType::HOOK_ADDED {
-                    if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
-                        Some(h)
+        let hooks: Vec<HookWithAssociatedProject> =
+            Hook::get_hooks_for_projects(&projects, &client)
+                .await?
+                .into_iter()
+                .filter_map(|h| {
+                    if h.trigger_type == TriggerType::HOOK_ADDED {
+                        if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
+                            Some(h)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })
-            .collect();
+                })
+                .collect();
         if hooks.is_empty() {
             Ok(())
         } else {
@@ -222,7 +240,7 @@ impl DatabaseHandler {
     async fn hook_action(
         &self,
         authorizer: Arc<PermissionHandler>,
-        hooks: Vec<Hook>,
+        hooks: Vec<HookWithAssociatedProject>,
         object_id: DieselUlid,
         user_id: DieselUlid,
     ) -> Result<()> {
@@ -312,26 +330,30 @@ impl DatabaseHandler {
 
                     // Create secret for callback
                     let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+                    // TODO: Only create token when specified in custom template
                     // Create append only s3-credentials
-                    let append_only_token = APIToken {
-                       pub_key: pubkey_serial,
-                       name: format!("{}-append_only", hook.id.to_string()),
-                       created_at: chrono::Utc::now().naive_utc(),
-                       expires_at: hook.timeout
-                       ,
-                       // TODO: Append only object parent
-                       object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                       user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                    let append_only_token = APIToken{
+                          pub_key: pubkey_serial,
+                          name: format!("{}-append_only", hook.id),
+                          created_at: chrono::Utc::now().naive_utc(),
+                          expires_at: hook.timeout
+                          ,
+                          object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
+                          user_rights: crate::database::enums::DbPermissionLevel::APPEND,
                     };
-
                     dbg!("Trigger token: {:?}", &append_only_token);
                     let token_id = self.create_hook_token(&user_id, append_only_token).await?;
                     dbg!("Trigger token id: {:?}", &token_id);
+
                     // Create download url for response
                     let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
-                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, token_id).await?;
+                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
                     dbg!("Presigned download: {:?}", &download);
-                    dbg!("Upload creds: {:?}", &upload_credentials);
+                    let (access_key, secret_key) = match upload_credentials {
+                        Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
+                        None => (None, None)
+                    };
+                    dbg!("Upload creds: ({}, {})", &access_key, &secret_key);
 
                     // Create & send request
                     let client = reqwest::Client::new();
@@ -362,8 +384,8 @@ impl DatabaseHandler {
                                 secret,
                                 download,
                                 pubkey_serial,
-                                access_key: upload_credentials.access_key,
-                                secret_key: upload_credentials.secret_key,
+                                access_key,
+                                secret_key,
                             })?;
                             dbg!("Template: {json}");
                             let response = base_request.json(&json).send().await?;

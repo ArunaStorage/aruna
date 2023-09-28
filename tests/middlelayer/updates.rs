@@ -1,4 +1,6 @@
-use crate::common::init::{init_database_handler_middlelayer, init_permission_handler};
+use crate::common::init::{
+    init_database_handler_middlelayer, init_permission_handler, init_token_handler,
+};
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
 use aruna_rust_api::api::storage::services::v2::{
@@ -233,9 +235,11 @@ async fn test_update_description() {
 async fn test_update_keyvals() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    //let cache = init_cache(db_handler.database.clone(), true).await;
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -409,8 +413,11 @@ async fn test_update_keyvals() {
 async fn update_object_test() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
     let object_id = DieselUlid::generate();
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();
@@ -453,10 +460,11 @@ async fn update_object_test() {
         data_class: 1,
         hashes: vec![],
         parent: None,
+        force_revision: false,
     };
 
     let (updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), update_request, user.id)
+        .update_grpc_object(authorizer.clone(), update_request, user.id, false)
         .await
         .unwrap();
     assert!(!is_new);
@@ -485,9 +493,10 @@ async fn update_object_test() {
             hash: "dd98d701915b2bc5aad5dc9190194844".to_string(),
         }],
         parent: None,
+        force_revision: false,
     };
     let (new, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id)
+        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
         .await
         .unwrap();
     assert!(is_new);
@@ -499,4 +508,26 @@ async fn update_object_test() {
         variant: KeyValueVariant::LABEL,
     }));
     assert!(!new.object.hashes.0 .0.is_empty());
+    let force_new_revision = UpdateObjectRequest {
+        object_id: new.object.id.to_string(),
+        name: None,
+        description: None,
+        add_key_values: vec![],
+        remove_key_values: vec![],
+        data_class: 0,
+        hashes: vec![],
+        parent: None,
+        force_revision: true,
+    };
+    let (new_2, is_new_2) = db_handler
+        .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
+        .await
+        .unwrap();
+    dbg!(&new);
+    dbg!(&new_2);
+    assert!(is_new_2);
+    assert_eq!(
+        new_2.object.revision_number,
+        (new.object.revision_number + 1)
+    )
 }
