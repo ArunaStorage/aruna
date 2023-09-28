@@ -90,6 +90,19 @@ DO $$
         END IF;
     END
 $$;
+
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PersistentNotificationVariant') THEN
+            CREATE TYPE "PersistentNotificationVariant" AS ENUM (
+                'ACCESS_REQUESTED',
+                'PERMISSION_GRANTED',
+                'PERMISSION_REVOKED',
+                'ANNOUNCEMENT'
+                );
+        END IF;
+    END
+$$;
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
@@ -178,6 +191,15 @@ CREATE TABLE IF NOT EXISTS stream_consumers (
     id UUID PRIMARY KEY,
     user_id UUID REFERENCES users(id),
     config JSONB NOT NULL
+);
+
+-- Table for persistent notifications which are delivered outside the message broker
+CREATE TABLE IF NOT EXISTS persistent_notifications (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    notification_variant "PersistentNotificationVariant" NOT NULL,
+    message TEXT NOT NULL,
+    refs JSONB NOT NULL
 );
 
 /* ----- Hooks -------------------------------------- */
