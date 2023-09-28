@@ -198,7 +198,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
         let metadata = request.metadata();
 
         // Authorization
-        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let token = tonic_auth!(get_token_from_md(metadata), "Token authentication error");
         let ctx = Context::self_ctx();
         let user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
