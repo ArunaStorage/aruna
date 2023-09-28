@@ -1,6 +1,8 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::crud::CrudDb;
+use crate::database::dsls::hook_dsl::Hook;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::CreateHook;
@@ -184,10 +186,35 @@ impl HooksService for HookServiceImpl {
     }
     async fn add_projects_to_hook(
         &self,
-        _request: Request<AddProjectsToHookRequest>,
+        request: Request<AddProjectsToHookRequest>,
     ) -> Result<Response<AddProjectsToHookResponse>> {
-        Err(tonic::Status::unimplemented(
-            "Adding projects to hooks is currently unimplemented",
-        ))
+        log_received!(&request);
+        let (metadata, _, request) = request.into_parts();
+
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let project_ids = request
+            .project_ids
+            .iter()
+            .map(|id| {
+                DieselUlid::from_str(id)
+                    .map_err(|_| tonic::Status::invalid_argument("Invalid id provided"))
+            })
+            .collect::<Result<Vec<DieselUlid>>>()?;
+        let ctx = project_ids
+            .iter()
+            .map(|id| Context::res_ctx(*id, DbPermissionLevel::ADMIN, true))
+            .collect();
+        let user = tonic_auth!(
+            self.authorizer.check_permissions(&token, ctx).await,
+            "Unauthorized"
+        );
+
+        tonic_internal!(
+            self.database_handler
+                .append_project_to_hook(request, &user)
+                .await,
+            "HookCallback failed"
+        );
+        return_with_log!(AddProjectsToHookResponse {});
     }
 }

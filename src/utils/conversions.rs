@@ -11,6 +11,7 @@ use crate::database::dsls::user_dsl::{
     APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
     UserAttributes as DBUserAttributes,
 };
+use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::database::enums::{DbPermissionLevel, EndpointVariant, ObjectMapping};
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
@@ -40,7 +41,7 @@ use aruna_rust_api::api::storage::models::v2::{
     Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
-    create_collection_request, create_dataset_request, create_object_request,
+    create_collection_request, create_dataset_request, create_object_request, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -1272,6 +1273,24 @@ impl Hook {
                     })),
                 }
             }
+        }
+    }
+}
+impl From<WorkspaceTemplate> for WorkspaceInfo {
+    fn from(ws: WorkspaceTemplate) -> Self {
+        WorkspaceInfo {
+            workspace_id: ws.id.to_string(),
+            name: ws.name,
+            description: ws.description,
+            owner: ws.owner.to_string(),
+            prefix: ws.prefix,
+            hook_ids: ws.hook_ids.0.iter().map(DieselUlid::to_string).collect(),
+            endpoint_ids: ws
+                .endpoint_ids
+                .0
+                .iter()
+                .map(DieselUlid::to_string)
+                .collect(),
         }
     }
 }

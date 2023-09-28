@@ -89,7 +89,6 @@ impl Endpoint {
             .await?
             .map(|e| Endpoint::from_row(&e)))
     }
-
     pub async fn delete_by_id(id: &DieselUlid, client: &Client) -> Result<()> {
         let query = "DELETE FROM endpoints WHERE id = $1;";
         let prepared = client.prepare(query).await?;

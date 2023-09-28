@@ -16,7 +16,7 @@ use aruna_rust_api::api::storage::services::v2::{
 
 use std::str::FromStr;
 use std::sync::Arc;
-use tonic::{Request, Response, Result, Status};
+use tonic::{Request, Response, Result};
 crate::impl_grpc_server!(WorkspaceServiceImpl, default_endpoint: String);
 
 #[tonic::async_trait]
@@ -54,7 +54,6 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Invalid request"
         );
 
-        // TODO: Change name into id
         let response = CreateWorkspaceTemplateResponse { template_id };
         return_with_log!(response);
     }
@@ -93,26 +92,23 @@ impl WorkspaceService for WorkspaceServiceImpl {
         let (metadata, _, request) = request.into_parts();
 
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
         let id = tonic_invalid!(
             diesel_ulid::DieselUlid::from_str(&request.workspace_id),
             "Invalid workspace id"
         );
 
-        // Deny service_accounts
-        let ctx = Context::res_ctx(
-            id,
-            //TODO: allow service accounts to delete their own workspaces?
-            crate::database::enums::DbPermissionLevel::ADMIN,
-            false,
-        );
-
-        tonic_auth!(
+        let ctx = Context::res_ctx(id, crate::database::enums::DbPermissionLevel::APPEND, true);
+        let service_account_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         tonic_internal!(
-            self.database_handler.delete_workspace(id).await,
+            // Deletes workspace and user
+            self.database_handler
+                .delete_workspace(id, service_account_id)
+                .await,
             "Internal error for DeleteWorkspaceRequest"
         );
 
@@ -133,21 +129,20 @@ impl WorkspaceService for WorkspaceServiceImpl {
         );
 
         // Check if user is valid
-        let user_ctx = Context::user_ctx(id, crate::database::enums::DbPermissionLevel::NONE);
-        let _user_id = tonic_auth!(
+        let user_ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![user_ctx])
                 .await,
             "Unauthorized"
         );
-        // Probably does not work, because new user is not assoiciated with workspace project
-        // TODO: Use request_token
+        // Check if token is valid and has permissions for workspace
         let res_ctx = Context::res_ctx(
             id,
-            crate::database::enums::DbPermissionLevel::APPEND, // Must be append, because
-            // workspaces are APPEND only for
-            // service accounts
-            false,
+            crate::database::enums::DbPermissionLevel::APPEND,
+            // Must be append, because workspaces
+            // are APPEND only for service accounts
+            true,
         );
         tonic_auth!(
             self.authorizer
@@ -156,32 +151,86 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "Unauthorized"
         );
 
-        return Err(Status::unimplemented(
-            "Claiming workspaces is not implemented!",
-        ));
+        tonic_internal!(
+            self.database_handler
+                .claim_workspace(request, user_id)
+                .await,
+            "Internal database error"
+        );
+
+        return_with_log!(ClaimWorkspaceResponse {});
     }
     async fn get_workspace_template(
         &self,
-        _request: Request<GetWorkspaceTemplateRequest>,
+        request: Request<GetWorkspaceTemplateRequest>,
     ) -> Result<Response<GetWorkspaceTemplateResponse>> {
-        Err(tonic::Status::unimplemented(
-            "GetWorkspaceTemplate is currently unimplemented",
-        ))
+        log_received!(&request);
+        let (metadata, _, request) = request.into_parts();
+
+        // Authorization
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let ctx = Context::self_ctx();
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let template_id = tonic_invalid!(
+            diesel_ulid::DieselUlid::from_str(&request.template_id),
+            "Invalid workspace id"
+        );
+
+        let workspace = tonic_invalid!(
+            self.database_handler.get_ws_template(&template_id).await,
+            "No template found"
+        );
+        let response = GetWorkspaceTemplateResponse {
+            workspaces: Some(workspace.into()),
+        };
+
+        return_with_log!(response);
     }
     async fn list_owned_workspace_templates(
         &self,
-        _request: Request<ListOwnedWorkspaceTemplatesRequest>,
+        request: Request<ListOwnedWorkspaceTemplatesRequest>,
     ) -> Result<Response<ListOwnedWorkspaceTemplatesResponse>> {
-        Err(tonic::Status::unimplemented(
-            "ListOwnedWorkspaceTemplates is currently unimplemented",
-        ))
+        log_received!(&request);
+        let metadata = request.metadata();
+
+        // Authorization
+        let token = tonic_auth!(get_token_from_md(metadata), "Token authentication error");
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let workspaces = tonic_invalid!(
+            self.database_handler.get_owned_ws(&user_id).await,
+            "No workspaces found"
+        );
+        let response = ListOwnedWorkspaceTemplatesResponse {
+            workspaces: workspaces.into_iter().map(|ws| ws.into()).collect(),
+        };
+        return_with_log!(response);
     }
     async fn delete_workspace_template(
         &self,
-        _request: Request<DeleteWorkspaceTemplateRequest>,
+        request: Request<DeleteWorkspaceTemplateRequest>,
     ) -> Result<Response<DeleteWorkspaceTemplateResponse>> {
-        Err(tonic::Status::unimplemented(
-            "DeleteWorkspaceTemplate is currently unimplemented",
-        ))
+        log_received!(&request);
+        let (metadata, _, request) = request.into_parts();
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        tonic_invalid!(
+            self.database_handler
+                .delete_workspace_template(request.template_id, &user_id)
+                .await,
+            "No workspaces found"
+        );
+        return_with_log!(DeleteWorkspaceTemplateResponse {});
     }
 }

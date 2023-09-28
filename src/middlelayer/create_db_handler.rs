@@ -138,26 +138,11 @@ impl DatabaseHandler {
 
         // Update cache
         self.cache.add_object(owr.clone());
-        if let Some(p) = &parent {
-            self.cache.upsert_object(&p.object.id, p.clone());
-        };
-
-        // Trigger hooks
-        if object.object_type != ObjectType::PROJECT {
-            let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
-            tokio::spawn(async move {
-                db_handler
-                    .trigger_on_creation(authorizer.clone(), object.id, user_id)
-                    .await
-            });
-        };
-
-        // If created resource has parent emit notification for updated parent
         if let Some(parent_plus) = parent {
+            self.cache
+                .upsert_object(&parent_plus.object.id, parent_plus.clone());
+
+            // If created resource has parent emit notification for updated parent
             let parent_hierachies = parent_plus.object.fetch_object_hierarchies(&client).await?;
 
             // Try to emit object created notification(s)
@@ -176,11 +161,23 @@ impl DatabaseHandler {
                 //transaction.rollback().await?;
                 return Err(anyhow::anyhow!("Notification emission failed: {err}"));
             }
-        }
+        };
 
+        // Trigger hooks
+        if object.object_type != ObjectType::PROJECT {
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                db_handler
+                    .trigger_on_creation(authorizer.clone(), object.id, user_id)
+                    .await
+            });
+        };
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
-
         // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler

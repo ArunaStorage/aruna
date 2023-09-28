@@ -203,11 +203,12 @@ CREATE TABLE IF NOT EXISTS workspaces (
     description VARCHAR(1023) NOT NULL,
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
     prefix VARCHAR(511) NOT NULL,
-    key_values JSONB NOT NULL,
+    hook_ids JSONB,
+    endpoint_ids JSONB,
     UNIQUE(name)
-)
+);
 
 -- Insert predefined relation types
--- INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY');
+INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY') ON CONFLICT (relation_name) DO NOTHING;
 -- Create partial unique index for BELONGS_TO relations only
--- CREATE UNIQUE INDEX belongs_to ON internal_relations (origin_pid, relation_name, target_name) WHERE relation_name = ('BELONGS_TO')
+CREATE UNIQUE INDEX IF NOT EXISTS belongs_to_idx ON internal_relations (origin_pid, relation_name, target_name) WHERE relation_name = ('BELONGS_TO')

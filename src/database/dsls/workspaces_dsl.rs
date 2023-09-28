@@ -20,7 +20,7 @@ pub struct WorkspaceTemplate {
 impl CrudDb for WorkspaceTemplate {
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO workspaces (id, name, description, owner, prefix, hook_ids, endpoint_ids ) VALUES (
-            $1, $2, $3, $4, $5
+            $1, $2, $3, $4, $5, $6, $7
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -76,5 +76,17 @@ impl WorkspaceTemplate {
             .query_opt(&prepared, &[&name])
             .await?
             .map(|e| WorkspaceTemplate::from_row(&e)))
+    }
+    pub async fn list_owned(
+        user_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<WorkspaceTemplate>> {
+        let query = "SELECT * FROM workspaces WHERE owner = $1";
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[user_id]).await?;
+        Ok(rows
+            .iter()
+            .map(WorkspaceTemplate::from_row)
+            .collect::<Vec<_>>())
     }
 }

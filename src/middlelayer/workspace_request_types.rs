@@ -25,7 +25,7 @@ impl CreateTemplate {
         let workspace = WorkspaceTemplate {
             id: DieselUlid::generate(),
             name: self.0.name.clone(),
-            description: self.0.description.clone(), //TODO: Workspace descriptions
+            description: self.0.description.clone(),
             owner,
             prefix: self.0.prefix.clone(),
             hook_ids: Json(
@@ -52,15 +52,9 @@ impl CreateWorkspace {
         self.0.workspace_template.clone()
     }
 
-    pub fn make_project(template: WorkspaceTemplate, endpoint: DieselUlid) -> Object {
+    pub fn make_project(template: WorkspaceTemplate, endpoints: Vec<DieselUlid>) -> Object {
         let id = DieselUlid::generate();
-        let endpoints = if template.endpoint_ids.0.is_empty() {
-            Json(DashMap::from_iter(vec![(endpoint, true)]))
-        } else {
-            Json(DashMap::from_iter(
-                template.endpoint_ids.0.iter().map(|id| (*id, true)),
-            ))
-        };
+        let endpoints = Json(DashMap::from_iter(endpoints.iter().map(|id| (*id, true))));
         Object {
             id,
             revision_number: 0,
@@ -83,8 +77,9 @@ impl CreateWorkspace {
         }
     }
 
-    pub fn create_service_account(endpoint: DieselUlid, workspace_id: DieselUlid) -> User {
+    pub fn create_service_account(endpoints: Vec<DieselUlid>, workspace_id: DieselUlid) -> User {
         let user_id = DieselUlid::generate();
+        let endpoints = endpoints.into_iter().map(|id| (id, Empty {}));
         User {
             id: user_id,
             display_name: ["SERVICE_ACCOUNT".to_string(), user_id.to_string()].join("#"),
@@ -94,7 +89,7 @@ impl CreateWorkspace {
                 global_admin: false,
                 service_account: true,
                 tokens: DashMap::default(),
-                trusted_endpoints: dashmap::DashMap::from_iter(vec![(endpoint, Empty {})]),
+                trusted_endpoints: dashmap::DashMap::from_iter(endpoints),
                 custom_attributes: vec![],
                 permissions: DashMap::from_iter(vec![(
                     workspace_id,
