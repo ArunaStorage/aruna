@@ -51,8 +51,9 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("WorkspaceTemplate not found"))?;
         let hooks = template.hook_ids.0.clone();
 
-        // If no endpoint configured for template -> default endpoint
-        // else if configured
+        // If no endpoint configured for template
+        //      -> default endpoint
+        // if provided endpoints are configured:
         //      -> ServiceAccount gets all endpoints as trusted
         //      -> Project gets all endpoints
         //      -> S3 creds are returned for first endpoint in list
@@ -217,13 +218,40 @@ impl DatabaseHandler {
                 .register_resource_event(object_plus, hierarchies, event_variant, Some(&block_id))
                 .await
             {
-                // Log error, rollback transaction and return
                 log::error!("{}", err);
-                //transaction.rollback().await?;
                 return Err(anyhow::anyhow!("Notification emission failed"));
             }
         }
 
         Ok(())
+    }
+    pub async fn get_ws_template(&self, ws_id: &DieselUlid) -> Result<WorkspaceTemplate> {
+        let client = self.database.get_client().await?;
+        let workspace = WorkspaceTemplate::get(*ws_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Template not found"))?;
+        Ok(workspace)
+    }
+    pub async fn get_owned_ws(&self, user_id: &DieselUlid) -> Result<Vec<WorkspaceTemplate>> {
+        let client = self.database.get_client().await?;
+        let workspaces = WorkspaceTemplate::list_owned(user_id, &client).await?;
+        Ok(workspaces)
+    }
+    pub async fn delete_workspace_template(
+        &self,
+        workspace_id: String,
+        user_id: &DieselUlid,
+    ) -> Result<()> {
+        let id = DieselUlid::from_str(&workspace_id)?;
+        let client = self.database.get_client().await?;
+        let workspace = WorkspaceTemplate::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("WorkspaceTemplate not found"))?;
+        if workspace.owner != *user_id {
+            Err(anyhow!("Unauthorized delete request"))
+        } else {
+            workspace.delete(&client).await?;
+            Ok(())
+        }
     }
 }

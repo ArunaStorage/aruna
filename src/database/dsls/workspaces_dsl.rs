@@ -77,4 +77,16 @@ impl WorkspaceTemplate {
             .await?
             .map(|e| WorkspaceTemplate::from_row(&e)))
     }
+    pub async fn list_owned(
+        user_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<WorkspaceTemplate>> {
+        let query = "SELECT * FROM workspaces WHERE owner = $1";
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[user_id]).await?;
+        Ok(rows
+            .iter()
+            .map(WorkspaceTemplate::from_row)
+            .collect::<Vec<_>>())
+    }
 }
