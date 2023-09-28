@@ -450,7 +450,7 @@ impl Object {
         client: &Client,
     ) -> Result<()> {
         let query = "UPDATE objects 
-            SET data_class = ('CONFIDENTIAL'), created_by = $1 
+            SET data_class = ('PRIVATE'), created_by = $1 
             WHERE id = ANY($2::uuid[]);";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[user_id, objects]).await?;

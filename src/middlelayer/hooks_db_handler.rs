@@ -53,14 +53,24 @@ impl DatabaseHandler {
         Ok(project_ids)
     }
 
-    pub async fn append_project_to_hook(&self, request: AddProjectsToHookRequest) -> Result<()> {
+    pub async fn append_project_to_hook(
+        &self,
+        request: AddProjectsToHookRequest,
+        user_id: &DieselUlid,
+    ) -> Result<()> {
+        let hook_id = DieselUlid::from_str(&request.hook_id)?;
         let client = self.database.get_client().await?;
+        let hook = Hook::get(hook_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Hook not found"))?;
+        if hook.owner != *user_id {
+            return Err(anyhow!("User is not allowed to add projects to hook"));
+        }
         let projects = request
             .project_ids
             .iter()
             .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid project id")))
             .collect::<Result<Vec<_>>>()?;
-        let hook_id = DieselUlid::from_str(&request.hook_id)?;
         Hook::add_projects_to_hook(&projects, &hook_id, &client).await?;
         Ok(())
     }

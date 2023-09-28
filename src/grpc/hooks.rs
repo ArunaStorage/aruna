@@ -208,21 +208,11 @@ impl HooksService for HookServiceImpl {
             self.authorizer.check_permissions(&token, ctx).await,
             "Unauthorized"
         );
-        let client = tonic_internal!(
-            self.database_handler.database.get_client().await,
-            "Internal database error"
-        );
-        let hook = tonic_invalid!(
-            Hook::get(request.hook_id.clone(), &client).await,
-            "Hook not found"
-        )
-        .ok_or_else(|| tonic::Status::not_found("Hook not found"))?;
 
-        if user != hook.owner {
-            return Err(tonic::Status::unauthenticated("Access not allowed"));
-        }
         tonic_internal!(
-            self.database_handler.append_project_to_hook(request).await,
+            self.database_handler
+                .append_project_to_hook(request, &user)
+                .await,
             "HookCallback failed"
         );
         return_with_log!(AddProjectsToHookResponse {});
