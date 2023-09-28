@@ -85,6 +85,7 @@ impl DatabaseHandler {
                     target_name: object.name.to_string(),
                 };
                 let result = ir.create(transaction_client).await;
+
                 if result.is_err() && is_dataproxy {
                     dbg!(&result);
                     dbg!(&is_dataproxy);
@@ -134,6 +135,8 @@ impl DatabaseHandler {
             outbound: Json(DashMap::default()),
             outbound_belongs_to: Json(DashMap::default()),
         };
+
+        // Update cache
         self.cache.add_object(owr.clone());
         if let Some(parent_plus) = parent {
             self.cache
@@ -159,9 +162,9 @@ impl DatabaseHandler {
                 return Err(anyhow::anyhow!("Notification emission failed: {err}"));
             }
         };
+
         // Trigger hooks
         if object.object_type != ObjectType::PROJECT {
-            dbg!("Reached trigger");
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
@@ -175,7 +178,6 @@ impl DatabaseHandler {
         };
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
-
         // Try to emit object created notification(s)
         if let Err(err) = self
             .natsio_handler

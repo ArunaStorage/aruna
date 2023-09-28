@@ -1,4 +1,6 @@
-use crate::common::init::{init_database_handler_middlelayer, init_permission_handler};
+use crate::common::init::{
+    init_database_handler_middlelayer, init_permission_handler, init_token_handler,
+};
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::services::v2::create_collection_request::Parent as CollectionParent;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent as DatasetParent;
@@ -27,9 +29,11 @@ fn random_name() -> String {
 async fn create_project() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
-    //let cache = Arc::new(Cache::new());
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -85,9 +89,11 @@ async fn create_collection() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
-    //let cache = Arc::new(Cache::new());
-    let authorizer =
-        init_permission_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(
+        db_handler.cache.clone(),
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
+    )
+    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -159,8 +165,11 @@ async fn create_dataset() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
-    let authorizer = init_permission_handler(db_handler.database.clone(), cache.clone()).await;
-
+    let authorizer = init_permission_handler(
+        cache.clone(),
+        init_token_handler(db_handler.database.clone(), cache.clone()).await,
+    )
+    .await;
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
@@ -230,7 +239,11 @@ async fn create_object() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
-    let authorizer = init_permission_handler(db_handler.database.clone(), cache.clone()).await;
+    let authorizer = init_permission_handler(
+        cache.clone(),
+        init_token_handler(db_handler.database.clone(), cache.clone()).await,
+    )
+    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);

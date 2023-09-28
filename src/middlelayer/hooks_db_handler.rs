@@ -391,7 +391,6 @@ impl DatabaseHandler {
                         }
                     };
                     // Put everything into template
-
                     match template {
                         TemplateVariant::Basic => {
                             let json = serde_json::to_string(&BasicTemplate {

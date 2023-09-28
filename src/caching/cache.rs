@@ -300,6 +300,15 @@ impl Cache {
                                 user_name: entry.value().display_name.to_string(),
                                 permission_level: PermissionLevel::from(perm.1) as i32,
                             });
+                        } else {
+                            resource_perms.insert(
+                                resource_id,
+                                vec![UserPermission {
+                                    user_id: entry.value().id.to_string(),
+                                    user_name: entry.value().display_name.to_string(),
+                                    permission_level: PermissionLevel::from(perm.1) as i32,
+                                }],
+                            );
                         }
                     }
                 }
