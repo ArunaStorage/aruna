@@ -470,8 +470,9 @@ async fn grpc_delete_authorization() {
     let _ = service_block
         .auth_service
         .delete_authorization(grpc_request)
-        .await
-        .unwrap();
+        .await;
+
+    assert!(response.is_err());
 
     // Remove permission without token
     inner_request.resource_id = project.id.clone();

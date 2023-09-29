@@ -802,16 +802,21 @@ async fn grpc_delete_collection() {
         .await
         .unwrap();
 
-    let response = collection_service
+    let deleted_collection = collection_service
         .get_collection(add_token(
             Request::new(GetCollectionRequest {
                 collection_id: collection_ulid.to_string(),
             }),
             USER_OIDC_TOKEN,
         ))
-        .await;
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap();
 
-    assert!(response.is_err()); // Object is deleted in cache
+    assert_eq!(deleted_collection.id, collection.id);
+    assert_eq!(deleted_collection.status, Status::Deleted as i32)
 
     //ToDo: Try delete non-empty Collection
 }

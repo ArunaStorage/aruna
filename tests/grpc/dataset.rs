@@ -838,16 +838,21 @@ async fn grpc_delete_dataset() {
 
     dataset_service.delete_dataset(grpc_request).await.unwrap();
 
-    let response = dataset_service
+    let deleted_dataset = dataset_service
         .get_dataset(add_token(
             Request::new(GetDatasetRequest {
                 dataset_id: dataset_ulid.to_string(),
             }),
             USER_OIDC_TOKEN,
         ))
-        .await;
+        .await
+        .unwrap()
+        .into_inner()
+        .dataset
+        .unwrap();
 
-    assert!(response.is_err()); // Object is deleted in cache
+    assert_eq!(deleted_dataset.id, dataset.id);
+    assert_eq!(deleted_dataset.status, Status::Deleted as i32)
 
     //ToDo: Try delete non-empty Dataset
 }
