@@ -5,16 +5,19 @@ use postgres_types::{Json, ToSql};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-use crate::{database::{
-    crud::{CrudDb, PrimaryKey},
-    enums::{NotificationReferenceType, PersistentNotificationVariant},
-}, utils::database_utils::create_multi_query};
+use crate::{
+    database::{
+        crud::{CrudDb, PrimaryKey},
+        enums::{NotificationReferenceType, PersistentNotificationVariant},
+    },
+    utils::database_utils::create_multi_query,
+};
 
 #[derive(FromRow, Debug, PartialEq, Eq)]
 pub struct PersistentNotification {
     pub id: DieselUlid,
     pub user_id: DieselUlid,
-    pub variant: PersistentNotificationVariant,
+    pub notification_variant: PersistentNotificationVariant,
     pub message: String,
     pub refs: Json<NotificationReferences>,
 }
@@ -45,7 +48,7 @@ impl CrudDb for PersistentNotification {
                 &[
                     &self.id,
                     &self.user_id,
-                    &self.variant,
+                    &self.notification_variant,
                     &self.message,
                     &self.refs,
                 ],

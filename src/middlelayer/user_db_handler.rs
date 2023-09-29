@@ -204,7 +204,7 @@ impl DatabaseHandler {
         let mut p_notification = PersistentNotification {
             id: DieselUlid::generate(),
             user_id,
-            variant: PersistentNotificationVariant::PERMISSION_GRANTED,
+            notification_variant: PersistentNotificationVariant::PERMISSION_GRANTED,
             message: format!(
                 "Permission granted for {:?} with id {}",
                 resource_name, resource_id
@@ -254,7 +254,7 @@ impl DatabaseHandler {
         let mut p_notification = PersistentNotification {
             id: DieselUlid::generate(),
             user_id,
-            variant: PersistentNotificationVariant::PERMISSION_REVOKED,
+            notification_variant: PersistentNotificationVariant::PERMISSION_REVOKED,
             message: format!(
                 "Permission revoked for {:?} with id {}",
                 resource.object.object_type, resource_id
