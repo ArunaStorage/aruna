@@ -4,7 +4,7 @@ WORKDIR /build
 RUN apk update
 RUN apk upgrade
 ENV RUSTFLAGS="-C target-feature=-crt-static"
-RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc libpq-dev musl-dev git
+RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc protobuf-dev libpq-dev musl-dev git
 COPY . .
 RUN cargo build --release
 
