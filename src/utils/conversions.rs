@@ -1288,7 +1288,7 @@ impl Hook {
 // -------------------------------------------------- //
 impl From<PersistentNotification> for PersonalNotification {
     fn from(value: PersistentNotification) -> Self {
-        let variant: PersonalNotificationVariant = value.variant.into();
+        let variant: PersonalNotificationVariant = value.notification_variant.into();
         let refs = value
             .refs
             .0

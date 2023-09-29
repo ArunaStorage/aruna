@@ -335,12 +335,16 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
 
         // Convert provided id strings to DieselUlids
-        let result: Result<Vec<_>, _> = notification_ids.into_iter().map(|id| DieselUlid::from_str(&id)).collect();
+        let result: Result<Vec<_>, _> = notification_ids
+            .into_iter()
+            .map(|id| DieselUlid::from_str(&id))
+            .collect();
 
         let notification_ulids = tonic_invalid!(result, "Invalid notification ids provided");
 
         // Acknowledge notification (delete from persistent notifications table)
-        PersistentNotification::acknowledge_user_notifications(&notification_ulids, &client).await?;
+        PersistentNotification::acknowledge_user_notifications(&notification_ulids, &client)
+            .await?;
 
         Ok(())
     }
