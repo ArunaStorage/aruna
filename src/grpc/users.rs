@@ -630,10 +630,16 @@ impl UserService for UserServiceImpl {
         );
 
         let ctx = Context::self_ctx();
-        tonic_auth!(
+        let token_user_ulid = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
+
+        if user_id != token_user_ulid {
+            return Err(tonic::Status::invalid_argument(
+                "Forbidden to fetch personal notifications of other users",
+            ));
+        }
 
         // Fetch personal notifications from database
         let notifications = tonic_internal!(
