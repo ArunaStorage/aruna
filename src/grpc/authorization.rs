@@ -60,7 +60,8 @@ impl AuthorizationService for AuthorizationServiceImpl {
                     obj.into_object_mapping(tonic_invalid!(
                         DbPermissionLevel::try_from(request.get_ref().permission_level),
                         "Invalid permission level"
-                    ))
+                    )),
+                    true
                 )
                 .await,
             "Internal error"

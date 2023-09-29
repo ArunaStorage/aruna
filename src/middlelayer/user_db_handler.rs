@@ -188,11 +188,11 @@ impl DatabaseHandler {
         resource_id: DieselUlid,
         resource_name: &str,
         perm_level: ObjectMapping<DbPermissionLevel>,
+        persistent_notification: bool,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
 
         // Update user permissions
-        println!("Update user permissions");
         let user = User::add_user_permission(
             &client,
             &user_id,
@@ -200,23 +200,24 @@ impl DatabaseHandler {
         )
         .await?;
 
-        // Create personal/persistent notification (no transaction needed)
-        let mut p_notification = PersistentNotification {
-            id: DieselUlid::generate(),
-            user_id,
-            notification_variant: PersistentNotificationVariant::PERMISSION_GRANTED,
-            message: format!(
-                "Permission granted for {:?} with id {}",
-                resource_name, resource_id
-            ),
-            refs: Json(NotificationReferences(vec![NotificationReference {
-                reference_type: NotificationReferenceType::Resource,
-                reference_name: resource_name.to_string(),
-                reference_value: resource_id.to_string(),
-            }])),
-        };
-        println!("Try to create persistent notification");
-        p_notification.create(&client).await?;
+        // Create personal/persistent notification (if needed)
+        if persistent_notification {
+            let mut p_notification = PersistentNotification {
+                id: DieselUlid::generate(),
+                user_id,
+                notification_variant: PersistentNotificationVariant::PERMISSION_GRANTED,
+                message: format!(
+                    "Permission granted for {:?} ({})",
+                    resource_name, resource_id
+                ),
+                refs: Json(NotificationReferences(vec![NotificationReference {
+                    reference_type: NotificationReferenceType::Resource,
+                    reference_name: resource_name.to_string(),
+                    reference_value: resource_id.to_string(),
+                }])),
+            };
+            p_notification.create(&client).await?;
+        }
 
         // Try to emit user updated notification(s)
         if let Err(err) = self

@@ -65,6 +65,7 @@ impl DatabaseHandler {
                         object.id,
                         &object.name,
                         ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
+                        false,
                     )
                     .await?,
                 );
