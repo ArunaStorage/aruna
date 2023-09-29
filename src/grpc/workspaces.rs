@@ -52,7 +52,8 @@ impl WorkspaceService for WorkspaceServiceImpl {
                 .create_workspace_template(request, user_id)
                 .await,
             "Invalid request"
-        );
+        )
+        .to_string();
 
         let response = CreateWorkspaceTemplateResponse { template_id };
         return_with_log!(response);

@@ -224,8 +224,9 @@ impl Hook {
         hook_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<()> {
+        let workspace = vec![workspace];
         let query = "UPDATE hooks
-        SET project_ids = project_ids || $1
+        SET project_ids = project_ids || $1::uuid[]
         WHERE id = ANY($2::uuid[]);";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&workspace, hook_ids]).await?;

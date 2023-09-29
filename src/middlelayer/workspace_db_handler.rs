@@ -26,7 +26,7 @@ impl DatabaseHandler {
         &self,
         request: CreateTemplate,
         owner: DieselUlid,
-    ) -> Result<String> {
+    ) -> Result<DieselUlid> {
         let client = self.database.get_client().await?;
         // Build template
         let mut template = request.get_template(owner)?;
@@ -34,8 +34,9 @@ impl DatabaseHandler {
         // Check if specified hooks exist
         Hook::exists(&hooks, &client).await?;
         // Create template
+        //
         template.create(&client).await?;
-        Ok(request.0.name)
+        Ok(template.id)
     }
     pub async fn create_workspace(
         &self,
@@ -45,10 +46,12 @@ impl DatabaseHandler {
     ) -> Result<(DieselUlid, String, String, String)> // (ProjectID, Token, AccessKey, SecretKey)
     {
         let mut client = self.database.get_client().await?;
+        let id = DieselUlid::from_str(&request.0.workspace_template)?;
 
-        let template = WorkspaceTemplate::get_by_name(request.get_name(), &client)
+        let template = WorkspaceTemplate::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("WorkspaceTemplate not found"))?;
+
         let hooks = template.hook_ids.0.clone();
 
         // If no endpoint configured for template
@@ -73,7 +76,10 @@ impl DatabaseHandler {
         Hook::add_workspace_to_hook(workspace.id, &hooks, transaction_client).await?;
 
         // Create service account
-        let user = CreateWorkspace::create_service_account(endpoints, workspace.id);
+        let mut user = CreateWorkspace::create_service_account(endpoints, workspace.id);
+        user.create(&transaction_client).await?;
+        self.cache.add_user(user.id, user.clone());
+        transaction.commit().await?;
         // Create token
         let (token_ulid, token) = self
             .create_token(
