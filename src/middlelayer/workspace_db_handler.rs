@@ -77,7 +77,7 @@ impl DatabaseHandler {
 
         // Create service account
         let mut user = CreateWorkspace::create_service_account(endpoints, workspace.id);
-        user.create(&transaction_client).await?;
+        user.create(transaction_client).await?;
         self.cache.add_user(user.id, user.clone());
         transaction.commit().await?;
         // Create token
