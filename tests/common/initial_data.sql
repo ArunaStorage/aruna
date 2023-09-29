@@ -20,7 +20,17 @@ VALUES
 (
     '018A27CF-78B4-D2A2-1F7E-16F6F27B5F8D', --01H8KWYY5MTAH1YZGPYVS7PQWD
     'test-user',
-    '39893781-320e-4dbf-be39-c06d8b28e897',
+    '39893781-320e-4dbf-be39-c06d8b28e897', -- regular-user
+    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
+    true
+);
+
+INSERT INTO users (id, display_name, external_id, attributes, active) 
+VALUES
+(
+    '018AE07D-5F28-8EB6-3A0A-D37CE945E645', --01HBG7TQS8HTV3M2PKFKMMBSJ5
+    'another-test-user',
+    'c675b9fe-7275-46c6-af5a-2641114b5375', -- user3
     '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
     true
 );

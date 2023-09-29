@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::common::{init, test_utils::GENERIC_USER_ULID};
+use crate::common::{init, test_utils::USER1_ULID};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::{
@@ -614,7 +614,7 @@ async fn persistent_notification_test() {
 
     let notification_ulid = DieselUlid::generate();
     let resource_ulid = DieselUlid::generate();
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Create notification in database
     let mut pers_notification = PersistentNotification {

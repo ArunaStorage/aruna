@@ -19,8 +19,8 @@ use crate::common::{
     init::init_service_block,
     test_utils::{
         add_token, fast_track_grpc_collection_create, fast_track_grpc_permission_add,
-        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, ADMIN_USER_ULID, GENERIC_USER_ULID,
-        USER_OIDC_TOKEN,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, ADMIN_USER_ULID, USER1_OIDC_TOKEN,
+        USER1_ULID,
     },
 };
 
@@ -41,7 +41,7 @@ async fn grpc_create_authorization() {
             tonic::Request::new(GetUserRequest {
                 user_id: "".to_string(),
             }),
-            USER_OIDC_TOKEN,
+            USER1_OIDC_TOKEN,
         ))
         .await
         .unwrap()
@@ -86,7 +86,7 @@ async fn grpc_create_authorization() {
     assert!(response.is_err());
 
     // Add permission to user without sufficient permission
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = service_block
         .auth_service
@@ -159,7 +159,7 @@ async fn grpc_get_authorization() {
     let project_ulid = DieselUlid::from_str(&project.id).unwrap();
 
     // Create ULID from user id
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Get authorization of resource who does not exist
     let mut inner_request = GetAuthorizationsRequest {
@@ -190,7 +190,7 @@ async fn grpc_get_authorization() {
     assert!(response.is_err());
 
     // Get authorization of resource without sufficient permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = service_block
         .auth_service
@@ -209,7 +209,7 @@ async fn grpc_get_authorization() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let authorizations = service_block
         .auth_service
@@ -221,7 +221,7 @@ async fn grpc_get_authorization() {
 
     assert_eq!(authorizations.len(), 1);
     assert!(authorizations[0].user_permission.contains(&UserPermission {
-        user_id: GENERIC_USER_ULID.to_string(),
+        user_id: USER1_ULID.to_string(),
         user_name: "test-user".to_string(),
         permission_level: PermissionLevel::Admin as i32,
     }));
@@ -236,7 +236,7 @@ async fn grpc_get_authorization() {
 
     let collection = fast_track_grpc_collection_create(
         &service_block.collection_service,
-        USER_OIDC_TOKEN,
+        USER1_OIDC_TOKEN,
         create_collection_request::Parent::ProjectId(project_ulid.to_string()),
     )
     .await;
@@ -251,7 +251,7 @@ async fn grpc_get_authorization() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let authorizations = service_block
         .auth_service
@@ -265,7 +265,7 @@ async fn grpc_get_authorization() {
     for authorization in authorizations {
         if authorization.resource_id == project_ulid.to_string() {
             assert!(authorization.user_permission.contains(&UserPermission {
-                user_id: GENERIC_USER_ULID.to_string(),
+                user_id: USER1_ULID.to_string(),
                 user_name: "test-user".to_string(),
                 permission_level: PermissionLevel::Admin as i32,
             }));
@@ -276,7 +276,7 @@ async fn grpc_get_authorization() {
             }));
         } else if authorization.resource_id == collection.id {
             assert!(authorization.user_permission.contains(&UserPermission {
-                user_id: GENERIC_USER_ULID.to_string(),
+                user_id: USER1_ULID.to_string(),
                 user_name: "test-user".to_string(),
                 permission_level: PermissionLevel::Read as i32,
             }));
@@ -300,7 +300,7 @@ async fn grpc_update_authorization() {
     let project_ulid = DieselUlid::from_str(&project.id).unwrap();
 
     // Create ULID from user id
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let admin_ulid = DieselUlid::from_str(ADMIN_USER_ULID).unwrap();
 
     // Update authorization with non-existing user
@@ -345,7 +345,7 @@ async fn grpc_update_authorization() {
     assert!(response.is_err());
 
     // Update authorization without sufficient permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = service_block
         .auth_service
@@ -375,7 +375,7 @@ async fn grpc_update_authorization() {
         &ObjectMapping::PROJECT(DbPermissionLevel::ADMIN)
     );
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let authorization = service_block
         .auth_service
@@ -423,7 +423,7 @@ async fn grpc_delete_authorization() {
         fast_track_grpc_project_create(&service_block.project_service, ADMIN_OIDC_TOKEN).await;
 
     // Create ULID from user id
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Add permission for another user to project
     fast_track_grpc_permission_add(
@@ -487,7 +487,7 @@ async fn grpc_delete_authorization() {
     assert!(response.is_err());
 
     // Remove permission without sufficient permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = service_block
         .auth_service

@@ -22,8 +22,8 @@ use crate::common::{
     test_utils::{
         add_token, fast_track_grpc_collection_create, fast_track_grpc_dataset_create,
         fast_track_grpc_get_dataset, fast_track_grpc_permission_add,
-        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID,
-        USER_OIDC_TOKEN,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN,
+        USER1_ULID,
     },
 };
 use aruna_server::database::enums::DbPermissionLevel;
@@ -138,7 +138,7 @@ async fn grpc_get_dataset() {
     let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Create random project and dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
@@ -173,14 +173,14 @@ async fn grpc_get_dataset() {
     assert!(response.is_err());
 
     // Get Dataset without permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
     // Get Dataset with permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     fast_track_grpc_permission_add(
         &auth_service,
@@ -227,7 +227,7 @@ async fn grpc_get_datasets() {
     let (auth_service, project_service, _, dataset_service, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Create random project and dataset
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
@@ -272,7 +272,7 @@ async fn grpc_get_datasets() {
     assert!(response.is_err());
 
     // Get Dataset without permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_datasets(grpc_request).await;
 
@@ -288,7 +288,7 @@ async fn grpc_get_datasets() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_datasets(grpc_request).await;
 
@@ -304,7 +304,7 @@ async fn grpc_get_datasets() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_datasets = dataset_service
         .get_datasets(grpc_request)
@@ -339,7 +339,7 @@ async fn grpc_update_dataset_name() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Update Dataset without token
@@ -366,7 +366,7 @@ async fn grpc_update_dataset_name() {
     // Update Dataset without sufficient permissions
     inner_request.dataset_id = dataset.id.to_string();
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.update_dataset_name(grpc_request).await;
 
@@ -382,7 +382,7 @@ async fn grpc_update_dataset_name() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_name(grpc_request)
@@ -411,7 +411,7 @@ async fn grpc_update_dataset_description() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Update Dataset without token
@@ -442,7 +442,7 @@ async fn grpc_update_dataset_description() {
     // Update Dataset without sufficient permissions
     inner_request.dataset_id = dataset.id.to_string();
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service
         .update_dataset_description(grpc_request)
@@ -460,7 +460,7 @@ async fn grpc_update_dataset_description() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_description(grpc_request)
@@ -489,7 +489,7 @@ async fn grpc_update_dataset_dataclass() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Change dataclass of non-existing dataset
@@ -518,7 +518,7 @@ async fn grpc_update_dataset_dataclass() {
     assert!(response.is_err());
 
     // Change dataclass without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service
         .update_dataset_data_class(grpc_request)
@@ -529,7 +529,7 @@ async fn grpc_update_dataset_dataclass() {
     // Change to stricter dataclass with sufficient permissions
     inner_request.data_class = DataClass::Confidential as i32;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service
         .update_dataset_data_class(grpc_request)
@@ -549,7 +549,7 @@ async fn grpc_update_dataset_dataclass() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_data_class(grpc_request)
@@ -578,7 +578,7 @@ async fn grpc_update_dataset_keyvalues() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Change key-values of non-existing Dataset
@@ -612,7 +612,7 @@ async fn grpc_update_dataset_keyvalues() {
     assert!(response.is_err());
 
     // Change key-values without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service
         .update_dataset_key_values(grpc_request)
@@ -696,7 +696,7 @@ async fn grpc_update_dataset_keyvalues() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_key_values(grpc_request)
@@ -726,7 +726,7 @@ async fn grpc_update_dataset_keyvalues() {
         variant: KeyValueVariant::Label as i32,
     }];
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_key_values(grpc_request)
@@ -758,7 +758,7 @@ async fn grpc_update_dataset_keyvalues() {
         variant: KeyValueVariant::Label as i32,
     }];
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .update_dataset_key_values(grpc_request)
@@ -794,7 +794,7 @@ async fn grpc_delete_dataset() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Delete non-existing Dataset
@@ -818,7 +818,7 @@ async fn grpc_delete_dataset() {
     assert!(response.is_err());
 
     // Delete Dataset without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.delete_dataset(grpc_request).await;
 
@@ -834,7 +834,7 @@ async fn grpc_delete_dataset() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     dataset_service.delete_dataset(grpc_request).await.unwrap();
 
@@ -843,7 +843,7 @@ async fn grpc_delete_dataset() {
             Request::new(GetDatasetRequest {
                 dataset_id: dataset_ulid.to_string(),
             }),
-            USER_OIDC_TOKEN,
+            USER1_OIDC_TOKEN,
         ))
         .await
         .unwrap()
@@ -872,7 +872,7 @@ async fn grpc_snapshot_dataset() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let dataset_ulid = DieselUlid::from_str(&dataset.id).unwrap();
 
     // Snapshot non-existing Dataset
@@ -896,7 +896,7 @@ async fn grpc_snapshot_dataset() {
     assert!(response.is_err());
 
     // Snapshot Dataset without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.snapshot_dataset(grpc_request).await;
 
@@ -912,7 +912,7 @@ async fn grpc_snapshot_dataset() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_dataset = dataset_service
         .snapshot_dataset(grpc_request)
