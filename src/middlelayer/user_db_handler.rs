@@ -1,14 +1,21 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::database::crud::CrudDb;
+use crate::database::dsls::persistent_notification_dsl::{
+    NotificationReference, NotificationReferences, PersistentNotification,
+};
 use crate::database::dsls::user_dsl::{User, UserAttributes};
-use crate::database::enums::{DbPermissionLevel, ObjectMapping};
+use crate::database::enums::{
+    DbPermissionLevel, NotificationReferenceType, ObjectMapping, PersistentNotificationVariant,
+};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
+use aruna_rust_api::api::storage::services::v2::PersonalNotification;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
@@ -179,16 +186,37 @@ impl DatabaseHandler {
         &self,
         user_id: DieselUlid,
         resource_id: DieselUlid,
+        resource_name: &str,
         perm_level: ObjectMapping<DbPermissionLevel>,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
 
+        // Update user permissions
+        println!("Update user permissions");
         let user = User::add_user_permission(
             &client,
             &user_id,
             HashMap::from_iter([(resource_id, perm_level)]),
         )
         .await?;
+
+        // Create personal/persistent notification (no transaction needed)
+        let mut p_notification = PersistentNotification {
+            id: DieselUlid::generate(),
+            user_id,
+            variant: PersistentNotificationVariant::PERMISSION_GRANTED,
+            message: format!(
+                "Permission granted for {:?} with id {}",
+                resource_name, resource_id
+            ),
+            refs: Json(NotificationReferences(vec![NotificationReference {
+                reference_type: NotificationReferenceType::Resource,
+                reference_name: resource_name.to_string(),
+                reference_value: resource_id.to_string(),
+            }])),
+        };
+        println!("Try to create persistent notification");
+        p_notification.create(&client).await?;
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -212,8 +240,32 @@ impl DatabaseHandler {
     ) -> Result<User> {
         let client = self.database.get_client().await?;
 
+        // Fetch resource to validate it exists
+        let resource = if let Some(resource) = self.cache.get_object(&resource_id) {
+            resource
+        } else {
+            bail!("Object does not exist");
+        };
+
         // Remove permission for specific resource from user
         let user = User::remove_user_permission(&client, &user_id, &resource_id).await?;
+
+        // Create personal/persistent notification (no transaction needed)
+        let mut p_notification = PersistentNotification {
+            id: DieselUlid::generate(),
+            user_id,
+            variant: PersistentNotificationVariant::PERMISSION_REVOKED,
+            message: format!(
+                "Permission revoked for {:?} with id {}",
+                resource.object.object_type, resource_id
+            ),
+            refs: Json(NotificationReferences(vec![NotificationReference {
+                reference_type: NotificationReferenceType::Resource,
+                reference_name: resource.object.name,
+                reference_value: resource.object.id.to_string(),
+            }])),
+        };
+        p_notification.create(&client).await?;
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -255,5 +307,41 @@ impl DatabaseHandler {
         }
 
         Ok(user)
+    }
+
+    //ToDo: Rust Doc
+    pub async fn get_persistent_notifications(
+        &self,
+        user_id: DieselUlid,
+    ) -> Result<Vec<PersonalNotification>> {
+        let client = self.database.get_client().await?;
+
+        // Fetch notifications from database
+        let db_notifications =
+            PersistentNotification::get_user_notifications(&user_id, &client).await?;
+
+        // Convert to proto and return
+        let proto_notifications: Vec<PersonalNotification> =
+            db_notifications.into_iter().map(|m| m.into()).collect();
+
+        Ok(proto_notifications)
+    }
+
+    //ToDo: Rust Doc
+    pub async fn acknowledge_persistent_notifications(
+        &self,
+        notification_ids: Vec<String>,
+    ) -> Result<()> {
+        let client = self.database.get_client().await?;
+
+        // Convert provided id strings to DieselUlids
+        let result: Result<Vec<_>, _> = notification_ids.into_iter().map(|id| DieselUlid::from_str(&id)).collect();
+
+        let notification_ulids = tonic_invalid!(result, "Invalid notification ids provided");
+
+        // Acknowledge notification (delete from persistent notifications table)
+        PersistentNotification::acknowledge_user_notifications(&notification_ulids, &client).await?;
+
+        Ok(())
     }
 }

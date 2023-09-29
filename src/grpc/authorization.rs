@@ -56,6 +56,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
                 .add_permission_to_user(
                     user_id,
                     resource_id,
+                    &obj.object.name,
                     obj.into_object_mapping(tonic_invalid!(
                         DbPermissionLevel::try_from(request.get_ref().permission_level),
                         "Invalid permission level"

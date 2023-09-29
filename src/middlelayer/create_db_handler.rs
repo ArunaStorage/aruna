@@ -63,6 +63,7 @@ impl DatabaseHandler {
                     self.add_permission_to_user(
                         user_id,
                         object.id,
+                        &object.name,
                         ObjectMapping::PROJECT(DbPermissionLevel::ADMIN),
                     )
                     .await?,
