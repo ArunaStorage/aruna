@@ -1,28 +1,48 @@
-use diesel::r2d2::{self, ConnectionManager, Pool};
-use diesel::PgConnection;
-use dotenv::dotenv;
+use anyhow::Result;
+use deadpool_postgres::{Config, ManagerConfig, Object, Pool, RecyclingMethod, Runtime};
+use tokio_postgres::NoTls;
 
 pub struct Database {
-    pub pg_connection: Pool<ConnectionManager<PgConnection>>,
+    connection_pool: Pool,
 }
 
 impl Database {
-    pub fn new(database_url: &str) -> Self {
-        let connection = Database::establish_connection(database_url);
+    pub fn new(
+        database_host: String,
+        database_port: u16,
+        database_name: String,
+        database_user: String,
+    ) -> Result<Self> {
+        let mut cfg = Config::new();
+        cfg.host = Some(database_host);
+        cfg.port = Some(database_port);
+        cfg.user = Some(database_user);
+        cfg.dbname = Some(database_name);
+        cfg.manager = Some(ManagerConfig {
+            recycling_method: RecyclingMethod::Fast,
+        });
+        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
-        Database {
-            pg_connection: connection,
-        }
+        Ok(Database {
+            connection_pool: pool,
+        })
     }
 
-    fn establish_connection(database_url: &str) -> Pool<ConnectionManager<PgConnection>> {
-        dotenv().ok();
+    /*
+    pub fn new (conn_str: &str) -> Result<Self> {
+        let conf = tokio_postgres::Config
+    }
+    */
 
-        //let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let manager = ConnectionManager::<PgConnection>::new(database_url);
+    pub async fn initialize_db(&self) -> Result<()> {
+        let client = self.connection_pool.get().await?;
 
-        r2d2::Pool::builder()
-            .build(manager)
-            .expect("Failed to create database connection pool")
+        let initial = tokio::fs::read_to_string("./src/database/schema.sql").await?;
+        client.batch_execute(&initial).await?;
+        Ok(())
+    }
+
+    pub async fn get_client(&self) -> Result<Object> {
+        Ok(self.connection_pool.get().await?)
     }
 }

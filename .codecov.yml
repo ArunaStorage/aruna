@@ -17,5 +17,5 @@ ignore:
   - "tests" # we also don't care about coverage of test code
   - "benches" # or coverage of benchmarks
   - "protos" # coverage for protos are not necessary either
-  - "migrations" # exclude database stuffnecessary either
+  - "migrations" # exclude database stuff necessary either
   - "migrations" # exclude database stuff
