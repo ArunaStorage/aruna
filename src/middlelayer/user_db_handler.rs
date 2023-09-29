@@ -348,4 +348,55 @@ impl DatabaseHandler {
 
         Ok(())
     }
+
+    //ToDo: Rust Doc
+    pub async fn request_resource_access(
+        &self,
+        request_user_ulid: DieselUlid,
+        resource_ulid: DieselUlid,
+    ) -> Result<()> {
+        let client = self.database.get_client().await?;
+
+        // Fetch resource and requesting user to validate they exist
+        let resource = if let Some(resource) = self.cache.get_object(&resource_ulid) {
+            resource
+        } else {
+            bail!("Object does not exist");
+        };
+
+        let request_user = if let Some(cache_user) = self.cache.get_user(&request_user_ulid) {
+            cache_user
+        } else {
+            bail!("Requesting user does not exist");
+        };
+
+        // Create personal/persistent notification
+        let mut p_notification = PersistentNotification {
+            id: DieselUlid::generate(),
+            user_id: resource.object.created_by,
+            notification_variant: PersistentNotificationVariant::ACCESS_REQUESTED,
+            message: format!(
+                "{} ({}) requests access for {:?} ({})",
+                request_user.display_name,
+                request_user.id,
+                resource.object.object_type,
+                resource_ulid
+            ),
+            refs: Json(NotificationReferences(vec![
+                NotificationReference {
+                    reference_type: NotificationReferenceType::User,
+                    reference_name: request_user.display_name,
+                    reference_value: request_user.id.to_string(),
+                },
+                NotificationReference {
+                    reference_type: NotificationReferenceType::Resource,
+                    reference_name: resource.object.name,
+                    reference_value: resource.object.id.to_string(),
+                },
+            ])),
+        };
+        p_notification.create(&client).await?;
+
+        Ok(())
+    }
 }
