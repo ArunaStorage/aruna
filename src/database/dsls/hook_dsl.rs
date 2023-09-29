@@ -176,10 +176,10 @@ impl Hook {
         }
     }
     pub async fn list_hooks(project_id: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
-        let ids = vec![project_id];
+        //let ids = vec![project_id];
         let query = "SELECT * FROM hooks WHERE $1 = ANY (project_ids)";
         let prepared = client.prepare(query).await?;
-        let rows = client.query(&prepared, &[&ids]).await?;
+        let rows = client.query(&prepared, &[&project_id]).await?;
         Ok(rows.iter().map(Hook::from_row).collect::<Vec<_>>())
     }
     pub async fn list_owned(owner: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {

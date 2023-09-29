@@ -5,7 +5,10 @@ use crate::common::{
 };
 use aruna_rust_api::api::storage::{
     models::v2::EndpointHostConfig,
-    services::v2::{CreateEndpointRequest, CreateWorkspaceRequest, CreateWorkspaceTemplateRequest},
+    services::v2::{
+        ClaimWorkspaceRequest, CreateEndpointRequest, CreateWorkspaceRequest,
+        CreateWorkspaceTemplateRequest, DeleteWorkspaceRequest,
+    },
 };
 use aruna_server::{
     auth::structs::Context,
@@ -14,8 +17,9 @@ use aruna_server::{
         dsls::{
             hook_dsl::{Hook, HookVariant, InternalHook},
             object_dsl::Object,
+            user_dsl::User,
         },
-        enums::DataClass,
+        enums::{DataClass, ObjectStatus},
     },
     middlelayer::{
         endpoints_request_types::CreateEP,
@@ -27,7 +31,7 @@ use postgres_types::Json;
 use std::{net::SocketAddr, str::FromStr};
 
 #[tokio::test]
-async fn create_template() {
+async fn create_and_delete_template() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
     let mut user = test_utils::new_user(vec![]);
@@ -87,7 +91,7 @@ async fn get_templates() {
     assert!(temps.iter().all(|t| t.owner == user.id));
 }
 #[tokio::test]
-async fn create_workspace() {
+async fn create_and_delete_workspace() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
     let token_handler =
@@ -223,7 +227,7 @@ async fn create_workspace() {
     assert!(custom_instance.endpoints.0.contains_key(&ep.id));
     assert_eq!(default_instance.data_class, DataClass::WORKSPACE);
     assert_eq!(custom_instance.data_class, DataClass::WORKSPACE);
-    authorizer
+    let default_service_account = authorizer
         .check_permissions(
             &token_one,
             vec![Context::res_ctx(
@@ -245,7 +249,7 @@ async fn create_workspace() {
         )
         .await
         .unwrap_err();
-    authorizer
+    let custom_service_account = authorizer
         .check_permissions(
             &token_two,
             vec![Context::res_ctx(
@@ -267,4 +271,91 @@ async fn create_workspace() {
         )
         .await
         .unwrap_err();
+
+    // Delete workspace instances
+    db_handler
+        .delete_workspace(default_instance_id, default_service_account)
+        .await
+        .unwrap();
+    db_handler
+        .delete_workspace(custom_instance_id, custom_service_account)
+        .await
+        .unwrap();
+    assert!(User::get(default_service_account, &client)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(User::get(custom_service_account, &client)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        Object::get(default_instance_id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .object_status,
+        ObjectStatus::DELETED
+    );
+    assert_eq!(
+        Object::get(custom_instance_id, &client)
+            .await
+            .unwrap()
+            .unwrap()
+            .object_status,
+        ObjectStatus::DELETED
+    );
+}
+#[tokio::test]
+pub async fn claim_workspace() {
+    // Init
+    let db_handler = init_database_handler_middlelayer().await;
+    let token_handler =
+        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await;
+    let authorizer = init_permission_handler(db_handler.cache.clone(), token_handler).await;
+    let mut creator = test_utils::new_user(vec![]);
+    let mut user = test_utils::new_user(vec![]);
+    let client = db_handler.database.get_client().await.unwrap();
+    creator.create(&client).await.unwrap();
+    user.create(&client).await.unwrap();
+
+    // Create template
+    let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
+    let template = CreateTemplate(CreateWorkspaceTemplateRequest {
+        owner_id: creator.id.to_string(),
+        prefix: "test".to_string(),
+        name: "claim_test".to_string(),
+        hook_ids: vec![],
+        description: "abc".to_string(),
+        endpoint_id: vec![],
+    });
+    let template_id = db_handler
+        .create_workspace_template(template, creator.id)
+        .await
+        .unwrap();
+
+    // Create instance
+    let request = CreateWorkspace(CreateWorkspaceRequest {
+        workspace_template: template_id.to_string(),
+        description: "instance description".to_string(),
+    });
+    let (workspace_id, .., token) = db_handler
+        .create_workspace(authorizer, request, default_endpoint)
+        .await
+        .unwrap();
+    let ws = Object::get(workspace_id, &client).await.unwrap().unwrap();
+
+    assert_eq!(ws.data_class, DataClass::WORKSPACE);
+    assert_eq!(ws.created_by, creator.id);
+
+    // Claim instance
+    let request = ClaimWorkspaceRequest {
+        workspace_id: workspace_id.to_string(),
+        token,
+    };
+    db_handler.claim_workspace(request, user.id).await.unwrap();
+
+    let claimed = Object::get(workspace_id, &client).await.unwrap().unwrap();
+    assert_eq!(claimed.data_class, DataClass::PRIVATE);
+    assert_eq!(claimed.created_by, user.id);
 }
