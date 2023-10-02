@@ -12,6 +12,7 @@ use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
+use crate::database::enums::ObjectStatus;
 use crate::database::enums::ObjectType;
 use crate::utils::cache_utils::{
     get_collection_children, get_dataset_relations, get_project_children,
@@ -174,7 +175,9 @@ impl Cache {
 
     pub fn remove_object(&self, id: &DieselUlid) {
         self.check_lock();
-        self.object_cache.remove(id);
+        if let Some(mut x) = self.object_cache.get_mut(id) {
+            x.value_mut().object.object_status = ObjectStatus::DELETED;
+        }
     }
 
     pub fn add_user(&self, id: DieselUlid, user: User) {
@@ -563,6 +566,29 @@ mod tests {
     use super::*;
     use diesel_ulid::DieselUlid;
     use postgres_types::Json;
+
+    #[test]
+    fn test_remove_object() {
+        let cache = Cache::new();
+        let object_ulid = DieselUlid::generate();
+        let object_plus = ObjectWithRelations::random_object_v2(
+            &object_ulid,
+            ObjectType::PROJECT,
+            vec![],
+            vec![],
+        );
+
+        // Add random object
+        cache.add_object(object_plus.clone());
+        assert!(cache.get_object(&object_ulid).is_some());
+
+        // Delete object
+        cache.remove_object(&object_ulid);
+        assert_eq!(
+            cache.get_object(&object_ulid).unwrap().object.object_status,
+            ObjectStatus::DELETED
+        );
+    }
 
     #[test]
     fn test_remove_endpoint_from_users() {

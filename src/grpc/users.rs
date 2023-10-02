@@ -624,20 +624,83 @@ impl UserService for UserServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn get_personal_notifications(
         &self,
-        _request: Request<GetPersonalNotificationsRequest>,
+        request: Request<GetPersonalNotificationsRequest>,
     ) -> tonic::Result<Response<GetPersonalNotificationsResponse>> {
-        return Err(Status::unimplemented(
-            "GetPersonalNotifications currently unimplemented",
-        ));
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        let user_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.user_id),
+            "ULID conversion error"
+        );
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let token_user_ulid = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        if user_id != token_user_ulid {
+            return Err(tonic::Status::invalid_argument(
+                "Forbidden to fetch personal notifications of other users",
+            ));
+        }
+
+        // Fetch personal notifications from database
+        let notifications = tonic_internal!(
+            self.database_handler
+                .get_persistent_notifications(user_id)
+                .await,
+            "Failed to fetch personal notifications"
+        );
+
+        // Return personal notifications
+        let response = GetPersonalNotificationsResponse { notifications };
+        return_with_log!(response);
     }
+
     async fn acknowledge_personal_notifications(
         &self,
-        _request: Request<AcknowledgePersonalNotificationsRequest>,
+        request: Request<AcknowledgePersonalNotificationsRequest>,
     ) -> tonic::Result<Response<AcknowledgePersonalNotificationsResponse>> {
-        return Err(Status::unimplemented(
-            "AcknowledgePersonalNotifications currently unimplemented",
-        ));
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Acknowledge personal notifications in database
+        tonic_internal!(
+            self.database_handler
+                .acknowledge_persistent_notifications(inner_request.notification_id)
+                .await,
+            "Failed to acknowledge personal notifications"
+        );
+
+        // Return empty response on success
+        let response = AcknowledgePersonalNotificationsResponse {};
+        return_with_log!(response);
     }
 }
