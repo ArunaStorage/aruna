@@ -172,8 +172,6 @@ impl DatabaseHandler {
             .map(|hook| hook.id)
             .collect();
 
-        dbg!("Err!");
-
         // All updates:
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
