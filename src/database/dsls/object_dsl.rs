@@ -444,7 +444,18 @@ impl Object {
             .await?;
         Ok(())
     }
-
+    pub async fn batch_claim(
+        user_id: &DieselUlid,
+        objects: &Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+            SET data_class = ('PRIVATE'), created_by = $1 
+            WHERE id = ANY($2::uuid[]);";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[user_id, objects]).await?;
+        Ok(())
+    }
     pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
         let query = "UPDATE objects 
         SET name = $2

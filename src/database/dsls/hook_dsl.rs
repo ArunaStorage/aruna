@@ -165,6 +165,16 @@ impl CrudDb for Hook {
     }
 }
 impl Hook {
+    pub async fn exists(hook_ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
+        let query = "SELECT * FROM hooks WHERE id = ANY ($1)";
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[&hook_ids]).await?;
+        if hook_ids.len() > rows.len() {
+            Err(anyhow!("Not all hooks exist"))
+        } else {
+            Ok(())
+        }
+    }
     pub async fn list_hooks(project_id: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
         let ids = vec![project_id];
         let query = "SELECT * FROM hooks WHERE $1 = ANY (project_ids)";
@@ -184,6 +194,43 @@ impl Hook {
         client.execute(&prepared, &[hook_id]).await?;
         Ok(())
     }
+    pub async fn add_projects_to_hook(
+        projects: &Vec<DieselUlid>,
+        hook_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE hooks
+        SET project_ids = project_ids || $1::uuid[]
+        WHERE id = $2;";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[projects, hook_id]).await?;
+        Ok(())
+    }
+    pub async fn remove_workspace_from_hooks(
+        workspace: &DieselUlid,
+        hook_ids: &Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE hooks
+        SET project_ids = array_remove(project_ids, $1)
+        WHERE id = ANY($2::uuid[]);";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&workspace, hook_ids]).await?;
+        Ok(())
+    }
+
+    pub async fn add_workspace_to_hook(
+        workspace: DieselUlid,
+        hook_ids: &Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE hooks
+        SET project_ids = project_ids || $1
+        WHERE id = ANY($2::uuid[]);";
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&workspace, hook_ids]).await?;
+        Ok(())
+    }
     pub async fn get_project_from_hook(
         hook_id: &DieselUlid,
         client: &Client,
@@ -197,20 +244,24 @@ impl Hook {
             .ok_or_else(|| anyhow!("Hook not found"))?;
         Ok(hook.project_ids)
     }
+
     pub async fn get_hooks_for_projects(
         project_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<HookWithAssociatedProject>> {
-        let query = "SELECT q.id, q.name, q.description, q.project_id, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
-        (
-	        SELECT UNNEST(p_ids) 
-            INTERSECT 
-            SELECT UNNEST(arr)
-        ) AS project_id
-        FROM (
-            SELECT project_id AS p_ids, 
-            ARRAY$1::uuid[] AS arr, *
-            FROM hooks
+        let query =
+        "SELECT 
+            q.id, q.name, q.description, q.project_ids, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
+            (
+	            SELECT UNNEST(p_ids) 
+                INTERSECT 
+                SELECT UNNEST(arr)
+            ) AS project_id
+        FROM 
+            (
+                SELECT project_ids AS p_ids, 
+                $1::uuid[] AS arr, *
+                FROM hooks
             ) q
         WHERE p_ids && arr;".to_string();
         let prepared = client.prepare(&query).await?;

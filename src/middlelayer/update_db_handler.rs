@@ -369,6 +369,8 @@ impl DatabaseHandler {
             }
         }
 
+        let hierarchies = owr.object.fetch_object_hierarchies(&client).await?;
+
         // Trigger hooks for the 4 combinations:
         // 1. update in place & new key_vals
         // 2. New object & new key_vals
@@ -387,19 +389,16 @@ impl DatabaseHandler {
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
             };
+            // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
-                db_handler
+                let call = db_handler
                     .trigger_on_append_hook(authorizer, user_id, id, kvs)
-                    .await
+                    .await;
+                if call.is_err() {
+                    log::error!("{:?}", call);
+                }
             });
         } else if !req.0.add_key_values.is_empty() && is_new {
-            let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
-            let auth2 = authorizer.clone();
-            tokio::spawn(async move { db_handler.trigger_on_creation(auth2, id, user_id).await });
             let kvs = req
                 .0
                 .add_key_values
@@ -412,9 +411,18 @@ impl DatabaseHandler {
                 cache: self.cache.clone(),
             };
             tokio::spawn(async move {
-                db_handler
-                    .trigger_on_append_hook(authorizer.clone(), id, user_id, kvs)
-                    .await
+                let call_on_create = db_handler
+                    .trigger_on_creation(authorizer.clone(), id, user_id)
+                    .await;
+                if call_on_create.is_err() {
+                    log::error!("{:?}", call_on_create);
+                }
+                let call_on_append = db_handler
+                    .trigger_on_append_hook(authorizer, id, user_id, kvs)
+                    .await;
+                if call_on_append.is_err() {
+                    log::error!("{:?}", call_on_append);
+                }
             });
         } else if is_new {
             let kvs = owr.object.key_values.0 .0.clone();
@@ -423,32 +431,23 @@ impl DatabaseHandler {
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
             };
-            let auth2 = authorizer.clone();
-            if !kvs.is_empty() {
-                tokio::spawn(async move {
-                    db_handler
-                        .trigger_on_append_hook(auth2, user_id, id, kvs)
-                        .await
-                });
-            }
-            let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
             tokio::spawn(async move {
-                db_handler
+                if !kvs.is_empty() {
+                    let on_append = db_handler
+                        .trigger_on_append_hook(authorizer.clone(), user_id, id, kvs)
+                        .await;
+                    if on_append.is_err() {
+                        log::error!("{:?}", on_append);
+                    }
+                }
+                let on_create = db_handler
                     .trigger_on_creation(authorizer, id, user_id)
-                    .await
+                    .await;
+                if on_create.is_err() {
+                    log::error!("{:?}", on_create);
+                }
             });
         };
-        // Update cache again with triggered hooks.
-        // Two cache updates are needed because hooks
-        // must have an updated cache for tree traversal
-        //self.cache
-        //    .update_object(&object_plus.object.id, object_plus.clone());
-
-        let hierarchies = owr.object.fetch_object_hierarchies(&client).await?;
 
         // Try to emit object updated notification(s)
         if let Err(err) = self
