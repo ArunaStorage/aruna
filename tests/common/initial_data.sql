@@ -20,7 +20,7 @@ VALUES
 (
     '018A27CF-78B4-D2A2-1F7E-16F6F27B5F8D', --01H8KWYY5MTAH1YZGPYVS7PQWD
     'test-user',
-    '39893781-320e-4dbf-be39-c06d8b28e897', -- regular-user
+    '39893781-320e-4dbf-be39-c06d8b28e897', -- regular-user 1SH4VR2CGE9PZVWEE0DP5JHT4Q
     '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
     true
 );

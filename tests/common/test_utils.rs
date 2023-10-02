@@ -5,8 +5,9 @@ use aruna_rust_api::api::storage::{
         collection_service_server::CollectionService, create_collection_request,
         create_dataset_request, dataset_service_server::DatasetService,
         project_service_server::ProjectService, CreateAuthorizationRequest,
-        CreateCollectionRequest, CreateDatasetRequest, CreateProjectRequest, GetCollectionRequest,
-        GetDatasetRequest,
+        CreateCollectionRequest, CreateDatasetRequest, CreateProjectRequest,
+        DeleteAuthorizationRequest, GetCollectionRequest, GetDatasetRequest,
+        UpdateAuthorizationRequest,
     },
 };
 use aruna_server::{
@@ -42,7 +43,7 @@ pub static USER1_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleH
 #[allow(dead_code)]
 pub static USER1_ULID: &str = "01H8KWYY5MTAH1YZGPYVS7PQWD";
 #[allow(dead_code)]
-pub static USER2_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMyNjc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI2YWVlNDg1ZC1jMzVlLTRmYWQtYTQ3Zi01YzVmOWNkMmYzMjAiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiYzY3NWI5ZmUtNzI3NS00NmM2LWFmNWEtMjY0MTExNGI1Mzc1IiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ1c2VyMyJ9.JVJpB4HF-7FgQE8SwnGxv5HXYCFvqEVX7jp9mgsXextYxP0jfhHUW6zTlzWgGBOj2FvCqWYJBTSZsgGhiRNT6ILWPNP65z07gj3ztPQJASDK68N5VtmmgSwBhk6byNLtEsJCLvPc0n1TnX8h26O6Zqk4maX8WF3zYulVwILQ5WezItTM9bb0mRy2FVZN35JOr7E1bVW83XnlzNKepdgyTIf8d-IBQifVIip27HMzgvVeBIircL7xSfTbaJgNsbF3LYVVmk0nQEGBXOgmljoLToXGjk0fRIFw1SCEzhY4Jyf873S5KSdi9jKwcxaoN7yjZqw1DPF4ux2q-OFZeqO_uNNSui6CeRuVZdFu8GzbrR45xWIoXlm4i16b1wT-IJr1RwvF1mpmIuEJilevTlhTn_FsAJBH28axDz-l_oblMbvZYzlYeirUYF_6fudDp61gwQv17G3Z8F5AYdF3Rs756_VnL-geCMakIE4bjZJOJlkYWC-9PKNqcabvlLbqs8OGqC7vR4nsi5cV29RDuCGud4TlWcWOiuzSc22hFy5gELfcIgsERKgxKgJ_WeFWgtFjXYKVCaAFDMc55elAs560qFftaKrs_o6esCW0wvrNVJvCxvo7CwlxUZKtnKZximPrUiqxSBwbpLXykivWTYDwp52F5hu8Q1pEWRYe_wySls8";
+pub static USER2_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMyNjc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI2YWVlNDg1ZC1jMzVlLTRmYWQtYTQ3Zi01YzVmOWNkMmYzMjAiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiYzY3NWI5ZmUtNzI3NS00NmM2LWFmNWEtMjY0MTExNGI1Mzc1IiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ1c2VyMyJ9.hSNxHV_IVjbYUa0V-Tj19-uZi1Sd5786G9S9t0SCwh_Vn5XCZFwv4_y-GfuOq4edtqBHStfIgD6PLEE1ZvD3BQUsU9wNRlAY6Me51vPKJvatHcbWR0Pf-j4BZJ3qLVTAsDDAV5_n-CR1d6I4ev_FCX7Xn7rXz9GhVMKrJ7apMEet4HizFexfA6EaCKaYvb3h-fpNgTD1p__qNquFvP8NjLu-EcPKc2XWWDaCEjTEIvS9iE2L-G173U2ewjrk2apU1rQfRfgd8BhP9Pj8eHb0zigxElkGMZhAqkwt8KWyuneOl_X6M3t_MKyiz_xlWY_3Q_ai-ZEYzxRc5xVdRffBtett8FxnFCNYwdFucIQaYexSTk1O3oXgVGekC4a_-GF8I51YjvjyvpBtdg26fmhdS7_ZHj3flM2mlfNi1byQRG3VYUn-gyyZJ0QCo5-q9CK8PWjqLSXaF1FqjlsnB5FqMKpRm1uT8K26ntFQQmrSotNfbQgFjnPDLbaGn9wC2Ld8hAtjEHNhl9eVvxVsa2E6Nyl_Xpt-r-m_J4DcH7Qcv0DiLoVzIhbO6OM_wDOlKsyQZ9FL7mXISisUKU-cPqyiiaI9hQ8f6sJm9iAy5xZQSoemKeEKxfsPfXviVpWYb_v9TdfbQjIJ3LR14ouPU056pSn2ofU3HBrUulnuVPLEP-8";
 #[allow(dead_code)]
 pub static USER2_ULID: &str = "01HBG7TQS8HTV3M2PKFKMMBSJ5";
 #[allow(dead_code)]
@@ -336,6 +337,50 @@ pub async fn fast_track_grpc_permission_add(
     // Add permission to user
     auth_service
         .create_authorization(grpc_request)
+        .await
+        .unwrap();
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_permission_update(
+    auth_service: &AuthorizationServiceImpl,
+    token: &str,
+    user_ulid: &DieselUlid,
+    resource_ulid: &DieselUlid,
+    permission_level: DbPermissionLevel,
+) {
+    // Create request with token
+    let inner_request = UpdateAuthorizationRequest {
+        resource_id: resource_ulid.to_string(),
+        user_id: user_ulid.to_string(),
+        permission_level: PermissionLevel::from(permission_level) as i32,
+    };
+    let grpc_request = add_token(Request::new(inner_request), token);
+
+    // Add permission to user
+    auth_service
+        .update_authorization(grpc_request)
+        .await
+        .unwrap();
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_permission_delete(
+    auth_service: &AuthorizationServiceImpl,
+    token: &str,
+    user_ulid: &DieselUlid,
+    resource_ulid: &DieselUlid,
+) {
+    // Create request with token
+    let inner_request = DeleteAuthorizationRequest {
+        resource_id: resource_ulid.to_string(),
+        user_id: user_ulid.to_string(),
+    };
+    let grpc_request = add_token(Request::new(inner_request), token);
+
+    // Add permission to user
+    auth_service
+        .delete_authorization(grpc_request)
         .await
         .unwrap();
 }
