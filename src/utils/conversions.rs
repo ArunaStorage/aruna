@@ -47,8 +47,8 @@ use aruna_rust_api::api::storage::models::v2::{
     Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
-    create_collection_request, create_dataset_request, create_object_request, WorkspaceInfo, PersonalNotification,
-    PersonalNotificationVariant, ReferenceType, References,
+    create_collection_request, create_dataset_request, create_object_request, PersonalNotification,
+    PersonalNotificationVariant, ReferenceType, References, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;

@@ -628,10 +628,10 @@ async fn persistent_notification_test() {
             reference_value: resource_ulid.to_string(),
         }])),
     };
-    pers_notification.create(&client).await.unwrap();
+    pers_notification.create(client).await.unwrap();
 
     // Fetch notification
-    let validation = PersistentNotification::get(notification_ulid, &client)
+    let validation = PersistentNotification::get(notification_ulid, client)
         .await
         .unwrap()
         .unwrap();
@@ -649,11 +649,11 @@ async fn persistent_notification_test() {
     assert_eq!(pers_notification.refs, validation.refs);
 
     // Acknowledge notification
-    PersistentNotification::acknowledge_user_notifications(&vec![notification_ulid], &client)
+    PersistentNotification::acknowledge_user_notifications(&vec![notification_ulid], client)
         .await
         .unwrap();
 
-    assert!(PersistentNotification::get(notification_ulid, &client)
+    assert!(PersistentNotification::get(notification_ulid, client)
         .await
         .unwrap()
         .is_none());

@@ -26,7 +26,7 @@ async fn grpc_request_access() {
         fast_track_grpc_project_create(&service_block.project_service, USER1_OIDC_TOKEN).await;
 
     let project_ulid = DieselUlid::from_str(&project.id).unwrap();
-    let user2_ulid = DieselUlid::from_str(&USER2_ULID.to_string()).unwrap();
+    let user2_ulid = DieselUlid::from_str(USER2_ULID).unwrap();
 
     // Request access of non-existing resource
     let mut inner_request = RequestResourceAccessRequest {
