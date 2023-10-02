@@ -340,7 +340,7 @@ impl SearchService for SearchServiceImpl {
         // Create personal notification to request access
         tonic_internal!(
             self.database_handler
-                .request_resource_access(resource_ulid, user_ulid)
+                .request_resource_access(user_ulid, resource_ulid)
                 .await,
             "Failed to request resource access"
         );
