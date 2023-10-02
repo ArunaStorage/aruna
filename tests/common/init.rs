@@ -8,6 +8,7 @@ use aruna_server::grpc::datasets::DatasetServiceImpl;
 use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::grpc::relations::RelationsServiceImpl;
+use aruna_server::grpc::search::SearchServiceImpl;
 use aruna_server::grpc::users::UserServiceImpl;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
@@ -32,6 +33,7 @@ pub struct ServiceBlock {
     pub collection_service: CollectionServiceImpl,
     pub database_service: DatasetServiceImpl,
     pub object_service: ObjectServiceImpl,
+    pub search_service: SearchServiceImpl,
 }
 
 #[allow(dead_code)]
@@ -285,6 +287,17 @@ pub async fn init_relation_service_manual(
 }
 
 #[allow(dead_code)]
+pub async fn init_search_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+    search: Arc<MeilisearchClient>,
+) -> SearchServiceImpl {
+    // Init collection service
+    SearchServiceImpl::new(db, auth, cache, search).await
+}
+
+#[allow(dead_code)]
 pub async fn init_grpc_services() -> (
     AuthorizationServiceImpl,
     ProjectServiceImpl,
@@ -395,6 +408,13 @@ pub async fn init_service_block() -> ServiceBlock {
         )
         .await,
         object_service: init_object_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
+            search_handler.clone(),
+        )
+        .await,
+        search_service: init_search_service_manual(
             db_handler.clone(),
             auth_handler.clone(),
             cache.clone(),
