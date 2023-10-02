@@ -86,11 +86,12 @@ async fn grpc_request_access() {
     for notification in &notifications {
         if notification.message
             == format!(
-                "{} ({}) requests access for {:?} ({})",
+                "{} ({}) requests access for {:?} {} ({})",
                 user2.display_name,
                 user2.id,
                 ObjectType::PROJECT,
-                project_ulid.to_string()
+                project.name,
+                project_ulid
             )
         {
             assert_eq!(

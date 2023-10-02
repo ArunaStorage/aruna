@@ -374,10 +374,11 @@ impl DatabaseHandler {
             user_id: resource.object.created_by,
             notification_variant: PersistentNotificationVariant::ACCESS_REQUESTED,
             message: format!(
-                "{} ({}) requests access for {:?} ({})",
+                "{} ({}) requests access for {:?} {} ({})",
                 request_user.display_name,
                 request_user.id,
                 resource.object.object_type,
+                resource.object.name,
                 resource_ulid
             ),
             refs: Json(NotificationReferences(vec![

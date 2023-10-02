@@ -68,7 +68,7 @@ async fn grpc_personal_notifications() {
 
     assert!(response.is_err());
 
-    // Get personal notifications of correct user
+    // Get personal notifications of correct user (specific for this test project)
     let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let notifications = service_block
@@ -77,9 +77,12 @@ async fn grpc_personal_notifications() {
         .await
         .unwrap()
         .into_inner()
-        .notifications;
+        .notifications
+        .into_iter()
+        .filter(|n| n.message.contains(&project_ulid.to_string()))
+        .collect_vec();
 
-    assert!(notifications.is_empty()); // This is maybe not true in the future...
+    assert!(notifications.is_empty());
 
     // Grant another user permission for project
     inner_request.user_id = user2_ulid.to_string();
