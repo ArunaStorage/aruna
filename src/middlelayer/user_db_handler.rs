@@ -206,10 +206,7 @@ impl DatabaseHandler {
                 id: DieselUlid::generate(),
                 user_id,
                 notification_variant: PersistentNotificationVariant::PERMISSION_GRANTED,
-                message: format!(
-                    "Permission granted for {:?} ({})",
-                    resource_name, resource_id
-                ),
+                message: format!("Permission granted for {} ({})", resource_name, resource_id),
                 refs: Json(NotificationReferences(vec![NotificationReference {
                     reference_type: NotificationReferenceType::Resource,
                     reference_name: resource_name.to_string(),
@@ -257,8 +254,8 @@ impl DatabaseHandler {
             user_id,
             notification_variant: PersistentNotificationVariant::PERMISSION_REVOKED,
             message: format!(
-                "Permission revoked for {:?} with id {}",
-                resource.object.object_type, resource_id
+                "Permission revoked for {} ({})",
+                resource.object.name, resource_id
             ),
             refs: Json(NotificationReferences(vec![NotificationReference {
                 reference_type: NotificationReferenceType::Resource,
