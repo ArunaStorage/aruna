@@ -27,7 +27,7 @@ pub async fn get_bundle(
     let final_receiver_clone = final_receiver.clone();
 
     tokio::spawn(async move {
-        let mut counter = 0;
+        let mut counter = 1; // Start with 1 for comparison with len()
         let len = path_level_vec.len();
         for (name, loc) in path_level_vec {
             dbg!((&name, &loc));
@@ -49,7 +49,7 @@ pub async fn get_bundle(
                                 .map(|e| e.to_string().into_bytes()),
                             ..Default::default()
                         },
-                        counter < len,
+                        counter >= len,
                     ))
                     .await
                     .map_err(|e| {
@@ -73,7 +73,7 @@ pub async fn get_bundle(
                             is_dir: true,
                             ..Default::default()
                         },
-                        counter < len,
+                        counter >= len,
                     ))
                     .await
                     .map_err(|e| {
@@ -82,9 +82,10 @@ pub async fn get_bundle(
                     })?;
             }
             counter += 1;
-            dbg!(counter);
+            log::debug!("{}/{}", counter, len);
         }
-        dbg!(counter);
+        log::debug!("{}/{}", counter, len);
+        
         Ok::<(), anyhow::Error>(())
     });
 
