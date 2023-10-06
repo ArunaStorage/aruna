@@ -84,7 +84,7 @@ pub async fn get_bundle(
             log::debug!("{}/{}", counter, len);
         }
         log::debug!("{}/{}", counter, len);
-        
+
         Ok::<(), anyhow::Error>(())
     });
 

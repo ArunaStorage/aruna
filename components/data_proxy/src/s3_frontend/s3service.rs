@@ -803,7 +803,7 @@ impl S3 for ArunaS3Service {
             let mut resp = S3Response::new(GetObjectOutput {
                 body,
                 last_modified: None,
-                e_tag: Some(format!("-{}", id.to_string())),
+                e_tag: Some(format!("-{}", id)),
                 ..Default::default()
             });
 
@@ -972,7 +972,7 @@ impl S3 for ArunaS3Service {
             body,
             content_length: calc_content_len,
             last_modified: None,
-            e_tag: Some(format!("-{}", id.to_string())),
+            e_tag: Some(format!("-{}", id)),
             version_id: None,
             ..Default::default()
         }))
@@ -1008,7 +1008,7 @@ impl S3 for ArunaS3Service {
                         .unwrap()
                         .into(),
                 ),
-                e_tag: Some(format!("-{}", id.to_string())),
+                e_tag: Some(format!("-{}", id)),
                 ..Default::default()
             }));
         }
