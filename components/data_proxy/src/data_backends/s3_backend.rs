@@ -242,7 +242,8 @@ impl StorageBackend for S3Backend {
             .sample_iter(&Alphanumeric)
             .take(30)
             .map(char::from)
-            .collect();
+            .collect::<String>()
+            .to_ascii_lowercase();
 
         // TODO: READ setting and set this based on settings
         let encryption_key: String = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
