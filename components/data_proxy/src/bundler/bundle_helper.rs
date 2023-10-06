@@ -30,7 +30,6 @@ pub async fn get_bundle(
         let mut counter = 1; // Start with 1 for comparison with len()
         let len = path_level_vec.len();
         for (name, loc) in path_level_vec {
-            dbg!((&name, &loc));
             let data_tx_clone = data_tx.clone();
             let file_info_sender_clone = file_info_sender.clone();
             if let Some(location) = loc {
