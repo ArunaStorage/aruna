@@ -304,7 +304,7 @@ impl AuthHandler {
         }
 
         if get_secret {
-            Ok(Some(user.access_key.clone()))
+            Ok(Some(user.secret.clone()))
         } else {
             Ok(None)
         }
