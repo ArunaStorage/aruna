@@ -184,7 +184,6 @@ impl BundlerService for BundlerServiceImpl {
 
             if let Some(perm) = user.value().permissions.get(&bundle_id) {
                 if *perm == DbPermissionLevel::Admin {
-
                     self.cache.delete_object(bundle_id).await.map_err(|err| {
                         log::error!("[Delete Bundle] Bundle deletion failed: {}", err);
                         tonic::Status::internal("Bundle deletion failed")

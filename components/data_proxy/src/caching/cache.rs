@@ -655,7 +655,7 @@ impl Cache {
             Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
         }
-        
+
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())

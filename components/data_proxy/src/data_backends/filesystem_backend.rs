@@ -217,7 +217,7 @@ impl StorageBackend for FSBackend {
             .map(char::from)
             .collect::<String>()
             .to_ascii_lowercase();
-        
+
         let bucket: String = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(5)

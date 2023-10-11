@@ -681,7 +681,7 @@ impl From<Object> for UpdateObjectRequest {
             description: None,
             add_key_values: vec![],
             remove_key_values: vec![],
-            data_class: DataClass::from(value.data_class) as i32,
+            data_class: value.data_class as i32,
             hashes: vec![],
             force_revision: false,
             parent: None,

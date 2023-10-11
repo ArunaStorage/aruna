@@ -133,10 +133,10 @@ impl AuthHandler {
 
         if let Some(it) = claims.it {
             match it.action {
-                Action::All => return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid)),
+                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid)),
                 Action::CreateSecrets => {
                     if it.target == self.self_id {
-                        return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
+                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
                     } else {
                         bail!("Token is not valid for this Dataproxy")
                     }
@@ -145,8 +145,8 @@ impl AuthHandler {
             }
         } else {
             // No intent, no Dataproxy/Action check
-            return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
-        };
+            Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+        }
     }
 
     pub(crate) fn extract_claims(
@@ -233,7 +233,7 @@ impl AuthHandler {
 
                         return Ok(CheckAccessResult {
                             user_id: Some(user.user_id.to_string()),
-                            token_id: token_id,
+                            token_id,
                             resource_ids: None,
                             missing_resources: None, // Bundles are standalone
                             object: Some((obj, None)), // Bundles can't have a location
