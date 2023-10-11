@@ -771,10 +771,17 @@ impl S3 for ArunaS3Service {
                     .finish_object(object.id, new_location.raw_content_len, hashes, token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+
+                // Set id of new location to object id to satisfy FK constraint
+                new_location.id = object.id;
+
                 self.cache
                     .upsert_object(object, Some(new_location))
                     .await
-                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
+                    .map_err(|e| {
+                        log::error! {"Upsert object error: {}", e};
+                        s3_error!(InternalError, "Unable to cache object after finish")
+                    })?;
 
                 self.backend
                     .delete_object(old_location)
