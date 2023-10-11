@@ -508,16 +508,19 @@ impl S3 for ArunaS3Service {
                     synced: false,
                 };
 
-                let id = col.id;
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        handler
+                        let col = handler
                             .create_collection(col, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                        Some(col.id)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-                Some(id)
             } else {
                 res_ids.get_collection()
             };
@@ -542,16 +545,21 @@ impl S3 for ArunaS3Service {
                     parents: Some(HashSet::from([parent])),
                     synced: false,
                 };
-                let id = dataset.id;
+                
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        handler
+                        let dataset = handler
                             .create_dataset(dataset, token)
                             .await
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
+
+                        Some(dataset.id)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-                Some(id)
             } else {
                 res_ids.get_dataset()
             };
@@ -571,7 +579,10 @@ impl S3 for ArunaS3Service {
                     handler
                         .create_object(new_object.clone(), Some(location), token)
                         .await
-                        .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                        .map_err(|err| {
+                            log::error!("Unable to create object: {:?}", err);
+                            s3_error!(InternalError, "Unable to create object")
+                    })?;
                 }
             }
         }
