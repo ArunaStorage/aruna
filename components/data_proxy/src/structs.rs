@@ -17,6 +17,7 @@ use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
@@ -668,6 +669,22 @@ impl From<Object> for CreateObjectRequest {
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
             hashes: vec![],
+        }
+    }
+}
+
+impl From<Object> for UpdateObjectRequest {
+    fn from(value: Object) -> Self {
+        UpdateObjectRequest {
+            object_id: value.id.to_string(),
+            name: None,
+            description: None,
+            add_key_values: vec![],
+            remove_key_values: vec![],
+            data_class: DataClass::from(value.data_class) as i32,
+            hashes: vec![],
+            force_revision: false,
+            parent: None,
         }
     }
 }

@@ -152,8 +152,6 @@ impl S3 for ArunaS3Service {
             .cloned()
             .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
 
-        dbg!(missing_resources.clone());
-
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
             user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
@@ -164,13 +162,40 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
-        let mut object = if let Some((o, _loc)) = object {
+        let mut object = if let Some((o, _)) = object {
             if o.object_type == crate::structs::ObjectType::Object {
                 if o.object_status == Status::Initializing {
                     o
                 } else {
-                    todo!();
-                    // TODO: Update object!
+                    // Force Object update in ArunaServer
+                    let new_revision = if let Some(handler) =
+                        self.cache.aruna_client.read().await.as_ref()
+                    {
+                        if let Some(token) = &impersonating_token {
+                            handler
+                                .init_object_update(o, token, true)
+                                .await
+                                .map_err(|_| s3_error!(InternalError, "Object update failed"))?
+                        } else {
+                            return Err(s3_error!(InternalError, "Token creation failed"));
+                        }
+                    } else {
+                        return Err(s3_error!(InternalError, "ArunaServer client not available"));
+                    };
+
+                    ProxyObject {
+                        id: new_revision.id,
+                        name: new_revision.name,
+                        key_values: new_revision.key_values,
+                        object_status: Status::Initializing,
+                        data_class: new_revision.data_class,
+                        object_type: crate::structs::ObjectType::Object,
+                        hashes: HashMap::default(),
+                        dynamic: false,
+                        children: None,
+                        parents: new_revision.parents,
+                        synced: false,
+                    }
                 }
             } else {
                 let missing_object_name = missing_resources
@@ -214,12 +239,15 @@ impl S3 for ArunaS3Service {
                 synced: false,
             }
         };
+
+        // Initialize data location in the storage backend
         let mut location = self
             .backend
             .initialize_location(&object, req.input.content_length, None, false)
             .await
             .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
+        // Initialize hashing transformers
         let (initial_sha_trans, initial_sha_recv) = HashingTransformer::new(Sha256::new());
         let (initial_md5_trans, initial_md5_recv) = HashingTransformer::new(Md5::new());
         let (initial_size_trans, initial_size_recv) = SizeProbe::new();
@@ -408,12 +436,13 @@ impl S3 for ArunaS3Service {
                         .create_and_finish(object.clone(), location, token)
                         .await
                         .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Unable to create object (finish)")
+                            log::error!("Create and finish error: {}", e);
+                            s3_error!(InternalError, "Unable to create and/or finish object")
                         })?;
                 }
             }
         }
+
         let output = PutObjectOutput {
             e_tag: md5_initial,
             checksum_sha256: sha_initial,
@@ -435,6 +464,7 @@ impl S3 for ArunaS3Service {
             token_id,
             resource_ids,
             missing_resources,
+            object,
             ..
         } = req
             .extensions
@@ -452,15 +482,51 @@ impl S3 for ArunaS3Service {
         let res_ids =
             resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
 
+        let mut new_object = if let Some((o, _)) = object {
+            if o.object_type == crate::structs::ObjectType::Object {
+                if o.object_status == Status::Initializing {
+                    o
+                } else {
+                    // Force Object update in ArunaServer
+                    let new_revision = if let Some(handler) =
+                        self.cache.aruna_client.read().await.as_ref()
+                    {
+                        if let Some(token) = &impersonating_token {
+                            handler
+                                .init_object_update(o, token, true)
+                                .await
+                                .map_err(|_| s3_error!(InternalError, "Object update failed"))?
+                        } else {
+                            return Err(s3_error!(InternalError, "Token creation failed"));
+                        }
+                    } else {
+                        return Err(s3_error!(InternalError, "ArunaServer client not available"));
+                    };
+
+                    ProxyObject {
+                        id: new_revision.id,
+                        name: new_revision.name,
+                        key_values: new_revision.key_values,
+                        object_status: Status::Initializing,
+                        data_class: new_revision.data_class,
+                        object_type: crate::structs::ObjectType::Object,
+                        hashes: HashMap::default(),
+                        dynamic: false,
+                        children: None,
+                        parents: new_revision.parents,
+                        synced: false,
+                    }
+                }
+            } else {
         let missing_object_name = missing_resources
             .clone()
             .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
             .o
             .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
-        let mut new_object = ProxyObject {
+                ProxyObject {
             id: DieselUlid::generate(),
-            name: missing_object_name,
+                    name: missing_object_name.to_string(),
             key_values: vec![],
             object_status: Status::Initializing,
             data_class: DataClass::Private,
@@ -470,6 +536,28 @@ impl S3 for ArunaS3Service {
             children: None,
             parents: None,
             synced: false,
+                }
+            }
+        } else {
+            let missing_object_name = missing_resources
+                .clone()
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+                .o
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+
+            ProxyObject {
+                id: DieselUlid::generate(),
+                name: missing_object_name.to_string(),
+                key_values: vec![],
+                object_status: Status::Initializing,
+                data_class: DataClass::Private,
+                object_type: crate::structs::ObjectType::Object,
+                hashes: HashMap::default(),
+                dynamic: false,
+                children: None,
+                parents: None,
+                synced: false,
+            }
         };
 
         let mut location = self
@@ -701,7 +789,6 @@ impl S3 for ArunaS3Service {
         };
 
         // If the object exists and the signatures match -> Skip the download
-
         let (object, old_location) = if let Some((object, Some(loc))) = object {
             (object, loc)
         } else {
