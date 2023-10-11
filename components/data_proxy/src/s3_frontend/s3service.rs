@@ -518,24 +518,24 @@ impl S3 for ArunaS3Service {
                     }
                 }
             } else {
-        let missing_object_name = missing_resources
-            .clone()
-            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-            .o
-            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+                let missing_object_name = missing_resources
+                    .clone()
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
+                    .o
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
 
                 ProxyObject {
-            id: DieselUlid::generate(),
+                    id: DieselUlid::generate(),
                     name: missing_object_name.to_string(),
-            key_values: vec![],
-            object_status: Status::Initializing,
-            data_class: DataClass::Private,
-            object_type: crate::structs::ObjectType::Object,
-            hashes: HashMap::default(),
-            dynamic: false,
-            children: None,
-            parents: None,
-            synced: false,
+                    key_values: vec![],
+                    object_status: Status::Initializing,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Object,
+                    hashes: HashMap::default(),
+                    dynamic: false,
+                    children: None,
+                    parents: None,
+                    synced: false,
                 }
             }
         } else {
@@ -633,7 +633,7 @@ impl S3 for ArunaS3Service {
                     parents: Some(HashSet::from([parent])),
                     synced: false,
                 };
-                
+
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
                         let dataset = handler
@@ -670,7 +670,7 @@ impl S3 for ArunaS3Service {
                         .map_err(|err| {
                             log::error!("Unable to create object: {:?}", err);
                             s3_error!(InternalError, "Unable to create object")
-                    })?;
+                        })?;
                 }
             }
         }

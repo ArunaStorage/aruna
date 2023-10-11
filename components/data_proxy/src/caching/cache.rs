@@ -118,9 +118,12 @@ impl Cache {
         for object in Object::get_all(&client).await? {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
-            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
-            for (e, v) in tree {
-                self.paths.insert(e, v);
+
+            if object.object_type != ObjectType::Bundle {
+                let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+                for (e, v) in tree {
+                    self.paths.insert(e, v);
+                }
             }
         }
 
@@ -231,13 +234,14 @@ impl Cache {
         resource_id: &str,
         variant: ObjectType,
     ) -> Result<Vec<(ResourceString, ResourceIds)>> {
-        // FIXME: This is really inefficient, but should work in a first iteration
+        //FIXME: This is really inefficient, but should work in a first iteration
         let resource_id = DieselUlid::from_str(resource_id)?;
         let (initial_res, _) = self
             .resources
             .get(&resource_id)
             .ok_or_else(|| anyhow!("Resource not found"))?
             .clone();
+
         match variant {
             ObjectType::Project => Ok(vec![(
                 ResourceString::Project(initial_res.name),
@@ -634,11 +638,14 @@ impl Cache {
             location
         };
 
-        self.resources.insert(object.id, (object, location));
+        self.resources.insert(object.id, (object.clone(), location));
         self.paths.retain(|_, v| v != &object_id);
-        let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
-        for (e, v) in tree {
-            self.paths.insert(e, v);
+
+        if object.object_type != ObjectType::Bundle {
+            let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
+            }
         }
         Ok(())
     }
@@ -648,6 +655,7 @@ impl Cache {
             Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
         }
+        
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())

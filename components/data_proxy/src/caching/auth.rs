@@ -4,6 +4,7 @@ use crate::structs::DbPermissionLevel;
 use crate::structs::Missing;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
+use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceString;
 use anyhow::anyhow;
@@ -131,12 +132,21 @@ impl AuthHandler {
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
-            if it.action == Action::CreateSecrets && it.target == self.self_id {
-                return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
+            match it.action {
+                Action::All => return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid)),
+                Action::CreateSecrets => {
+                    if it.target == self.self_id {
+                        return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
+                    } else {
+                        bail!("Token is not valid for this Dataproxy")
+                    }
+                }
+                _ => bail!("Action not allowed for Dataproxy"),
             }
-        }
-
-        bail!("Invalid permissions")
+        } else {
+            // No intent, no Dataproxy/Action check
+            return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
+        };
     }
 
     pub(crate) fn extract_claims(
@@ -205,6 +215,34 @@ impl AuthHandler {
 
         let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
         if let Some(bundle) = bundle {
+            if obj.object_type == ObjectType::Bundle {
+                // Check if user has access to Bundle Object
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                for (res, perm) in user.permissions {
+                    // ResourceIds only contain Bundle Id as Project
+                    if ids.check_if_in(res) && perm >= db_perm_from_method {
+                        let token_id = if user.user_id.to_string() == user.access_key {
+                            None
+                        } else {
+                            Some(user.access_key.clone())
+                        };
+
+                        return Ok(CheckAccessResult {
+                            user_id: Some(user.user_id.to_string()),
+                            token_id: token_id,
+                            resource_ids: None,
+                            missing_resources: None, // Bundles are standalone
+                            object: Some((obj, None)), // Bundles can't have a location
+                            bundle: Some(bundle),
+                        });
+                    }
+                }
+            }
+
             if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
             {
                 return Ok(CheckAccessResult {
@@ -343,6 +381,36 @@ impl AuthHandler {
                         ids.last()
                             .ok_or_else(|| anyhow!("No object found in path"))?
                             .clone(),
+                        None,
+                        Some(name.to_string()),
+                    ));
+                }
+            } else if bucket == "bundles" {
+                path = path.trim_matches('/');
+                if let Some((prefix, name)) = path.split_once('/') {
+                    let id = DieselUlid::from_str(prefix)?;
+                    log::debug!("Bundle ID: {}", id);
+
+                    let (bundle_object, _) = self
+                        .cache
+                        .resources
+                        .get(&id)
+                        .ok_or_else(|| anyhow!("No object found in path"))?
+                        .value()
+                        .clone();
+
+                    // Check if Bundle is empty
+                    if let Some(children) = &bundle_object.children {
+                        if children.is_empty() {
+                            bail!("Empty bundle: Children is empty")
+                        }
+                    } else {
+                        bail!("Empty bundle: Children is None")
+                    }
+
+                    return Ok((
+                        (bundle_object, None),
+                        ResourceIds::Project(id),
                         None,
                         Some(name.to_string()),
                     ));
