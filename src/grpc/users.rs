@@ -572,21 +572,11 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (_, maybe_token, _) = tonic_auth!(
+        let (user_ulid, maybe_token, proxy_request) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
             "Unauthorized"
-        );
-
-        // Validate provided endpoint/user id format
-        let endpoint_ulid = tonic_invalid!(
-            DieselUlid::from_str(&inner_request.endpoint_id),
-            "Invalid endpoint id format"
-        );
-        let user_ulid = tonic_invalid!(
-            DieselUlid::from_str(&inner_request.endpoint_id),
-            "Invalid endpoint id format"
         );
 
         // Create token based on provided context
@@ -597,10 +587,13 @@ impl UserService for UserServiceImpl {
                         ProtoContext::S3Credentials(_) => {
                             tonic_internal!(
                                 self.authorizer.token_handler.sign_dataproxy_slt(
-                                    &user_ulid, // Shouldn't we just take the user id associated with the request token?
+                                    &user_ulid,
                                     maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
                                     Some(Intent {
-                                        target: endpoint_ulid,
+                                        target: tonic_invalid!(
+                                            DieselUlid::from_str(&inner_request.endpoint_id),
+                                            "Invalid endpoint id format"
+                                        ),
                                         action: Action::CreateSecrets
                                     }),
                                 ),
@@ -608,14 +601,39 @@ impl UserService for UserServiceImpl {
                             )
                         }
                         ProtoContext::Copy(_) => {
-                            unimplemented!("Dataproxy copy token creation not yet implemented")
+                            unimplemented!("Dataproxy data replication token creation not yet implemented")
                         }
                     }
                 }
-                None => return Err(Status::invalid_argument("No context provided")),
+                None => return Err(Status::invalid_argument("Missing context action")),
             }
         } else {
-            return Err(Status::invalid_argument("No context provided"));
+            if proxy_request {
+                return Err(Status::invalid_argument("No context provided"));
+            } else {
+                if let Ok(endpoint_ulid) = DieselUlid::from_str(&inner_request.endpoint_id) {
+                    tonic_internal!(
+                        self.authorizer.token_handler.sign_dataproxy_slt(
+                            &user_ulid,
+                            maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                            Some(Intent {
+                                target: endpoint_ulid,
+                                action: Action::All
+                            }),
+                        ),
+                        "Token signing failed"
+                    )
+                } else {
+                    tonic_internal!(
+                        self.authorizer.token_handler.sign_dataproxy_slt(
+                            &user_ulid,
+                            maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                            None,
+                        ),
+                        "Token signing failed"
+                    )
+                }
+            }
         };
 
         // Return token to user
