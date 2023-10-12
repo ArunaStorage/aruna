@@ -601,7 +601,9 @@ impl UserService for UserServiceImpl {
                             )
                         }
                         ProtoContext::Copy(_) => {
-                            unimplemented!("Dataproxy data replication token creation not yet implemented")
+                            unimplemented!(
+                                "Dataproxy data replication token creation not yet implemented"
+                            )
                         }
                     }
                 }
