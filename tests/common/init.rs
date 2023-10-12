@@ -144,6 +144,7 @@ pub async fn init_token_handler(db_conn: Arc<Database>, cache: Arc<Cache>) -> Ar
             dotenvy::var("OAUTH_REALMINFO").unwrap(),
             dotenvy::var("ENCODING_KEY").unwrap(),
             dotenvy::var("DECODING_KEY").unwrap(),
+            dotenvy::var("OIDC_TOKEN_ISSUER").unwrap(),
         )
         .await
         .unwrap(),
@@ -178,6 +179,7 @@ pub async fn init_project_service() -> ProjectServiceImpl {
             dotenvy::var("OAUTH_REALMINFO").unwrap(),
             dotenvy::var("ENCODING_KEY").unwrap(),
             dotenvy::var("DECODING_KEY").unwrap(),
+            dotenvy::var("OIDC_TOKEN_ISSUER").unwrap(),
         )
         .await
         .unwrap(),

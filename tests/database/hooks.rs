@@ -209,16 +209,16 @@ pub async fn get_hooks() {
     assert!(Hook::exists(&vec![hook_id], &client).await.is_ok());
     // -> Checks if hook exists
 }
-#[tokio::test]
-pub async fn update_hooks() {
-    // TODO: remove_workspace_from_hook
-    // TODO: add_workspace_to_hook
-    // TODO: add_projects_to_hook
-    todo!()
-}
-#[tokio::test]
-pub async fn delete_hooks() {
-    // TODO: delete()
-    // TODO: delete_by_id()
-    todo!()
-}
+// #[tokio::test]
+// pub async fn update_hooks() {
+//     // TODO: remove_workspace_from_hook
+//     // TODO: add_workspace_to_hook
+//     // TODO: add_projects_to_hook
+//     todo!()
+// }
+// #[tokio::test]
+// pub async fn delete_hooks() {
+//     // TODO: delete()
+//     // TODO: delete_by_id()
+//     todo!()
+// }
