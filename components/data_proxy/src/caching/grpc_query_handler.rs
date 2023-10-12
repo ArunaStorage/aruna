@@ -35,6 +35,7 @@ use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -351,6 +352,43 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    pub async fn init_object_update(
+        &self,
+        object: DPObject,
+        token: &str,
+        force_update: bool,
+    ) -> Result<DPObject> {
+        // Create UpdateObjectRequest with provided value for force_revision parameter
+        let mut inner_request = UpdateObjectRequest::from(object);
+        inner_request.force_revision = force_update;
+
+        // Crate gRPC request with provided token in header
+        let mut req = Request::new(inner_request);
+
+        req.metadata_mut().append(
+            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+        );
+
+        // Update Object in ArunaServer and validate response
+        let response = self
+            .object_service
+            .clone()
+            .update_object(req)
+            .await?
+            .into_inner();
+
+        let object = DPObject::try_from(
+            response
+                .object
+                .ok_or(anyhow!("response does not contain object"))?,
+        )?;
+
+        self.cache.upsert_object(object.clone(), None).await?;
+
+        Ok(object)
+    }
+
     pub async fn finish_object(
         &self,
         object_id: DieselUlid,
@@ -388,33 +426,32 @@ impl GrpcQueryHandler {
 
     pub async fn create_and_finish(
         &self,
-        object: DPObject,
-        loc: ObjectLocation,
+        proxy_object: DPObject,
+        mut loc: ObjectLocation,
         token: &str,
     ) -> Result<DPObject> {
-        let mut req = Request::new(CreateObjectRequest::from(object.clone()));
+        // Create Object in Aruna Server
+        let mut req = Request::new(CreateObjectRequest::from(proxy_object.clone()));
 
         req.metadata_mut().append(
             AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
             AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
         );
 
-        let response = self
+        let server_object: DPObject = self
             .object_service
             .clone()
             .create_object(req)
             .await?
-            .into_inner();
-
-        let object: DPObject = response
+            .into_inner()
             .object
-            .ok_or(anyhow!("unknown project"))?
+            .ok_or(anyhow!("Object missing in CreateObjectResponse"))?
             .try_into()?;
 
         let mut req = Request::new(FinishObjectStagingRequest {
-            object_id: object.id.to_string(),
+            object_id: server_object.id.to_string(),
             content_len: loc.raw_content_len,
-            hashes: object.get_hashes(),
+            hashes: proxy_object.get_hashes(), // Hashes stay the same
             completed_parts: vec![],
         });
 
@@ -430,9 +467,15 @@ impl GrpcQueryHandler {
             .await?
             .into_inner()
             .object
-            .ok_or(anyhow!("unknown project"))?;
+            .ok_or(anyhow!("Object missing in FinishObjectResponse"))?;
+
+        // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
         let object = DPObject::try_from(response)?;
+        loc.id = object.id;
+
+        // Persist Object and Location in cache/database
         self.cache.upsert_object(object.clone(), Some(loc)).await?;
+
         Ok(object)
     }
 
@@ -475,7 +518,7 @@ impl GrpcQueryHandler {
                 Target::GenericResource(GenericResource { resource: Some(r) }) => {
                     resources.push(r);
                 }
-                Target::User(u) => self.cache.upsert_user(u).await?,
+                Target::User(u) => self.cache.clone().upsert_user(u).await?,
                 Target::Pubkey(pk) => {
                     let dec_key = DecodingKey::from_ed_pem(
                         format!(
@@ -568,7 +611,7 @@ impl GrpcQueryHandler {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
                 let user_info = self.get_user(uid, message.checksum.clone()).await?;
-                self.cache.upsert_user(user_info.clone()).await?;
+                self.cache.clone().upsert_user(user_info.clone()).await?;
             }
             EventVariant::Deleted => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
@@ -627,7 +670,7 @@ impl GrpcQueryHandler {
     }
 }
 
-pub fn sort_resources(res: &mut Vec<Resource>) {
+pub fn sort_resources(res: &mut [Resource]) {
     res.sort_by(|x, y| match (x, y) {
         (Resource::Project(_), Resource::Project(_)) => std::cmp::Ordering::Equal,
         (Resource::Project(_), Resource::Collection(_))

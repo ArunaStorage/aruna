@@ -57,14 +57,18 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                     access_key,
                     secret_key,
                 }));
-            };
+            } else {
+                log::error!("[Get Credentials] Query handler not available");
+                return Err(tonic::Status::unauthenticated(
+                    "Unable to authenticate user",
+                ));
+            }
         } else {
+            log::error!("[Get Credentials] Authentication handler not available");
             return Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ));
         }
-
-        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     /// PushReplica

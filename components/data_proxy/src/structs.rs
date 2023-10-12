@@ -17,6 +17,7 @@ use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
@@ -45,8 +46,8 @@ impl From<&Method> for DbPermissionLevel {
     fn from(method: &Method) -> Self {
         match *method {
             Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
-            Method::POST => DbPermissionLevel::Append,
-            Method::PUT | Method::DELETE => DbPermissionLevel::Write,
+            Method::POST | Method::PUT => DbPermissionLevel::Append,
+            Method::DELETE => DbPermissionLevel::Write,
             _ => DbPermissionLevel::Admin,
         }
     }
@@ -62,6 +63,7 @@ pub struct User {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
+    Bundle, // Bundles are proxy specific objects that group together all lower level objects into a single bundle
     Project,
     Collection,
     Dataset,
@@ -128,7 +130,7 @@ impl From<Pubkey> for PubKey {
 }
 
 impl TypedRelation {
-    fn _get_id(&self) -> DieselUlid {
+    pub fn get_id(&self) -> DieselUlid {
         match self {
             TypedRelation::Project(i)
             | TypedRelation::Collection(i)
@@ -138,16 +140,18 @@ impl TypedRelation {
     }
 }
 
-impl From<&Object> for TypedRelation {
-    fn from(value: &Object) -> Self {
-        match value.object_type {
-            ObjectType::Project => TypedRelation::Project(value.id),
-            ObjectType::Collection => TypedRelation::Collection(value.id),
-            ObjectType::Dataset => TypedRelation::Dataset(value.id),
-            ObjectType::Object => TypedRelation::Object(value.id),
-        }
-    }
-}
+// impl TryFrom<&Object> for TypedRelation {
+//     type Error = anyhow::Error;
+//     fn try_from(value: &Object) -> Result<Self> {
+//         Ok(match value.object_type {
+//             ObjectType::Project => TypedRelation::Project(value.id),
+//             ObjectType::Collection => TypedRelation::Collection(value.id),
+//             ObjectType::Dataset => TypedRelation::Dataset(value.id),
+//             ObjectType::Object => TypedRelation::Object(value.id),
+//             ObjectType::Bundle => bail!("Bundles do not have typed relations"),
+//         })
+//     }
+// }
 
 impl TryFrom<&Relation> for TypedRelation {
     type Error = anyhow::Error;
@@ -236,7 +240,7 @@ impl TryInto<GenericBytes<i16>> for PubKey {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -261,7 +265,7 @@ impl TryInto<GenericBytes<DieselUlid>> for Object {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -286,7 +290,7 @@ impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
             id: self.id,
-            data: data.into(),
+            data,
             table: Self::get_table(),
         })
     }
@@ -311,10 +315,9 @@ impl TryInto<GenericBytes<String>> for User {
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let user = self;
         let data = bincode::serialize(&user)?;
-        dbg!(&data);
         Ok(GenericBytes {
             id: user.access_key,
-            data: data,
+            data,
             table: Self::get_table(),
         })
     }
@@ -666,6 +669,22 @@ impl From<Object> for CreateObjectRequest {
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
             hashes: vec![],
+        }
+    }
+}
+
+impl From<Object> for UpdateObjectRequest {
+    fn from(value: Object) -> Self {
+        UpdateObjectRequest {
+            object_id: value.id.to_string(),
+            name: None,
+            description: None,
+            add_key_values: vec![],
+            remove_key_values: vec![],
+            data_class: value.data_class as i32,
+            hashes: vec![],
+            force_revision: false,
+            parent: None,
         }
     }
 }
@@ -1112,6 +1131,49 @@ impl ResourceIds {
             ResourceIds::Object(p, c, d, o) => (*p, *c, *d, Some(*o)),
         }
     }
+
+    pub fn set_project(&mut self, id: DieselUlid) {
+        match self {
+            ResourceIds::Project(p) => *p = id,
+            ResourceIds::Collection(p, _) => *p = id,
+            ResourceIds::Dataset(p, _, _) => *p = id,
+            ResourceIds::Object(p, _, _, _) => *p = id,
+        }
+    }
+
+    pub fn set_collection(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set collection on project")),
+            ResourceIds::Collection(_, c) => *c = id,
+            ResourceIds::Dataset(_, c, _) => *c = Some(id),
+            ResourceIds::Object(_, c, _, _) => *c = Some(id),
+        };
+        Ok(())
+    }
+
+    pub fn set_dataset(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set dataset on project")),
+            ResourceIds::Collection(_, _) => {
+                return Err(anyhow!("Cannot set dataset on collection"))
+            }
+            ResourceIds::Dataset(_, _, d) => *d = id,
+            ResourceIds::Object(_, _, d, _) => *d = Some(id),
+        };
+        Ok(())
+    }
+
+    pub fn set_object(&mut self, id: DieselUlid) -> Result<()> {
+        match self {
+            ResourceIds::Project(_) => return Err(anyhow!("Cannot set object on project")),
+            ResourceIds::Collection(_, _) => {
+                return Err(anyhow!("Cannot set object on collection"))
+            }
+            ResourceIds::Dataset(_, _, _) => return Err(anyhow!("Cannot set object on dataset")),
+            ResourceIds::Object(_, _, _, o) => *o = id,
+        };
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -1121,6 +1183,7 @@ pub struct CheckAccessResult {
     pub resource_ids: Option<ResourceIds>,
     pub missing_resources: Option<Missing>,
     pub object: Option<(Object, Option<ObjectLocation>)>,
+    pub bundle: Option<String>,
 }
 
 impl CheckAccessResult {
@@ -1130,6 +1193,7 @@ impl CheckAccessResult {
         resource_ids: Option<ResourceIds>,
         missing_resources: Option<Missing>,
         object: Option<(Object, Option<ObjectLocation>)>,
+        bundle: Option<String>,
     ) -> Self {
         Self {
             resource_ids,
@@ -1137,6 +1201,7 @@ impl CheckAccessResult {
             user_id,
             token_id,
             object,
+            bundle,
         }
     }
 }

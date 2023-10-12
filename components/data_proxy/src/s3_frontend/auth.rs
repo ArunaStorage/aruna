@@ -24,8 +24,6 @@ impl S3Auth for AuthProvider {
             .cache
             .get_secret(access_key)
             .map_err(|_| s3_error!(AccessDenied, "Invalid access key"))?;
-
-        dbg!(secret.expose());
         Ok(secret)
     }
 

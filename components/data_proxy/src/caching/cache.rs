@@ -2,20 +2,21 @@ use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
     transforms::ExtractAccessKeyPermissions,
 };
-use crate::structs::TypedRelation;
+use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
 };
 use ahash::RandomState;
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
+use std::collections::{HashMap, VecDeque};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -117,9 +118,12 @@ impl Cache {
         for object in Object::get_all(&client).await? {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
-            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
-            for (e, v) in tree {
-                self.paths.insert(e, v);
+
+            if object.object_type != ObjectType::Bundle {
+                let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+                for (e, v) in tree {
+                    self.paths.insert(e, v);
+                }
             }
         }
 
@@ -128,52 +132,62 @@ impl Cache {
 
     /// Requests a secret key from the cache
     pub async fn create_or_get_secret(
-        &self,
+        self: Arc<Self>,
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
-        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+        let cache = self.clone();
+        tokio::spawn(async move {
+            let access_key = access_key.unwrap_or_else(|| user.id.to_string());
 
-        match self
-            .users
-            .get(&access_key)
-            .map(|e| e.value().secret.clone())
-        {
-            Some(secret) => {
-                if !secret.is_empty() {
-                    return Ok((access_key, secret));
+            let perm = user
+                .extract_access_key_permissions()?
+                .iter()
+                .find(|e| e.0 == access_key.as_str())
+                .ok_or_else(|| anyhow!("Access key not found"))?
+                .1
+                .clone();
+
+            loop {
+                let entry = cache.users.try_entry(access_key.to_string());
+
+                match entry {
+                    Some(e) => {
+                        let mut user = e.or_try_insert_with(|| {
+                            Ok::<_, anyhow::Error>(User {
+                                access_key: access_key.to_string(),
+                                user_id: DieselUlid::from_str(&user.id)?,
+                                secret: "".to_string(),
+                                permissions: perm,
+                            })
+                        })?;
+
+                        if !user.secret.is_empty() {
+                            return Ok((user.access_key.clone(), user.secret.clone()));
+                        }
+
+                        let new_secret = thread_rng()
+                            .sample_iter(&Alphanumeric)
+                            .take(30)
+                            .map(char::from)
+                            .collect::<String>();
+
+                        let user = {
+                            user.pair_mut().1.secret = new_secret.clone();
+                            user.value().clone()
+                        };
+
+                        if let Some(persistence) = cache.persistence.read().await.as_ref() {
+                            user.upsert(&persistence.get_client().await?).await?;
+                        }
+
+                        return Ok((access_key, new_secret));
+                    }
+                    None => continue,
                 }
             }
-            None => {}
-        }
-
-        let new_secret = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect::<String>();
-
-        let perm = user
-            .extract_access_key_permissions()?
-            .iter()
-            .find(|e| e.0 == access_key.as_str())
-            .ok_or_else(|| anyhow!("Access key not found"))?
-            .1
-            .clone();
-
-        let user_access = User {
-            access_key: access_key.to_string(),
-            user_id: DieselUlid::from_str(&user.id)?,
-            secret: new_secret.clone(),
-            permissions: perm,
-        };
-        if let Some(persistence) = self.persistence.read().await.as_ref() {
-            user_access.upsert(&persistence.get_client().await?).await?;
-        }
-
-        self.users.insert(access_key.to_string(), user_access);
-
-        Ok((access_key, new_secret))
+        })
+        .await?
     }
 
     pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
@@ -220,13 +234,14 @@ impl Cache {
         resource_id: &str,
         variant: ObjectType,
     ) -> Result<Vec<(ResourceString, ResourceIds)>> {
-        // FIXME: This is really inefficient, but should work in a first iteration
+        //FIXME: This is really inefficient, but should work in a first iteration
         let resource_id = DieselUlid::from_str(resource_id)?;
         let (initial_res, _) = self
             .resources
             .get(&resource_id)
             .ok_or_else(|| anyhow!("Resource not found"))?
             .clone();
+
         match variant {
             ObjectType::Project => Ok(vec![(
                 ResourceString::Project(initial_res.name),
@@ -487,6 +502,7 @@ impl Cache {
                 }
                 Ok(res)
             }
+            ObjectType::Bundle => Err(anyhow!("Bundles do not have paths / trees")),
         }
     }
 
@@ -498,26 +514,79 @@ impl Cache {
             .clone())
     }
 
-    pub async fn upsert_user(&self, user: GrpcUser) -> Result<()> {
+    pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
-        for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
-            let user_access = User {
-                access_key: key.clone(),
-                user_id,
-                secret: self
-                    .get_secret(&key)
-                    .map(|k| k.expose().to_string())
-                    .unwrap_or_default(),
-                permissions: perm,
-            };
+        tokio::spawn(async move {
+            for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
+                loop {
+                    if let Some(e) = self.users.try_entry(key.to_string()) {
+                        let user = {
+                            let mut mut_entry = e.or_try_insert_with(|| {
+                                Ok::<_, anyhow::Error>(User {
+                                    access_key: key.to_string(),
+                                    user_id,
+                                    secret: "".to_string(),
+                                    permissions: HashMap::default(),
+                                })
+                            })?;
+                            mut_entry.value_mut().permissions = perm.clone();
+
+                            mut_entry.clone()
+                        };
+                        if let Some(persistence) = self.persistence.read().await.as_ref() {
+                            user.upsert(&persistence.get_client().await?).await?;
+                        }
+                        break;
+                    }
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await??;
+        Ok(())
+    }
+
+    pub async fn add_permission_to_access_key(
+        &self,
+        access_key: &str,
+        permission: (DieselUlid, DbPermissionLevel),
+    ) -> Result<()> {
+        if let Some(mut user) = self.users.get_mut(access_key) {
+            user.value_mut()
+                .permissions
+                .insert(permission.0, permission.1);
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
-                user_access.upsert(&persistence.get_client().await?).await?;
+                user.value()
+                    .upsert(&persistence.get_client().await?)
+                    .await?;
             }
-            self.users.insert(key.clone(), user_access);
+
+            Ok(())
+        } else {
+            Err(anyhow!("User not found"))
         }
-        Ok(())
+    }
+
+    pub async fn _remove_permission_from_access_key(
+        &self,
+        access_key: &str,
+        permission: &DieselUlid,
+    ) -> Result<()> {
+        if let Some(mut user) = self.users.get_mut(access_key) {
+            user.value_mut().permissions.remove(permission);
+
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                user.value()
+                    .upsert(&persistence.get_client().await?)
+                    .await?;
+            }
+
+            Ok(())
+        } else {
+            Err(anyhow!("User not found"))
+        }
     }
 
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
@@ -569,11 +638,14 @@ impl Cache {
             location
         };
 
-        self.resources.insert(object.id, (object, location));
+        self.resources.insert(object.id, (object.clone(), location));
         self.paths.retain(|_, v| v != &object_id);
-        let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
-        for (e, v) in tree {
-            self.paths.insert(e, v);
+
+        if object.object_type != ObjectType::Bundle {
+            let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
+            }
         }
         Ok(())
     }
@@ -583,6 +655,7 @@ impl Cache {
             Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
         }
+
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())
@@ -590,5 +663,244 @@ impl Cache {
 
     pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
         self.users.get(access_key).map(|e| e.value().clone())
+    }
+
+    pub fn get_resource_ids_from_id(
+        &self,
+        id: DieselUlid,
+    ) -> Result<(Vec<ResourceIds>, TypedRelation)> {
+        let mut result = Vec::new();
+        let rel;
+
+        if let Some(resource) = self.resources.get(&id) {
+            let (object, _) = resource.value();
+
+            match object.object_type {
+                ObjectType::Bundle => bail!("Bundles are not allowed in this context"),
+                ObjectType::Project => {
+                    rel = TypedRelation::Project(object.id);
+                    result.push(ResourceIds::Project(object.id))
+                }
+                ObjectType::Collection => {
+                    rel = TypedRelation::Collection(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid collection, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Collection(*parent_id, object.id))
+                            }
+                            _ => bail!("Invalid collection, parent is not a project"),
+                        }
+                    }
+                }
+                ObjectType::Dataset => {
+                    rel = TypedRelation::Dataset(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Dataset(*parent_id, None, object.id))
+                            }
+                            TypedRelation::Collection(parent_id) => {
+                                if let Some(resource) = self.resources.get(parent_id) {
+                                    let (collection_object, _) = resource.value();
+
+                                    for parent_parent in collection_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Dataset(
+                                                    *project_id,
+                                                    Some(*parent_id),
+                                                    object.id,
+                                                ))
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            _ => bail!("Invalid dataset, parent is not a project"),
+                        }
+                    }
+                }
+                ObjectType::Object => {
+                    rel = TypedRelation::Object(object.id);
+                    for parent in object
+                        .parents
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                    {
+                        match parent {
+                            TypedRelation::Project(parent_id) => {
+                                result.push(ResourceIds::Object(*parent_id, None, None, object.id))
+                            }
+                            TypedRelation::Collection(parent_id) => {
+                                if let Some(resource) = self.resources.get(parent_id) {
+                                    let (collection_object, _) = resource.value();
+
+                                    for parent_parent in collection_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Object(
+                                                    *project_id,
+                                                    Some(*parent_id),
+                                                    None,
+                                                    object.id,
+                                                ))
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            TypedRelation::Dataset(parent_id) => {
+                                if let Some(resource) = self.resources.get(parent_id) {
+                                    let (dataset_object, _) = resource.value();
+
+                                    for parent_parent in dataset_object
+                                        .parents
+                                        .as_ref()
+                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent"))?
+                                    {
+                                        match parent_parent {
+                                            TypedRelation::Project(project_id) => {
+                                                result.push(ResourceIds::Object(
+                                                    *project_id,
+                                                    None,
+                                                    Some(*parent_id),
+                                                    object.id,
+                                                ))
+                                            }
+
+                                            TypedRelation::Collection(collection_id) => {
+                                                if let Some(resource) =
+                                                    self.resources.get(collection_id)
+                                                {
+                                                    let (collection_object, _) = resource.value();
+
+                                                    for parent_parent in collection_object
+                                                        .parents
+                                                        .as_ref()
+                                                        .ok_or_else(|| {
+                                                            anyhow!(
+                                                                "Invalid dataset, missing parent"
+                                                            )
+                                                        })?
+                                                    {
+                                                        match parent_parent {
+                                                            TypedRelation::Project(project_id) => {
+                                                                result.push(ResourceIds::Object(
+                                                                    *project_id,
+                                                                    Some(*collection_id),
+                                                                    Some(*parent_id),
+                                                                    object.id,
+                                                                ))
+                                                            }
+                                                            _ => {
+                                                                bail!("Invalid dataset, parent is not a collection")
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    bail!("Invalid dataset, parent is not a collection")
+                                                }
+                                            }
+                                            _ => {
+                                                bail!("Invalid dataset, parent is not a collection")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    bail!("Invalid dataset, parent is not a project")
+                                }
+                            }
+                            _ => bail!("Invalid dataset, parent is not a project"),
+                        }
+                    }
+                }
+            }
+        } else {
+            return Err(anyhow!("Resource not found"));
+        }
+        Ok((result, rel))
+    }
+
+    pub fn get_path_levels(
+        &self,
+        resource_id: DieselUlid,
+    ) -> Result<Vec<(String, Option<ObjectLocation>)>> {
+        let init = self
+            .resources
+            .get(&resource_id)
+            .ok_or_else(|| anyhow!("Resource not found"))?;
+
+        let mut queue = VecDeque::with_capacity(10_000);
+
+        if init.0.object_type == ObjectType::Bundle {
+            for x in init
+                .0
+                .children
+                .as_ref()
+                .ok_or_else(|| anyhow!("No children found"))?
+            {
+                queue.push_back(("".to_string(), x.get_id()));
+            }
+        } else {
+            queue.push_back(("".to_string(), init.0.id));
+        };
+
+        let mut finished = Vec::with_capacity(10_000);
+
+        while let Some((mut name, id)) = queue.pop_front() {
+            let resource = self
+                .resources
+                .get(&id)
+                .ok_or_else(|| anyhow!("Resource not found"))?;
+
+            if resource.0.object_type == ObjectType::Object {
+                name = format!("{}/{}", name, resource.0.name);
+                name = name.trim_matches('/').to_string();
+                finished.push((name, resource.1.clone()));
+            } else if let Some(child) = resource.0.children.as_ref() {
+                if child.is_empty() {
+                    name = format!("{}/{}", name, resource.0.name);
+                    name = name.trim_matches('/').to_string();
+                    finished.push((name, resource.1.clone()));
+                } else {
+                    for x in child {
+                        name = name.trim_matches('/').to_string();
+                        queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
+                    }
+                }
+            } else {
+                name = format!("{}/{}", name, resource.0.name);
+                name = name.trim_matches('/').to_string();
+                finished.push((name, resource.1.clone()));
+            }
+        }
+
+        Ok(finished)
     }
 }

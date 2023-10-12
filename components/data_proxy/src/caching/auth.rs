@@ -4,6 +4,7 @@ use crate::structs::DbPermissionLevel;
 use crate::structs::Missing;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
+use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceString;
 use anyhow::anyhow;
@@ -131,12 +132,21 @@ impl AuthHandler {
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
-            if it.action == Action::CreateSecrets && it.target == self.self_id {
-                return Ok((DieselUlid::from_str(&claims.sub)?, claims.tid));
+            match it.action {
+                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid)),
+                Action::CreateSecrets => {
+                    if it.target == self.self_id {
+                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+                    } else {
+                        bail!("Token is not valid for this Dataproxy")
+                    }
+                }
+                _ => bail!("Action not allowed for Dataproxy"),
             }
+        } else {
+            // No intent, no Dataproxy/Action check
+            Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
         }
-
-        bail!("Invalid permissions")
     }
 
     pub(crate) fn extract_claims(
@@ -179,31 +189,8 @@ impl AuthHandler {
                         o: None,
                     }),
                     object: None,
+                    bundle: None,
                 });
-
-                // let get_object = self
-                //     .cache
-                //     .get_res_by_res_string(crate::structs::ResourceString::Project(b.to_string()))
-                //     .ok_or_else(|| anyhow!("Unknown object"))?;
-
-                // let obj = &self
-                //     .cache
-                //     .resources
-                //     .get(&get_object.get_id())
-                //     .ok_or_else(|| anyhow!("Unknown object"))?
-                //     .0;
-
-                // for (res, perm) in user.permissions {
-                //     if get_object.check_if_in(res) && perm >= db_perm_from_method {
-                //         return Ok(CheckAccessResult::new(
-                //             Some(user.user_id.to_string()),
-                //             Some(user.access_key),
-                //             Some(get_object),
-                //             None,
-                //             Some(obj.clone()),
-                //         ));
-                //     }
-                // }
             } else {
                 let user = self
                     .cache
@@ -221,11 +208,78 @@ impl AuthHandler {
                         o: None,
                     }),
                     None,
+                    None,
                 ));
             }
         }
 
-        let (ids, (obj, loc), missing) = self.extract_object_from_path(path, method)?;
+        let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+        if let Some(bundle) = bundle {
+            if obj.object_type == ObjectType::Bundle {
+                // Check if user has access to Bundle Object
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                for (res, perm) in user.permissions {
+                    // ResourceIds only contain Bundle Id as Project
+                    if ids.check_if_in(res) && perm >= db_perm_from_method {
+                        let token_id = if user.user_id.to_string() == user.access_key {
+                            None
+                        } else {
+                            Some(user.access_key.clone())
+                        };
+
+                        return Ok(CheckAccessResult {
+                            user_id: Some(user.user_id.to_string()),
+                            token_id,
+                            resource_ids: None,
+                            missing_resources: None, // Bundles are standalone
+                            object: Some((obj, None)), // Bundles can't have a location
+                            bundle: Some(bundle),
+                        });
+                    }
+                }
+            }
+
+            if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
+            {
+                return Ok(CheckAccessResult {
+                    user_id: None,
+                    token_id: None,
+                    resource_ids: None,
+                    missing_resources: None,
+                    object: Some((obj, loc)),
+                    bundle: Some(bundle),
+                });
+            } else {
+                let user = self
+                    .cache
+                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user"))?;
+
+                for (res, perm) in user.permissions {
+                    if ids.check_if_in(res) && perm >= db_perm_from_method {
+                        let token_id = if user.user_id.to_string() == user.access_key {
+                            None
+                        } else {
+                            Some(user.access_key.clone())
+                        };
+
+                        return Ok(CheckAccessResult::new(
+                            Some(user.user_id.to_string()),
+                            token_id,
+                            Some(ids),
+                            missing,
+                            Some((obj, loc)),
+                            Some(bundle),
+                        ));
+                    }
+                }
+            }
+        }
+
         if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
             return Ok(CheckAccessResult::new(
                 None,
@@ -233,6 +287,7 @@ impl AuthHandler {
                 Some(ids),
                 missing,
                 Some((obj, loc)),
+                None,
             ));
         } else if let Some(creds) = creds {
             let user = self
@@ -254,6 +309,7 @@ impl AuthHandler {
                         Some(ids),
                         missing,
                         Some((obj, loc)),
+                        None,
                     ));
                 }
             }
@@ -262,16 +318,106 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    pub fn check_ids(
+        &self,
+        vec_vec_ids: &Vec<Vec<ResourceIds>>,
+        access_key: &str,
+        target_perm_level: DbPermissionLevel,
+        get_secret: bool,
+    ) -> Result<Option<String>> {
+        let user = self
+            .cache
+            .get_user_by_key(access_key)
+            .ok_or_else(|| anyhow!("Unknown user"))?;
+
+        for (res, perm) in user.permissions {
+            'id_vec: for vec_ids in vec_vec_ids {
+                for id in vec_ids {
+                    if id.check_if_in(res) && perm >= target_perm_level {
+                        continue 'id_vec;
+                    }
+                }
+                return Err(anyhow!("Invalid permissions"));
+            }
+        }
+
+        if get_secret {
+            Ok(Some(user.secret.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,
         path: &S3Path,
         _method: &Method,
     ) -> Result<(
-        ResourceIds,
         (Object, Option<ObjectLocation>),
+        ResourceIds,
         Option<Missing>,
+        Option<String>,
     )> {
+        if let Some((bucket, mut path)) = path.as_object() {
+            if bucket == "objects" {
+                path = path.trim_matches('/');
+                if let Some((prefix, name)) = path.split_once('/') {
+                    let id = DieselUlid::from_str(prefix)?;
+                    dbg!(id);
+                    let obj = self
+                        .cache
+                        .resources
+                        .get(&id)
+                        .ok_or_else(|| anyhow!("No object found in path"))?
+                        .value()
+                        .clone();
+
+                    let mut ids = self.cache.get_resource_ids_from_id(id)?.0;
+                    ids.sort();
+
+                    return Ok((
+                        obj,
+                        ids.last()
+                            .ok_or_else(|| anyhow!("No object found in path"))?
+                            .clone(),
+                        None,
+                        Some(name.to_string()),
+                    ));
+                }
+            } else if bucket == "bundles" {
+                path = path.trim_matches('/');
+                if let Some((prefix, name)) = path.split_once('/') {
+                    let id = DieselUlid::from_str(prefix)?;
+                    log::debug!("Bundle ID: {}", id);
+
+                    let (bundle_object, _) = self
+                        .cache
+                        .resources
+                        .get(&id)
+                        .ok_or_else(|| anyhow!("No object found in path"))?
+                        .value()
+                        .clone();
+
+                    // Check if Bundle is empty
+                    if let Some(children) = &bundle_object.children {
+                        if children.is_empty() {
+                            bail!("Empty bundle: Children is empty")
+                        }
+                    } else {
+                        bail!("Empty bundle: Children is None")
+                    }
+
+                    return Ok((
+                        (bundle_object, None),
+                        ResourceIds::Project(id),
+                        None,
+                        Some(name.to_string()),
+                    ));
+                }
+            }
+        }
+
         let res_strings = ResourceString::try_from(path)?;
 
         let mut found = Vec::new();
@@ -299,7 +445,7 @@ impl AuthHandler {
             .value()
             .clone();
 
-        Ok((resource_id, (object, location), Some(missing.into())))
+        Ok(((object, location), resource_id, Some(missing.into()), None))
     }
 
     pub(crate) fn sign_impersonating_token(

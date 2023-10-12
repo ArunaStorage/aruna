@@ -27,7 +27,7 @@ impl DataproxyService for DataproxyServiceImpl {
         &self,
         _request: tonic::Request<RequestReplicationRequest>,
     ) -> Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Not implemented"))
+        Err(tonic::Status::unimplemented("Currently not implemented"))
     }
     /// InitReplication
     ///
@@ -38,6 +38,6 @@ impl DataproxyService for DataproxyServiceImpl {
         &self,
         _request: tonic::Request<InitReplicationRequest>,
     ) -> Result<tonic::Response<InitReplicationResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Not implemented"))
+        Err(tonic::Status::unimplemented("Currently not implemented"))
     }
 }
