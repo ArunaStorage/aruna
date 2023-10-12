@@ -104,7 +104,7 @@ async fn create_and_delete_workspace() {
     // TODO: Create & mock endpoints
     // -> Default endpoint
     let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
-    endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
+    let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
         .await
         .unwrap();
     // -> Custom endpoint
@@ -122,7 +122,7 @@ async fn create_and_delete_workspace() {
         }],
     });
     let (ep, _pk) = db_handler.create_endpoint(request).await.unwrap();
-    endpoint_mock::start_server("0.0.0.0:50098".parse::<SocketAddr>().unwrap())
+    let second_task = endpoint_mock::start_server("0.0.0.0:50098".parse::<SocketAddr>().unwrap())
         .await
         .unwrap();
 
@@ -305,6 +305,8 @@ async fn create_and_delete_workspace() {
             .object_status,
         ObjectStatus::DELETED
     );
+    default_task.abort();
+    second_task.abort();
 }
 #[tokio::test]
 pub async fn claim_workspace() {
@@ -321,6 +323,9 @@ pub async fn claim_workspace() {
 
     // Create template
     let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
+    let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
+        .await
+        .unwrap();
     let template = CreateTemplate(CreateWorkspaceTemplateRequest {
         owner_id: creator.id.to_string(),
         prefix: "test".to_string(),
@@ -358,4 +363,5 @@ pub async fn claim_workspace() {
     let claimed = Object::get(workspace_id, &client).await.unwrap().unwrap();
     assert_eq!(claimed.data_class, DataClass::PRIVATE);
     assert_eq!(claimed.created_by, user.id);
+    default_task.abort();
 }

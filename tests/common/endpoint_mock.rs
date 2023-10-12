@@ -1,24 +1,24 @@
-use std::net::SocketAddr;
-
+use super::test_utils::rand_string;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::{DataproxyUserService, DataproxyUserServiceServer},
     GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse,
     PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
 };
+use std::net::SocketAddr;
+use tokio::task::AbortHandle;
 use tonic::transport::Server;
 
-use super::test_utils::rand_string;
-
 #[allow(dead_code)]
-pub async fn start_server(address: SocketAddr) -> Result<()> {
-    tokio::spawn(async move {
+pub async fn start_server(address: SocketAddr) -> Result<AbortHandle> {
+    let task = tokio::spawn(async move {
         Server::builder()
             .add_service(DataproxyUserServiceServer::new(DataProxyServiceImpl::new()))
             .serve(address)
             .await
     });
-    Ok(())
+    let abort_handle = task.abort_handle();
+    Ok(abort_handle)
 }
 
 pub struct DataProxyServiceImpl {}
