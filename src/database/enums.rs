@@ -181,3 +181,18 @@ impl TryFrom<&[u8]> for ObjectStatus {
         }
     }
 }
+
+#[allow(non_camel_case_types)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, ToSql, FromSql)]
+pub enum PersistentNotificationVariant {
+    ACCESS_REQUESTED,
+    PERMISSION_REVOKED,
+    PERMISSION_GRANTED,
+    ANNOUNCEMENT,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, ToSql, FromSql)]
+pub enum NotificationReferenceType {
+    User,
+    Resource,
+}

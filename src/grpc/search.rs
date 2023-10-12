@@ -308,15 +308,45 @@ impl SearchService for SearchServiceImpl {
 
         // Create response and return with log
         let response = GetResourcesResponse { resources };
-
         return_with_log!(response);
     }
+
     async fn request_resource_access(
         &self,
-        _request: tonic::Request<RequestResourceAccessRequest>,
+        request: tonic::Request<RequestResourceAccessRequest>,
     ) -> tonic::Result<tonic::Response<RequestResourceAccessResponse>> {
-        Err(tonic::Status::unimplemented(
-            "RequestResourceAccess is currently unimplemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        let resource_ulid = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.resource_id),
+            "ULID conversion error"
+        );
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::default(); // User only needs to be activated
+        let user_ulid = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Create personal notification to request access
+        tonic_internal!(
+            self.database_handler
+                .request_resource_access(user_ulid, resource_ulid)
+                .await,
+            "Failed to request resource access"
+        );
+
+        // Create response and return with log
+        let response = RequestResourceAccessResponse {};
+        return_with_log!(response);
     }
 }
