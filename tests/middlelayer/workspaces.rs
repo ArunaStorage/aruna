@@ -7,7 +7,7 @@ use aruna_rust_api::api::storage::{
     models::v2::EndpointHostConfig,
     services::v2::{
         ClaimWorkspaceRequest, CreateEndpointRequest, CreateWorkspaceRequest,
-        CreateWorkspaceTemplateRequest, DeleteWorkspaceRequest,
+        CreateWorkspaceTemplateRequest,
     },
 };
 use aruna_server::{

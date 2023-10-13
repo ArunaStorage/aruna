@@ -609,33 +609,29 @@ impl UserService for UserServiceImpl {
                 }
                 None => return Err(Status::invalid_argument("Missing context action")),
             }
+        } else if proxy_request {
+            return Err(Status::invalid_argument("No context provided"));
+        } else if let Ok(endpoint_ulid) = DieselUlid::from_str(&inner_request.endpoint_id) {
+            tonic_internal!(
+                self.authorizer.token_handler.sign_dataproxy_slt(
+                    &user_ulid,
+                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                    Some(Intent {
+                        target: endpoint_ulid,
+                        action: Action::All
+                    }),
+                ),
+                "Token signing failed"
+            )
         } else {
-            if proxy_request {
-                return Err(Status::invalid_argument("No context provided"));
-            } else {
-                if let Ok(endpoint_ulid) = DieselUlid::from_str(&inner_request.endpoint_id) {
-                    tonic_internal!(
-                        self.authorizer.token_handler.sign_dataproxy_slt(
-                            &user_ulid,
-                            maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
-                            Some(Intent {
-                                target: endpoint_ulid,
-                                action: Action::All
-                            }),
-                        ),
-                        "Token signing failed"
-                    )
-                } else {
-                    tonic_internal!(
-                        self.authorizer.token_handler.sign_dataproxy_slt(
-                            &user_ulid,
-                            maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
-                            None,
-                        ),
-                        "Token signing failed"
-                    )
-                }
-            }
+            tonic_internal!(
+                self.authorizer.token_handler.sign_dataproxy_slt(
+                    &user_ulid,
+                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                    None,
+                ),
+                "Token signing failed"
+            )
         };
 
         // Return token to user

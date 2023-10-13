@@ -36,7 +36,7 @@ async fn test_db_calls() {
     assert_eq!(created_template.prefix, ws_template.prefix);
     assert_eq!(created_template.hook_ids.0, ws_template.hook_ids.0);
     assert_eq!(created_template.endpoint_ids.0, ws_template.endpoint_ids.0);
-    let by_name = WorkspaceTemplate::get_by_name("create_template.test".to_string(), &client)
+    let by_name = WorkspaceTemplate::get_by_name("create_template.test".to_string(), client)
         .await
         .unwrap()
         .unwrap();
@@ -47,13 +47,13 @@ async fn test_db_calls() {
     assert_eq!(by_name.prefix, ws_template.prefix);
     assert_eq!(by_name.hook_ids.0, ws_template.hook_ids.0);
     assert_eq!(by_name.endpoint_ids.0, ws_template.endpoint_ids.0);
-    let by_owner = WorkspaceTemplate::list_owned(&user.id, &client)
+    let by_owner = WorkspaceTemplate::list_owned(&user.id, client)
         .await
         .unwrap();
     assert_eq!(by_owner.len(), 1);
 
     // Delete
-    ws_template.delete(&client).await.unwrap();
+    ws_template.delete(client).await.unwrap();
 
-    assert!(WorkspaceTemplate::get(id, &client).await.unwrap().is_none());
+    assert!(WorkspaceTemplate::get(id, client).await.unwrap().is_none());
 }

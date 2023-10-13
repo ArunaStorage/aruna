@@ -159,10 +159,10 @@ impl SearchService for SearchServiceImpl {
                         let all_subs = self.cache.get_subresources(&id).unwrap_or_default(); // This is empty if unwrap fails -> should not affect anything
                         if all_subs.iter().contains(&id) {
                             let tmp_perm: DbPermissionLevel = match perm {
-                                ObjectMapping::OBJECT(perm) => perm.into(),
-                                ObjectMapping::COLLECTION(perm) => perm.into(),
-                                ObjectMapping::DATASET(perm) => perm.into(),
-                                ObjectMapping::PROJECT(perm) => perm.into(),
+                                ObjectMapping::OBJECT(perm) => perm,
+                                ObjectMapping::COLLECTION(perm) => perm,
+                                ObjectMapping::DATASET(perm) => perm,
+                                ObjectMapping::PROJECT(perm) => perm,
                             };
                             permission = tmp_perm.into();
                             break;
@@ -289,16 +289,16 @@ impl SearchService for SearchServiceImpl {
                             let all_subs = self.cache.get_subresources(&id).unwrap_or_default();
                             if all_subs.iter().contains(&id) {
                                 let tmp_perm: DbPermissionLevel = match perm {
-                                    ObjectMapping::OBJECT(perm) => perm.into(),
-                                    ObjectMapping::COLLECTION(perm) => perm.into(),
-                                    ObjectMapping::DATASET(perm) => perm.into(),
-                                    ObjectMapping::PROJECT(perm) => perm.into(),
+                                    ObjectMapping::OBJECT(perm) => perm,
+                                    ObjectMapping::COLLECTION(perm) => perm,
+                                    ObjectMapping::DATASET(perm) => perm,
+                                    ObjectMapping::PROJECT(perm) => perm,
                                 };
                                 permission = tmp_perm.into();
                                 break;
                             }
                         }
-                        objects.push((object, permission.into()));
+                        objects.push((object, permission));
                     }
                 };
             }

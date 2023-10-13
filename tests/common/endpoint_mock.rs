@@ -24,6 +24,12 @@ pub async fn start_server(address: SocketAddr) -> Result<AbortHandle> {
 pub struct DataProxyServiceImpl {}
 
 #[allow(dead_code)]
+impl Default for DataProxyServiceImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataProxyServiceImpl {
     pub fn new() -> Self {
         DataProxyServiceImpl {}
