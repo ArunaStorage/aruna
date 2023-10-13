@@ -322,8 +322,22 @@ pub async fn claim_workspace() {
     user.create(&client).await.unwrap();
 
     // Create template
-    let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
-    let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
+    // -> Custom endpoint
+    let request = CreateEP(CreateEndpointRequest {
+        name: "workspace_test".to_string(),
+        ep_variant: 1,
+        is_public: true,
+        pubkey: "MCowBQYDK2VwAyEAWBBLB9+sOZ4pSjM7U3DCSoq5R4xQYG4W27iwI1QoMN0=".to_string(),
+        host_configs: vec![EndpointHostConfig {
+            url: "http://localhost:50099".to_string(),
+            is_primary: true,
+            ssl: false,
+            public: true,
+            host_variant: 1,
+        }],
+    });
+    let (ep, _pk) = db_handler.create_endpoint(request).await.unwrap();
+    let endpoint_task = endpoint_mock::start_server("0.0.0.0:50099".parse::<SocketAddr>().unwrap())
         .await
         .unwrap();
     let template = CreateTemplate(CreateWorkspaceTemplateRequest {
@@ -332,7 +346,7 @@ pub async fn claim_workspace() {
         name: "claim_test".to_string(),
         hook_ids: vec![],
         description: "abc".to_string(),
-        endpoint_id: vec![],
+        endpoint_id: vec![ep.id.to_string()],
     });
     let template_id = db_handler
         .create_workspace_template(template, creator.id)
@@ -345,7 +359,7 @@ pub async fn claim_workspace() {
         description: "instance description".to_string(),
     });
     let (workspace_id, .., token) = db_handler
-        .create_workspace(authorizer, request, default_endpoint)
+        .create_workspace(authorizer, request, ep.id.to_string())
         .await
         .unwrap();
     let ws = Object::get(workspace_id, &client).await.unwrap().unwrap();
@@ -363,5 +377,5 @@ pub async fn claim_workspace() {
     let claimed = Object::get(workspace_id, &client).await.unwrap().unwrap();
     assert_eq!(claimed.data_class, DataClass::PRIVATE);
     assert_eq!(claimed.created_by, user.id);
-    default_task.abort();
+    endpoint_task.abort();
 }
