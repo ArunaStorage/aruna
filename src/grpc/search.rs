@@ -17,6 +17,7 @@ use aruna_rust_api::api::storage::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -49,7 +50,7 @@ impl SearchService for SearchServiceImpl {
             "Token extraction failed"
         );
 
-        let _ = tonic_auth!(
+        tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![Context::default()])
                 .await,
@@ -57,7 +58,7 @@ impl SearchService for SearchServiceImpl {
         );
 
         // Check if: 0 < limit <= 100
-        if inner_request.limit < 1 || inner_request.limit > 100 {
+        if (inner_request.limit < 1) || (inner_request.limit > 100) {
             return Err(Status::invalid_argument("Limit must be between 1 and 100"));
         }
 
@@ -132,22 +133,44 @@ impl SearchService for SearchServiceImpl {
                 .cache
                 .get_object(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Object not found"))?;
-            let mapping_perm = *self
+            let user = self
                 .cache
                 .get_user(&user)
-                .ok_or_else(|| Status::not_found("User not found"))?
+                .ok_or_else(|| Status::not_found("User not found"))?;
+            let mapping_perm = user
                 .attributes
                 .0
                 .permissions
                 .get(&resource_ulid)
-                .ok_or_else(|| Status::not_found("No permissions found"))?;
-            let permission = match mapping_perm {
-                ObjectMapping::OBJECT(perm) => perm.into(),
-                ObjectMapping::COLLECTION(perm) => perm.into(),
-                ObjectMapping::DATASET(perm) => perm.into(),
-                ObjectMapping::PROJECT(perm) => perm.into(),
-            };
-            (object, permission)
+                .ok_or_else(|| Status::not_found("No permissions found"));
+            match mapping_perm {
+                Ok(perm) => {
+                    let permission = match *perm {
+                        ObjectMapping::OBJECT(perm) => perm.into(),
+                        ObjectMapping::COLLECTION(perm) => perm.into(),
+                        ObjectMapping::DATASET(perm) => perm.into(),
+                        ObjectMapping::PROJECT(perm) => perm.into(),
+                    };
+                    (object, permission)
+                }
+                Err(_) => {
+                    let mut permission = PermissionLevel::Read;
+                    for (id, perm) in user.attributes.0.permissions.clone() {
+                        let all_subs = self.cache.get_subresources(&id).unwrap_or_default(); // This is empty if unwrap fails -> should not affect anything
+                        if all_subs.iter().contains(&id) {
+                            let tmp_perm: DbPermissionLevel = match perm {
+                                ObjectMapping::OBJECT(perm) => perm.into(),
+                                ObjectMapping::COLLECTION(perm) => perm.into(),
+                                ObjectMapping::DATASET(perm) => perm.into(),
+                                ObjectMapping::PROJECT(perm) => perm.into(),
+                            };
+                            permission = tmp_perm.into();
+                            break;
+                        }
+                    }
+                    (object, permission)
+                }
+            }
         } else {
             // Get Object from cache
             let mut object_plus = self
@@ -239,22 +262,45 @@ impl SearchService for SearchServiceImpl {
                     .cache
                     .get_object(&id)
                     .ok_or_else(|| Status::not_found("Object not found"))?;
-                let mapping_perm = *self
+                let user = self
                     .cache
                     .get_user(&user)
-                    .ok_or_else(|| Status::not_found("User not found"))?
+                    .clone()
+                    .ok_or_else(|| Status::not_found("User not found"))?;
+                let mapping_perm = user
                     .attributes
                     .0
                     .permissions
                     .get(&id)
-                    .ok_or_else(|| Status::not_found("No permissions found"))?;
-                let permission = match mapping_perm {
-                    ObjectMapping::OBJECT(perm) => perm.into(),
-                    ObjectMapping::COLLECTION(perm) => perm.into(),
-                    ObjectMapping::DATASET(perm) => perm.into(),
-                    ObjectMapping::PROJECT(perm) => perm.into(),
+                    .ok_or_else(|| Status::not_found("No permissions found"));
+                match mapping_perm {
+                    Ok(explicit_perms) => {
+                        let permission = match *explicit_perms {
+                            ObjectMapping::OBJECT(perm) => perm.into(),
+                            ObjectMapping::COLLECTION(perm) => perm.into(),
+                            ObjectMapping::DATASET(perm) => perm.into(),
+                            ObjectMapping::PROJECT(perm) => perm.into(),
+                        };
+                        objects.push((object, permission));
+                    }
+                    Err(_) => {
+                        let mut permission = PermissionLevel::Read;
+                        for (id, perm) in user.attributes.0.permissions.clone() {
+                            let all_subs = self.cache.get_subresources(&id).unwrap_or_default();
+                            if all_subs.iter().contains(&id) {
+                                let tmp_perm: DbPermissionLevel = match perm {
+                                    ObjectMapping::OBJECT(perm) => perm.into(),
+                                    ObjectMapping::COLLECTION(perm) => perm.into(),
+                                    ObjectMapping::DATASET(perm) => perm.into(),
+                                    ObjectMapping::PROJECT(perm) => perm.into(),
+                                };
+                                permission = tmp_perm.into();
+                                break;
+                            }
+                        }
+                        objects.push((object, permission.into()));
+                    }
                 };
-                objects.push((object, permission));
             }
             objects
         } else {
