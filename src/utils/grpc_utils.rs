@@ -1,5 +1,5 @@
 use crate::caching::cache::Cache;
-use crate::database::enums::DbPermissionLevel;
+use crate::database::enums::{DataClass, DbPermissionLevel};
 use crate::grpc::users::UserServiceImpl;
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
 use crate::{auth::structs::Context, search::meilisearch_client::ObjectDocument};
@@ -147,7 +147,10 @@ pub async fn update_search_index(
     // Remove confidential objects
     let final_updates = index_updates
         .into_iter()
-        .filter(|od| od.object_type < 3)
+        .filter_map(|od| match od.data_class {
+            DataClass::PUBLIC | DataClass::PRIVATE => Some(od),
+            _ => None,
+        })
         .collect::<Vec<_>>();
 
     // Update remaining objects in search index

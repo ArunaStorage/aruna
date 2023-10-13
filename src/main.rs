@@ -92,7 +92,6 @@ pub async fn main() -> Result<()> {
         cache: cache_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
-    dbg!("Bin hier!");
 
     // MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(
