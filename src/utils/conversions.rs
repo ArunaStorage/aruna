@@ -842,7 +842,7 @@ impl InternalRelation {
                     origin_type: other_obj.object.object_type,
                     relation_name: api_rel
                         .defined_variant
-                        .into_relation_name(api_rel.custom_variant.clone())?,
+                        .as_relation_name(api_rel.custom_variant.clone())?,
                     target_pid: self_obj.object.id,
                     target_type: self_obj.object.object_type,
                     target_name: self_obj.object.name,
@@ -862,7 +862,7 @@ impl InternalRelation {
                     origin_type: other_obj.object.object_type,
                     relation_name: api_rel
                         .defined_variant
-                        .into_relation_name(api_rel.custom_variant.clone())?,
+                        .as_relation_name(api_rel.custom_variant.clone())?,
                     target_pid: self_obj.object.id,
                     target_type: self_obj.object.object_type,
                     target_name: self_obj.object.name,
@@ -939,11 +939,11 @@ impl InternalRelation {
 // }
 
 pub trait IntoRelationName {
-    fn into_relation_name(&self, name: Option<String>) -> Result<String>;
+    fn as_relation_name(&self, name: Option<String>) -> Result<String>;
 }
 
 impl IntoRelationName for i32 {
-    fn into_relation_name(&self, name: Option<String>) -> Result<String> {
+    fn as_relation_name(&self, name: Option<String>) -> Result<String> {
         match self {
             1 => Ok(INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string()),
             2 => Ok(INTERNAL_RELATION_VARIANT_ORIGIN.to_string()),
@@ -1063,7 +1063,7 @@ impl DBUser {
     }
 }
 
-pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
+pub fn as_api_token(id: DieselUlid, token: APIToken) -> Token {
     Token {
         id: id.to_string(),
         name: token.name,
@@ -1199,12 +1199,12 @@ impl TryFrom<i32> for EndpointVariant {
 
 impl From<Hook> for HookInfo {
     fn from(hook: Hook) -> HookInfo {
-        let trigger = Some(hook.into_trigger());
+        let trigger = Some(hook.as_trigger());
         HookInfo {
             name: hook.name.clone(),
             description: hook.description.clone(),
             hook_id: hook.id.to_string(),
-            hook: Some(hook.into_api_hook()),
+            hook: Some(hook.as_api_hook()),
             trigger,
             timeout: hook.timeout.timestamp_millis() as u64,
             project_ids: hook.project_ids.iter().map(|id| id.to_string()).collect(),
@@ -1221,7 +1221,7 @@ impl From<&Method> for i32 {
     }
 }
 impl Hook {
-    fn into_trigger(&self) -> Trigger {
+    fn as_trigger(&self) -> Trigger {
         Trigger {
             trigger_type: match self.trigger_type {
                 crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
@@ -1231,7 +1231,7 @@ impl Hook {
             value: self.trigger_value.clone(),
         }
     }
-    fn into_api_hook(&self) -> APIHook {
+    fn as_api_hook(&self) -> APIHook {
         match &self.hook.0 {
             crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
                 let internal_action = match internal_hook {

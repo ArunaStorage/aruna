@@ -11,7 +11,7 @@ use postgres_types::{FromSql, Json, ToSql};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug, Clone)]
+#[derive(FromRow, Debug, Clone, PartialEq)]
 pub struct Hook {
     pub id: DieselUlid,
     pub name: String,
@@ -25,13 +25,13 @@ pub struct Hook {
     pub hook: Json<HookVariant>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum HookVariant {
     Internal(InternalHook),
     External(ExternalHook),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExternalHook {
     pub url: String,
     pub credentials: Option<Credentials>,
@@ -39,7 +39,7 @@ pub struct ExternalHook {
     pub method: Method,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Method {
     PUT,
     POST,
@@ -52,25 +52,25 @@ pub enum TriggerType {
     OBJECT_CREATED,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum InternalHook {
     AddLabel { key: String, value: String },
     AddHook { key: String, value: String },
     CreateRelation { relation: Relation },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub token: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TemplateVariant {
     Basic,
     Custom(String),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BasicTemplate {
     pub hook_id: DieselUlid,
     pub object: Resource,
@@ -81,21 +81,21 @@ pub struct BasicTemplate {
     pub secret_key: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HookStatusValues {
     pub name: String,
     pub status: HookStatusVariant,
     pub trigger_type: TriggerType,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HookStatusVariant {
     RUNNING,
     FINISHED,
     ERROR(String),
 }
 
-#[derive(Clone, Debug, FromSql, FromRow)]
+#[derive(Clone, Debug, FromSql, FromRow, PartialEq)]
 pub struct HookWithAssociatedProject {
     pub id: DieselUlid,
     pub name: String,
@@ -176,10 +176,10 @@ impl Hook {
         }
     }
     pub async fn list_hooks(project_id: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
-        let ids = vec![project_id];
+        //let ids = vec![project_id];
         let query = "SELECT * FROM hooks WHERE $1 = ANY (project_ids)";
         let prepared = client.prepare(query).await?;
-        let rows = client.query(&prepared, &[&ids]).await?;
+        let rows = client.query(&prepared, &[&project_id]).await?;
         Ok(rows.iter().map(Hook::from_row).collect::<Vec<_>>())
     }
     pub async fn list_owned(owner: &DieselUlid, client: &Client) -> Result<Vec<Hook>> {
@@ -224,8 +224,9 @@ impl Hook {
         hook_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<()> {
+        let workspace = vec![workspace];
         let query = "UPDATE hooks
-        SET project_ids = project_ids || $1
+        SET project_ids = project_ids || $1::uuid[]
         WHERE id = ANY($2::uuid[]);";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&workspace, hook_ids]).await?;
@@ -249,21 +250,11 @@ impl Hook {
         project_ids: &Vec<DieselUlid>,
         client: &Client,
     ) -> Result<Vec<HookWithAssociatedProject>> {
-        let query =
-        "SELECT 
-            q.id, q.name, q.description, q.project_ids, q.owner, q.trigger_type, q.trigger_key, q.trigger_value, q.timeout, q.hook, 
-            (
-	            SELECT UNNEST(p_ids) 
-                INTERSECT 
-                SELECT UNNEST(arr)
-            ) AS project_id
-        FROM 
-            (
-                SELECT project_ids AS p_ids, 
-                $1::uuid[] AS arr, *
-                FROM hooks
-            ) q
-        WHERE p_ids && arr;".to_string();
+        let query = "SELECT *, f.pids AS project_id
+FROM hooks 
+JOIN unnest($1::uuid[]) f(pids) ON true 
+JOIN unnest(hooks.project_ids) b(pids) ON b.pids = f.pids;;"
+            .to_string();
         let prepared = client.prepare(&query).await?;
         let hooks = client
             .query(&prepared, &[project_ids])

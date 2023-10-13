@@ -9,7 +9,7 @@ use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use crate::utils::conversions::{convert_token_to_proto, get_token_from_md, into_api_token};
+use crate::utils::conversions::{as_api_token, convert_token_to_proto, get_token_from_md};
 use anyhow::anyhow;
 
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
@@ -190,7 +190,7 @@ impl UserService for UserServiceImpl {
         );
         let token_id = tonic_invalid!(request.get_token_id(), "Invalid token_id");
         let token = match user.attributes.0.tokens.get(&token_id) {
-            Some(token) => Some(into_api_token(token_id, token.clone())),
+            Some(token) => Some(as_api_token(token_id, token.clone())),
             None => return Err(Status::not_found("Token not found")),
         };
         let response = GetApiTokenResponse { token };
@@ -223,7 +223,7 @@ impl UserService for UserServiceImpl {
                 .0
                 .tokens
                 .into_iter()
-                .map(|t| into_api_token(t.0, t.1)),
+                .map(|t| as_api_token(t.0, t.1)),
         );
         let response = GetApiTokensResponse { token };
 
@@ -601,7 +601,9 @@ impl UserService for UserServiceImpl {
                             )
                         }
                         ProtoContext::Copy(_) => {
-                            unimplemented!("Dataproxy data replication token creation not yet implemented")
+                            unimplemented!(
+                                "Dataproxy data replication token creation not yet implemented"
+                            )
                         }
                     }
                 }

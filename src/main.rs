@@ -69,6 +69,7 @@ pub async fn main() -> Result<()> {
         dotenvy::var("OAUTH_REALMINFO")?,
         dotenvy::var("ENCODING_KEY")?,
         dotenvy::var("DECODING_KEY")?,
+        dotenvy::var("OIDC_TOKEN_ISSUER")?,
     )
     .await?;
     let token_handler_arc = Arc::new(token_handler);
