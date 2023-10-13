@@ -324,7 +324,7 @@ pub async fn claim_workspace() {
     // Create template
     // -> Custom endpoint
     let request = CreateEP(CreateEndpointRequest {
-        name: "workspace_test".to_string(),
+        name: "claim_workspace_test".to_string(),
         ep_variant: 1,
         is_public: true,
         pubkey: "MCowBQYDK2VwAyEAWBBLB9+sOZ4pSjM7U3DCSoq5R4xQYG4W27iwI1QoMN0=".to_string(),
