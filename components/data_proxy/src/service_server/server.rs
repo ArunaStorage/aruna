@@ -4,13 +4,18 @@ use anyhow::{bail, Result};
 use std::{env, net::SocketAddr, sync::Arc};
 
 use aruna_rust_api::api::internal::v1::{
+    internal_bundler_service_server::InternalBundlerServiceServer,
     internal_proxy_service_server::{InternalProxyService, InternalProxyServiceServer},
     DeleteObjectRequest, DeleteObjectResponse, FinishMultipartUploadRequest,
     FinishMultipartUploadResponse, InitMultipartUploadRequest, InitMultipartUploadResponse,
     Location,
 };
 
-use crate::{backends::storage_backend::StorageBackend, data_server::data_handler::DataHandler};
+use crate::{
+    backends::storage_backend::StorageBackend,
+    bundler::internal_bundler_service::InternalBundlerServiceImpl,
+    data_server::data_handler::DataHandler,
+};
 use async_trait::async_trait;
 use tonic::Response;
 
@@ -24,6 +29,7 @@ pub struct InternalServerImpl {
 /// The gRPC Server to run the internal proxy api.
 #[derive(Debug, Clone)]
 pub struct ProxyServer {
+    pub bundler: Option<Arc<InternalBundlerServiceImpl>>,
     pub internal_api: Arc<InternalServerImpl>,
     pub addr: SocketAddr,
 }
@@ -31,18 +37,29 @@ pub struct ProxyServer {
 /// The actual implementation of the internal API
 impl ProxyServer {
     pub async fn new(
+        bundler: Option<Arc<InternalBundlerServiceImpl>>,
         internal_api: Arc<InternalServerImpl>,
         addr: SocketAddr,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(ProxyServer { addr, internal_api })
+        Ok(ProxyServer {
+            addr,
+            internal_api,
+            bundler,
+        })
     }
 
     pub async fn serve(&self) -> Result<()> {
         let internal_proxy_service =
             InternalProxyServiceServer::from_arc(self.internal_api.clone());
 
+        let bundler = self
+            .bundler
+            .clone()
+            .map(|b| InternalBundlerServiceServer::from_arc(b));
+
         tonic::transport::Server::builder()
             .add_service(internal_proxy_service)
+            .add_optional_service(bundler)
             .serve(self.addr)
             .await?;
 
@@ -82,7 +99,10 @@ impl InternalProxyService for InternalServerImpl {
         let upload_id = self
             .data_client
             .init_multipart_upload(Location {
-                bucket: "temp".to_string(),
+                bucket: format!(
+                    "{}-temp",
+                    &self.data_handler.settings.endpoint_id.to_string()
+                ),
                 path: format!(
                     "{}/{}",
                     inner_request.collection_id, inner_request.object_id

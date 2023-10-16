@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use crate::backends::storage_backend::StorageBackend;
 use anyhow::{anyhow, Result};
-use aruna_file::transformer::{AddTransformer, Data, Notifications, Sink, Transformer};
+use aruna_file::transformer::{Sink, Transformer};
 use aruna_rust_api::api::internal::v1::{Location, PartETag};
+use async_channel::{Receiver, Sender};
 use bytes::{BufMut, BytesMut};
 
 pub struct BufferedS3Sink {
@@ -15,6 +16,7 @@ pub struct BufferedS3Sink {
     only_parts: bool,
     tags: Vec<PartETag>,
     sum: usize,
+    sender: Sender<String>,
 }
 
 impl Sink for BufferedS3Sink {}
@@ -27,26 +29,29 @@ impl BufferedS3Sink {
         part_number: Option<i32>,
         only_parts: bool,
         tags: Option<Vec<PartETag>>,
-    ) -> Self {
+    ) -> (Self, Receiver<String>) {
         let t = match tags {
             Some(t) => t,
             None => Vec::new(),
         };
-        Self {
-            backend,
-            buffer: BytesMut::with_capacity(10_000_000),
-            target_location,
-            upload_id,
-            part_number,
-            only_parts,
-            tags: t,
-            sum: 0,
-        }
-    }
-}
 
-impl AddTransformer<'_> for BufferedS3Sink {
-    fn add_transformer<'a>(self: &mut BufferedS3Sink, _t: Box<dyn Transformer + Send + 'a>) {}
+        let (tx, sx) = async_channel::bounded(2);
+
+        (
+            Self {
+                backend,
+                buffer: BytesMut::with_capacity(10_000_000),
+                target_location,
+                upload_id,
+                part_number,
+                only_parts,
+                tags: t,
+                sum: 0,
+                sender: tx,
+            },
+            sx,
+        )
+    }
 }
 
 impl BufferedS3Sink {
@@ -98,15 +103,14 @@ impl BufferedS3Sink {
         let (sender, receiver) = async_channel::bounded(10);
         sender.send(Ok(self.buffer.split().freeze())).await?;
 
-        self.tags.push(
-            tokio::spawn(async move {
-                backend_clone
-                    .upload_multi_object(receiver, location_clone, up_id, expected_len, pnummer)
-                    .await
-            })
-            .await??,
-        );
-
+        let tag = tokio::spawn(async move {
+            backend_clone
+                .upload_multi_object(receiver, location_clone, up_id, expected_len, pnummer)
+                .await
+        })
+        .await??;
+        self.sender.send(tag.etag.to_string()).await?;
+        self.tags.push(tag);
         self.part_number = Some(pnummer + 1);
 
         log::debug!(
@@ -140,7 +144,12 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
-    async fn process_bytes(&mut self, buf: &mut bytes::Bytes, finished: bool) -> Result<bool> {
+    async fn process_bytes(
+        &mut self,
+        buf: &mut bytes::BytesMut,
+        finished: bool,
+        _: bool,
+    ) -> Result<bool> {
         self.sum += buf.len();
         let len = buf.len();
 
@@ -167,31 +176,4 @@ impl Transformer for BufferedS3Sink {
         }
         Ok(false)
     }
-    async fn notify(&mut self, notes: &mut Vec<Notifications>) -> Result<()> {
-        if self.only_parts {
-            notes.push(Notifications::Response(Data {
-                recipient: "SINK_TAG".to_string(),
-                info: self.tags.pop().map(|tag| tag.etag.as_bytes().to_vec()),
-            }));
-        }
-        Ok(())
-    }
-}
-
-pub fn parse_notes_get_etag(notes: Vec<Notifications>) -> Result<String> {
-    let mut result = String::new();
-    for note in notes {
-        match note {
-            Notifications::Response(data) => {
-                if data.recipient.starts_with("SINK_TAG") {
-                    result = String::from_utf8_lossy(
-                        &data.info.ok_or_else(|| anyhow!("No chunks responded"))?,
-                    )
-                    .to_string()
-                }
-            }
-            _ => continue,
-        }
-    }
-    Ok(result)
 }

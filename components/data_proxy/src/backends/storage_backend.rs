@@ -34,7 +34,7 @@ pub trait StorageBackend: Debug + Send + Sync {
         &self,
         location: Location,
         range: Option<String>,
-        sender: Sender<bytes::Bytes>,
+        sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()>;
 
     /// Gets meta information about a specific object
