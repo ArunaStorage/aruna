@@ -1,19 +1,22 @@
 use crate::common::{init, test_utils};
-use aruna_server::database::dsls::hook_dsl::{Hook, HookVariant, TriggerType};
-use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
+use aruna_server::database::dsls::hook_dsl::{
+    Hook, HookVariant, HookWithAssociatedProject, TriggerType,
+};
 use aruna_server::database::enums::ObjectType;
-use aruna_server::database::{crud::CrudDb, dsls::object_dsl::Object, enums::ObjectMapping};
+use aruna_server::database::{crud::CrudDb, enums::ObjectMapping};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
 #[tokio::test]
 async fn create_hook() {
+    // Init
     let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
     let proj_id = DieselUlid::generate();
     let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(proj_id)]);
     user.create(&client).await.unwrap();
 
+    // Create hook
     let hook_id = DieselUlid::generate();
     let mut hook = Hook {
         id: hook_id,
@@ -37,30 +40,185 @@ async fn create_hook() {
     };
 
     let mut create_project = test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
-    let obj_id = DieselUlid::generate();
-    let mut create_object = test_utils::new_object(user.id, obj_id, ObjectType::OBJECT);
+    create_project.create(&client).await.unwrap();
+    hook.create(&client).await.unwrap();
+    let created = Hook::get(hook.id, &client).await.unwrap().unwrap();
+    assert_eq!(hook, created);
+}
+#[tokio::test]
+pub async fn get_hooks() {
+    // Init
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let proj_id = DieselUlid::generate();
+    let mut user = test_utils::new_user(vec![ObjectMapping::PROJECT(proj_id)]);
+    user.create(&client).await.unwrap();
+
+    // Create hooks
+    // Hooks for association query tests
+    let other_hook_ids = vec![
+        (DieselUlid::generate(), DieselUlid::generate()),
+        (DieselUlid::generate(), DieselUlid::generate()),
+        (DieselUlid::generate(), DieselUlid::generate()),
+    ];
+    let (_, projects): (Vec<DieselUlid>, Vec<DieselUlid>) =
+        other_hook_ids.clone().into_iter().unzip();
+    let mut other_user = test_utils::new_user(
+        other_hook_ids
+            .clone()
+            .into_iter()
+            .map(|(_, p)| ObjectMapping::PROJECT(p))
+            .collect(),
+    );
+    other_user.create(&client).await.unwrap();
+    let mut other_hooks = Vec::new();
+    for (hook_id, proj_id) in other_hook_ids.clone() {
+        let mut hook = Hook {
+            id: hook_id,
+            name: "HookName".to_string(),
+            description: "SOME_DESCRIPTION".to_string(),
+            owner: other_user.id,
+            project_ids: projects.clone(),
+            trigger_type: TriggerType::HOOK_ADDED,
+            trigger_key: "TEST_KEY".to_string(),
+            trigger_value: "TEST_VALUE".to_string(),
+            timeout: chrono::Utc::now()
+                .naive_utc()
+                .checked_add_days(chrono::Days::new(1))
+                .unwrap(),
+            hook: Json(HookVariant::Internal(
+                aruna_server::database::dsls::hook_dsl::InternalHook::AddLabel {
+                    key: "HOOK_STATUS".to_string(),
+                    value: "HOOK_TRIGGERED_SUCCESSFULL".to_string(),
+                },
+            )),
+        };
+
+        let mut create_project = test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
+        create_project.create(&client).await.unwrap();
+        hook.create(&client).await.unwrap();
+        other_hooks.push(hook);
+    }
+    let hook_id = DieselUlid::generate();
+    let mut hook = Hook {
+        id: hook_id,
+        name: "HookName".to_string(),
+        description: "SOME_DESCRIPTION".to_string(),
+        owner: user.id,
+        project_ids: vec![proj_id],
+        trigger_type: TriggerType::HOOK_ADDED,
+        trigger_key: "TEST_KEY".to_string(),
+        trigger_value: "TEST_VALUE".to_string(),
+        timeout: chrono::Utc::now()
+            .naive_utc()
+            .checked_add_days(chrono::Days::new(1))
+            .unwrap(),
+        hook: Json(HookVariant::Internal(
+            aruna_server::database::dsls::hook_dsl::InternalHook::AddLabel {
+                key: "HOOK_STATUS".to_string(),
+                value: "HOOK_TRIGGERED_SUCCESSFULL".to_string(),
+            },
+        )),
+    };
+
+    let mut create_project = test_utils::new_object(user.id, proj_id, ObjectType::PROJECT);
     create_project.create(&client).await.unwrap();
     hook.create(&client).await.unwrap();
 
-    create_object.create(&client).await.unwrap();
-    assert!(Object::get(obj_id, &client)
-        .await
-        .unwrap()
-        .unwrap()
-        .key_values
-        .0
-         .0
-        .is_empty());
-    let keyval = KeyValue {
-        key: "TEST_KEY".to_string(),
-        value: "TEST_VALUE".to_string(),
-        variant: KeyValueVariant::HOOK,
-    };
-    Object::add_key_value(&obj_id, &client, keyval)
+    // List hooks
+    // -> Lists hooks with queried projects
+    let hook_with_project = Hook::get_hooks_for_projects(&vec![proj_id], &client)
         .await
         .unwrap();
+    assert_eq!(hook_with_project.len(), 1);
+    let hook_with_project = &hook_with_project[0];
+    let other = HookWithAssociatedProject {
+        id: hook.id,
+        name: hook.name.clone(),
+        description: hook.description.clone(),
+        project_ids: hook.project_ids.clone(),
+        owner: hook.owner,
+        trigger_type: hook.trigger_type.clone(),
+        trigger_key: hook.trigger_key.clone(),
+        trigger_value: hook.trigger_value.clone(),
+        timeout: hook.timeout,
+        hook: hook.hook.clone(),
+        project_id: proj_id,
+    };
+    assert_eq!(hook_with_project, &other);
+    // -> Test with associated hook
+    let other_hooks_with_projects = Hook::get_hooks_for_projects(&projects, &client)
+        .await
+        .unwrap();
+    let map = other_hooks_with_projects
+        .into_iter()
+        .map(|h| (h.id, h.project_id))
+        .collect::<Vec<(DieselUlid, DieselUlid)>>();
+    // 3 hooks with 3 project ids each
+    // searching for these 3 projects = 9 results
+    assert_eq!(map.len(), 9);
+    assert!(map.contains(&other_hook_ids[0]));
+    assert!(map.contains(&other_hook_ids[1]));
+    assert!(map.contains(&other_hook_ids[2]));
+    // Collect each combination
+    let mut one = Vec::new();
+    let mut two = Vec::new();
+    let mut three = Vec::new();
+    for (hook, proj) in map {
+        if hook == other_hook_ids[0].0 {
+            one.push(proj);
+        } else if hook == other_hook_ids[1].0 {
+            two.push(proj)
+        } else if hook == other_hook_ids[2].0 {
+            three.push(proj)
+        }
+    }
+    assert_eq!(one.len(), 3);
+    assert!(one.contains(&projects[0]));
+    assert!(one.contains(&projects[1]));
+    assert!(one.contains(&projects[2]));
+    assert_eq!(two.len(), 3);
+    assert!(two.contains(&projects[0]));
+    assert!(two.contains(&projects[1]));
+    assert!(two.contains(&projects[2]));
+    assert_eq!(three.len(), 3);
+    assert!(three.contains(&projects[0]));
+    assert!(three.contains(&projects[1]));
+    assert!(three.contains(&projects[2]));
 
-    let get_obj = Object::get(obj_id, &client).await.unwrap().unwrap();
-    dbg!(get_obj);
-    //assert!(get_obj.key_values.0 .0.contains(KeyValue ));
+    let projects = Hook::get_project_from_hook(&hook_id, &client)
+        .await
+        .unwrap();
+    // --> Lists projects associated with hook
+    assert!(projects.contains(&proj_id));
+
+    let hooks = Hook::list_hooks(&proj_id, &client).await.unwrap();
+    // --> Lists all hooks that contain project_id
+    assert_eq!(hooks.len(), 1);
+    assert_eq!(hooks[0], hook);
+
+    let owned_hooks = Hook::list_owned(&user.id, &client).await.unwrap();
+    let otherowned_hooks = Hook::list_owned(&other_user.id, &client).await.unwrap();
+    assert_eq!(hooks.len(), 1);
+    assert_eq!(owned_hooks[0], hook);
+    assert_eq!(otherowned_hooks.len(), 3);
+    assert!(otherowned_hooks.contains(&other_hooks[0]));
+    assert!(otherowned_hooks.contains(&other_hooks[1]));
+    assert!(otherowned_hooks.contains(&other_hooks[2]));
+
+    assert!(Hook::exists(&vec![hook_id], &client).await.is_ok());
+    // -> Checks if hook exists
 }
+// #[tokio::test]
+// pub async fn update_hooks() {
+//     // TODO: remove_workspace_from_hook
+//     // TODO: add_workspace_to_hook
+//     // TODO: add_projects_to_hook
+//     todo!()
+// }
+// #[tokio::test]
+// pub async fn delete_hooks() {
+//     // TODO: delete()
+//     // TODO: delete_by_id()
+//     todo!()
+// }

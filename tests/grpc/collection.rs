@@ -22,7 +22,7 @@ use crate::common::{
     test_utils::{
         add_token, fast_track_grpc_collection_create, fast_track_grpc_get_collection,
         fast_track_grpc_permission_add, fast_track_grpc_project_create, ADMIN_OIDC_TOKEN,
-        DEFAULT_ENDPOINT_ULID, GENERIC_USER_ULID, USER_OIDC_TOKEN,
+        DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN, USER1_ULID,
     },
 };
 use aruna_server::database::enums::DbPermissionLevel;
@@ -89,7 +89,7 @@ async fn grpc_get_collection() {
     let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Create random project and collection
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
@@ -124,14 +124,14 @@ async fn grpc_get_collection() {
     assert!(response.is_err());
 
     // Get Collection without permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service.get_collection(grpc_request).await;
 
     assert!(response.is_err());
 
     // Get Collection with permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     fast_track_grpc_permission_add(
         &auth_service,
@@ -178,7 +178,7 @@ async fn grpc_get_collections() {
     let (auth_service, project_service, collection_service, _, _, _) = init_grpc_services().await;
 
     // Get normal user id as DieselUlid
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
 
     // Create random project and collection
     let project = fast_track_grpc_project_create(&project_service, ADMIN_OIDC_TOKEN).await;
@@ -226,7 +226,7 @@ async fn grpc_get_collections() {
     assert!(response.is_err());
 
     // Get Collection without permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service.get_collections(grpc_request).await;
 
@@ -242,7 +242,7 @@ async fn grpc_get_collections() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service.get_collections(grpc_request).await;
 
@@ -258,7 +258,7 @@ async fn grpc_get_collections() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collections = collection_service
         .get_collections(grpc_request)
@@ -294,7 +294,7 @@ async fn grpc_update_collection_name() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Update Collection without token
@@ -325,7 +325,7 @@ async fn grpc_update_collection_name() {
     // Update Collection without sufficient permissions
     inner_request.collection_id = collection.id.to_string();
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service
         .update_collection_name(grpc_request)
@@ -343,7 +343,7 @@ async fn grpc_update_collection_name() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_name(grpc_request)
@@ -372,7 +372,7 @@ async fn grpc_update_collection_description() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Update Collection without token
@@ -403,7 +403,7 @@ async fn grpc_update_collection_description() {
     // Update Collection without sufficient permissions
     inner_request.collection_id = collection.id.to_string();
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service
         .update_collection_description(grpc_request)
@@ -421,7 +421,7 @@ async fn grpc_update_collection_description() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_description(grpc_request)
@@ -450,7 +450,7 @@ async fn grpc_update_collection_dataclass() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Change dataclass of non-existing collection
@@ -479,7 +479,7 @@ async fn grpc_update_collection_dataclass() {
     assert!(response.is_err());
 
     // Change dataclass without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service
         .update_collection_data_class(grpc_request)
@@ -490,7 +490,7 @@ async fn grpc_update_collection_dataclass() {
     // Change to stricter dataclass with sufficient permissions
     inner_request.data_class = DataClass::Confidential as i32;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service
         .update_collection_data_class(grpc_request)
@@ -510,7 +510,7 @@ async fn grpc_update_collection_dataclass() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_data_class(grpc_request)
@@ -539,7 +539,7 @@ async fn grpc_update_collection_keyvalues() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Change key-values of non-existing Collection
@@ -573,7 +573,7 @@ async fn grpc_update_collection_keyvalues() {
     assert!(response.is_err());
 
     // Change key-values without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service
         .update_collection_key_values(grpc_request)
@@ -657,7 +657,7 @@ async fn grpc_update_collection_keyvalues() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_key_values(grpc_request)
@@ -687,7 +687,7 @@ async fn grpc_update_collection_keyvalues() {
         variant: KeyValueVariant::Label as i32,
     }];
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_key_values(grpc_request)
@@ -719,7 +719,7 @@ async fn grpc_update_collection_keyvalues() {
         variant: KeyValueVariant::Label as i32,
     }];
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .update_collection_key_values(grpc_request)
@@ -755,7 +755,7 @@ async fn grpc_delete_collection() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Delete non-existing Collection
@@ -779,7 +779,7 @@ async fn grpc_delete_collection() {
     assert!(response.is_err());
 
     // Delete Collection without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service.delete_collection(grpc_request).await;
 
@@ -795,23 +795,28 @@ async fn grpc_delete_collection() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     collection_service
         .delete_collection(grpc_request)
         .await
         .unwrap();
 
-    let response = collection_service
+    let deleted_collection = collection_service
         .get_collection(add_token(
             Request::new(GetCollectionRequest {
                 collection_id: collection_ulid.to_string(),
             }),
-            USER_OIDC_TOKEN,
+            USER1_OIDC_TOKEN,
         ))
-        .await;
+        .await
+        .unwrap()
+        .into_inner()
+        .collection
+        .unwrap();
 
-    assert!(response.is_err()); // Object is deleted in cache
+    assert_eq!(deleted_collection.id, collection.id);
+    assert_eq!(deleted_collection.status, Status::Deleted as i32)
 
     //ToDo: Try delete non-empty Collection
 }
@@ -831,7 +836,7 @@ async fn grpc_snapshot_collection() {
     .await;
 
     // Create user/resource ulids
-    let user_ulid = DieselUlid::from_str(GENERIC_USER_ULID).unwrap();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let collection_ulid = DieselUlid::from_str(&collection.id).unwrap();
 
     // Snapshot non-existing Collection
@@ -855,7 +860,7 @@ async fn grpc_snapshot_collection() {
     assert!(response.is_err());
 
     // Snapshot Collection without sufficient permissions
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = collection_service.snapshot_collection(grpc_request).await;
 
@@ -871,7 +876,7 @@ async fn grpc_snapshot_collection() {
     )
     .await;
 
-    let grpc_request = add_token(Request::new(inner_request.clone()), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_collection = collection_service
         .snapshot_collection(grpc_request)

@@ -1,12 +1,22 @@
-use crate::common::init;
+use std::str::FromStr;
+
+use crate::common::{init, test_utils::USER1_ULID};
 use aruna_server::database::{
     crud::CrudDb,
-    dsls::user_dsl::{APIToken, User, UserAttributes},
-    enums::{DbPermissionLevel, ObjectMapping},
+    dsls::{
+        persistent_notification_dsl::{
+            NotificationReference, NotificationReferences, PersistentNotification,
+        },
+        user_dsl::{APIToken, User, UserAttributes},
+    },
+    enums::{
+        DbPermissionLevel, NotificationReferenceType, ObjectMapping, PersistentNotificationVariant,
+    },
 };
 use dashmap::DashMap;
 //use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
+use postgres_types::Json;
 use tokio_postgres::GenericClient;
 
 #[tokio::test]
@@ -594,4 +604,57 @@ async fn user_status_test() {
 
     User::deactivate_user(client, &id).await.unwrap();
     assert!(!User::get(id, client).await.unwrap().unwrap().active);
+}
+
+#[tokio::test]
+async fn persistent_notification_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    let notification_ulid = DieselUlid::generate();
+    let resource_ulid = DieselUlid::generate();
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
+
+    // Create notification in database
+    let mut pers_notification = PersistentNotification {
+        id: notification_ulid,
+        user_id: user_ulid,
+        notification_variant: PersistentNotificationVariant::PERMISSION_GRANTED,
+        message: format!("Permission granted for example.file ({})", resource_ulid),
+        refs: Json(NotificationReferences(vec![NotificationReference {
+            reference_type: NotificationReferenceType::Resource,
+            reference_name: "example.file".to_string(),
+            reference_value: resource_ulid.to_string(),
+        }])),
+    };
+    pers_notification.create(client).await.unwrap();
+
+    // Fetch notification
+    let validation = PersistentNotification::get(notification_ulid, client)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(pers_notification.id, validation.id);
+    assert_eq!(pers_notification.user_id, validation.user_id);
+    assert_eq!(
+        pers_notification.notification_variant,
+        validation.notification_variant
+    );
+    assert_eq!(
+        pers_notification.message,
+        format!("Permission granted for example.file ({})", resource_ulid)
+    );
+    assert_eq!(pers_notification.refs, validation.refs);
+
+    // Acknowledge notification
+    PersistentNotification::acknowledge_user_notifications(&vec![notification_ulid], client)
+        .await
+        .unwrap();
+
+    assert!(PersistentNotification::get(notification_ulid, client)
+        .await
+        .unwrap()
+        .is_none());
 }

@@ -7,12 +7,18 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_VERSION,
 };
 use crate::database::dsls::object_dsl::Object;
+use crate::database::dsls::persistent_notification_dsl::{
+    NotificationReference, PersistentNotification,
+};
 use crate::database::dsls::user_dsl::{
     APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
     UserAttributes as DBUserAttributes,
 };
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
-use crate::database::enums::{DbPermissionLevel, EndpointVariant, ObjectMapping};
+use crate::database::enums::{
+    DbPermissionLevel, EndpointVariant, NotificationReferenceType, ObjectMapping,
+    PersistentNotificationVariant,
+};
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
     dsls::object_dsl::{
@@ -41,7 +47,8 @@ use aruna_rust_api::api::storage::models::v2::{
     Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
-    create_collection_request, create_dataset_request, create_object_request, WorkspaceInfo,
+    create_collection_request, create_dataset_request, create_object_request, PersonalNotification,
+    PersonalNotificationVariant, ReferenceType, References, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -835,7 +842,7 @@ impl InternalRelation {
                     origin_type: other_obj.object.object_type,
                     relation_name: api_rel
                         .defined_variant
-                        .into_relation_name(api_rel.custom_variant.clone())?,
+                        .as_relation_name(api_rel.custom_variant.clone())?,
                     target_pid: self_obj.object.id,
                     target_type: self_obj.object.object_type,
                     target_name: self_obj.object.name,
@@ -855,7 +862,7 @@ impl InternalRelation {
                     origin_type: other_obj.object.object_type,
                     relation_name: api_rel
                         .defined_variant
-                        .into_relation_name(api_rel.custom_variant.clone())?,
+                        .as_relation_name(api_rel.custom_variant.clone())?,
                     target_pid: self_obj.object.id,
                     target_type: self_obj.object.object_type,
                     target_name: self_obj.object.name,
@@ -932,11 +939,11 @@ impl InternalRelation {
 // }
 
 pub trait IntoRelationName {
-    fn into_relation_name(&self, name: Option<String>) -> Result<String>;
+    fn as_relation_name(&self, name: Option<String>) -> Result<String>;
 }
 
 impl IntoRelationName for i32 {
-    fn into_relation_name(&self, name: Option<String>) -> Result<String> {
+    fn as_relation_name(&self, name: Option<String>) -> Result<String> {
         match self {
             1 => Ok(INTERNAL_RELATION_VARIANT_BELONGS_TO.to_string()),
             2 => Ok(INTERNAL_RELATION_VARIANT_ORIGIN.to_string()),
@@ -1056,7 +1063,7 @@ impl DBUser {
     }
 }
 
-pub fn into_api_token(id: DieselUlid, token: APIToken) -> Token {
+pub fn as_api_token(id: DieselUlid, token: APIToken) -> Token {
     Token {
         id: id.to_string(),
         name: token.name,
@@ -1192,12 +1199,12 @@ impl TryFrom<i32> for EndpointVariant {
 
 impl From<Hook> for HookInfo {
     fn from(hook: Hook) -> HookInfo {
-        let trigger = Some(hook.into_trigger());
+        let trigger = Some(hook.as_trigger());
         HookInfo {
             name: hook.name.clone(),
             description: hook.description.clone(),
             hook_id: hook.id.to_string(),
-            hook: Some(hook.into_api_hook()),
+            hook: Some(hook.as_api_hook()),
             trigger,
             timeout: hook.timeout.timestamp_millis() as u64,
             project_ids: hook.project_ids.iter().map(|id| id.to_string()).collect(),
@@ -1214,7 +1221,7 @@ impl From<&Method> for i32 {
     }
 }
 impl Hook {
-    fn into_trigger(&self) -> Trigger {
+    fn as_trigger(&self) -> Trigger {
         Trigger {
             trigger_type: match self.trigger_type {
                 crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
@@ -1224,7 +1231,7 @@ impl Hook {
             value: self.trigger_value.clone(),
         }
     }
-    fn into_api_hook(&self) -> APIHook {
+    fn as_api_hook(&self) -> APIHook {
         match &self.hook.0 {
             crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
                 let internal_action = match internal_hook {
@@ -1291,6 +1298,101 @@ impl From<WorkspaceTemplate> for WorkspaceInfo {
                 .iter()
                 .map(DieselUlid::to_string)
                 .collect(),
+        }
+    }
+}
+
+// -------------------------------------------------- //
+// ----- Personal/Persistant Notifications ---------- //
+// -------------------------------------------------- //
+impl From<PersistentNotification> for PersonalNotification {
+    fn from(value: PersistentNotification) -> Self {
+        let variant: PersonalNotificationVariant = value.notification_variant.into();
+        let refs = value
+            .refs
+            .0
+             .0
+            .into_iter()
+            .map(|r| r.into())
+            .collect::<Vec<_>>();
+
+        PersonalNotification {
+            id: value.id.to_string(),
+            variant: variant as i32,
+            message: value.message,
+            refs,
+        }
+    }
+}
+
+impl From<PersistentNotificationVariant> for PersonalNotificationVariant {
+    fn from(value: PersistentNotificationVariant) -> Self {
+        match value {
+            PersistentNotificationVariant::ACCESS_REQUESTED => {
+                PersonalNotificationVariant::AccessRequested
+            }
+            PersistentNotificationVariant::PERMISSION_REVOKED => {
+                PersonalNotificationVariant::PermissionRevoked
+            }
+            PersistentNotificationVariant::PERMISSION_GRANTED => {
+                PersonalNotificationVariant::PermissionGranted
+            }
+            PersistentNotificationVariant::ANNOUNCEMENT => {
+                PersonalNotificationVariant::Announcement
+            }
+        }
+    }
+}
+
+impl From<NotificationReference> for References {
+    fn from(value: NotificationReference) -> Self {
+        References {
+            ref_type: match value.reference_type {
+                NotificationReferenceType::User => ReferenceType::User,
+                NotificationReferenceType::Resource => ReferenceType::Resource,
+            } as i32,
+            ref_name: value.reference_name,
+            ref_value: value.reference_value,
+        }
+    }
+}
+
+impl TryFrom<PersonalNotificationVariant> for PersistentNotificationVariant {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PersonalNotificationVariant) -> std::result::Result<Self, Self::Error> {
+        match value {
+            PersonalNotificationVariant::Unspecified => Err(anyhow!(
+                "Unspecified personal notification variant not allowed"
+            )),
+            PersonalNotificationVariant::AccessRequested => {
+                Ok(PersistentNotificationVariant::ACCESS_REQUESTED)
+            }
+            PersonalNotificationVariant::PermissionGranted => {
+                Ok(PersistentNotificationVariant::PERMISSION_GRANTED)
+            }
+            PersonalNotificationVariant::PermissionRevoked => {
+                Ok(PersistentNotificationVariant::PERMISSION_REVOKED)
+            }
+            PersonalNotificationVariant::Announcement => {
+                Ok(PersistentNotificationVariant::ANNOUNCEMENT)
+            }
+        }
+    }
+}
+
+impl TryFrom<i32> for PersistentNotificationVariant {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            1 => Ok(PersistentNotificationVariant::ACCESS_REQUESTED),
+            2 => Ok(PersistentNotificationVariant::PERMISSION_GRANTED),
+            3 => Ok(PersistentNotificationVariant::PERMISSION_REVOKED),
+            4 => Ok(PersistentNotificationVariant::ANNOUNCEMENT),
+            _ => Err(anyhow!(
+                "Unspecified personal notification variant not allowed"
+            )),
         }
     }
 }

@@ -15,7 +15,7 @@ use crate::common::{
     init::{init_database, init_project_service},
     test_utils::{
         add_token, fast_track_grpc_project_create, rand_string, ADMIN_OIDC_TOKEN,
-        DEFAULT_ENDPOINT_ULID, USER_OIDC_TOKEN,
+        DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN,
     },
 };
 use aruna_server::database::{crud::CrudDb, dsls::object_dsl::Object, enums::ObjectStatus};
@@ -71,15 +71,15 @@ async fn grpc_get_projects() {
     let project_service = init_project_service().await;
 
     // Create multiple projects
-    let project_01 = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
-    let project_02 = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
+    let project_01 = fast_track_grpc_project_create(&project_service, USER1_OIDC_TOKEN).await;
+    let project_02 = fast_track_grpc_project_create(&project_service, USER1_OIDC_TOKEN).await;
 
     // Fetch single project
     let get_request = GetProjectRequest {
         project_id: project_01.id.to_string(),
     };
 
-    let grpc_request = add_token(Request::new(get_request), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(get_request), USER1_OIDC_TOKEN);
 
     let get_response = project_service
         .get_project(grpc_request)
@@ -96,7 +96,7 @@ async fn grpc_get_projects() {
         project_ids: vec![project_01.id.to_string(), project_02.id.to_string()],
     };
 
-    let grpc_request = add_token(Request::new(get_all_request), USER_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(get_all_request), USER1_OIDC_TOKEN);
 
     let get_all_response = project_service
         .get_projects(grpc_request)
@@ -117,7 +117,7 @@ async fn grpc_update_project() {
     let project_service = init_project_service().await;
 
     // Create multiple projects
-    let project = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
+    let project = fast_track_grpc_project_create(&project_service, USER1_OIDC_TOKEN).await;
 
     // Update project name
     let update_name_request = add_token(
@@ -285,7 +285,7 @@ async fn grpc_delete_project() {
     let project_service = init_project_service().await;
 
     // Create random project
-    let project = fast_track_grpc_project_create(&project_service, USER_OIDC_TOKEN).await;
+    let project = fast_track_grpc_project_create(&project_service, USER1_OIDC_TOKEN).await;
     let project_ulid = DieselUlid::from_str(&project.id).unwrap();
 
     // Delete random project

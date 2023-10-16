@@ -5,8 +5,9 @@ use aruna_rust_api::api::storage::{
         collection_service_server::CollectionService, create_collection_request,
         create_dataset_request, dataset_service_server::DatasetService,
         project_service_server::ProjectService, CreateAuthorizationRequest,
-        CreateCollectionRequest, CreateDatasetRequest, CreateProjectRequest, GetCollectionRequest,
-        GetDatasetRequest,
+        CreateCollectionRequest, CreateDatasetRequest, CreateProjectRequest,
+        DeleteAuthorizationRequest, GetCollectionRequest, GetDatasetRequest,
+        UpdateAuthorizationRequest,
     },
 };
 use aruna_server::{
@@ -38,9 +39,13 @@ pub static ADMIN_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleH
 #[allow(dead_code)]
 pub static ADMIN_USER_ULID: &str = "01H819G3ZMK5DC9Q5PD18N9SXB";
 #[allow(dead_code)]
-pub static USER_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjM2Njc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI2NzRkNDZiNy1kZGFkLTQ1ZmYtYjU4YS01MjFkYjk2M2QyNjYiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiMzk4OTM3ODEtMzIwZS00ZGJmLWJlMzktYzA2ZDhiMjhlODk3IiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJyZWd1bGFyLXVzZXIifQ.xV0KkMTYe-k7iFEaz2ZW1b7VYX1HG_PB1O7yAZdafBheBJr9y9dSxI3pvoFN4pgRPF1zSPq7YLB6lwT6IRAE5sDxXorcSOc-FH2L5YCWKd5Dz1XdDNSDpYkN-9VRXevOpaQuw2_PnSVqJ922uDWz4zO5L3nNZ3dD69uR1-jaUlbjbzBf_9d-f5hXDjVI2XMLaGBBwD9EoGFZkucYKN8XgnrK6eyBUezX8W7U5vet5r-gNgDKPu17BPEaghURosa2JSIKDvfoCSOJmF_6IiDmfmiFp3wzCLldp1hZP0ve6NyzM3V80J0GiIOintvjBMGwUr8B6eFE2lm1M5vl7fsENBJF7mMYpSUBQYWqFShWujNIOJfsaHg_y9n0DUHNxJ1fYTInQDWOzky29VfXDr5yNGNtq9AOQiDGaUp4f0q-VjE1FC58a96tV2VhxYA_yTxxE-DzxZ-h_DvVTcZ9i_s9w4wVT2C2cCZrkvOH5cxdoXkGpJwwZRainUyDRJr2D5GpaMRPlIF4tUjV1H84x9aHpzvblscbgrKnsBwq2-PpIrRCezIt5XMXl5pjlQaI0sMe4sSOgK-Qls3ILhz33tslUypIn29D6iy5U7pYb-0n8KnPnufNWn4uWviHsHFwGgvZkDhvlwqGW8BxtWePU4xc3Fu7N2sdv1Vvmj3-cYSLcaA";
+pub static USER1_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjM2Njc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI2NzRkNDZiNy1kZGFkLTQ1ZmYtYjU4YS01MjFkYjk2M2QyNjYiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiMzk4OTM3ODEtMzIwZS00ZGJmLWJlMzktYzA2ZDhiMjhlODk3IiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJyZWd1bGFyLXVzZXIifQ.xV0KkMTYe-k7iFEaz2ZW1b7VYX1HG_PB1O7yAZdafBheBJr9y9dSxI3pvoFN4pgRPF1zSPq7YLB6lwT6IRAE5sDxXorcSOc-FH2L5YCWKd5Dz1XdDNSDpYkN-9VRXevOpaQuw2_PnSVqJ922uDWz4zO5L3nNZ3dD69uR1-jaUlbjbzBf_9d-f5hXDjVI2XMLaGBBwD9EoGFZkucYKN8XgnrK6eyBUezX8W7U5vet5r-gNgDKPu17BPEaghURosa2JSIKDvfoCSOJmF_6IiDmfmiFp3wzCLldp1hZP0ve6NyzM3V80J0GiIOintvjBMGwUr8B6eFE2lm1M5vl7fsENBJF7mMYpSUBQYWqFShWujNIOJfsaHg_y9n0DUHNxJ1fYTInQDWOzky29VfXDr5yNGNtq9AOQiDGaUp4f0q-VjE1FC58a96tV2VhxYA_yTxxE-DzxZ-h_DvVTcZ9i_s9w4wVT2C2cCZrkvOH5cxdoXkGpJwwZRainUyDRJr2D5GpaMRPlIF4tUjV1H84x9aHpzvblscbgrKnsBwq2-PpIrRCezIt5XMXl5pjlQaI0sMe4sSOgK-Qls3ILhz33tslUypIn29D6iy5U7pYb-0n8KnPnufNWn4uWviHsHFwGgvZkDhvlwqGW8BxtWePU4xc3Fu7N2sdv1Vvmj3-cYSLcaA";
 #[allow(dead_code)]
-pub static GENERIC_USER_ULID: &str = "01H8KWYY5MTAH1YZGPYVS7PQWD";
+pub static USER1_ULID: &str = "01H8KWYY5MTAH1YZGPYVS7PQWD";
+#[allow(dead_code)]
+pub static USER2_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMyNjc0Mzk0ODQsImlhdCI6MTY2NzQwMzQ4NCwiYXV0aF90aW1lIjoxNjY3NDAzNDg0LCJqdGkiOiI2YWVlNDg1ZC1jMzVlLTRmYWQtYTQ3Zi01YzVmOWNkMmYzMjAiLCJpc3MiOiJsb2NhbGhvc3QudGVzdCIsImF1ZCI6ImFydW5hIiwic3ViIjoiYzY3NWI5ZmUtNzI3NS00NmM2LWFmNWEtMjY0MTExNGI1Mzc1IiwidHlwIjoiSUQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ1c2VyMyJ9.hSNxHV_IVjbYUa0V-Tj19-uZi1Sd5786G9S9t0SCwh_Vn5XCZFwv4_y-GfuOq4edtqBHStfIgD6PLEE1ZvD3BQUsU9wNRlAY6Me51vPKJvatHcbWR0Pf-j4BZJ3qLVTAsDDAV5_n-CR1d6I4ev_FCX7Xn7rXz9GhVMKrJ7apMEet4HizFexfA6EaCKaYvb3h-fpNgTD1p__qNquFvP8NjLu-EcPKc2XWWDaCEjTEIvS9iE2L-G173U2ewjrk2apU1rQfRfgd8BhP9Pj8eHb0zigxElkGMZhAqkwt8KWyuneOl_X6M3t_MKyiz_xlWY_3Q_ai-ZEYzxRc5xVdRffBtett8FxnFCNYwdFucIQaYexSTk1O3oXgVGekC4a_-GF8I51YjvjyvpBtdg26fmhdS7_ZHj3flM2mlfNi1byQRG3VYUn-gyyZJ0QCo5-q9CK8PWjqLSXaF1FqjlsnB5FqMKpRm1uT8K26ntFQQmrSotNfbQgFjnPDLbaGn9wC2Ld8hAtjEHNhl9eVvxVsa2E6Nyl_Xpt-r-m_J4DcH7Qcv0DiLoVzIhbO6OM_wDOlKsyQZ9FL7mXISisUKU-cPqyiiaI9hQ8f6sJm9iAy5xZQSoemKeEKxfsPfXviVpWYb_v9TdfbQjIJ3LR14ouPU056pSn2ofU3HBrUulnuVPLEP-8";
+#[allow(dead_code)]
+pub static USER2_ULID: &str = "01HBG7TQS8HTV3M2PKFKMMBSJ5";
 #[allow(dead_code)]
 pub static DEFAULT_ENDPOINT_ULID: &str = "01H81W0ZMB54YEP5711Q2BK46V";
 /* ----- End Testing Constants ---------- */
@@ -332,6 +337,50 @@ pub async fn fast_track_grpc_permission_add(
     // Add permission to user
     auth_service
         .create_authorization(grpc_request)
+        .await
+        .unwrap();
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_permission_update(
+    auth_service: &AuthorizationServiceImpl,
+    token: &str,
+    user_ulid: &DieselUlid,
+    resource_ulid: &DieselUlid,
+    permission_level: DbPermissionLevel,
+) {
+    // Create request with token
+    let inner_request = UpdateAuthorizationRequest {
+        resource_id: resource_ulid.to_string(),
+        user_id: user_ulid.to_string(),
+        permission_level: PermissionLevel::from(permission_level) as i32,
+    };
+    let grpc_request = add_token(Request::new(inner_request), token);
+
+    // Add permission to user
+    auth_service
+        .update_authorization(grpc_request)
+        .await
+        .unwrap();
+}
+
+#[allow(dead_code)]
+pub async fn fast_track_grpc_permission_delete(
+    auth_service: &AuthorizationServiceImpl,
+    token: &str,
+    user_ulid: &DieselUlid,
+    resource_ulid: &DieselUlid,
+) {
+    // Create request with token
+    let inner_request = DeleteAuthorizationRequest {
+        resource_id: resource_ulid.to_string(),
+        user_id: user_ulid.to_string(),
+    };
+    let grpc_request = add_token(Request::new(inner_request), token);
+
+    // Add permission to user
+    auth_service
+        .delete_authorization(grpc_request)
         .await
         .unwrap();
 }

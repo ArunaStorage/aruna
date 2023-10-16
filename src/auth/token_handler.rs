@@ -40,7 +40,7 @@ struct KeyCloakResponse {
 /// This contains claims for ArunaTokens
 /// containing 3 mandatory and 2 optional fields.
 ///
-/// - iss: Toen issuer which is currently 'aruna' everytime
+/// - iss: Token issuer which is currently 'aruna' everytime
 /// - sub: User_ID or Endpoint_ID
 /// - tid: UUID from the specific token
 /// - exp: When this token expires (by default very large number)
@@ -143,6 +143,7 @@ impl<'de> Deserialize<'de> for Action {
 pub struct TokenHandler {
     cache: Arc<Cache>,
     oidc_realminfo: String,
+    oidc_token_issuer: String,
     oidc_pubkey: Arc<RwLock<Option<DecodingKey>>>,
     signing_info: Arc<RwLock<(i64, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
@@ -154,6 +155,7 @@ impl TokenHandler {
         oidc_realminfo: String,
         encode_secret: String,
         decode_secret: String,
+        token_issuer: String,
     ) -> Result<Self> {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
@@ -192,6 +194,7 @@ impl TokenHandler {
             oidc_realminfo,
             oidc_pubkey: Arc::new(RwLock::new(None)),
             signing_info: Arc::new(RwLock::new((pubkey_serial, encoding_key, decoding_key))),
+            oidc_token_issuer: token_issuer,
         })
     }
 
@@ -282,11 +285,12 @@ impl TokenHandler {
             .ok_or_else(|| anyhow!("Invalid token"))?;
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
+        let oidc_issuer = self.oidc_token_issuer.as_str();
 
         match claims.iss.as_str() {
             "aruna" => self.validate_server_token(token).await,
             "aruna_dataproxy" => self.validate_dataproxy_token(token).await,
-            "localhost.test" => self.validate_oidc_token(token).await,
+            iss if iss == oidc_issuer => self.validate_oidc_token(token).await,
             _ => Err(anyhow!("Unknown issuer")),
         }
     }

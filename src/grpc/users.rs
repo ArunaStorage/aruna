@@ -9,7 +9,7 @@ use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use crate::utils::conversions::{convert_token_to_proto, get_token_from_md, into_api_token};
+use crate::utils::conversions::{as_api_token, convert_token_to_proto, get_token_from_md};
 use anyhow::anyhow;
 
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
@@ -190,7 +190,7 @@ impl UserService for UserServiceImpl {
         );
         let token_id = tonic_invalid!(request.get_token_id(), "Invalid token_id");
         let token = match user.attributes.0.tokens.get(&token_id) {
-            Some(token) => Some(into_api_token(token_id, token.clone())),
+            Some(token) => Some(as_api_token(token_id, token.clone())),
             None => return Err(Status::not_found("Token not found")),
         };
         let response = GetApiTokenResponse { token };
@@ -223,7 +223,7 @@ impl UserService for UserServiceImpl {
                 .0
                 .tokens
                 .into_iter()
-                .map(|t| into_api_token(t.0, t.1)),
+                .map(|t| as_api_token(t.0, t.1)),
         );
         let response = GetApiTokensResponse { token };
 
@@ -572,21 +572,11 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (_, maybe_token, _) = tonic_auth!(
+        let (user_ulid, maybe_token, proxy_request) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
             "Unauthorized"
-        );
-
-        // Validate provided endpoint/user id format
-        let endpoint_ulid = tonic_invalid!(
-            DieselUlid::from_str(&inner_request.endpoint_id),
-            "Invalid endpoint id format"
-        );
-        let user_ulid = tonic_invalid!(
-            DieselUlid::from_str(&inner_request.endpoint_id),
-            "Invalid endpoint id format"
         );
 
         // Create token based on provided context
@@ -597,10 +587,13 @@ impl UserService for UserServiceImpl {
                         ProtoContext::S3Credentials(_) => {
                             tonic_internal!(
                                 self.authorizer.token_handler.sign_dataproxy_slt(
-                                    &user_ulid, // Shouldn't we just take the user id associated with the request token?
+                                    &user_ulid,
                                     maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
                                     Some(Intent {
-                                        target: endpoint_ulid,
+                                        target: tonic_invalid!(
+                                            DieselUlid::from_str(&inner_request.endpoint_id),
+                                            "Invalid endpoint id format"
+                                        ),
                                         action: Action::CreateSecrets
                                     }),
                                 ),
@@ -608,14 +601,37 @@ impl UserService for UserServiceImpl {
                             )
                         }
                         ProtoContext::Copy(_) => {
-                            unimplemented!("Dataproxy copy token creation not yet implemented")
+                            unimplemented!(
+                                "Dataproxy data replication token creation not yet implemented"
+                            )
                         }
                     }
                 }
-                None => return Err(Status::invalid_argument("No context provided")),
+                None => return Err(Status::invalid_argument("Missing context action")),
             }
-        } else {
+        } else if proxy_request {
             return Err(Status::invalid_argument("No context provided"));
+        } else if let Ok(endpoint_ulid) = DieselUlid::from_str(&inner_request.endpoint_id) {
+            tonic_internal!(
+                self.authorizer.token_handler.sign_dataproxy_slt(
+                    &user_ulid,
+                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                    Some(Intent {
+                        target: endpoint_ulid,
+                        action: Action::All
+                    }),
+                ),
+                "Token signing failed"
+            )
+        } else {
+            tonic_internal!(
+                self.authorizer.token_handler.sign_dataproxy_slt(
+                    &user_ulid,
+                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
+                    None,
+                ),
+                "Token signing failed"
+            )
         };
 
         // Return token to user
@@ -624,20 +640,83 @@ impl UserService for UserServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn get_personal_notifications(
         &self,
-        _request: Request<GetPersonalNotificationsRequest>,
+        request: Request<GetPersonalNotificationsRequest>,
     ) -> tonic::Result<Response<GetPersonalNotificationsResponse>> {
-        return Err(Status::unimplemented(
-            "GetPersonalNotifications currently unimplemented",
-        ));
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        let user_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.user_id),
+            "ULID conversion error"
+        );
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let token_user_ulid = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        if user_id != token_user_ulid {
+            return Err(tonic::Status::invalid_argument(
+                "Forbidden to fetch personal notifications of other users",
+            ));
+        }
+
+        // Fetch personal notifications from database
+        let notifications = tonic_internal!(
+            self.database_handler
+                .get_persistent_notifications(user_id)
+                .await,
+            "Failed to fetch personal notifications"
+        );
+
+        // Return personal notifications
+        let response = GetPersonalNotificationsResponse { notifications };
+        return_with_log!(response);
     }
+
     async fn acknowledge_personal_notifications(
         &self,
-        _request: Request<AcknowledgePersonalNotificationsRequest>,
+        request: Request<AcknowledgePersonalNotificationsRequest>,
     ) -> tonic::Result<Response<AcknowledgePersonalNotificationsResponse>> {
-        return Err(Status::unimplemented(
-            "AcknowledgePersonalNotifications currently unimplemented",
-        ));
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Acknowledge personal notifications in database
+        tonic_internal!(
+            self.database_handler
+                .acknowledge_persistent_notifications(inner_request.notification_id)
+                .await,
+            "Failed to acknowledge personal notifications"
+        );
+
+        // Return empty response on success
+        let response = AcknowledgePersonalNotificationsResponse {};
+        return_with_log!(response);
     }
 }

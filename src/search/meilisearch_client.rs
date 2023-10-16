@@ -297,7 +297,7 @@ impl From<KeyValueVariant> for ApiKeyValueVariant {
             KeyValueVariant::HOOK => ApiKeyValueVariant::Hook,
             KeyValueVariant::LABEL => ApiKeyValueVariant::Label,
             KeyValueVariant::STATIC_LABEL => ApiKeyValueVariant::StaticLabel,
-            KeyValueVariant::HOOK_STATUS => todo!(), //TODO
+            KeyValueVariant::HOOK_STATUS => ApiKeyValueVariant::HookStatus,
         }
     }
 }

@@ -69,6 +69,7 @@ pub async fn main() -> Result<()> {
         dotenvy::var("OAUTH_REALMINFO")?,
         dotenvy::var("ENCODING_KEY")?,
         dotenvy::var("DECODING_KEY")?,
+        dotenvy::var("OIDC_TOKEN_ISSUER")?,
     )
     .await?;
     let token_handler_arc = Arc::new(token_handler);
@@ -91,7 +92,6 @@ pub async fn main() -> Result<()> {
         cache: cache_arc.clone(),
     };
     let db_handler_arc = Arc::new(database_handler);
-    dbg!("Bin hier!");
 
     // MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(

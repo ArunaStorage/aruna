@@ -5,3 +5,4 @@ mod relations;
 mod snapshots;
 mod updates;
 mod users;
+mod workspaces;
