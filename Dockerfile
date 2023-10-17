@@ -14,4 +14,6 @@ RUN apk update
 RUN apk upgrade
 RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc protobuf-dev libpq-dev musl-dev git
 COPY --from=builder /build/target/release/aruna_server .
+COPY --from=builder /build/.env .
+COPY --from=builder /build/src/database/schema.sql .
 CMD [ "/run/aruna_server" ]
