@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use crate::common::{init, test_utils::USER1_ULID};
 use aruna_server::database::{
@@ -657,4 +657,33 @@ async fn persistent_notification_test() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+async fn add_token_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    let user_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
+
+    User::add_user_token(
+        client,
+        &user_ulid,
+        HashMap::from_iter([(
+            DieselUlid::generate(),
+            &APIToken {
+                pub_key: 1,
+                name: "mytoken".to_string(),
+                created_at: chrono::Utc::now().naive_utc(),
+                expires_at: chrono::Utc::now().naive_utc(),
+                object_id: None,
+                user_rights: DbPermissionLevel::NONE,
+            },
+        )]),
+    )
+    .await
+    .unwrap();
+
+    //ToDo extend test
 }

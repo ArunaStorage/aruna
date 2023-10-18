@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use aruna_rust_api::api::storage::services::v2::{
     user_service_server::UserService, AcknowledgePersonalNotificationsRequest,
-    GetPersonalNotificationsRequest, PersonalNotificationVariant, ReferenceType, References,
+    CreateApiTokenRequest, GetPersonalNotificationsRequest, PersonalNotificationVariant,
+    ReferenceType, References,
 };
 use aruna_server::database::enums::DbPermissionLevel;
 use diesel_ulid::DieselUlid;
@@ -210,4 +211,27 @@ async fn grpc_personal_notifications() {
         .into_inner()
         .notifications
         .is_empty());
+}
+
+#[tokio::test]
+async fn grpc_add_token() {
+    // Init gRPC services
+    let service_block = init_service_block().await;
+
+    // Get personal notifications of non-existing user
+    let inner_request = CreateApiTokenRequest {
+        name: "my_second_token".to_string(),
+        permission: None,
+        expires_at: None,
+    };
+
+    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
+
+    let response = service_block
+        .user_service
+        .create_api_token(grpc_request)
+        .await
+        .unwrap();
+
+    //ToDo extend test
 }

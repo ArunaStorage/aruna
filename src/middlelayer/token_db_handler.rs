@@ -22,10 +22,9 @@ impl DatabaseHandler {
         let token_ulid = DieselUlid::generate();
         let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
         token_map.insert(token_ulid, &token);
-        User::add_user_token(client, user_id, token_map).await?;
-        let user = User::get(*user_id, client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+        let user = User::add_user_token(client, user_id, token_map).await?;
+        transaction.commit().await?;
+
         self.cache.update_user(user_id, user.clone());
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -60,10 +59,9 @@ impl DatabaseHandler {
         // Add token to user attributes
         let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
         token_map.insert(token_ulid, &token);
-        User::add_user_token(client, user_id, token_map).await?;
-        let user = User::get(*user_id, client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+        let user = User::add_user_token(client, user_id, token_map).await?;
+        transaction.commit().await?;
+
         self.cache.update_user(&user.id, user.clone());
         // Try to emit user updated notification(s)
         if let Err(err) = self

@@ -254,14 +254,21 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         token: HashMap<DieselUlid, &APIToken, RandomState>,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
             SET attributes = jsonb_set(attributes, '{tokens}', attributes->'tokens' || $1::jsonb, true) 
-            WHERE id = $2;";
+            WHERE id = $2 
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&Json(token), user_id]).await?;
-        Ok(())
+        let row = client
+            .query_one(&prepared, &[&Json(token), user_id])
+            .await?;
+
+        let updated_user = User::from_row(&row);
+        log::debug!("{:#?}", &updated_user);
+
+        Ok(updated_user)
     }
 
     pub async fn remove_user_token(
