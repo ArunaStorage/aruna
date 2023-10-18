@@ -386,7 +386,7 @@ impl Cache {
                         false
                     }
                 }
-                ContextVariant::SelfUser => return true && personal,
+                ContextVariant::SelfUser => return personal,
                 ContextVariant::GlobalProxy | ContextVariant::GlobalAdmin => return false,
             }
         }
