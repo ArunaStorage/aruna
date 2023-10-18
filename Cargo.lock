@@ -61,9 +61,9 @@ checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
 name = "aruna-rust-api"
-version = "2.0.0-beta.4"
+version = "2.0.0-beta.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e665f1e1ccb2bdc260c1e55445da56142ae134d7aa9044b8dc7ca5aa183202c"
+checksum = "6ab0f3e7c36012fbec939dc50b1f14ad3d6f5be9e304f65c8422155378d3575c"
 dependencies = [
  "prost",
  "prost-types",
@@ -3560,6 +3560,7 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
+ "rustls-native-certs",
  "rustls-pemfile",
  "tokio",
  "tokio-rustls 0.24.1",

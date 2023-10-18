@@ -661,12 +661,7 @@ impl UserService for UserServiceImpl {
         log_received!(&request);
 
         // Consume gRPC request into its parts
-        let (request_metadata, _, inner_request) = request.into_parts();
-
-        let user_id = tonic_invalid!(
-            DieselUlid::from_str(&inner_request.user_id),
-            "ULID conversion error"
-        );
+        let (request_metadata, _, _) = request.into_parts();
 
         // Extract token from request and check permissions
         let token = tonic_auth!(
@@ -680,16 +675,10 @@ impl UserService for UserServiceImpl {
             "Unauthorized"
         );
 
-        if user_id != token_user_ulid {
-            return Err(tonic::Status::invalid_argument(
-                "Forbidden to fetch personal notifications of other users",
-            ));
-        }
-
         // Fetch personal notifications from database
         let notifications = tonic_internal!(
             self.database_handler
-                .get_persistent_notifications(user_id)
+                .get_persistent_notifications(token_user_ulid)
                 .await,
             "Failed to fetch personal notifications"
         );
@@ -723,7 +712,7 @@ impl UserService for UserServiceImpl {
         // Acknowledge personal notifications in database
         tonic_internal!(
             self.database_handler
-                .acknowledge_persistent_notifications(inner_request.notification_id)
+                .acknowledge_persistent_notifications(inner_request.notification_ids)
                 .await,
             "Failed to acknowledge personal notifications"
         );

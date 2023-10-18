@@ -48,7 +48,7 @@ use aruna_rust_api::api::storage::models::v2::{
 };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request, PersonalNotification,
-    PersonalNotificationVariant, ReferenceType, References, WorkspaceInfo,
+    PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -1276,7 +1276,6 @@ impl Hook {
                             .map(|c| Credentials { token: c.token }),
                         custom_template,
                         method: (&external_hook.method).into(),
-                        result_object: None, //TODO: Remove from API
                     })),
                 }
             }
@@ -1337,6 +1336,9 @@ impl From<PersistentNotificationVariant> for PersonalNotificationVariant {
             PersistentNotificationVariant::PERMISSION_GRANTED => {
                 PersonalNotificationVariant::PermissionGranted
             }
+            PersistentNotificationVariant::PERMISSION_UPDATED => {
+                PersonalNotificationVariant::PermissionUpdated
+            }
             PersistentNotificationVariant::ANNOUNCEMENT => {
                 PersonalNotificationVariant::Announcement
             }
@@ -1344,9 +1346,9 @@ impl From<PersistentNotificationVariant> for PersonalNotificationVariant {
     }
 }
 
-impl From<NotificationReference> for References {
+impl From<NotificationReference> for Reference {
     fn from(value: NotificationReference) -> Self {
-        References {
+        Reference {
             ref_type: match value.reference_type {
                 NotificationReferenceType::User => ReferenceType::User,
                 NotificationReferenceType::Resource => ReferenceType::Resource,
@@ -1374,6 +1376,9 @@ impl TryFrom<PersonalNotificationVariant> for PersistentNotificationVariant {
             PersonalNotificationVariant::PermissionRevoked => {
                 Ok(PersistentNotificationVariant::PERMISSION_REVOKED)
             }
+            PersonalNotificationVariant::PermissionUpdated => {
+                Ok(PersistentNotificationVariant::PERMISSION_UPDATED)
+            }
             PersonalNotificationVariant::Announcement => {
                 Ok(PersistentNotificationVariant::ANNOUNCEMENT)
             }
@@ -1389,7 +1394,8 @@ impl TryFrom<i32> for PersistentNotificationVariant {
             1 => Ok(PersistentNotificationVariant::ACCESS_REQUESTED),
             2 => Ok(PersistentNotificationVariant::PERMISSION_GRANTED),
             3 => Ok(PersistentNotificationVariant::PERMISSION_REVOKED),
-            4 => Ok(PersistentNotificationVariant::ANNOUNCEMENT),
+            4 => Ok(PersistentNotificationVariant::PERMISSION_UPDATED),
+            5 => Ok(PersistentNotificationVariant::ANNOUNCEMENT),
             _ => Err(anyhow!(
                 "Unspecified personal notification variant not allowed"
             )),

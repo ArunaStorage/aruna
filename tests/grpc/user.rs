@@ -2,8 +2,8 @@ use std::str::FromStr;
 
 use aruna_rust_api::api::storage::services::v2::{
     user_service_server::UserService, AcknowledgePersonalNotificationsRequest,
-    CreateApiTokenRequest, GetPersonalNotificationsRequest, PersonalNotificationVariant,
-    ReferenceType, References,
+    CreateApiTokenRequest, GetPersonalNotificationsRequest, PersonalNotificationVariant, Reference,
+    ReferenceType,
 };
 use aruna_server::database::enums::DbPermissionLevel;
 use diesel_ulid::DieselUlid;
@@ -13,8 +13,8 @@ use crate::common::{
     init::init_service_block,
     test_utils::{
         add_token, fast_track_grpc_permission_add, fast_track_grpc_permission_delete,
-        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, USER1_OIDC_TOKEN, USER1_ULID,
-        USER2_OIDC_TOKEN, USER2_ULID,
+        fast_track_grpc_project_create, ADMIN_OIDC_TOKEN, USER1_OIDC_TOKEN, USER2_OIDC_TOKEN,
+        USER2_ULID,
     },
 };
 
@@ -28,38 +28,11 @@ async fn grpc_personal_notifications() {
         fast_track_grpc_project_create(&service_block.project_service, USER1_OIDC_TOKEN).await;
 
     let project_ulid = DieselUlid::from_str(&project.id).unwrap();
-    let user1_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
     let user2_ulid = DieselUlid::from_str(USER2_ULID).unwrap();
 
-    // Get personal notifications of non-existing user
-    let mut inner_request = GetPersonalNotificationsRequest {
-        user_id: DieselUlid::generate().to_string(),
-    };
-
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
-
-    let response = service_block
-        .user_service
-        .get_personal_notifications(grpc_request)
-        .await;
-
-    assert!(response.is_err());
-
-    // Get personal notifications of other user
-    inner_request.user_id = user2_ulid.to_string();
-
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
-
-    let response = service_block
-        .user_service
-        .get_personal_notifications(grpc_request)
-        .await;
-
-    assert!(response.is_err());
+    let inner_request = GetPersonalNotificationsRequest {};
 
     // Get personal notifications without token
-    inner_request.user_id = user1_ulid.to_string();
-
     let grpc_request = tonic::Request::new(inner_request.clone());
 
     let response = service_block
@@ -86,8 +59,6 @@ async fn grpc_personal_notifications() {
     assert!(notifications.is_empty());
 
     // Grant another user permission for project
-    inner_request.user_id = user2_ulid.to_string();
-
     fast_track_grpc_permission_add(
         &service_block.auth_service,
         ADMIN_OIDC_TOKEN,
@@ -122,7 +93,7 @@ async fn grpc_personal_notifications() {
             );
             assert_eq!(
                 notification.refs,
-                vec![References {
+                vec![Reference {
                     ref_type: ReferenceType::Resource as i32,
                     ref_name: project.name.clone(),
                     ref_value: project_ulid.to_string()
@@ -171,7 +142,7 @@ async fn grpc_personal_notifications() {
             );
             assert_eq!(
                 notification.refs,
-                vec![References {
+                vec![Reference {
                     ref_type: ReferenceType::Resource as i32,
                     ref_name: project.name.clone(),
                     ref_value: project_ulid.to_string()
@@ -189,9 +160,7 @@ async fn grpc_personal_notifications() {
     let notification_ids = notifications.into_iter().map(|n| n.id).collect_vec();
 
     let grpc_request = add_token(
-        tonic::Request::new(AcknowledgePersonalNotificationsRequest {
-            notification_id: notification_ids,
-        }),
+        tonic::Request::new(AcknowledgePersonalNotificationsRequest { notification_ids }),
         USER2_OIDC_TOKEN,
     );
 
@@ -227,7 +196,7 @@ async fn grpc_add_token() {
 
     let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
-    let response = service_block
+    let _ = service_block
         .user_service
         .create_api_token(grpc_request)
         .await

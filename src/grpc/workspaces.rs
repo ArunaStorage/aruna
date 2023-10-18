@@ -186,7 +186,7 @@ impl WorkspaceService for WorkspaceServiceImpl {
             "No template found"
         );
         let response = GetWorkspaceTemplateResponse {
-            workspaces: Some(workspace.into()),
+            workspace: Some(workspace.into()),
         };
 
         return_with_log!(response);

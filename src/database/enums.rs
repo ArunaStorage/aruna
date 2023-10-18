@@ -199,6 +199,7 @@ pub enum PersistentNotificationVariant {
     ACCESS_REQUESTED,
     PERMISSION_REVOKED,
     PERMISSION_GRANTED,
+    PERMISSION_UPDATED,
     ANNOUNCEMENT,
 }
 

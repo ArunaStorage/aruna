@@ -98,6 +98,7 @@ DO $$
                 'ACCESS_REQUESTED',
                 'PERMISSION_GRANTED',
                 'PERMISSION_REVOKED',
+                'PERMISSION_UPDATED',
                 'ANNOUNCEMENT'
                 );
         END IF;
