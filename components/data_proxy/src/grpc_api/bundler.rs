@@ -147,6 +147,7 @@ impl BundlerService for BundlerServiceImpl {
                 log::debug!("[Create Bundle] Error signing url: {}", e);
                 tonic::Status::internal("Failed to presign bundle download url")
             })?,
+            bundle_id: bundle_id.to_string(),
         };
 
         Ok(tonic::Response::new(response))
