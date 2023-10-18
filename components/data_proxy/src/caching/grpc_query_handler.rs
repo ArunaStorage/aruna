@@ -49,6 +49,7 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
+use tonic::transport::ClientTlsConfig;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
@@ -79,8 +80,14 @@ impl GrpcQueryHandler {
         cache: Arc<Cache>,
         endpoint_id: String,
     ) -> Result<Self> {
-        //let tls_config = ClientTlsConfig::new();
-        let endpoint = Channel::from_shared(server.into())?;
+
+        // Check if server host url is tls
+        let server_url: String = server.into();
+        let endpoint = if server_url.starts_with("https") {
+            Channel::from_shared(server_url)?.tls_config(ClientTlsConfig::new())?
+        } else {
+            Channel::from_shared(server_url)?
+        };
         let channel = endpoint.connect().await?;
 
         let project_service = ProjectServiceClient::new(channel.clone());
