@@ -53,6 +53,7 @@ pub async fn main() -> Result<()> {
         dotenvy::var("DATABASE_PORT")?.parse::<u16>()?,
         dotenvy::var("DATABASE_DB")?,
         dotenvy::var("DATABASE_USER")?,
+        dotenvy::var("DATABASE_PASSWORD")?,
     )?;
     db.initialize_db().await?;
     let db_arc = Arc::new(db);

@@ -12,11 +12,13 @@ impl Database {
         database_port: u16,
         database_name: String,
         database_user: String,
+        database_password: String,
     ) -> Result<Self> {
         let mut cfg = Config::new();
         cfg.host = Some(database_host);
         cfg.port = Some(database_port);
         cfg.user = Some(database_user);
+        cfg.password = Some(database_password);
         cfg.dbname = Some(database_name);
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,

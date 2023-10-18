@@ -50,6 +50,7 @@ pub async fn init_database() -> Arc<Database> {
             .unwrap(),
         dotenvy::var("DATABASE_DB").unwrap(),
         dotenvy::var("DATABASE_USER").unwrap(),
+        dotenvy::var("DATABASE_PASSWORD").unwrap(),
     )
     .unwrap();
 
