@@ -109,10 +109,10 @@ async fn create_and_delete_workspace() {
         .unwrap();
     // -> Custom endpoint
     let request = CreateEP(CreateEndpointRequest {
-        name: "workspace_test".to_string(),
+        name: "workspace_test_endpoint".to_string(),
         ep_variant: 1,
         is_public: true,
-        pubkey: "MCowBQYDK2VwAyEAWBBLB9+sOZ4pSjM7U3DCSoq5R4xQYG4W27iwI1QoMN0=".to_string(),
+        pubkey: "MCowBQYDK2VwAyEAWom2nuIGH8K9rMP++evpPghluJmbgxtI+d8sweePzJ8=".to_string(),
         host_configs: vec![EndpointHostConfig {
             url: "http://localhost:50098".to_string(),
             is_primary: true,

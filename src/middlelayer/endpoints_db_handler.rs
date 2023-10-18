@@ -11,13 +11,13 @@ use tokio_postgres::GenericClient;
 impl DatabaseHandler {
     pub async fn create_endpoint(&self, request: CreateEP) -> Result<(Endpoint, PubKey)> {
         let mut client = self.database.get_client().await?;
-        let idx = PubKey::get_max_id(&client).await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let (mut endpoint, mut pubkey) = request.build_endpoint()?;
-        pubkey.id = idx + 1;
+        let (mut endpoint, pubkey) = request.build_endpoint()?;
         endpoint.create(transaction_client).await?;
-        pubkey.create(transaction_client).await?;
+        let pubkey =
+            PubKey::create_or_get_without_id(Some(endpoint.id), &pubkey.pubkey, transaction_client)
+                .await?;
         transaction.commit().await?;
 
         // Emit announcement notifications
