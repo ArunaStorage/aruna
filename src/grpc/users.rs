@@ -34,6 +34,8 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
+use tonic::transport::Channel;
+use tonic::transport::ClientTlsConfig;
 use tonic::{Request, Response, Status};
 crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>);
 
@@ -528,8 +530,19 @@ impl UserService for UserServiceImpl {
             }
         }
 
+        // Check if dataproxy host url is tls
+        let dp_endpoint = if endpoint_host_url.starts_with("https") {
+            Channel::from_shared(endpoint_host_url)
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+                .tls_config(ClientTlsConfig::new())
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+        } else {
+            Channel::from_shared(endpoint_host_url)
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+        };
+
         let mut dp_conn = tonic_internal!(
-            DataproxyUserServiceClient::connect(endpoint_host_url.clone()).await,
+            DataproxyUserServiceClient::connect(dp_endpoint).await,
             "Could not connect to endpoint"
         );
 

@@ -21,6 +21,7 @@ use reqsign::{AwsCredential, AwsV4Signer};
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
+use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 use url::Url;
 
@@ -310,14 +311,22 @@ impl DatabaseHandler {
                 break;
             }
         }
-        dbg!(&endpoint_host_url);
         if endpoint_host_url.is_empty() {
             return Err(anyhow!("No valid endpoint config found"));
         }
 
-        let mut dp_conn = DataproxyUserServiceClient::connect(endpoint_host_url.clone()).await?;
+        // Check if dataproxy host url is tls
+        let dp_endpoint = if endpoint_host_url.starts_with("https") {
+            Channel::from_shared(endpoint_host_url.clone())
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+                .tls_config(ClientTlsConfig::new())
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+        } else {
+            Channel::from_shared(endpoint_host_url.clone())
+                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+        };
+        let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
 
-        dbg!("Building connection to proxy");
         // 3. Create GetCredentialsRequest with one-shot token in header ...
         let mut credentials_request = Request::new(GetCredentialsRequest {});
         credentials_request.metadata_mut().append(
@@ -329,7 +338,7 @@ impl DatabaseHandler {
             .get_credentials(credentials_request)
             .await?
             .into_inner();
-        dbg!("response {:?}", &response);
+
         Ok((endpoint_host_url, endpoint_s3_url, ssl, response))
     }
 
