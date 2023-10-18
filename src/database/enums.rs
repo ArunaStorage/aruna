@@ -63,6 +63,17 @@ pub enum ObjectMapping<T> {
     OBJECT(T),
 }
 
+impl<T> ObjectMapping<T> {
+    pub fn into_inner(self) -> T {
+        match self {
+            ObjectMapping::PROJECT(inner)
+            | ObjectMapping::COLLECTION(inner)
+            | ObjectMapping::DATASET(inner)
+            | ObjectMapping::OBJECT(inner) => inner,
+        }
+    }
+}
+
 #[derive(
     Copy,
     Debug,

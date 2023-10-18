@@ -273,8 +273,9 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
-        DieselUlid,         // Proxy or Token Id
-        Option<DieselUlid>, // User_id
+        DieselUlid,         // User Id
+        Option<DieselUlid>, // Maybe token
+        bool,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
         Option<Intent>,
@@ -300,8 +301,9 @@ impl TokenHandler {
         &self,
         token: &str,
     ) -> Result<(
-        DieselUlid,                           // User_ID or Endpoint_ID
-        Option<DieselUlid>,                   // Maybe Token_ID
+        DieselUlid,         // User_ID or Endpoint_ID
+        Option<DieselUlid>, // Maybe Token_ID
+        bool,
         Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
         bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
         Option<Intent>,
@@ -336,15 +338,15 @@ impl TokenHandler {
         let user = self.cache.get_user(&uid);
 
         // Convert token id if present
-        let token = match claims.claims.tid {
+        let maybe_token = match claims.claims.tid {
             Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
             None => None,
         };
 
         // Fetch permissions associated with token
         if let Some(user) = user {
-            let perms = user.get_permissions(token)?;
-            return Ok((user.id, token, perms, false, None));
+            let (perms, personal) = user.get_permissions(maybe_token)?;
+            return Ok((user.id, maybe_token, personal, perms, false, None));
         }
         bail!("Invalid user")
     }
@@ -356,6 +358,7 @@ impl TokenHandler {
     ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
+        bool,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
         Option<Intent>,
@@ -393,7 +396,7 @@ impl TokenHandler {
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::FetchInfo => Ok((sub_id, None, vec![], true, Some(intent))),
+                        Action::FetchInfo => Ok((sub_id, None, false, vec![], true, Some(intent))),
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
                             // Fetch user from cache
@@ -408,7 +411,7 @@ impl TokenHandler {
                             // Fetch permissions associated with token
                             if let Some(user) = user {
                                 let perms = user.get_permissions(token)?;
-                                return Ok((user.id, token, perms, true, Some(intent)));
+                                return Ok((user.id, token, false, perms.0, true, Some(intent)));
                             }
                             bail!("Invalid user provided")
                         }
@@ -453,6 +456,7 @@ impl TokenHandler {
     ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
+        bool,
         Vec<(DieselUlid, DbPermissionLevel)>,
         bool,
         Option<Intent>,
@@ -462,7 +466,7 @@ impl TokenHandler {
         let user = self.cache.get_user_by_oidc(&claims.sub)?;
         let perms = user.get_permissions(None)?;
 
-        Ok((user.id, None, perms, false, None))
+        Ok((user.id, None, true, perms.0, false, None))
     }
 
     /// Fetches the public key from the OIDC provider.

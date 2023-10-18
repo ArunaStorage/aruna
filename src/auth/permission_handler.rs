@@ -30,7 +30,7 @@ impl PermissionHandler {
         // 2. User OIDC token        --> (user_id, None)
         // 3. Endpoint signed token  --> (user_id, ?)
         // 4. Endpoint notifications --> (endpoint_id, None)
-        let (main_id, associated_id, permissions, is_proxy, proxy_intent) = tonic_auth!(
+        let (main_id, token, personal, permissions, is_proxy, proxy_intent) = tonic_auth!(
             self.token_handler.process_token(token).await,
             "Unauthorized"
         );
@@ -81,7 +81,7 @@ impl PermissionHandler {
                 }
 
                 if self.cache.check_proxy_ctxs(&intent.target, &ctxs) {
-                    Ok((main_id, associated_id, true))
+                    Ok((main_id, token, true))
                 } else {
                     Err(tonic::Status::unauthenticated(
                         "Invalid proxy authentication",
@@ -95,9 +95,9 @@ impl PermissionHandler {
         // Check permissions for standard ArunaServer user token
         if self
             .cache
-            .check_permissions_with_contexts(&ctxs, &permissions, &main_id)
+            .check_permissions_with_contexts(&ctxs, &permissions, personal, &main_id)
         {
-            Ok((main_id, associated_id, false))
+            Ok((main_id, token, false))
         } else {
             Err(tonic::Status::unauthenticated("Invalid permissions"))
         }

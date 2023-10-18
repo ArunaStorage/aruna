@@ -4,6 +4,7 @@ use crate::database::{
 };
 use anyhow::{bail, Result};
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -78,7 +79,7 @@ impl User {
     pub fn get_permissions(
         &self,
         token: Option<DieselUlid>,
-    ) -> Result<Vec<(DieselUlid, DbPermissionLevel)>> {
+    ) -> Result<(Vec<(DieselUlid, DbPermissionLevel)>, bool)> {
         if let Some(token) = token {
             if let Some(token) = self.attributes.0.tokens.get(&token) {
                 // Check if token is mapped to an object
@@ -90,33 +91,41 @@ impl User {
                         | ObjectMapping::OBJECT(id) => id,
                     }
                 } else {
-                    return Err(anyhow::anyhow!(
-                        "Personal token without resource permission"
+                    let user_perms = &self.attributes.0.permissions;
+
+                    return Ok((
+                        user_perms
+                            .iter()
+                            .map(|entry| (*entry.key(), entry.value().into_inner()))
+                            .collect_vec(),
+                        true,
                     ));
                 };
 
-                Ok(vec![(object_id, token.user_rights)])
+                Ok((vec![(object_id, token.user_rights)], false))
             } else {
                 bail!("Token not found")
             }
         } else {
-            Ok(self
-                .attributes
-                .0
-                .permissions
-                .iter()
-                .map(|item| {
-                    (
-                        *item.key(),
-                        match *item.value() {
-                            ObjectMapping::PROJECT(perm)
-                            | ObjectMapping::COLLECTION(perm)
-                            | ObjectMapping::DATASET(perm)
-                            | ObjectMapping::OBJECT(perm) => perm,
-                        },
-                    )
-                })
-                .collect())
+            Ok((
+                self.attributes
+                    .0
+                    .permissions
+                    .iter()
+                    .map(|item| {
+                        (
+                            *item.key(),
+                            match *item.value() {
+                                ObjectMapping::PROJECT(perm)
+                                | ObjectMapping::COLLECTION(perm)
+                                | ObjectMapping::DATASET(perm)
+                                | ObjectMapping::OBJECT(perm) => perm,
+                            },
+                        )
+                    })
+                    .collect(),
+                true,
+            ))
         }
     }
 }

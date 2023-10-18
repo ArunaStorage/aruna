@@ -295,7 +295,7 @@ impl Cache {
             // Loop over users
             for entry in &self.user_cache {
                 // Loop over users permissions
-                for perm in entry.value().get_permissions(None)? {
+                for perm in entry.value().get_permissions(None)?.0 {
                     if perm.0 == resource_id {
                         if let Some(permissions) = resource_perms.get_mut(&resource_id) {
                             permissions.push(UserPermission {
@@ -358,6 +358,7 @@ impl Cache {
         &self,
         ctxs: &[Context],
         permitted: &[(DieselUlid, DbPermissionLevel)],
+        personal: bool,
         user_id: &DieselUlid,
     ) -> bool {
         self.check_lock();
@@ -368,24 +369,24 @@ impl Cache {
             None => return false,
         };
 
-        if user.active && user.attributes.0.global_admin {
+        if user.active && user.attributes.0.global_admin && personal {
             return true;
         }
 
         for ctx in ctxs {
             match &ctx.variant {
-                ContextVariant::Activated => return user.active,
+                ContextVariant::Activated => return user.active && personal,
                 ContextVariant::Resource((id, perm)) => {
                     resources.insert(*id, *perm);
                 }
                 ContextVariant::User((uid, _)) => {
-                    return if uid == user_id {
+                    return if uid == user_id && personal {
                         !user.attributes.0.service_account
                     } else {
                         false
                     }
                 }
-                ContextVariant::SelfUser => return true,
+                ContextVariant::SelfUser => return true && personal,
                 ContextVariant::GlobalProxy | ContextVariant::GlobalAdmin => return false,
             }
         }

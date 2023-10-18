@@ -445,10 +445,11 @@ async fn update_user_permission_test() {
     .unwrap();
 
     dbg!(&user);
-    assert_eq!(user.get_permissions(None).unwrap().len(), 1);
+    assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)
         .unwrap()
+        .0
         .contains(&(project_id, DbPermissionLevel::ADMIN)));
 
     let user = User::update_user_permission(
@@ -461,10 +462,11 @@ async fn update_user_permission_test() {
     .unwrap();
 
     dbg!(&user);
-    assert_eq!(user.get_permissions(None).unwrap().len(), 1);
+    assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)
         .unwrap()
+        .0
         .contains(&(project_id, DbPermissionLevel::WRITE)));
 }
 
