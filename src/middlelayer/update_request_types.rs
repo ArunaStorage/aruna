@@ -1,6 +1,8 @@
+use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
+use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::{
     Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
 };
@@ -10,14 +12,16 @@ use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
 use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
-    UpdateCollectionKeyValuesRequest, UpdateCollectionNameRequest, UpdateDatasetDataClassRequest,
-    UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetNameRequest,
-    UpdateObjectRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest,
-    UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
+    UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest,
+    UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest,
+    UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateObjectRequest,
+    UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest,
+    UpdateProjectLicensesRequest, UpdateProjectNameRequest,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
+use tokio_postgres::Client;
 
 pub struct UpdateObject(pub UpdateObjectRequest);
 
@@ -41,6 +45,12 @@ pub enum NameUpdate {
     Project(UpdateProjectNameRequest),
     Collection(UpdateCollectionNameRequest),
     Dataset(UpdateDatasetNameRequest),
+}
+
+pub enum LicenseUpdate {
+    Project(UpdateProjectLicensesRequest),
+    Collection(UpdateCollectionLicensesRequest),
+    Dataset(UpdateDatasetLicensesRequest),
 }
 
 impl DataClassUpdate {
@@ -114,6 +124,94 @@ impl KeyValueUpdate {
             KeyValueUpdate::Dataset(req) => DieselUlid::from_str(&req.dataset_id)?,
         };
         Ok(id)
+    }
+}
+
+impl LicenseUpdate {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        match self {
+            LicenseUpdate::Project(req) => DieselUlid::from_str(&req.project_id),
+            LicenseUpdate::Collection(req) => DieselUlid::from_str(&req.collection_id),
+            LicenseUpdate::Dataset(req) => DieselUlid::from_str(&req.dataset_id),
+        }
+        .map_err(|_| anyhow!("Invalid id"))
+    }
+
+    pub async fn get_licenses(&self, old: &Object, client: &Client) -> Result<(String, String)> {
+        match self {
+            LicenseUpdate::Project(req) => {
+                let meta = if req.metadata_license_tag.is_empty() {
+                    old.metadata_license.clone()
+                } else if License::get(req.metadata_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.metadata_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid metadata license tag"));
+                };
+                let data = if req.default_data_license_tag.is_empty() {
+                    old.data_license.clone()
+                } else if License::get(req.default_data_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.default_data_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid default data license tag"));
+                };
+
+                Ok((meta, data))
+            }
+            LicenseUpdate::Collection(req) => {
+                let meta = if req.metadata_license_tag.is_empty() {
+                    old.metadata_license.clone()
+                } else if License::get(req.metadata_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.metadata_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid metadata license tag"));
+                };
+                let data = if req.default_data_license_tag.is_empty() {
+                    old.data_license.clone()
+                } else if License::get(req.default_data_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.default_data_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid default data license tag"));
+                };
+
+                Ok((meta, data))
+            }
+            LicenseUpdate::Dataset(req) => {
+                let meta = if req.metadata_license_tag.is_empty() {
+                    old.metadata_license.clone()
+                } else if License::get(req.metadata_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.metadata_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid metadata license tag"));
+                };
+                let data = if req.default_data_license_tag.is_empty() {
+                    old.data_license.clone()
+                } else if License::get(req.default_data_license_tag.clone(), client)
+                    .await?
+                    .is_some()
+                {
+                    req.default_data_license_tag.clone()
+                } else {
+                    return Err(anyhow!("Invalid default data license tag"));
+                };
+
+                Ok((meta, data))
+            }
+        }
     }
 }
 
@@ -290,5 +388,32 @@ impl UpdateObject {
                 .collect(),
         );
         relations
+    }
+    pub async fn get_license(&self, old: &Object, client: &Client) -> Result<(String, String)> {
+        let metadata_license = if self.0.metadata_license_tag.is_empty() {
+            old.metadata_license.clone()
+        } else {
+            let meta = self.0.metadata_license_tag.clone();
+            if UpdateObject::check_license(&meta, client).await? {
+                meta
+            } else {
+                return Err(anyhow!("License does not exist"));
+            }
+        };
+        let data_license = if self.0.data_license_tag.is_empty() {
+            old.data_license.clone()
+        } else {
+            let data = self.0.data_license_tag.clone();
+            if UpdateObject::check_license(&data, client).await? {
+                data
+            } else {
+                return Err(anyhow!("License does not exist"));
+            }
+        };
+        Ok((metadata_license, data_license))
+    }
+
+    async fn check_license(tag: &str, client: &Client) -> Result<bool> {
+        Ok(License::get(tag.to_string(), client).await?.is_some())
     }
 }

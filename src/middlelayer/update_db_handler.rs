@@ -1,4 +1,4 @@
-use super::update_request_types::UpdateObject;
+use super::update_request_types::{LicenseUpdate, UpdateObject};
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
@@ -229,6 +229,17 @@ impl DatabaseHandler {
         }
     }
 
+    pub async fn update_license(&self, request: LicenseUpdate) -> Result<ObjectWithRelations> {
+        let client = self.database.get_client().await?;
+        let id = request.get_id()?;
+        let old = Object::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Resource not found"))?;
+        let (metadata_tag, data_tag) = request.get_licenses(&old, &client).await?;
+        Object::update_licenses(id, data_tag, metadata_tag, &client).await?;
+        Object::get_object_with_relations(&id, &client).await
+    }
+
     pub async fn update_grpc_object(
         &self,
         authorizer: Arc<PermissionHandler>,
@@ -254,18 +265,8 @@ impl DatabaseHandler {
             || !request.data_license_tag.is_empty()
         {
             let id = DieselUlid::generate();
-            let metadata_license = if req.0.metadata_license_tag.is_empty() {
-                old.metadata_license
-            } else {
-                // TODO: Check license tag
-                req.0.metadata_license_tag
-            };
-            let data_license = if req.0.data_license_tag.is_empty() {
-                old.data_license
-            } else {
-                // TODO: Check license tag
-                req.0.data_license_tag
-            };
+            let (metadata_license, data_license) =
+                req.get_license(&old, transaction_client).await?;
             // Create new object
             let mut create_object = Object {
                 id,
@@ -348,6 +349,8 @@ impl DatabaseHandler {
                 object_status: old.object_status.clone(),
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone())?),
+                metadata_license: old.metadata_license,
+                data_license: old.data_license,
             };
             update_object.update(transaction_client).await?;
             // Create & return all affected ids for cache sync

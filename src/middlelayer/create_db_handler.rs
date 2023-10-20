@@ -49,7 +49,9 @@ impl DatabaseHandler {
         let mut user = None;
 
         // Create object in database
-        let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
+        let mut object = request
+            .into_new_db_object(user_id, DieselUlid::default(), transaction_client)
+            .await?;
         object.endpoints = Json(endpoint_ids);
         object.create(transaction_client).await?;
 
@@ -73,6 +75,11 @@ impl DatabaseHandler {
                 (None, DashMap::default())
             }
             _ => {
+                // TODO:
+                // - Create relations
+                // - Collect affected objects
+                // - Update cache with affected objects
+
                 let parent = request
                     .get_parent()
                     .ok_or_else(|| anyhow!("No parent provided"))?;

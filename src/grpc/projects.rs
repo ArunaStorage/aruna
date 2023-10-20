@@ -6,7 +6,7 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
@@ -427,9 +427,33 @@ impl ProjectService for ProjectServiceImpl {
 
     async fn update_project_licenses(
         &self,
-        _request: Request<UpdateProjectLicensesRequest>,
+        request: Request<UpdateProjectLicensesRequest>,
     ) -> Result<Response<UpdateProjectLicensesResponse>> {
-        // TODO:
-        todo!()
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = LicenseUpdate::Project(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id.");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let project = tonic_invalid!(
+            self.database_handler.update_license(request).await,
+            "Invalid update license request"
+        );
+        let generic_resource: generic_resource::Resource =
+            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let response = UpdateProjectLicensesResponse {
+            project: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }

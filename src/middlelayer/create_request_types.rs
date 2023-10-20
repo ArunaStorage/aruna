@@ -2,6 +2,7 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
+use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use ahash::RandomState;
@@ -15,11 +16,11 @@ use aruna_rust_api::api::storage::{
     },
 };
 use dashmap::DashMap;
-use deadpool_postgres::Client;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio_postgres::Client;
 
 pub enum CreateRequest {
     Project(CreateProjectRequest, String),
@@ -187,8 +188,7 @@ impl CreateRequest {
                         true, // is true, because at least one full sync endpoint is needed for projects
                     )]))
                 } else {
-                    // TODO: Check if endpoint exists
-
+                    // Checks if endpoints exists
                     let endpoint_id = DieselUlid::from_str(&req.preferred_endpoint)?;
                     match Endpoint::get(endpoint_id, db_client).await? {
                         Some(_) => Ok(DashMap::from_iter([(
@@ -217,10 +217,11 @@ impl CreateRequest {
         }
     }
 
-    pub fn into_new_db_object(
+    pub async fn into_new_db_object(
         &self,
         user_id: DieselUlid,
         endpoint_id: DieselUlid,
+        client: &Client,
     ) -> Result<Object> {
         // Conversions
         let id = DieselUlid::generate();
@@ -231,6 +232,7 @@ impl CreateRequest {
             Some(h) => h.try_into()?,
             None => Hashes(Vec::new()),
         };
+        let (metadata_license, data_license) = self.get_licenses(client).await?;
 
         Ok(Object {
             id,
@@ -249,6 +251,101 @@ impl CreateRequest {
             hashes: Json(hashes),
             dynamic: self.is_dynamic(),
             endpoints: Json(DashMap::from_iter([(endpoint_id, true)])),
+            metadata_license,
+            data_license,
         })
+    }
+
+    pub async fn get_licenses(&self, client: &Client) -> Result<(String, String)> {
+        // Either retrieve license from request or parent
+        match &self {
+            // Projects must specify licenses
+            CreateRequest::Project(req, _) => {
+                let data_tag = &req.default_data_license_tag;
+                let meta_tag = &req.metadata_license_tag;
+                if License::get(data_tag.clone(), client).await?.is_some()
+                    && License::get(meta_tag.clone(), client).await?.is_some()
+                {
+                    Ok((meta_tag.to_string(), data_tag.to_string()))
+                } else {
+                    Err(anyhow!("No license provided or invalid"))
+                }
+            }
+            CreateRequest::Collection(req) => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent specified"))?
+                    .get_id()?;
+                let data_tag = req.default_data_license_tag.clone();
+                let meta_tag = req.metadata_license_tag.clone();
+                CreateRequest::check_license(data_tag, meta_tag, parent, client).await
+            }
+            CreateRequest::Dataset(req) => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent specified"))?
+                    .get_id()?;
+                let data_tag = req.default_data_license_tag.clone();
+                let meta_tag = req.metadata_license_tag.clone();
+                CreateRequest::check_license(data_tag, meta_tag, parent, client).await
+            }
+            CreateRequest::Object(req) => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent specified"))?
+                    .get_id()?;
+                let data_tag = req.data_license_tag.clone();
+                let meta_tag = req.metadata_license_tag.clone();
+                CreateRequest::check_license(data_tag, meta_tag, parent, client).await
+            }
+        }
+    }
+
+    // Checks if licenses are specified
+    // and if not tries to retrieve parent licenses
+    async fn check_license(
+        data: String,
+        meta: String,
+        parent: DieselUlid,
+        client: &Client,
+    ) -> Result<(String, String)> {
+        match (meta.is_empty(), data.is_empty()) {
+            // both not specified -> get parent licenses
+            (true, true) => {
+                let parent = Object::get(parent, client)
+                    .await?
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                Ok((parent.metadata_license, parent.data_license))
+            }
+            (true, false) => {
+                let parent = Object::get(parent, client)
+                    .await?
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                if License::get(data.clone(), client).await?.is_some() {
+                    Ok((parent.metadata_license, data.to_string()))
+                } else {
+                    Err(anyhow!("License invalid"))
+                }
+            }
+            (false, true) => {
+                let parent = Object::get(parent, client)
+                    .await?
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                if License::get(meta.clone(), client).await?.is_some() {
+                    Ok((meta.to_string(), parent.data_license))
+                } else {
+                    Err(anyhow!("License invalid"))
+                }
+            }
+            (false, false) => {
+                if License::get(data.clone(), client).await?.is_some()
+                    && License::get(meta.clone(), client).await?.is_some()
+                {
+                    Ok((meta.to_string(), data.to_string()))
+                } else {
+                    Err(anyhow!("Licenses invalid"))
+                }
+            }
+        }
     }
 }

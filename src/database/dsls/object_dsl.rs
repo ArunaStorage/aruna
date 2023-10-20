@@ -482,6 +482,22 @@ impl Object {
         Ok(())
     }
 
+    pub async fn update_licenses(
+        id: DieselUlid,
+        data_license: String,
+        metadata_license: String,
+        client: &Client,
+    ) -> Result<()> {
+        let query = "UPDATE objects 
+        SET metadata_license = $2, data_license = $3
+        WHERE id = $1 ;";
+        let prepared = client.prepare(query).await?;
+        client
+            .query(&prepared, &[&id, &metadata_license, &data_license])
+            .await?;
+        Ok(())
+    }
+
     pub async fn update_dataclass(
         id: DieselUlid,
         dataclass: DataClass,

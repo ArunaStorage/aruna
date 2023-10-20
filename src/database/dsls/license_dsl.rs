@@ -15,6 +15,8 @@ pub struct License {
     pub url: String,
 }
 
+pub const ALL_RIGHTS_RESERVED: &str = "all_rights_reserved";
+
 #[async_trait]
 impl CrudDb for License {
     async fn create(&mut self, client: &Client) -> Result<()> {
