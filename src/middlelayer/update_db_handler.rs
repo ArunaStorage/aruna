@@ -250,8 +250,22 @@ impl DatabaseHandler {
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
+            || !request.metadata_license_tag.is_empty()
+            || !request.data_license_tag.is_empty()
         {
             let id = DieselUlid::generate();
+            let metadata_license = if req.0.metadata_license_tag.is_empty() {
+                old.metadata_license
+            } else {
+                // TODO: Check license tag
+                req.0.metadata_license_tag
+            };
+            let data_license = if req.0.data_license_tag.is_empty() {
+                old.data_license
+            } else {
+                // TODO: Check license tag
+                req.0.data_license_tag
+            };
             // Create new object
             let mut create_object = Object {
                 id,
@@ -270,6 +284,8 @@ impl DatabaseHandler {
                 object_status: old.object_status.clone(),
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone())?),
+                metadata_license,
+                data_license,
             };
             create_object.create(transaction_client).await?;
 

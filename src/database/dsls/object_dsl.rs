@@ -87,6 +87,8 @@ pub struct Object {
     pub hashes: Json<Hashes>,
     pub dynamic: bool,
     pub endpoints: Json<DashMap<DieselUlid, bool, RandomState>>, // <Endpoint_id, leader>
+    pub metadata_license: String,
+    pub data_license: String,
 }
 
 #[derive(FromRow, Debug, FromSql, Clone)]
@@ -102,8 +104,8 @@ pub struct ObjectWithRelations {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -127,6 +129,8 @@ impl CrudDb for Object {
                     &self.hashes,
                     &self.dynamic,
                     &self.endpoints,
+                    &self.metadata_license,
+                    &self.data_license,
                 ],
             )
             .await?;
@@ -523,6 +527,8 @@ impl Object {
             hashes: object.hashes,
             dynamic: false,
             endpoints: object.endpoints,
+            metadata_license: object.metadata_license,
+            data_license: object.data_license,
         }
     }
     pub async fn archive(
@@ -583,7 +589,7 @@ impl Object {
         //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
         //    VALUES $1;";
         let query = "COPY objects \
-        (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
+        (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
         FROM STDIN BINARY";
         let sink: CopyInSink<_> = client.copy_in(query).await?;
         let writer = BinaryCopyInWriter::new(
@@ -604,6 +610,8 @@ impl Object {
                 Type::JSONB,
                 Type::BOOL,
                 Type::JSONB,
+                Type::VARCHAR,
+                Type::VARCHAR,
             ],
         );
         pin_mut!(writer);
@@ -626,6 +634,8 @@ impl Object {
                     &object.hashes,
                     &object.dynamic,
                     &object.endpoints,
+                    &object.metadata_license,
+                    &object.data_license,
                 ])
                 .await?;
         }
@@ -690,6 +700,8 @@ impl PartialEq for Object {
                         .all(|i| other_external_relation.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
+                    && self.metadata_license == other.metadata_license
+                    && self.data_license == other.data_license
             }
             (Some(_), Some(_)) => {
                 self.id == other.id
@@ -706,6 +718,8 @@ impl PartialEq for Object {
                         .all(|i| other_external_relation.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
+                    && self.metadata_license == other.metadata_license
+                    && self.data_license == other.data_license
             }
         }
     }
@@ -807,6 +821,8 @@ impl ObjectWithRelations {
                 description: "a_name".to_string(),
                 count: 0,
                 endpoints: Json(DashMap::default()),
+                metadata_license: "CC-BY-4.0".to_string(),
+                data_license: "CC-BY-4.0".to_string(),
             },
             inbound: Json(DashMap::default()),
             inbound_belongs_to: Json(DashMap::default()),
@@ -839,6 +855,8 @@ impl ObjectWithRelations {
                 hashes: Json(Hashes(vec![])),
                 dynamic: false,
                 endpoints: Json(DashMap::default()),
+                metadata_license: "CC-BY-4.0".to_string(),
+                data_license: "CC-BY-4.0".to_string(),
             },
             inbound: Json(DashMap::default()),
             inbound_belongs_to: Json(DashMap::from_iter(
