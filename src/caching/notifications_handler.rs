@@ -157,7 +157,7 @@ async fn process_resource_event(
 ) -> anyhow::Result<()> {
     if let Some(resource) = resource_event.resource {
         // Process cache
-        if let Some(variant) = EventVariant::from_i32(resource_event.event_variant) {
+        if let Ok(variant) = EventVariant::try_from(resource_event.event_variant) {
             // Extract resource id to validate format
             let resource_ulid = DieselUlid::from_str(&resource.resource_id)?;
 
@@ -233,7 +233,7 @@ async fn process_user_event(
     let user_ulid = DieselUlid::from_str(&user_event.user_id)?;
 
     // Process cache
-    if let Some(variant) = EventVariant::from_i32(user_event.event_variant) {
+    if let Ok(variant) = EventVariant::try_from(user_event.event_variant) {
         match variant {
             EventVariant::Unspecified => bail!("Unspecified user event variant not allowed"),
             EventVariant::Created | EventVariant::Updated | EventVariant::Available => {

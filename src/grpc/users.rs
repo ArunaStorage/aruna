@@ -220,14 +220,14 @@ impl UserService for UserServiceImpl {
                 .ok_or_else(|| anyhow!("Not found")),
             "User not found"
         );
-        let token = Vec::from_iter(
+        let tokens = Vec::from_iter(
             user.attributes
                 .0
                 .tokens
                 .into_iter()
                 .map(|t| as_api_token(t.0, t.1)),
         );
-        let response = GetApiTokensResponse { token };
+        let response = GetApiTokensResponse { tokens };
 
         return_with_log!(response);
     }

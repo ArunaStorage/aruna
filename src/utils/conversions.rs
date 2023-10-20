@@ -565,6 +565,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: String::new(),     // TODO
+                default_data_license_tag: String::new(), // TODO
             }),
             ObjectType::COLLECTION => generic_resource::Resource::Collection(GRPCCollection {
                 id: object_with_relations.object.id.to_string(),
@@ -588,6 +590,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: String::new(),     // TODO
+                default_data_license_tag: String::new(), // TODO
             }),
             ObjectType::DATASET => generic_resource::Resource::Dataset(GRPCDataset {
                 id: object_with_relations.object.id.to_string(),
@@ -611,6 +615,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: String::new(),     // TODO
+                default_data_license_tag: String::new(), // TODO
             }),
             ObjectType::OBJECT => generic_resource::Resource::Object(GRPCObject {
                 id: object_with_relations.object.id.to_string(),
@@ -635,6 +641,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: String::new(), // TODO
+                data_license_tag: String::new(),     // TODO
             }),
         }
     }
@@ -723,6 +731,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: String::new(),     // TODO
+            default_data_license_tag: String::new(), // TODO
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
             id: object.id.to_string(),
@@ -745,6 +755,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: String::new(),     // TODO
+            default_data_license_tag: String::new(), // TODO
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
             id: object.id.to_string(),
@@ -767,6 +779,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: String::new(),     // TODO
+            default_data_license_tag: String::new(), // TODO
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
             id: object.id.to_string(),
@@ -790,6 +804,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: String::new(), // TODO
+            data_license_tag: String::new(),     // TODO
         })),
     }
 }

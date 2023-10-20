@@ -22,7 +22,8 @@ use aruna_rust_api::api::storage::services::v2::{
     GetProjectsRequest, GetProjectsResponse, UpdateProjectDataClassRequest,
     UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
     UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
-    UpdateProjectKeyValuesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
+    UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,
+    UpdateProjectNameRequest, UpdateProjectNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -422,5 +423,13 @@ impl ProjectService for ProjectServiceImpl {
             project: Some(project.into_inner()?),
         };
         return_with_log!(response);
+    }
+
+    async fn update_project_licenses(
+        &self,
+        _request: Request<UpdateProjectLicensesRequest>,
+    ) -> Result<Response<UpdateProjectLicensesResponse>> {
+        // TODO:
+        todo!()
     }
 }

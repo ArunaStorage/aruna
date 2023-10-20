@@ -21,7 +21,8 @@ use aruna_rust_api::api::storage::services::v2::{
     SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetDataClassRequest,
     UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest,
     UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
-    UpdateDatasetKeyValuesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
+    UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse,
+    UpdateDatasetNameRequest, UpdateDatasetNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -434,5 +435,13 @@ impl DatasetService for DatasetServiceImpl {
             dataset: Some(dataset.into_inner()?),
         };
         return_with_log!(response);
+    }
+
+    async fn update_dataset_licenses(
+        &self,
+        _request: Request<UpdateDatasetLicensesRequest>,
+    ) -> Result<Response<UpdateDatasetLicensesResponse>> {
+        // TODO:
+        todo!()
     }
 }

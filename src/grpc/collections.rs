@@ -22,7 +22,8 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDataClassResponse,
     UpdateCollectionDescriptionRequest, UpdateCollectionDescriptionResponse,
     UpdateCollectionKeyValuesRequest, UpdateCollectionKeyValuesResponse,
-    UpdateCollectionNameRequest, UpdateCollectionNameResponse,
+    UpdateCollectionLicensesRequest, UpdateCollectionLicensesResponse, UpdateCollectionNameRequest,
+    UpdateCollectionNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -433,5 +434,13 @@ impl CollectionService for CollectionServiceImpl {
             collection: Some(collection.into_inner()?),
         };
         return_with_log!(response);
+    }
+
+    async fn update_collection_licenses(
+        &self,
+        _request: Request<UpdateCollectionLicensesRequest>,
+    ) -> Result<Response<UpdateCollectionLicensesResponse>> {
+        // TODO:
+        todo!()
     }
 }

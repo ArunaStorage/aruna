@@ -6,6 +6,7 @@ use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Ob
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::storage::models::v2::relation::Relation;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -88,12 +89,41 @@ impl CreateRequest {
         }
     }
 
-    pub fn get_external_relations(&self) -> &Vec<ExternalRelation> {
+    pub fn get_external_relations(&self) -> Vec<ExternalRelation> {
         match self {
-            CreateRequest::Project(request, _) => &request.external_relations,
-            CreateRequest::Collection(request) => &request.external_relations,
-            CreateRequest::Dataset(request) => &request.external_relations,
-            CreateRequest::Object(request) => &request.external_relations,
+            CreateRequest::Project(request, _) => request
+                .relations
+                .iter()
+                .filter_map(|relation| match &relation.relation {
+                    Some(Relation::External(rel)) => Some(rel.clone()),
+                    _ => None,
+                })
+                .collect(),
+            CreateRequest::Collection(request) => request
+                .relations
+                .iter()
+                .filter_map(|relation| match &relation.relation {
+                    Some(Relation::External(rel)) => Some(rel.clone()),
+                    _ => None,
+                })
+                .collect(),
+            CreateRequest::Dataset(request) => request
+                .relations
+                .iter()
+                .filter_map(|relation| match &relation.relation {
+                    Some(Relation::External(rel)) => Some(rel.clone()),
+                    _ => None,
+                })
+                .collect(),
+
+            CreateRequest::Object(request) => request
+                .relations
+                .iter()
+                .filter_map(|relation| match &relation.relation {
+                    Some(Relation::External(rel)) => Some(rel.clone()),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -195,7 +225,7 @@ impl CreateRequest {
         // Conversions
         let id = DieselUlid::generate();
         let key_values: KeyValues = self.get_key_values().try_into()?;
-        let external_relations: ExternalRelations = self.get_external_relations().try_into()?;
+        let external_relations: ExternalRelations = (&self.get_external_relations()).try_into()?;
         let data_class = self.get_data_class().try_into()?;
         let hashes: Hashes = match self.get_hashes() {
             Some(h) => h.try_into()?,

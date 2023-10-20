@@ -125,6 +125,8 @@ impl From<ObjectDocument> for Project {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
+            metadata_license_tag: "".to_string(),     // TODO
+            default_data_license_tag: "".to_string(), // TODO
         }
     }
 }
@@ -172,6 +174,8 @@ impl From<ObjectDocument> for Collection {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
+            metadata_license_tag: "".to_string(),     // TODO
+            default_data_license_tag: "".to_string(), // TODO
         }
     }
 }
@@ -219,6 +223,8 @@ impl From<ObjectDocument> for Dataset {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
+            metadata_license_tag: "".to_string(),     // TODO
+            default_data_license_tag: "".to_string(), // TODO
         }
     }
 }
@@ -267,6 +273,8 @@ impl From<ObjectDocument> for Object {
             dynamic: false, // Objects are alywas persistent
             hashes: vec![],
             endpoints: vec![],
+            metadata_license_tag: "".to_string(), // TODO
+            data_license_tag: "".to_string(),     // TODO
         }
     }
 }
