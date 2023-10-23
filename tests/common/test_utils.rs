@@ -99,6 +99,8 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     }
 }
 
@@ -143,6 +145,8 @@ pub fn object_from_mapping(
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     }
 }
 
@@ -226,9 +230,11 @@ pub async fn fast_track_grpc_project_create(
         name: project_name.to_string(),
         description: "".to_string(),
         key_values: vec![],
-        external_relations: vec![],
+        relations: vec![],
         data_class: ApiDataClass::Private as i32,
         preferred_endpoint: "".to_string(),
+        default_data_license_tag: "all_rights_reserved".to_string(),
+        metadata_license_tag: "all_rights_reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -261,9 +267,11 @@ pub async fn fast_track_grpc_collection_create(
         name: collection_name.to_string(),
         description: "".to_string(),
         key_values: vec![],
-        external_relations: vec![],
+        relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
+        default_data_license_tag: "all_rights_reserved".to_string(),
+        metadata_license_tag: "all_rights_reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -296,9 +304,11 @@ pub async fn fast_track_grpc_dataset_create(
         name: dataset_name.to_string(),
         description: "".to_string(),
         key_values: vec![],
-        external_relations: vec![],
+        relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
+        default_data_license_tag: "all_rights_reserved".to_string(),
+        metadata_license_tag: "all_rights_reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);

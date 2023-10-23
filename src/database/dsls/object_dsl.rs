@@ -566,7 +566,7 @@ impl Object {
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.id IN ";
         let query_five = " GROUP BY o.id, o.revision_number, o.name, o.description, o.created_at, o.created_by, o.content_len, o.count, o.key_values, 
-        o.object_status, o.data_class, o.object_type, o.external_relations, o.hashes, o.dynamic, o.endpoints;";
+        o.object_status, o.data_class, o.object_type, o.external_relations, o.hashes, o.dynamic, o.endpoints, o.metadata_license, o.data_license;";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in ids {
             inserts.push(id);

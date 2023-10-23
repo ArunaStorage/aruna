@@ -1,10 +1,7 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
-use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json, ToSql};
-use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
 #[derive(FromRow, Debug, Clone, PartialEq)]

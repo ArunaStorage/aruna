@@ -6,6 +6,7 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::persistent_notification_dsl::{
     NotificationReference, PersistentNotification,
@@ -37,8 +38,8 @@ use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
-    Status, Token, User as ApiUser, UserAttributes,
+    generic_resource, CustomAttributes, DataEndpoint, License as APILicense, Permission,
+    PermissionLevel, ResourceVariant, Status, Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -47,8 +48,8 @@ use aruna_rust_api::api::storage::models::v2::{
     Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
-    create_collection_request, create_dataset_request, create_object_request, PersonalNotification,
-    PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
+    create_collection_request, create_dataset_request, create_object_request, CreateLicenseRequest,
+    PersonalNotification, PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -718,7 +719,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -742,7 +743,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -766,7 +767,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -790,7 +791,7 @@ pub fn from_db_object(
             relations,
             content_len: object.content_len,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -1415,6 +1416,28 @@ impl TryFrom<i32> for PersistentNotificationVariant {
             _ => Err(anyhow!(
                 "Unspecified personal notification variant not allowed"
             )),
+        }
+    }
+}
+
+impl From<License> for APILicense {
+    fn from(lic: License) -> Self {
+        APILicense {
+            tag: lic.tag,
+            name: lic.name,
+            text: lic.description,
+            url: lic.url,
+        }
+    }
+}
+impl From<CreateLicenseRequest> for License {
+    fn from(req: CreateLicenseRequest) -> Self {
+        License {
+            tag: req.tag,
+            name: req.name,
+            description: req.text,
+
+            url: req.url,
         }
     }
 }

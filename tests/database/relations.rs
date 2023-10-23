@@ -66,6 +66,8 @@ async fn test_external_relations() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
 

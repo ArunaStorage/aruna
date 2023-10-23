@@ -9,6 +9,7 @@ pub mod endpoints_db_handler;
 pub mod endpoints_request_types;
 pub mod hooks_db_handler;
 pub mod hooks_request_types;
+pub mod license_db_handler;
 pub mod presigned_url_handler;
 pub mod query_handler;
 pub mod relations_db_handler;
