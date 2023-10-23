@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::common::{init, test_utils};
 
 #[tokio::test]
-async fn crd_licenses() {
+async fn create_and_get_licenses() {
     let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
 
@@ -51,7 +51,7 @@ async fn crd_licenses() {
 }
 
 #[tokio::test]
-async fn object_license() {
+async fn objects_and_licenses() {
     // Init
     let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
