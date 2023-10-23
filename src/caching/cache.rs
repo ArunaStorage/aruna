@@ -200,13 +200,13 @@ impl Cache {
         self.user_cache.remove(id);
     }
 
-    pub fn get_user_by_oidc(&self, external_id: &str) -> Result<User> {
+    pub fn get_user_by_oidc(&self, external_id: &str) -> Option<User> {
         self.check_lock();
         self.user_cache
             .iter()
             .find(|x| x.value().external_id == Some(external_id.to_string()))
             .map(|x| x.value().clone())
-            .ok_or_else(|| anyhow!("User not found"))
+        //.ok_or_else(|| anyhow!("User not found"))
     }
 
     pub async fn get_all_users(&self) -> Vec<APIUser> {
