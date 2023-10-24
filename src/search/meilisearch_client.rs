@@ -1,5 +1,7 @@
-use std::{fmt::Display, str::FromStr};
-
+use crate::database::{
+    dsls::object_dsl::{KeyValue, KeyValueVariant, Object as DbObject},
+    enums::{DataClass, ObjectStatus, ObjectType},
+};
 use anyhow::bail;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource::Resource, Collection, Dataset, KeyValue as ApiKeyValue,
@@ -9,11 +11,7 @@ use diesel_ulid::DieselUlid;
 use meilisearch_sdk::{indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
-use crate::database::{
-    dsls::object_dsl::{KeyValue, KeyValueVariant, Object as DbObject},
-    enums::{DataClass, ObjectStatus, ObjectType},
-};
+use std::{fmt::Display, str::FromStr};
 
 // Enum for the different index variants (multi-index search?)
 #[derive(Serialize)]
@@ -48,6 +46,8 @@ pub struct ObjectDocument {
     pub data_class: DataClass,
     pub created_at: i64, // Converted to UNIX timestamp for filtering/sorting
     pub dynamic: bool,   // Just for the lulz
+    pub metadata_license: String,
+    pub data_license: String,
 }
 
 // Conversion from database model Object into ObjectDocument
@@ -74,6 +74,8 @@ impl From<DbObject> for ObjectDocument {
             data_class: db_object.data_class,
             created_at: db_object.created_at.unwrap_or_default().timestamp(),
             dynamic: db_object.dynamic,
+            metadata_license: db_object.metadata_license,
+            data_license: db_object.data_license,
         }
     }
 }
@@ -125,8 +127,8 @@ impl From<ObjectDocument> for Project {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
-            metadata_license_tag: "".to_string(),     // TODO
-            default_data_license_tag: "".to_string(), // TODO
+            metadata_license_tag: object_document.metadata_license,
+            default_data_license_tag: object_document.data_license,
         }
     }
 }
@@ -151,6 +153,8 @@ impl TryFrom<Project> for ObjectDocument {
             data_class: DataClass::try_from(project.data_class)?,
             created_at: project.created_at.unwrap_or_default().seconds,
             dynamic: project.dynamic,
+            metadata_license: project.metadata_license_tag,
+            data_license: project.default_data_license_tag,
         })
     }
 }
@@ -174,8 +178,8 @@ impl From<ObjectDocument> for Collection {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
-            metadata_license_tag: "".to_string(),     // TODO
-            default_data_license_tag: "".to_string(), // TODO
+            metadata_license_tag: object_document.metadata_license,
+            default_data_license_tag: object_document.data_license,
         }
     }
 }
@@ -200,6 +204,8 @@ impl TryFrom<Collection> for ObjectDocument {
             data_class: DataClass::try_from(collection.data_class)?,
             created_at: collection.created_at.unwrap_or_default().seconds,
             dynamic: collection.dynamic,
+            metadata_license: collection.metadata_license_tag,
+            data_license: collection.default_data_license_tag,
         })
     }
 }
@@ -223,8 +229,8 @@ impl From<ObjectDocument> for Dataset {
             status: Into::<ApiStatus>::into(object_document.object_status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
-            metadata_license_tag: "".to_string(),     // TODO
-            default_data_license_tag: "".to_string(), // TODO
+            metadata_license_tag: object_document.metadata_license,
+            default_data_license_tag: object_document.data_license,
         }
     }
 }
@@ -249,6 +255,8 @@ impl TryFrom<Dataset> for ObjectDocument {
             data_class: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
             dynamic: dataset.dynamic,
+            metadata_license: dataset.metadata_license_tag,
+            data_license: dataset.default_data_license_tag,
         })
     }
 }
@@ -273,8 +281,8 @@ impl From<ObjectDocument> for Object {
             dynamic: false, // Objects are alywas persistent
             hashes: vec![],
             endpoints: vec![],
-            metadata_license_tag: "".to_string(), // TODO
-            data_license_tag: "".to_string(),     // TODO
+            metadata_license_tag: object_document.metadata_license,
+            data_license_tag: object_document.data_license,
         }
     }
 }
@@ -295,6 +303,8 @@ impl TryFrom<Object> for ObjectDocument {
             data_class: DataClass::try_from(object.data_class)?,
             created_at: object.created_at.unwrap_or_default().seconds,
             dynamic: object.dynamic,
+            metadata_license: object.metadata_license_tag,
+            data_license: object.data_license_tag,
         })
     }
 }
