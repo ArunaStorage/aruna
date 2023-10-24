@@ -599,9 +599,11 @@ impl From<Object> for CreateProjectRequest {
             name: value.name,
             description: "".to_string(),
             key_values: vec![],
-            external_relations: vec![],
+            relations: vec![],
             data_class: value.data_class.into(),
             preferred_endpoint: "".to_string(),
+            metadata_license_tag: "all_rights_reserved".to_string(),
+            default_data_license_tag: "all_rights_reserved".to_string(),
         }
     }
 }
@@ -612,12 +614,14 @@ impl From<Object> for CreateCollectionRequest {
             name: value.name,
             description: "".to_string(),
             key_values: vec![],
-            external_relations: vec![],
+            relations: vec![],
             data_class: value.data_class.into(),
             parent: value
                 .parents
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
+            metadata_license_tag: "all_rights_reserved".to_string(),
+            default_data_license_tag: "all_rights_reserved".to_string(),
         }
     }
 }
@@ -628,12 +632,14 @@ impl From<Object> for CreateDatasetRequest {
             name: value.name,
             description: "".to_string(),
             key_values: vec![],
-            external_relations: vec![],
+            relations: vec![],
             data_class: value.data_class.into(),
             parent: value
                 .parents
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
+            metadata_license_tag: "all_rights_reserved".to_string(),
+            default_data_license_tag: "all_rights_reserved".to_string(),
         }
     }
 }
@@ -662,13 +668,15 @@ impl From<Object> for CreateObjectRequest {
             name: value.name,
             description: "".to_string(),
             key_values: vec![],
-            external_relations: vec![],
+            relations: vec![],
             data_class: value.data_class.into(),
             parent: value
                 .parents
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
             hashes: vec![],
+            metadata_license_tag: "all_rights_reserved".to_string(),
+            data_license_tag: "all_rights_reserved".to_string(),
         }
     }
 }
@@ -685,6 +693,8 @@ impl From<Object> for UpdateObjectRequest {
             hashes: vec![],
             force_revision: false,
             parent: None,
+            metadata_license_tag: String::new(),
+            data_license_tag: String::new(),
         }
     }
 }
