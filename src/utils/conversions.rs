@@ -1,3 +1,4 @@
+use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
@@ -1439,5 +1440,33 @@ impl From<CreateLicenseRequest> for License {
 
             url: req.url,
         }
+    }
+}
+
+pub struct ContextContainer(pub Vec<Context>);
+impl TryFrom<Vec<aruna_rust_api::api::storage::models::v2::Relation>> for ContextContainer {
+    type Error = tonic::Status;
+
+    fn try_from(relations: Vec<Relation>) -> Result<Self, tonic::Status> {
+        let vec = relations
+            .iter()
+            .filter_map(|rel| match &rel.relation {
+                Some(aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(
+                    internal_relation,
+                )) => Some(internal_relation),
+                _ => None,
+            })
+            .map(|ir| -> Result<Context, tonic::Status> {
+                Ok(Context::res_ctx(
+                    DieselUlid::from_str(&ir.resource_id).map_err(|e| {
+                        log::error!("{e}");
+                        tonic::Status::invalid_argument("Invalid relation id".to_string())
+                    })?,
+                    DbPermissionLevel::APPEND,
+                    true,
+                ))
+            })
+            .collect::<Result<Vec<Context>, tonic::Status>>()?;
+        Ok(ContextContainer(vec))
     }
 }

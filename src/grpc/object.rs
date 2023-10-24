@@ -42,7 +42,7 @@ impl ObjectService for ObjectServiceImpl {
         );
 
         let request = CreateRequest::Object(request.into_inner());
-
+        let mut ctxs = request.get_relation_contexts()?;
         let parent_ctx = tonic_invalid!(
             request
                 .get_parent()
@@ -50,9 +50,10 @@ impl ObjectService for ObjectServiceImpl {
                 .get_context(),
             "invalid parent"
         );
+        ctxs.push(parent_ctx);
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![parent_ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );

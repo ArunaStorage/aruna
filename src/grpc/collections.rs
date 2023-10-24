@@ -11,7 +11,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{get_token_from_md, ContextContainer};
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
@@ -46,7 +46,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = CreateRequest::Collection(request.into_inner());
-
+        let mut ctxs = request.get_relation_contexts()?;
         let parent_ctx = tonic_invalid!(
             request
                 .get_parent()
@@ -54,10 +54,11 @@ impl CollectionService for CollectionServiceImpl {
                 .get_context(),
             "invalid parent"
         );
+        ctxs.push(parent_ctx);
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![parent_ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );

@@ -9,7 +9,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{get_token_from_md, ContextContainer};
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -42,6 +42,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
+        let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
 
         // Extract token from request and check permissions
         let token = tonic_auth!(
@@ -49,20 +50,21 @@ impl ProjectService for ProjectServiceImpl {
             "Token authentication error"
         );
 
-        let ctx = Context {
+        // Collect all ids from relations and parse them into ctx
+        let mut ctxs = request.get_relation_contexts()?;
+        ctxs.push(Context {
             allow_service_account: false,
             ..Default::default()
-        };
+        });
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );
 
         // Create project in database
-        let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
 
         let (project, user) = tonic_internal!(
             self.database_handler
