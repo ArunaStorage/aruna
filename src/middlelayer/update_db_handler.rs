@@ -282,7 +282,7 @@ impl DatabaseHandler {
                 key_values: Json(req.get_all_kvs(old.clone())?),
                 hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
-                object_status: old.object_status.clone(),
+                object_status: ObjectStatus::INITIALIZING, // New revisions must be finished
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone())?),
                 metadata_license,
@@ -477,7 +477,6 @@ impl DatabaseHandler {
                 EventVariant::Updated,
                 Some(&DieselUlid::generate()), // block_id for deduplication
             )
-            //>>>>>>> feat/version2.0rework
             .await
         {
             // Log error, rollback transaction and return
