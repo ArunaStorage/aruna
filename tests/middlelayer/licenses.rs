@@ -1,11 +1,7 @@
+use crate::common::init::init_database_handler_middlelayer;
 use aruna_rust_api::api::storage::services::v2::CreateLicenseRequest;
 use aruna_server::database::dsls::license_dsl::License;
 use itertools::Itertools;
-
-use crate::common::init::{
-    init_database_handler_middlelayer, init_permission_handler, init_token_handler,
-};
-use crate::common::test_utils;
 
 #[tokio::test]
 async fn create_and_read_license() {
@@ -53,32 +49,4 @@ async fn create_and_read_license() {
     let dummy_two: License = dummy_two_req.into();
     assert!(all.iter().contains(&dummy_one));
     assert!(all.iter().contains(&dummy_two));
-}
-
-#[tokio::test]
-async fn hierarchies_and_licenses() {
-    // Init
-    let db_handler = init_database_handler_middlelayer().await;
-    let request = CreateLicenseRequest {
-        tag: "default_middlelayer_license_test".to_string(),
-        name: "default middlelayer license test".to_string(),
-        text: "Tests default licenses".to_string(),
-        url: "test.org/default-middelayer-test-license".to_string(),
-    };
-    let tag_one = db_handler.create_license(request).await.unwrap();
-    let request = CreateLicenseRequest {
-        tag: "second_default_middlelayer_license_test".to_string(),
-        name: "default middlelayer license test".to_string(),
-        text: "Tests default licenses".to_string(),
-        url: "test.org/default-middelayer-test-license".to_string(),
-    };
-    let tag_two = db_handler.create_license(request).await.unwrap();
-
-    // Create Project, Collection, Dataset and Object
-    let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
-
-    let (project, user) = database_handler
-        .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
-        .await
-        .unwrap();
 }

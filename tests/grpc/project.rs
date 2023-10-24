@@ -53,7 +53,7 @@ async fn grpc_create_project() {
     assert!(!proto_project.id.is_empty());
     assert_eq!(proto_project.name, project_name);
     assert_eq!(&proto_project.description, "Something");
-    assert_eq!(proto_project.key / _values, vec![]);
+    assert_eq!(proto_project.key_values, vec![]);
     assert_eq!(proto_project.data_class, 1);
     assert_eq!(proto_project.relations, vec![]);
     assert_eq!(proto_project.status, Status::Available as i32);

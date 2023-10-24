@@ -32,7 +32,7 @@ pub struct ServiceBlock {
     pub auth_service: AuthorizationServiceImpl,
     pub project_service: ProjectServiceImpl,
     pub collection_service: CollectionServiceImpl,
-    pub database_service: DatasetServiceImpl,
+    pub dataset_service: DatasetServiceImpl,
     pub object_service: ObjectServiceImpl,
     pub search_service: SearchServiceImpl,
     pub license_service: LicensesServiceImpl,
@@ -415,7 +415,7 @@ pub async fn init_service_block() -> ServiceBlock {
             search_handler.clone(),
         )
         .await,
-        database_service: init_dataset_service_manual(
+        dataset_service: init_dataset_service_manual(
             db_handler.clone(),
             auth_handler.clone(),
             cache.clone(),
