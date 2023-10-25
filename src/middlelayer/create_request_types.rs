@@ -21,6 +21,7 @@ use aruna_rust_api::api::storage::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use regex::Regex;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio_postgres::Client;
@@ -38,6 +39,8 @@ pub enum Parent {
     Collection(String),
     Dataset(String),
 }
+
+pub static PROJECT_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$");
 
 impl Parent {
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -66,12 +69,39 @@ impl Parent {
 }
 
 impl CreateRequest {
-    pub fn get_name(&self) -> String {
+    pub fn get_name(&self) -> Result<String> {
+        // TODO:
+        // - Match naming
         match self {
-            CreateRequest::Project(request, _) => request.name.to_string(),
-            CreateRequest::Collection(request) => request.name.to_string(),
-            CreateRequest::Dataset(request) => request.name.to_string(),
-            CreateRequest::Object(request) => request.name.to_string(),
+            CreateRequest::Project(request, _) => {
+                let name = request.name.to_string();
+                if !PROJECT_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid project name: Projects can only consist of alphanumeric characters and '-'"))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Collection(request) => {
+                let name = request.name.to_string();
+                if name.contains("/") {
+                    Err(anyhow!(
+                        "Invalid collection name: Collections cannot contain slashes"
+                    ))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Dataset(request) => {
+                let name = request.name.to_string();
+                if name.contains("/") {
+                    Err(anyhow!(
+                        "Invalid dataset name: Datasets cannot contain slashes"
+                    ))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Object(request) => Ok(request.name.to_string()),
         }
     }
 
@@ -290,11 +320,12 @@ impl CreateRequest {
             None => Hashes(Vec::new()),
         };
         let (metadata_license, data_license) = self.get_licenses(client).await?;
+        let name = self.get_name()?;
 
         Ok(Object {
             id,
             revision_number: 0,
-            name: self.get_name(),
+            name,
             description: self.get_description(),
             created_at: None,
             content_len: 0,

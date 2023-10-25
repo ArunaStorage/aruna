@@ -142,7 +142,7 @@ impl SearchService for SearchServiceImpl {
                 .0
                 .permissions
                 .get(&resource_ulid)
-                .ok_or_else(|| Status::not_found("No permissions found"));
+                .ok_or_else(|| Status::not_found("Permissions not found"));
             match mapping_perm {
                 Ok(perm) => {
                     let permission = match *perm {

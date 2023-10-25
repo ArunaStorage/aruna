@@ -8,7 +8,8 @@ use aruna_rust_api::api::{
         authorization_service_server::AuthorizationServiceServer,
         collection_service_server::CollectionServiceServer,
         dataset_service_server::DatasetServiceServer,
-        endpoint_service_server::EndpointServiceServer, object_service_server::ObjectServiceServer,
+        endpoint_service_server::EndpointServiceServer,
+        license_service_server::LicenseServiceServer, object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
         relations_service_server::RelationsServiceServer,
         search_service_server::SearchServiceServer,
@@ -23,9 +24,10 @@ use aruna_server::{
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
         datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl, hooks::HookServiceImpl,
-        info::StorageStatusServiceImpl, notification::NotificationServiceImpl,
-        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
-        search::SearchServiceImpl, users::UserServiceImpl,
+        info::StorageStatusServiceImpl, licenses::LicensesServiceImpl,
+        notification::NotificationServiceImpl, object::ObjectServiceImpl,
+        projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
+        users::UserServiceImpl,
     },
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
@@ -237,11 +239,20 @@ pub async fn main() -> Result<()> {
             .add_service(HooksServiceServer::new(
                 HookServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
                     .await,
+            ))
+            .add_service(LicenseServiceServer::new(
+                LicensesServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
             ));
     }
 
     // Do it.
-    let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
+    //let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
+    let addr: std::net::SocketAddr = dotenvy::var("ARUNA_SOCKET_ADDRESS")?.parse()?;
     log::info!("ArunaServer listening on {}", addr);
     builder.serve(addr).await?;
 
