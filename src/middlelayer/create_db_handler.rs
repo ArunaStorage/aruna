@@ -49,11 +49,13 @@ impl DatabaseHandler {
         let mut user = None;
 
         // Create object in database
-        let mut object = request.into_new_db_object(user_id, DieselUlid::default())?;
+        let mut object = request
+            .into_new_db_object(user_id, DieselUlid::default(), transaction_client)
+            .await?;
         object.endpoints = Json(endpoint_ids);
         object.create(transaction_client).await?;
 
-        // Create internal relation in database && add user permissions for resource
+        // Create internal relation for parent and add user permissions for resource
         let (parent, internal_relation): (
             Option<ObjectWithRelations>,
             DashMap<DieselUlid, InternalRelation, RandomState>,
@@ -88,18 +90,16 @@ impl DatabaseHandler {
                 };
                 let result = ir.create(transaction_client).await;
 
+                // When dataproxy creates object and object exists, return Ok(existing_object)
                 if result.is_err() && is_dataproxy {
-                    dbg!(&result);
-                    dbg!(&is_dataproxy);
                     transaction.rollback().await?;
+                    // Get parent ...
                     if let Some(parent) = self.cache.get_object(&parent.get_id()?) {
-                        dbg!(&parent);
-                        dbg!(&self.cache.object_cache);
+                        // ... iterate over outbound relations ...
                         for (id, irel) in parent.outbound_belongs_to.0 {
-                            dbg!(&id);
-                            dbg!(&irel);
+                            // ... if object name exists in outbound relations ...
                             if irel.target_name == object.name {
-                                dbg!("RETURN");
+                                // ... return existing object
                                 return Ok((
                                     self.cache
                                         .get_object(&id)
@@ -127,7 +127,38 @@ impl DatabaseHandler {
                 )
             }
         };
+
+        // Create specified relations
+        let internal_relations = request.get_internal_relations(object.id, self.cache.clone())?;
+        InternalRelation::batch_create(&internal_relations, transaction_client).await?;
+        // Collect affected objects
+        let mut affected: Vec<DieselUlid> = Vec::new();
+        for (source, destination) in internal_relations
+            .iter()
+            .map(|ir| (ir.origin_pid, ir.target_pid))
+        {
+            if source == object.id && destination == object.id {
+                // Are relations from self to self even possible?
+                continue;
+            } else if source == object.id {
+                affected.push(destination);
+            } else if destination == object.id {
+                affected.push(source);
+            } else {
+                affected.push(source);
+                affected.push(destination);
+            }
+        }
         transaction.commit().await?;
+
+        // TODO:
+        // - Update cache with affected objects
+        let affected_owrs = Object::get_objects_with_relations(&affected, &client).await?;
+        for affected_owr in affected_owrs {
+            self.cache
+                .upsert_object(&affected_owr.object.id, affected_owr.clone())
+        }
+        // - Trigger hooks for all
 
         // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {
@@ -173,9 +204,32 @@ impl DatabaseHandler {
                 cache: self.cache.clone(),
             };
             tokio::spawn(async move {
-                db_handler
-                    .trigger_on_creation(authorizer.clone(), object.id, user_id)
-                    .await
+                let mut affected = affected;
+                affected.push(object.id);
+                for affected_id in affected {
+                    let hook_trigger = db_handler
+                        .trigger_on_creation(authorizer.clone(), affected_id, user_id)
+                        .await;
+                    if hook_trigger.is_err() {
+                        log::error!("{:?}", hook_trigger)
+                    }
+                }
+            });
+        } else {
+            let db_handler = DatabaseHandler {
+                database: self.database.clone(),
+                natsio_handler: self.natsio_handler.clone(),
+                cache: self.cache.clone(),
+            };
+            tokio::spawn(async move {
+                for affected_id in affected {
+                    let hook_trigger = db_handler
+                        .trigger_on_creation(authorizer.clone(), affected_id, user_id)
+                        .await;
+                    if hook_trigger.is_err() {
+                        log::error!("{:?}", hook_trigger)
+                    }
+                }
             });
         };
         // Fetch all object paths for the notification subjects

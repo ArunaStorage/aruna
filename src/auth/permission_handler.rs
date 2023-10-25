@@ -1,6 +1,6 @@
 use super::{
     structs::{Context, ContextVariant},
-    token_handler::{Action, TokenHandler},
+    token_handler::{Action, OIDCError, TokenHandler},
 };
 use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
 use anyhow::Result;
@@ -30,10 +30,18 @@ impl PermissionHandler {
         // 2. User OIDC token        --> (user_id, None)
         // 3. Endpoint signed token  --> (user_id, ?)
         // 4. Endpoint notifications --> (endpoint_id, None)
-        let (main_id, token, personal, permissions, is_proxy, proxy_intent) = tonic_auth!(
-            self.token_handler.process_token(token).await,
-            "Unauthorized"
-        );
+        // let (main_id, token, personal, permissions, is_proxy, proxy_intent) = tonic_auth!(
+        //     self.token_handler.process_token(token).await,
+        //     "Unauthorized"
+        // );
+        let (main_id, token, personal, permissions, is_proxy, proxy_intent) =
+            match self.token_handler.process_token(token).await {
+                Ok(results) => results,
+                Err(err) => match err.downcast_ref::<OIDCError>() {
+                    Some(_) => return Err(tonic::Status::unauthenticated("Not registered")),
+                    None => return Err(tonic::Status::unauthenticated("Unauthorized")),
+                },
+            };
 
         // Individual permission checking if token is signed from Dataproxy
         if is_proxy {

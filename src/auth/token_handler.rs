@@ -14,6 +14,7 @@ use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -37,6 +38,18 @@ struct KeyCloakResponse {
     _tokens_not_before: i64,
 }
 
+#[derive(Debug)]
+pub enum OIDCError {
+    NotFound(String),
+}
+impl Display for OIDCError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OIDCError::NotFound(err) => write!(f, "{}", err),
+        }
+    }
+}
+impl std::error::Error for OIDCError {}
 /// This contains claims for ArunaTokens
 /// containing 3 mandatory and 2 optional fields.
 ///
@@ -463,7 +476,10 @@ impl TokenHandler {
     )> {
         let claims = self.process_oidc_token(token).await?;
         // Fetch user from oidc provider
-        let user = self.cache.get_user_by_oidc(&claims.sub)?;
+        let user = match self.cache.get_user_by_oidc(&claims.sub) {
+            Some(u) => u,
+            None => return Err(anyhow!(OIDCError::NotFound("Not registered".to_string()))),
+        };
         let perms = user.get_permissions(None)?;
 
         Ok((user.id, None, true, perms.0, false, None))

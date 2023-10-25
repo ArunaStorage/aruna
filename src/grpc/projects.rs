@@ -6,10 +6,10 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{get_token_from_md, ContextContainer};
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -22,7 +22,8 @@ use aruna_rust_api::api::storage::services::v2::{
     GetProjectsRequest, GetProjectsResponse, UpdateProjectDataClassRequest,
     UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
     UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
-    UpdateProjectKeyValuesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
+    UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,
+    UpdateProjectNameRequest, UpdateProjectNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -41,6 +42,7 @@ impl ProjectService for ProjectServiceImpl {
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
+        let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
 
         // Extract token from request and check permissions
         let token = tonic_auth!(
@@ -48,20 +50,21 @@ impl ProjectService for ProjectServiceImpl {
             "Token authentication error"
         );
 
-        let ctx = Context {
+        // Collect all ids from relations and parse them into ctx
+        let mut ctxs = request.get_relation_contexts()?;
+        ctxs.push(Context {
             allow_service_account: false,
             ..Default::default()
-        };
+        });
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );
 
         // Create project in database
-        let request = CreateRequest::Project(inner_request, self.default_endpoint.clone());
 
         let (project, user) = tonic_internal!(
             self.database_handler
@@ -420,6 +423,38 @@ impl ProjectService for ProjectServiceImpl {
         );
         let response = ArchiveProjectResponse {
             project: Some(project.into_inner()?),
+        };
+        return_with_log!(response);
+    }
+
+    async fn update_project_licenses(
+        &self,
+        request: Request<UpdateProjectLicensesRequest>,
+    ) -> Result<Response<UpdateProjectLicensesResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = LicenseUpdate::Project(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid project id.");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let project = tonic_invalid!(
+            self.database_handler.update_license(request).await,
+            "Invalid update license request"
+        );
+        let generic_resource: generic_resource::Resource =
+            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let response = UpdateProjectLicensesResponse {
+            project: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
     }

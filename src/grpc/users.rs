@@ -220,14 +220,14 @@ impl UserService for UserServiceImpl {
                 .ok_or_else(|| anyhow!("Not found")),
             "User not found"
         );
-        let token = Vec::from_iter(
+        let tokens = Vec::from_iter(
             user.attributes
                 .0
                 .tokens
                 .into_iter()
                 .map(|t| as_api_token(t.0, t.1)),
         );
-        let response = GetApiTokensResponse { token };
+        let response = GetApiTokensResponse { tokens };
 
         return_with_log!(response);
     }
@@ -288,18 +288,15 @@ impl UserService for UserServiceImpl {
             "Token authentication error"
         );
         let request = GetUser::GetUser(request.into_inner());
+
         let user_id = match tonic_invalid!(request.get_user(), "Invalid user id") {
+            // If admin requests users this gets a user context scope
             (Some(id), ctx) => {
-                tonic_auth!(
-                    self.authorizer.check_permissions(&token, vec![ctx]).await,
-                    "Unauthorized"
-                );
+                self.authorizer.check_permissions(&token, vec![ctx]).await?;
                 id
             }
-            (None, ctx) => tonic_auth!(
-                self.authorizer.check_permissions(&token, vec![ctx]).await,
-                "Unauthorized"
-            ),
+            // If user requests himself, this is a self context
+            (None, ctx) => self.authorizer.check_permissions(&token, vec![ctx]).await?,
         };
         let user = self.cache.get_user(&user_id);
         let response = GetUserResponse {

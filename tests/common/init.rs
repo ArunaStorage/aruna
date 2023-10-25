@@ -5,6 +5,7 @@ use aruna_server::database::connection::Database;
 use aruna_server::grpc::authorization::AuthorizationServiceImpl;
 use aruna_server::grpc::collections::CollectionServiceImpl;
 use aruna_server::grpc::datasets::DatasetServiceImpl;
+use aruna_server::grpc::licenses::LicensesServiceImpl;
 use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::grpc::relations::RelationsServiceImpl;
@@ -31,9 +32,10 @@ pub struct ServiceBlock {
     pub auth_service: AuthorizationServiceImpl,
     pub project_service: ProjectServiceImpl,
     pub collection_service: CollectionServiceImpl,
-    pub database_service: DatasetServiceImpl,
+    pub dataset_service: DatasetServiceImpl,
     pub object_service: ObjectServiceImpl,
     pub search_service: SearchServiceImpl,
+    pub license_service: LicensesServiceImpl,
 }
 
 #[allow(dead_code)]
@@ -301,6 +303,16 @@ pub async fn init_search_service_manual(
 }
 
 #[allow(dead_code)]
+pub async fn init_licenses_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+) -> LicensesServiceImpl {
+    // Init collection service
+    LicensesServiceImpl::new(db, auth, cache).await
+}
+
+#[allow(dead_code)]
 pub async fn init_grpc_services() -> (
     AuthorizationServiceImpl,
     ProjectServiceImpl,
@@ -403,7 +415,7 @@ pub async fn init_service_block() -> ServiceBlock {
             search_handler.clone(),
         )
         .await,
-        database_service: init_dataset_service_manual(
+        dataset_service: init_dataset_service_manual(
             db_handler.clone(),
             auth_handler.clone(),
             cache.clone(),
@@ -422,6 +434,12 @@ pub async fn init_service_block() -> ServiceBlock {
             auth_handler.clone(),
             cache.clone(),
             search_handler.clone(),
+        )
+        .await,
+        license_service: init_licenses_service_manual(
+            db_handler.clone(),
+            auth_handler.clone(),
+            cache.clone(),
         )
         .await,
     }

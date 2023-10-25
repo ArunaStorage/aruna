@@ -106,9 +106,6 @@ impl CreateHook {
                                 Method::Put => crate::database::dsls::hook_dsl::Method::PUT,
                                 Method::Post => crate::database::dsls::hook_dsl::Method::POST,
                             },
-                            // TODO: This is broken and should be
-                            // removed next API release
-                            // --> result_meta_object: None
                         }),
                     ),
                 })

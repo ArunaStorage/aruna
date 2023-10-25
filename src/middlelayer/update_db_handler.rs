@@ -1,4 +1,4 @@
-use super::update_request_types::UpdateObject;
+use super::update_request_types::{LicenseUpdate, UpdateObject};
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
@@ -229,6 +229,17 @@ impl DatabaseHandler {
         }
     }
 
+    pub async fn update_license(&self, request: LicenseUpdate) -> Result<ObjectWithRelations> {
+        let client = self.database.get_client().await?;
+        let id = request.get_id()?;
+        let old = Object::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Resource not found"))?;
+        let (metadata_tag, data_tag) = request.get_licenses(&old, &client).await?;
+        Object::update_licenses(id, data_tag, metadata_tag, &client).await?;
+        Object::get_object_with_relations(&id, &client).await
+    }
+
     pub async fn update_grpc_object(
         &self,
         authorizer: Arc<PermissionHandler>,
@@ -250,8 +261,12 @@ impl DatabaseHandler {
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
+            || !request.metadata_license_tag.is_empty()
+            || !request.data_license_tag.is_empty()
         {
             let id = DieselUlid::generate();
+            let (metadata_license, data_license) =
+                req.get_license(&old, transaction_client).await?;
             // Create new object
             let mut create_object = Object {
                 id,
@@ -267,9 +282,11 @@ impl DatabaseHandler {
                 key_values: Json(req.get_all_kvs(old.clone())?),
                 hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
-                object_status: old.object_status.clone(),
+                object_status: ObjectStatus::INITIALIZING, // New revisions must be finished
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone())?),
+                metadata_license,
+                data_license,
             };
             create_object.create(transaction_client).await?;
 
@@ -332,6 +349,8 @@ impl DatabaseHandler {
                 object_status: old.object_status.clone(),
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone())?),
+                metadata_license: old.metadata_license,
+                data_license: old.data_license,
             };
             update_object.update(transaction_client).await?;
             // Create & return all affected ids for cache sync
@@ -458,7 +477,6 @@ impl DatabaseHandler {
                 EventVariant::Updated,
                 Some(&DieselUlid::generate()), // block_id for deduplication
             )
-            //>>>>>>> feat/version2.0rework
             .await
         {
             // Log error, rollback transaction and return

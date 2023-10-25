@@ -455,12 +455,13 @@ async fn update_object_test() {
             value: "value".to_string(),
             variant: 1,
         }],
-
         remove_key_values: vec![],
         data_class: 1,
         hashes: vec![],
         parent: None,
         force_revision: false,
+        data_license_tag: "".to_string(),
+        metadata_license_tag: "".to_string(),
     };
 
     let (updated, is_new) = db_handler
@@ -494,6 +495,8 @@ async fn update_object_test() {
         }],
         parent: None,
         force_revision: false,
+        data_license_tag: "".to_string(),
+        metadata_license_tag: "".to_string(),
     };
     let (new, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
@@ -518,16 +521,42 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
+        metadata_license_tag: "".to_string(),
+        data_license_tag: "".to_string(),
     };
     let (new_2, is_new_2) = db_handler
         .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
         .await
         .unwrap();
-    dbg!(&new);
-    dbg!(&new_2);
     assert!(is_new_2);
     assert_eq!(
         new_2.object.revision_number,
         (new.object.revision_number + 1)
+    );
+    let license_update = UpdateObjectRequest {
+        object_id: new.object.id.to_string(),
+        name: None,
+        description: None,
+        add_key_values: vec![],
+        remove_key_values: vec![],
+        data_class: 0,
+        hashes: vec![],
+        parent: None,
+        force_revision: true,
+        metadata_license_tag: "all_rights_reserved".to_string(),
+        data_license_tag: "all_rights_reserved".to_string(),
+    };
+    let (license_updated, is_new) = db_handler
+        .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)
+        .await
+        .unwrap();
+    assert!(is_new);
+    assert_eq!(
+        license_update.metadata_license_tag,
+        license_updated.object.metadata_license
+    );
+    assert_eq!(
+        license_update.data_license_tag,
+        license_updated.object.data_license
     )
 }

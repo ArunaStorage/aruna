@@ -8,7 +8,7 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
@@ -21,7 +21,8 @@ use aruna_rust_api::api::storage::services::v2::{
     SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetDataClassRequest,
     UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest,
     UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
-    UpdateDatasetKeyValuesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
+    UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse,
+    UpdateDatasetNameRequest, UpdateDatasetNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -44,7 +45,7 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = CreateRequest::Dataset(request.into_inner());
-
+        let mut ctxs = request.get_relation_contexts()?;
         let parent_ctx = tonic_invalid!(
             request
                 .get_parent()
@@ -52,10 +53,11 @@ impl DatasetService for DatasetServiceImpl {
                 .get_context(),
             "invalid parent"
         );
+        ctxs.push(parent_ctx);
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![parent_ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );
@@ -432,6 +434,38 @@ impl DatasetService for DatasetServiceImpl {
 
         let response = SnapshotDatasetResponse {
             dataset: Some(dataset.into_inner()?),
+        };
+        return_with_log!(response);
+    }
+
+    async fn update_dataset_licenses(
+        &self,
+        request: Request<UpdateDatasetLicensesRequest>,
+    ) -> Result<Response<UpdateDatasetLicensesResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = LicenseUpdate::Dataset(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid dataset id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let project = tonic_invalid!(
+            self.database_handler.update_license(request).await,
+            "Invalid update license request"
+        );
+        let generic_resource: generic_resource::Resource =
+            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let response = UpdateDatasetLicensesResponse {
+            dataset: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
     }

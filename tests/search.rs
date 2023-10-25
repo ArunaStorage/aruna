@@ -153,5 +153,7 @@ fn generate_random_object_document() -> ObjectDocument {
             .unwrap()
             .timestamp(),
         dynamic: rng.gen_bool(0.5).to_string().parse::<bool>().unwrap(),
+        metadata_license: "all_rights_reserved".to_string(),
+        data_license: "all_rights_reserved".to_string(),
     }
 }

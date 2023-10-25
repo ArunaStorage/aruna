@@ -1,5 +1,6 @@
 use crate::database::{
     dsls::{
+        license_dsl::ALL_RIGHTS_RESERVED,
         object_dsl::Object,
         user_dsl::{User, UserAttributes},
         workspaces_dsl::WorkspaceTemplate,
@@ -74,6 +75,8 @@ impl CreateWorkspace {
             hashes: Json(crate::database::dsls::object_dsl::Hashes(Vec::new())),
             dynamic: true,
             endpoints,
+            metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+            data_license: ALL_RIGHTS_RESERVED.to_string(),
         }
     }
 

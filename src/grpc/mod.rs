@@ -4,6 +4,7 @@ pub mod datasets;
 pub mod endpoints;
 pub mod hooks;
 pub mod info;
+pub mod licenses;
 pub mod notification;
 pub mod object;
 pub mod projects;

@@ -444,6 +444,8 @@ async fn test_keyvals() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     };
     assert_eq!(object, comp_obj);
     object.remove_key_value(&client, kv).await.unwrap();
@@ -465,6 +467,8 @@ async fn test_keyvals() {
         hashes: test_object.hashes,
         dynamic: test_object.dynamic,
         endpoints: test_object.endpoints,
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     };
     assert_eq!(object, comp_obj);
 }
@@ -521,6 +525,8 @@ async fn test_external_relations() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
+        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "all_rights_reserved".to_string(),
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
     //dbg!(&obj);

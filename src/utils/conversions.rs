@@ -1,3 +1,4 @@
+use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
@@ -6,6 +7,7 @@ use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
     INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::persistent_notification_dsl::{
     NotificationReference, PersistentNotification,
@@ -37,8 +39,8 @@ use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, CustomAttributes, DataEndpoint, Permission, PermissionLevel, ResourceVariant,
-    Status, Token, User as ApiUser, UserAttributes,
+    generic_resource, CustomAttributes, DataEndpoint, License as APILicense, Permission,
+    PermissionLevel, ResourceVariant, Status, Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -47,8 +49,8 @@ use aruna_rust_api::api::storage::models::v2::{
     Project as GRPCProject, Relation, Stats, User,
 };
 use aruna_rust_api::api::storage::services::v2::{
-    create_collection_request, create_dataset_request, create_object_request, PersonalNotification,
-    PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
+    create_collection_request, create_dataset_request, create_object_request, CreateLicenseRequest,
+    PersonalNotification, PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -565,6 +567,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: object_with_relations.object.metadata_license,
+                default_data_license_tag: object_with_relations.object.data_license,
             }),
             ObjectType::COLLECTION => generic_resource::Resource::Collection(GRPCCollection {
                 id: object_with_relations.object.id.to_string(),
@@ -588,6 +592,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: object_with_relations.object.metadata_license,
+                default_data_license_tag: object_with_relations.object.data_license,
             }),
             ObjectType::DATASET => generic_resource::Resource::Dataset(GRPCDataset {
                 id: object_with_relations.object.id.to_string(),
@@ -611,6 +617,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: object_with_relations.object.metadata_license,
+                default_data_license_tag: object_with_relations.object.data_license,
             }),
             ObjectType::OBJECT => generic_resource::Resource::Object(GRPCObject {
                 id: object_with_relations.object.id.to_string(),
@@ -635,6 +643,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                         full_synced: *e.value(),
                     })
                     .collect(),
+                metadata_license_tag: object_with_relations.object.metadata_license,
+                data_license_tag: object_with_relations.object.data_license,
             }),
         }
     }
@@ -710,7 +720,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -723,6 +733,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: object.metadata_license,
+            default_data_license_tag: object.data_license,
         })),
         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
             id: object.id.to_string(),
@@ -732,7 +744,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -745,6 +757,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: object.metadata_license,
+            default_data_license_tag: object.data_license,
         })),
         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
             id: object.id.to_string(),
@@ -754,7 +768,7 @@ pub fn from_db_object(
             stats: None,
             relations,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -767,6 +781,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: object.metadata_license,
+            default_data_license_tag: object.data_license,
         })),
         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
             id: object.id.to_string(),
@@ -776,7 +792,7 @@ pub fn from_db_object(
             relations,
             content_len: object.content_len,
             data_class: object.data_class.into(),
-            created_at: None, // TODO
+            created_at: object.created_at.map(|t| t.into()),
             created_by: object.created_by.to_string(),
             status: object.object_status.into(),
             dynamic: object.dynamic,
@@ -790,6 +806,8 @@ pub fn from_db_object(
                     full_synced: *e.value(),
                 })
                 .collect(),
+            metadata_license_tag: object.metadata_license,
+            data_license_tag: object.data_license,
         })),
     }
 }
@@ -1400,5 +1418,55 @@ impl TryFrom<i32> for PersistentNotificationVariant {
                 "Unspecified personal notification variant not allowed"
             )),
         }
+    }
+}
+
+impl From<License> for APILicense {
+    fn from(lic: License) -> Self {
+        APILicense {
+            tag: lic.tag,
+            name: lic.name,
+            text: lic.description,
+            url: lic.url,
+        }
+    }
+}
+impl From<CreateLicenseRequest> for License {
+    fn from(req: CreateLicenseRequest) -> Self {
+        License {
+            tag: req.tag,
+            name: req.name,
+            description: req.text,
+
+            url: req.url,
+        }
+    }
+}
+
+pub struct ContextContainer(pub Vec<Context>);
+impl TryFrom<Vec<aruna_rust_api::api::storage::models::v2::Relation>> for ContextContainer {
+    type Error = tonic::Status;
+
+    fn try_from(relations: Vec<Relation>) -> Result<Self, tonic::Status> {
+        let vec = relations
+            .iter()
+            .filter_map(|rel| match &rel.relation {
+                Some(aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(
+                    internal_relation,
+                )) => Some(internal_relation),
+                _ => None,
+            })
+            .map(|ir| -> Result<Context, tonic::Status> {
+                Ok(Context::res_ctx(
+                    DieselUlid::from_str(&ir.resource_id).map_err(|e| {
+                        log::error!("{e}");
+                        tonic::Status::invalid_argument("Invalid relation id".to_string())
+                    })?,
+                    DbPermissionLevel::APPEND,
+                    true,
+                ))
+            })
+            .collect::<Result<Vec<Context>, tonic::Status>>()?;
+        Ok(ContextContainer(vec))
     }
 }

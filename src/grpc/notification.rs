@@ -610,8 +610,10 @@ fn extract_context_event_type_from_target(
             resource_id,
             resource_variant,
         }) => {
-            let variant =
-                ResourceVariant::from_i32(resource_variant).ok_or(Status::invalid_argument(""))?;
+            let variant = ResourceVariant::try_from(resource_variant).map_err(|e| {
+                log::error!("{e}");
+                Status::invalid_argument("")
+            })?;
             let variant_type =
                 ObjectType::try_from(variant).map_err(|_| Status::invalid_argument(""))?;
             let event_type =

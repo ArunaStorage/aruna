@@ -117,6 +117,15 @@ CREATE TABLE IF NOT EXISTS users (
     active BOOL NOT NULL DEFAULT FALSE
 );
 
+/* ----- Licenses -------------------------------------- */
+-- Table for licenses
+CREATE TABLE IF NOT EXISTS licenses (
+    tag VARCHAR(511) PRIMARY KEY NOT NULL,
+    name VARCHAR(511) NOT NULL,
+    description VARCHAR(1023) NOT NULL,
+    url VARCHAR(511) NOT NULL
+);
+
 /* ----- Object Service -------------------------------------------- */
 -- Table with objects which represent individual data blobs
 CREATE TABLE IF NOT EXISTS objects (
@@ -136,6 +145,8 @@ CREATE TABLE IF NOT EXISTS objects (
     hashes JSONB NOT NULL DEFAULT '{}',
     dynamic BOOL NOT NULL DEFAULT TRUE,
     endpoints JSONB NOT NULL DEFAULT '{}',
+    metadata_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
+    data_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
     UNIQUE(id, object_type)
 );
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);
@@ -230,7 +241,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
     endpoint_ids JSONB,
     UNIQUE(name)
 );
-
 -- Insert predefined relation types
 INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY') ON CONFLICT (relation_name) DO NOTHING;
 -- Create partial unique index for BELONGS_TO relations only

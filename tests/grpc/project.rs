@@ -32,9 +32,11 @@ async fn grpc_create_project() {
         name: project_name.to_string(),
         description: "Something".to_string(),
         key_values: vec![],
-        external_relations: vec![],
+        relations: vec![],
         data_class: DataClass::Public as i32,
         preferred_endpoint: "".to_string(),
+        default_data_license_tag: "all_rights_reserved".to_string(),
+        metadata_license_tag: "all_rights_reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);

@@ -8,10 +8,10 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
 use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::conversions::{get_token_from_md, ContextContainer};
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
@@ -22,7 +22,8 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateCollectionDataClassRequest, UpdateCollectionDataClassResponse,
     UpdateCollectionDescriptionRequest, UpdateCollectionDescriptionResponse,
     UpdateCollectionKeyValuesRequest, UpdateCollectionKeyValuesResponse,
-    UpdateCollectionNameRequest, UpdateCollectionNameResponse,
+    UpdateCollectionLicensesRequest, UpdateCollectionLicensesResponse, UpdateCollectionNameRequest,
+    UpdateCollectionNameResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -45,7 +46,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = CreateRequest::Collection(request.into_inner());
-
+        let mut ctxs = request.get_relation_contexts()?;
         let parent_ctx = tonic_invalid!(
             request
                 .get_parent()
@@ -53,10 +54,11 @@ impl CollectionService for CollectionServiceImpl {
                 .get_context(),
             "invalid parent"
         );
+        ctxs.push(parent_ctx);
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![parent_ctx])
+                .check_permissions_verbose(&token, ctxs)
                 .await,
             "Unauthorized"
         );
@@ -431,6 +433,38 @@ impl CollectionService for CollectionServiceImpl {
 
         let response = SnapshotCollectionResponse {
             collection: Some(collection.into_inner()?),
+        };
+        return_with_log!(response);
+    }
+
+    async fn update_collection_licenses(
+        &self,
+        request: Request<UpdateCollectionLicensesRequest>,
+    ) -> Result<Response<UpdateCollectionLicensesResponse>> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = LicenseUpdate::Collection(request.into_inner());
+        let project_id = tonic_invalid!(request.get_id(), "Invalid collection id");
+        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let project = tonic_invalid!(
+            self.database_handler.update_license(request).await,
+            "Invalid update license request"
+        );
+        let generic_resource: generic_resource::Resource =
+            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let response = UpdateCollectionLicensesResponse {
+            collection: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
     }
