@@ -3,7 +3,7 @@ use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::license_dsl::License;
+use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use crate::utils::conversions::ContextContainer;
@@ -349,14 +349,22 @@ impl CreateRequest {
         match &self {
             // Projects must specify licenses
             CreateRequest::Project(req, _) => {
-                let data_tag = &req.default_data_license_tag;
-                let meta_tag = &req.metadata_license_tag;
+                let data_tag = if &req.default_data_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED
+                } else {
+                    &req.default_data_license_tag
+                };
+                let meta_tag = if &req.metadata_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED
+                } else {
+                    &req.metadata_license_tag
+                };
                 if License::get(data_tag.clone(), client).await?.is_some()
                     && License::get(meta_tag.clone(), client).await?.is_some()
                 {
                     Ok((meta_tag.to_string(), data_tag.to_string()))
                 } else {
-                    Err(anyhow!("No license provided or invalid"))
+                    Err(anyhow!("Invalid license: License not found"))
                 }
             }
             CreateRequest::Collection(req) => {
