@@ -41,6 +41,7 @@ pub enum Parent {
 }
 
 pub static PROJECT_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$");
+pub static S3_KEY_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)]+$");
 
 impl Parent {
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -70,38 +71,39 @@ impl Parent {
 
 impl CreateRequest {
     pub fn get_name(&self) -> Result<String> {
-        // TODO:
-        // - Match naming
         match self {
             CreateRequest::Project(request, _) => {
                 let name = request.name.to_string();
                 if !PROJECT_SCHEMA.is_match(&name) {
-                    Err(anyhow!("Invalid project name: Projects can only consist of alphanumeric characters and '-'"))
+                    Err(anyhow!("Invalid project name"))
                 } else {
                     Ok(name)
                 }
             }
             CreateRequest::Collection(request) => {
                 let name = request.name.to_string();
-                if name.contains("/") {
-                    Err(anyhow!(
-                        "Invalid collection name: Collections cannot contain slashes"
-                    ))
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid collection name"))
                 } else {
                     Ok(name)
                 }
             }
             CreateRequest::Dataset(request) => {
                 let name = request.name.to_string();
-                if name.contains("/") {
-                    Err(anyhow!(
-                        "Invalid dataset name: Datasets cannot contain slashes"
-                    ))
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid dataset name"))
                 } else {
                     Ok(name)
                 }
             }
-            CreateRequest::Object(request) => Ok(request.name.to_string()),
+            CreateRequest::Object(request) => {
+                let name = request.name.to_string();
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid object name"))
+                } else {
+                    Ok(name)
+                }
+            }
         }
     }
 
