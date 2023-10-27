@@ -265,26 +265,10 @@ impl DatabaseHandler {
             (old.metadata_license == ALL_RIGHTS_RESERVED),
         ) {
             (true, true) => false,
-            (true, false) => {
-                if request.metadata_license_tag.is_empty() {
-                    false
-                } else {
-                    true
-                }
-            }
-            (false, true) => {
-                if request.data_license_tag.is_empty() {
-                    false
-                } else {
-                    true
-                }
-            }
+            (true, false) => !request.metadata_license_tag.is_empty(),
+            (false, true) => !request.data_license_tag.is_empty(),
             (false, false) => {
-                if request.data_license_tag.is_empty() && request.metadata_license_tag.is_empty() {
-                    false
-                } else {
-                    true
-                }
+                !(request.data_license_tag.is_empty() && request.metadata_license_tag.is_empty())
             }
         };
         let (id, is_new, affected) = if request.force_revision

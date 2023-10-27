@@ -9,7 +9,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::{get_token_from_md, ContextContainer};
+use crate::utils::conversions::get_token_from_md;
 use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;

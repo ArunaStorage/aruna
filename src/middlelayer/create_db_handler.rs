@@ -57,18 +57,18 @@ impl DatabaseHandler {
                     .outbound_belongs_to
                     .0
                     .iter()
-                    .filter_map(|rel| match rel.target_type {
+                    .map(|rel| match rel.target_type {
                         ObjectType::OBJECT => {
                             // Check if object splits by '/'
                             match rel.target_name.split('/').next().map(|s| s.to_string()) {
                                 // return first path
-                                Some(split) => Some(split),
+                                Some(split) => split,
                                 // return full name
-                                None => Some(rel.target_name.to_string()),
+                                None => rel.target_name.to_string(),
                             }
                         }
                         // return name of other resources
-                        _ => Some(rel.target_name.to_string()),
+                        _ => rel.target_name.to_string(),
                     })
                     // Check if names contain request name
                     .contains(&name)
@@ -93,18 +93,18 @@ impl DatabaseHandler {
                     .outbound_belongs_to
                     .0
                     .iter()
-                    .filter_map(|rel| match rel.target_type {
+                    .map(|rel| match rel.target_type {
                         ObjectType::OBJECT => {
                             // Check if object splits by '/'
                             match rel.target_name.split('/').next().map(|s| s.to_string()) {
                                 // return first path
-                                Some(split) => Some(split),
+                                Some(split) => split,
                                 // return full name
-                                None => Some(rel.target_name.to_string()),
+                                None => rel.target_name.to_string(),
                             }
                         }
                         // return name of other resources
-                        _ => Some(rel.target_name.to_string()),
+                        _ => rel.target_name.to_string(),
                     })
                     .contains(&query)
                 {

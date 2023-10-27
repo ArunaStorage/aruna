@@ -154,7 +154,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Collection(req) => req
                 .relations
@@ -163,7 +163,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Dataset(req) => req
                 .relations
@@ -172,7 +172,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Object(req) => req
                 .relations
@@ -181,7 +181,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
         }
     }
