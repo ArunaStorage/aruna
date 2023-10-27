@@ -522,6 +522,8 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
+        authorizer: Arc<PermissionHandler>,
+        user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
         let client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
@@ -534,7 +536,21 @@ impl DatabaseHandler {
         Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
             .await?;
 
-        // TODO: Trigger hooks for objects
-        Object::get_object_with_relations(&id, &client).await
+        let object = Object::get_object_with_relations(&id, &client).await?;
+        // TODO: Add new HookTrigger for finishing objects
+        let db_handler = DatabaseHandler {
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+        };
+        tokio::spawn(async move {
+            let call = db_handler
+                .trigger_on_creation(authorizer, user_id, id)
+                .await;
+            if call.is_err() {
+                log::error!("{:?}", call);
+            }
+        });
+        Ok(object)
     }
 }
