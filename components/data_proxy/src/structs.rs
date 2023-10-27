@@ -1,3 +1,4 @@
+use crate::caching::cache::Cache;
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use anyhow::anyhow;
 use anyhow::Result;
@@ -23,6 +24,7 @@ use http::Method;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -978,6 +980,280 @@ impl From<Vec<ResourceString>> for Missing {
 //         (orig, permutations)
 //     }
 // }
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub struct ResourceResults {
+    pub found: Vec<ResourceIds>,
+    pub missing: Vec<ResourceString>,
+}
+
+impl ResourceResults {
+    pub fn from_path(path: &S3Path, cache: Arc<Cache>) -> Result<Self> {
+        // FIXME: I am so inefficient
+        if let Some((bucket, key)) = path.as_object() {
+            let pathvec = key.split('/').collect::<Vec<&str>>();
+            match pathvec.len() {
+                0 => Err(anyhow!("Only bucket provided")),
+                1 => {
+                    let object = ResourceString::Object(
+                        bucket.to_string(),
+                        None,
+                        None,
+                        pathvec[0].to_string(),
+                    );
+                    let mut found = Vec::new();
+                    let mut missing = Vec::new();
+                    for resource in object.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found.push(res);
+                        } else {
+                            missing.push(resource.clone());
+                        };
+                    }
+                    found.sort();
+                    Ok(ResourceResults { found, missing })
+                }
+                2 => {
+                    // Possible combinations to find
+                    let with_dataset = ResourceString::Object(
+                        bucket.to_string(),
+                        None,
+                        Some(pathvec[0].to_string()),
+                        pathvec[1].to_string(),
+                    );
+                    let with_collection = ResourceString::Object(
+                        bucket.to_string(),
+                        Some(pathvec[0].to_string()),
+                        None,
+                        pathvec[1].to_string(),
+                    );
+                    let only_object =
+                        ResourceString::Object(bucket.to_string(), None, None, pathvec.join("/"));
+                    // Try first combination
+                    let mut found_one = Vec::new();
+                    let mut missing_one = Vec::new();
+                    for resource in only_object.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_one.push(res);
+                        } else {
+                            missing_one.push(resource.clone());
+                        };
+                    }
+
+                    // Try second combination
+                    let mut found_two = Vec::new();
+                    let mut missing_two = Vec::new();
+                    for resource in with_collection.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_two.push(res);
+                        } else {
+                            missing_two.push(resource.clone());
+                        };
+                    }
+                    // Try third combination
+                    let mut found_three = Vec::new();
+                    let mut missing_three = Vec::new();
+                    for resource in with_dataset.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_three.push(res);
+                        } else {
+                            missing_three.push(resource.clone());
+                        };
+                    }
+                    // Compare found vecs for number of hits
+                    // If missing is none return combination
+                    if missing_one.is_empty() {
+                        found_one.sort();
+                        Ok(ResourceResults {
+                            found: found_one,
+                            missing: missing_one,
+                        })
+                    } else if missing_two.is_empty() {
+                        found_two.sort();
+                        Ok(ResourceResults {
+                            found: found_two,
+                            missing: missing_two,
+                        })
+                    } else if missing_three.is_empty() {
+                        found_three.sort();
+                        Ok(ResourceResults {
+                            found: found_three,
+                            missing: missing_three,
+                        })
+                    }
+                    // else compare number of found objects and return combination with max hits
+                    else if (found_one.len() > found_two.len())
+                        && (found_one.len() > found_three.len())
+                    {
+                        found_one.sort();
+                        Ok(ResourceResults {
+                            found: found_one,
+                            missing: missing_one,
+                        })
+                    } else if (found_two.len() > found_one.len())
+                        && (found_two.len() > found_three.len())
+                    {
+                        found_two.sort();
+                        Ok(ResourceResults {
+                            found: found_two,
+                            missing: missing_two,
+                        })
+                    } else if (found_three.len() > found_one.len())
+                        && (found_three.len() > found_two.len())
+                    {
+                        found_three.sort();
+                        Ok(ResourceResults {
+                            found: found_three,
+                            missing: missing_three,
+                        })
+                    } else {
+                        found_three.sort();
+                        Ok(ResourceResults {
+                            found: found_three,
+                            missing: missing_three,
+                        })
+                    }
+                }
+                _ => {
+                    let with_all = ResourceString::Object(
+                        bucket.to_string(),
+                        Some(pathvec[0].to_string()),
+                        Some(pathvec[1].to_string()),
+                        pathvec[2].to_string(),
+                    );
+                    let with_dataset = ResourceString::Object(
+                        bucket.to_string(),
+                        None,
+                        Some(pathvec[0].to_string()),
+                        pathvec[1..].join("/"),
+                    );
+                    let with_collection = ResourceString::Object(
+                        bucket.to_string(),
+                        Some(pathvec[0].to_string()),
+                        None,
+                        pathvec[1..].join("/"),
+                    );
+                    let only_object =
+                        ResourceString::Object(bucket.to_string(), None, None, pathvec.join("/"));
+                    // Try first combination
+                    let mut found_one = Vec::new();
+                    let mut missing_one = Vec::new();
+                    for resource in only_object.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_one.push(res);
+                        } else {
+                            missing_one.push(resource.clone());
+                        };
+                    }
+
+                    // Try second combination
+                    let mut found_two = Vec::new();
+                    let mut missing_two = Vec::new();
+                    for resource in with_collection.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_two.push(res);
+                        } else {
+                            missing_two.push(resource.clone());
+                        };
+                    }
+                    // Try third combination
+                    let mut found_three = Vec::new();
+                    let mut missing_three = Vec::new();
+                    for resource in with_dataset.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_three.push(res);
+                        } else {
+                            missing_three.push(resource.clone());
+                        };
+                    }
+                    // Try fourth combination
+                    let mut found_four = Vec::new();
+                    let mut missing_four = Vec::new();
+                    for resource in with_all.into_parts() {
+                        if let Some(res) = cache.get_res_by_res_string(resource.clone()) {
+                            found_four.push(res);
+                        } else {
+                            missing_four.push(resource.clone());
+                        };
+                    }
+                    // Compare found vecs for number of hits
+                    // If missing is none return combination
+                    if missing_one.is_empty() {
+                        found_one.sort();
+                        Ok(ResourceResults {
+                            found: found_one,
+                            missing: missing_one,
+                        })
+                    } else if missing_two.is_empty() {
+                        found_two.sort();
+                        Ok(ResourceResults {
+                            found: found_two,
+                            missing: missing_two,
+                        })
+                    } else if missing_three.is_empty() {
+                        found_three.sort();
+                        Ok(ResourceResults {
+                            found: found_three,
+                            missing: missing_three,
+                        })
+                    } else if missing_four.is_empty() {
+                        found_four.sort();
+                        Ok(ResourceResults {
+                            found: found_four,
+                            missing: missing_four,
+                        })
+                    }
+                    // else compare number of found objects and return combination with max hits
+                    else if (found_one.len() > found_two.len())
+                        && (found_one.len() > found_three.len())
+                        && (found_one.len() > found_four.len())
+                    {
+                        found_one.sort();
+                        Ok(ResourceResults {
+                            found: found_one,
+                            missing: missing_one,
+                        })
+                    } else if (found_two.len() > found_one.len())
+                        && (found_two.len() > found_three.len())
+                        && (found_two.len() > found_four.len())
+                    {
+                        found_two.sort();
+                        Ok(ResourceResults {
+                            found: found_two,
+                            missing: missing_two,
+                        })
+                    } else if (found_three.len() > found_one.len())
+                        && (found_three.len() > found_two.len())
+                        && (found_three.len() > found_four.len())
+                    {
+                        found_three.sort();
+                        Ok(ResourceResults {
+                            found: found_three,
+                            missing: missing_three,
+                        })
+                    } else if (found_four.len() > found_one.len())
+                        && (found_four.len() > found_two.len())
+                        && (found_four.len() > found_three.len())
+                    {
+                        found_four.sort();
+                        Ok(ResourceResults {
+                            found: found_four,
+                            missing: missing_four,
+                        })
+                    } else {
+                        found_four.sort();
+                        Ok(ResourceResults {
+                            found: found_four,
+                            missing: missing_four,
+                        })
+                    }
+                }
+            }
+        } else {
+            Err(anyhow!("Invalid path"))
+        }
+    }
+}
 
 impl TryFrom<&S3Path> for ResourceString {
     type Error = anyhow::Error;

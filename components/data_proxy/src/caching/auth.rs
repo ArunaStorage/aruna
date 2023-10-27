@@ -6,6 +6,7 @@ use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
+use crate::structs::ResourceResults;
 use crate::structs::ResourceString;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -418,19 +419,24 @@ impl AuthHandler {
             }
         }
 
-        let res_strings = ResourceString::try_from(path)?;
+        //let res_strings = ResourceString::try_from(path)?;
+        //
 
-        let mut found = Vec::new();
-        let mut missing = Vec::new();
+        let ResourceResults { found, missing } =
+            ResourceResults::from_path(path, self.cache.clone())?;
+        dbg!(&found);
+        dbg!(&missing);
+        // let mut found = Vec::new();
+        // let mut missing = Vec::new();
 
-        for resource in res_strings.into_parts() {
-            if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
-                found.push(e);
-            } else {
-                missing.push(resource.clone());
-            }
-        }
-        found.sort();
+        //for resource in res_strings.into_parts() {
+        //    if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
+        //        found.push(e);
+        //    } else {
+        //        missing.push(resource.clone());
+        //    }
+        //}
+        //found.sort();
 
         let resource_id = found
             .last()
