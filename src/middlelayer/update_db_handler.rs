@@ -4,6 +4,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -257,12 +258,41 @@ impl DatabaseHandler {
         let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+
+        // If license is updated from all rights reserved to anything no new revision is triggered
+        let license_triggers_new_revision = match (
+            (old.data_license == ALL_RIGHTS_RESERVED),
+            (old.metadata_license == ALL_RIGHTS_RESERVED),
+        ) {
+            (true, true) => false,
+            (true, false) => {
+                if request.metadata_license_tag.is_empty() {
+                    false
+                } else {
+                    true
+                }
+            }
+            (false, true) => {
+                if request.data_license_tag.is_empty() {
+                    false
+                } else {
+                    true
+                }
+            }
+            (false, false) => {
+                if request.data_license_tag.is_empty() && request.metadata_license_tag.is_empty() {
+                    false
+                } else {
+                    true
+                }
+            }
+        };
         let (id, is_new, affected) = if request.force_revision
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
             || !request.metadata_license_tag.is_empty()
-            || !request.data_license_tag.is_empty()
+            || license_triggers_new_revision
         {
             let id = DieselUlid::generate();
             let (metadata_license, data_license) =
