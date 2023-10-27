@@ -13,6 +13,7 @@ use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_types::Json;
 use std::sync::Arc;
 
@@ -30,18 +31,88 @@ impl DatabaseHandler {
         // query endpoints
         let endpoint_ids = request.get_endpoint(self.cache.clone(), &client).await?;
 
-        // check if project exists:
-        if request.get_type() == ObjectType::PROJECT {
-            let object = Object::check_existing_projects(request.get_name(), &client).await?;
-            if let Some(object) = object {
-                return if is_dataproxy {
-                    // return existing project
-                    Ok((object, None))
-                } else {
-                    // return err
-                    Err(anyhow!("Project exists!"))
+        // check if resource with same name on same hierarchy exists
+        match request.get_type() {
+            ObjectType::PROJECT => {
+                let name = request.get_name()?;
+                let object = Object::check_existing_projects(name, &client).await?;
+                if let Some(object) = object {
+                    return if is_dataproxy {
+                        // return existing project
+                        Ok((object, None))
+                    } else {
+                        // return err
+                        Err(anyhow!("Project exists!"))
+                    };
                 };
-            };
+            }
+            ObjectType::DATASET | ObjectType::COLLECTION => {
+                let parent_id = request
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent found"))?
+                    .get_id()?;
+                let parent = Object::get_object_with_relations(&parent_id, &client).await?;
+                let name = request.get_name()?;
+                if parent
+                    .outbound_belongs_to
+                    .0
+                    .iter()
+                    .filter_map(|rel| match rel.target_type {
+                        ObjectType::OBJECT => {
+                            // Check if object splits by '/'
+                            match rel.target_name.split('/').next().map(|s| s.to_string()) {
+                                // return first path
+                                Some(split) => Some(split),
+                                // return full name
+                                None => Some(rel.target_name.to_string()),
+                            }
+                        }
+                        // return name of other resources
+                        _ => Some(rel.target_name.to_string()),
+                    })
+                    // Check if names contain request name
+                    .contains(&name)
+                {
+                    return Err(anyhow!(
+                        "Name is invalid: Contains path of object".to_string()
+                    ));
+                }
+            }
+            ObjectType::OBJECT => {
+                let parent_id = request
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent found"))?
+                    .get_id()?;
+                let parent = Object::get_object_with_relations(&parent_id, &client).await?;
+                let name = request.get_name()?;
+                let query = match name.split('/').next() {
+                    Some(name) => name.to_string(),
+                    None => name,
+                };
+                if parent
+                    .outbound_belongs_to
+                    .0
+                    .iter()
+                    .filter_map(|rel| match rel.target_type {
+                        ObjectType::OBJECT => {
+                            // Check if object splits by '/'
+                            match rel.target_name.split('/').next().map(|s| s.to_string()) {
+                                // return first path
+                                Some(split) => Some(split),
+                                // return full name
+                                None => Some(rel.target_name.to_string()),
+                            }
+                        }
+                        // return name of other resources
+                        _ => Some(rel.target_name.to_string()),
+                    })
+                    .contains(&query)
+                {
+                    return Err(anyhow!(
+                        "Name is invalid: Contains substring that matches same hierarchy object"
+                    ));
+                }
+            }
         }
         // Transaction setup
         let transaction = client.transaction().await?;

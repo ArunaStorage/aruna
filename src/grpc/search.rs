@@ -182,7 +182,8 @@ impl SearchService for SearchServiceImpl {
             match object_plus.object.data_class {
                 DataClass::PUBLIC => {}
                 DataClass::PRIVATE => {
-                    // TODO: Redacted object operations
+                    // TODO: SPECIFIC private operations OTHER THAN strip labels
+                    // -> maybe endpoint redaction?
                 }
                 _ => return Err(Status::invalid_argument("Resource is not public")),
             }
@@ -316,7 +317,8 @@ impl SearchService for SearchServiceImpl {
                 match object_plus.object.data_class {
                     DataClass::PUBLIC => {}
                     DataClass::PRIVATE => {
-                        //TODO: Redacted object
+                        // TODO: SPECIFIC private operations OTHER THAN strip labels
+                        // -> maybe endpoint redaction?
                     }
                     _ => return Err(Status::invalid_argument("Resource is not public")),
                 }

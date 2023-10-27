@@ -504,7 +504,7 @@ impl DatabaseHandler {
         Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
             .await?;
 
-        // TODO: Database request finish_object_staging() should return ObjectWithRelations
+        // TODO: Trigger hooks for objects
         Object::get_object_with_relations(&id, &client).await
     }
 }

@@ -11,7 +11,6 @@ use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::Hash;
-use aruna_rust_api::api::storage::models::v2::Relation;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
     services::v2::{
@@ -20,6 +19,7 @@ use aruna_rust_api::api::storage::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use lazy_static::lazy_static;
 use postgres_types::Json;
 use regex::Regex;
 use std::str::FromStr;
@@ -40,8 +40,14 @@ pub enum Parent {
     Dataset(String),
 }
 
-pub static PROJECT_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-]+$");
-pub static S3_KEY_SCHEMA: Regex = Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)]+$");
+lazy_static! {
+    pub static ref PROJECT_SCHEMA: Regex =
+        Regex::new(r"^[a-z0-9\-]+$").expect("Regex must be valid");
+    pub static ref S3_KEY_SCHEMA: Regex =
+        Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)]+$").expect("Regex must be valid");
+    pub static ref OBJECT_SCHEMA: Regex =
+        Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)\/]+$").expect("Regex must be valid");
+}
 
 impl Parent {
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -98,7 +104,7 @@ impl CreateRequest {
             }
             CreateRequest::Object(request) => {
                 let name = request.name.to_string();
-                if !S3_KEY_SCHEMA.is_match(&name) {
+                if !OBJECT_SCHEMA.is_match(&name) {
                     Err(anyhow!("Invalid object name"))
                 } else {
                     Ok(name)
@@ -351,15 +357,15 @@ impl CreateRequest {
         match &self {
             // Projects must specify licenses
             CreateRequest::Project(req, _) => {
-                let data_tag = if &req.default_data_license_tag.is_empty() {
-                    ALL_RIGHTS_RESERVED
+                let data_tag = if req.default_data_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED.to_string()
                 } else {
-                    &req.default_data_license_tag
+                    req.default_data_license_tag.clone()
                 };
-                let meta_tag = if &req.metadata_license_tag.is_empty() {
-                    ALL_RIGHTS_RESERVED
+                let meta_tag = if req.metadata_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED.to_string()
                 } else {
-                    &req.metadata_license_tag
+                    req.metadata_license_tag.clone()
                 };
                 if License::get(data_tag.clone(), client).await?.is_some()
                     && License::get(meta_tag.clone(), client).await?.is_some()
