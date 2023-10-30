@@ -174,8 +174,11 @@ impl SearchService for SearchServiceImpl {
             match object_plus.object.data_class {
                 DataClass::PUBLIC => {}
                 DataClass::PRIVATE => {
-                    // TODO: SPECIFIC private operations OTHER THAN strip labels
-                    // -> maybe endpoint redaction?
+                    // SPECIFIC private operations OTHER THAN strip labels
+                    // Remove created by
+                    object_plus.object.created_by = DieselUlid::default();
+                    // Endpoint redaction
+                    object_plus.object.endpoints = Json(DashMap::default());
                 }
                 _ => return Err(Status::invalid_argument("Resource is not public")),
             }
@@ -309,8 +312,11 @@ impl SearchService for SearchServiceImpl {
                 match object_plus.object.data_class {
                     DataClass::PUBLIC => {}
                     DataClass::PRIVATE => {
-                        // TODO: SPECIFIC private operations OTHER THAN strip labels
-                        // -> maybe endpoint redaction?
+                        // SPECIFIC private operations OTHER THAN strip labels
+                        // Remove created by
+                        object_plus.object.created_by = DieselUlid::default();
+                        // Endpoint redaction
+                        object_plus.object.endpoints = Json(DashMap::default());
                     }
                     _ => return Err(Status::invalid_argument("Resource is not public")),
                 }

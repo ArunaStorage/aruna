@@ -68,7 +68,7 @@ impl Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
-            variant: ContextVariant::NotActivated,
+            variant: ContextVariant::SelfUser,
             allow_service_account: true,
             is_self: false,
         }
