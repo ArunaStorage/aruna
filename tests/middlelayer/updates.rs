@@ -543,8 +543,8 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: "all_rights_reserved".to_string(),
-        data_license_tag: "all_rights_reserved".to_string(),
+        metadata_license_tag: "All_Rights_Reserved".to_string(),
+        data_license_tag: "All_Rights_Reserved".to_string(),
     };
     let (license_updated, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)

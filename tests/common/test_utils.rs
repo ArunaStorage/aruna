@@ -99,8 +99,8 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
-        data_license: "all_rights_reserved".to_string(),
-        metadata_license: "all_rights_reserved".to_string(),
+        data_license: "All_Rights_Reserved".to_string(),
+        metadata_license: "All_Rights_Reserved".to_string(),
     }
 }
 
@@ -145,8 +145,8 @@ pub fn object_from_mapping(
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
-        data_license: "all_rights_reserved".to_string(),
-        metadata_license: "all_rights_reserved".to_string(),
+        data_license: "All_Rights_Reserved".to_string(),
+        metadata_license: "All_Rights_Reserved".to_string(),
     }
 }
 
@@ -224,7 +224,7 @@ pub async fn fast_track_grpc_project_create(
     token: &str,
 ) -> Project {
     // Create request with token
-    let project_name = rand_string(32);
+    let project_name = rand_string(32).to_lowercase();
 
     let create_request = CreateProjectRequest {
         name: project_name.to_string(),
@@ -233,8 +233,8 @@ pub async fn fast_track_grpc_project_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         preferred_endpoint: "".to_string(),
-        default_data_license_tag: "all_rights_reserved".to_string(),
-        metadata_license_tag: "all_rights_reserved".to_string(),
+        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: "All_Rights_Reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -270,8 +270,8 @@ pub async fn fast_track_grpc_collection_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: "all_rights_reserved".to_string(),
-        metadata_license_tag: "all_rights_reserved".to_string(),
+        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: "All_Rights_Reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -307,8 +307,8 @@ pub async fn fast_track_grpc_dataset_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: "all_rights_reserved".to_string(),
-        metadata_license_tag: "all_rights_reserved".to_string(),
+        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: "All_Rights_Reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
