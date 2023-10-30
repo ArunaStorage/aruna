@@ -60,14 +60,14 @@ impl GetUser {
         let (id, ctx) = match self {
             GetUser::GetUser(req) => {
                 if req.user_id.is_empty() {
-                    (None, Context::self_ctx())
+                    (None, Context::default())
                 } else {
                     (Some(DieselUlid::from_str(&req.user_id)?), Context::admin())
                 }
             }
             GetUser::GetUserRedacted(req) => {
                 if req.user_id.is_empty() {
-                    (None, Context::self_ctx())
+                    (None, Context::default())
                 } else {
                     (Some(DieselUlid::from_str(&req.user_id)?), Context::admin())
                 }

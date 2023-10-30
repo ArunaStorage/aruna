@@ -324,7 +324,7 @@ impl Cache {
     pub fn check_proxy_ctxs(&self, endpoint_id: &DieselUlid, ctxs: &[Context]) -> bool {
         self.check_lock();
         ctxs.iter().all(|x| match &x.variant {
-            ContextVariant::Activated => true,
+            ContextVariant::NotActivated => true,
             ContextVariant::Resource((id, _)) => {
                 log::debug!("[Check Proxy Ctxs] Looking for resource id: {}", id);
                 if let Some(obj) = self.get_object(id) {
@@ -375,18 +375,22 @@ impl Cache {
 
         for ctx in ctxs {
             match &ctx.variant {
-                ContextVariant::Activated => return user.active && personal,
+                ContextVariant::NotActivated => return personal,
                 ContextVariant::Resource((id, perm)) => {
-                    resources.insert(*id, *perm);
+                    if !user.active {
+                        return false;
+                    } else {
+                        resources.insert(*id, *perm);
+                    };
                 }
                 ContextVariant::User((uid, _)) => {
-                    return if uid == user_id && personal {
+                    return if uid == user_id && personal && user.active {
                         !user.attributes.0.service_account
                     } else {
                         false
                     }
                 }
-                ContextVariant::SelfUser => return personal,
+                ContextVariant::SelfUser => return user.active && personal,
                 ContextVariant::GlobalProxy | ContextVariant::GlobalAdmin => return false,
             }
         }

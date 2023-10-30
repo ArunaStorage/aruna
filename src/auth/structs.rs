@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ContextVariant {
-    Activated,
+    NotActivated,
     Resource((DieselUlid, DbPermissionLevel)),
     User((DieselUlid, DbPermissionLevel)),
     SelfUser, // True: Registered, False: Unregistered
@@ -68,7 +68,7 @@ impl Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
-            variant: ContextVariant::Activated,
+            variant: ContextVariant::NotActivated,
             allow_service_account: true,
             is_self: false,
         }
