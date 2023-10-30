@@ -44,9 +44,9 @@ lazy_static! {
     pub static ref PROJECT_SCHEMA: Regex =
         Regex::new(r"^[a-z0-9\-]+$").expect("Regex must be valid");
     pub static ref S3_KEY_SCHEMA: Regex =
-        Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)]+$").expect("Regex must be valid");
+        Regex::new(r"^[a-zA-Z0-9\-\!\_\.\*\_\'\(\)]+$").expect("Regex must be valid");
     pub static ref OBJECT_SCHEMA: Regex =
-        Regex::new(r"^[a-z0-9\-\!\_\.\*\_\'\(\)\/]+$").expect("Regex must be valid");
+        Regex::new(r"^[a-zA-Z0-9\-\!\_\.\*\_\'\(\)\/]+$").expect("Regex must be valid");
 }
 
 impl Parent {
