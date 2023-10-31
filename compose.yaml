@@ -1,0 +1,44 @@
+services:
+  nats:
+    image: nats:latest
+    ports:
+      - 4222:4222
+      - 8222:8222
+    command: --http_port 8222 --js
+  meili:
+    image: getmeili/meilisearch:latest
+    ports:
+      - 7700:7700
+    environment:
+      MEILI_MASTER_KEY: "MASTER_KEY"
+  yugabyte:
+    image: yugabytedb/yugabyte:2.19.2.0-b121
+    ports:
+      - 5433:5433
+    command: 'bin/yugabyted start --tserver_flags="enable_wait_queues=true,enable_deadlock_detection=true,yb_enable_read_committed_isolation=true" --daemon=false'
+  keycloak:
+    image: quay.io/keycloak/keycloak:21.0.2
+    ports:
+      - 1998:8080
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./tests/common/keycloak/realm.json:/opt/keycloak/data/import/realm.json
+    command: "start-dev --import-realm"
+  load_database:
+    network_mode: "host"
+    depends_on:
+      - yugabyte
+    image: postgres:alpine3.18
+    volumes:
+      - ./tests/common/initial_data.sql:/data/initial_data.sql
+      - ./src/database/schema.sql:/data/schema.sql
+    command: >
+      sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE test' &&
+             psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
+             psql 'postgres://yugabyte@localhost:5433/test' < /data/schema.sql &&
+             psql 'postgres://yugabyte@localhost:5433/test' < /data/initial_data.sql"
+
+
+
