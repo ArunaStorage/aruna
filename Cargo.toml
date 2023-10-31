@@ -9,19 +9,19 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aws-sdk-s3 = "0.28.0"
-aws-config = "0.55.3"
-aws-types = "0.55.3"
+aws-sdk-s3 = "0.34.0"
+aws-config = "0.56.1"
+aws-types = "0.56.1"
 anyhow = "1.0.75"
 aruna-rust-api = "2.0.0-beta.6"
-async-nats = "0.30.0"
+async-nats = "0.32.1"
 bigdecimal = "0.4.2"
 bincode = "1.3.3"
 chrono = "0.4.31"
 dotenvy = "0.15.7"
 http = "0.2.9"
 itertools = "0.11.0"
-jsonwebtoken = {version = "8.3.0", features = ["use_pem"]}
+jsonwebtoken = {version = "9.1.0", features = ["use_pem"]}
 log = "0.4.20"
 meilisearch-sdk = "0.24.2"
 prost = "0.12.1"
@@ -30,29 +30,29 @@ prost-wkt-types = "0.5.0"
 rand = "0.8.5"
 rand_core = "0.6.4"
 regex = "1.10.2"
-reqsign = { version = "0.14.2", features = ["reqwest_request"]}
+reqsign = { version = "0.14.3", features = ["reqwest_request"]}
 reqwest = {version = "0.11.22", features = ["json"] }
-serde = {version = "1.0.189", features = ["derive"]}
-serde_json = {version = "1.0.107", features = ["raw_value"]}
+serde = {version = "1.0.190", features = ["derive"]}
+serde_json = {version = "1.0.108", features = ["raw_value"]}
 simple_logger = "4.2.0"
 time = "0.3.30"
 tokio = {version = "1.33.0", features = ["full"]}
 tokio-stream = { version = "0.1.14", features = ["net"] }
-toml = "0.7.8"
+toml = "0.8.6"
 tonic = {version = "0.10.2", features =["tls", "tls-roots"] }
 url = "2.4.1"
 uuid = {version = "1.5.0", features = ["v4", "fast-rng", "macro-diagnostics", "serde"]}
-lettre = "0.10"
+lettre = "0.11"
 diesel-ulid = "0.3.1"
 rusty_ulid = "2.0.0"
 sha2 = "0.10.8"
 hmac = "0.12.1"
 hex = "0.4.3"
-base64 = "0.21.4"
+base64 = "0.21.5"
 tower = "0.4.13"
 async-trait = "0.1.74"
 dashmap = {version = "5.5.3", features = ["serde"]}
-ahash = "0.8.3"
+ahash = "0.8.6"
 xxhash-rust = {version="0.8.7", features=["xxh3"]}
 lazy_static = "1.4.0"
 
@@ -60,6 +60,6 @@ lazy_static = "1.4.0"
 tokio-postgres = { version = "0.7.10", features = ["with-uuid-1", "with-serde_json-1", "with-chrono-0_4"] }
 postgres-types = { version = "0.2.6", features = ["derive"] }
 postgres_array = "0.11.1"
-deadpool-postgres = "0.10.5"
-futures = "0.3.28"
+deadpool-postgres = "0.11.0"
+futures = "0.3.29"
 postgres-from-row = "=0.5.2"
