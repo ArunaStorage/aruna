@@ -117,9 +117,9 @@ async fn default_licenses() {
         url: "test.org/second_defaultgrpc-test-license".to_string(),
     };
 
-    // Try creating project without licenses
-    let mut create_project_request = CreateProjectRequest {
-        name: "license_test_project".to_string(),
+    // Create project without licenses
+    let create_project_with_defaults_request = CreateProjectRequest {
+        name: "default-license-test-project".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
@@ -128,16 +128,37 @@ async fn default_licenses() {
         metadata_license_tag: String::new(),
         default_data_license_tag: String::new(),
     };
-    let failing_response = services
+    let response = services
         .project_service
         .create_project(add_token(
-            tonic::Request::new(create_project_request.clone()),
+            tonic::Request::new(create_project_with_defaults_request),
             USER1_OIDC_TOKEN,
         ))
-        .await;
-    assert!(failing_response.is_err());
+        .await
+        .unwrap()
+        .into_inner()
+        .project
+        .unwrap();
+    assert_eq!(
+        response.metadata_license_tag,
+        "All_Rights_Reserved".to_string()
+    );
+    assert_eq!(
+        response.default_data_license_tag,
+        "All_Rights_Reserved".to_string()
+    );
 
     // Create licenses and project with license
+    let mut create_project_request = CreateProjectRequest {
+        name: "license-test-project".to_string(),
+        description: String::new(),
+        key_values: Vec::new(),
+        relations: Vec::new(),
+        data_class: DataClass::Public as i32,
+        preferred_endpoint: String::new(),
+        metadata_license_tag: String::new(),
+        default_data_license_tag: String::new(),
+    };
     let license_tag = services
         .license_service
         .create_license(add_token(

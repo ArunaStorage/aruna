@@ -57,7 +57,9 @@ impl CreateHook {
         }
     }
     fn get_timeout(&self) -> Result<NaiveDateTime> {
-        NaiveDateTime::from_timestamp_millis(self.0.timeout.try_into()?)
+        // Convert millis to seconds
+        let time = self.0.timeout * 1000;
+        NaiveDateTime::from_timestamp_millis(time.try_into()?)
             .ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {

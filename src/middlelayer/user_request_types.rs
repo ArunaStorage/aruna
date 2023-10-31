@@ -1,4 +1,4 @@
-use crate::auth::structs::Context;
+use crate::auth::structs::{Context, ContextVariant};
 use anyhow::Result;
 use aruna_rust_api::api::storage::services::v2::{
     ActivateUserRequest, DeactivateUserRequest, GetUserRedactedRequest, GetUserRequest,
@@ -60,14 +60,28 @@ impl GetUser {
         let (id, ctx) = match self {
             GetUser::GetUser(req) => {
                 if req.user_id.is_empty() {
-                    (None, Context::self_ctx())
+                    (
+                        None,
+                        Context {
+                            variant: ContextVariant::NotActivated,
+                            allow_service_account: false,
+                            is_self: true,
+                        },
+                    )
                 } else {
                     (Some(DieselUlid::from_str(&req.user_id)?), Context::admin())
                 }
             }
             GetUser::GetUserRedacted(req) => {
                 if req.user_id.is_empty() {
-                    (None, Context::self_ctx())
+                    (
+                        None,
+                        Context {
+                            variant: ContextVariant::NotActivated,
+                            allow_service_account: false,
+                            is_self: true,
+                        },
+                    )
                 } else {
                     (Some(DieselUlid::from_str(&req.user_id)?), Context::admin())
                 }

@@ -51,11 +51,11 @@ impl PermissionHandler {
             return if let Some(intent) = proxy_intent {
                 if intent.action == Action::Impersonate {
                     //Case 1: Impersonate
-                    //  - Check if provided contexts are proxy/activated/resource only
+                    //  - Check if provided contexts are proxy/self/resource only
                     for ctx in &ctxs {
                         dbg!(&ctx);
                         match ctx.variant {
-                            ContextVariant::Activated
+                            ContextVariant::SelfUser
                             | ContextVariant::GlobalProxy
                             | ContextVariant::Resource(_) => {}
                             _ => return Err(tonic::Status::invalid_argument(
@@ -69,7 +69,7 @@ impl PermissionHandler {
                     for ctx in &ctxs {
                         dbg!(&ctx);
                         match ctx.variant {
-                            ContextVariant::Activated | ContextVariant::GlobalProxy => {}
+                            ContextVariant::SelfUser | ContextVariant::GlobalProxy => {}
                             ContextVariant::Resource((_, perm))
                             | ContextVariant::User((_, perm)) => {
                                 if perm > DbPermissionLevel::READ {

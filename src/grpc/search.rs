@@ -42,20 +42,12 @@ impl SearchService for SearchServiceImpl {
         log_received!(&request);
 
         // Consumer gRPC request into its parts
-        let (request_metadata, _, inner_request) = request.into_parts();
+        let (_, _, inner_request) = request.into_parts();
 
-        // Extract token and check permissions with empty context
-        let token = tonic_auth!(
-            get_token_from_md(&request_metadata),
-            "Token extraction failed"
-        );
-
-        tonic_auth!(
-            self.authorizer
-                .check_permissions(&token, vec![Context::default()])
-                .await,
-            "Permission denied"
-        );
+        // NO AUTHORIZATION:
+        // Search results are always redacted for PRIVATE
+        // and this search function is a PUBLIC endpoint ON PURPOSE
+        // to make everything FINDABLE
 
         // Check if: 0 < limit <= 100
         if (inner_request.limit < 1) || (inner_request.limit > 100) {
@@ -142,7 +134,7 @@ impl SearchService for SearchServiceImpl {
                 .0
                 .permissions
                 .get(&resource_ulid)
-                .ok_or_else(|| Status::not_found("No permissions found"));
+                .ok_or_else(|| Status::not_found("Permissions not found"));
             match mapping_perm {
                 Ok(perm) => {
                     let permission = match *perm {
@@ -182,7 +174,11 @@ impl SearchService for SearchServiceImpl {
             match object_plus.object.data_class {
                 DataClass::PUBLIC => {}
                 DataClass::PRIVATE => {
-                    // TODO: Redacted object operations
+                    // SPECIFIC private operations OTHER THAN strip labels
+                    // Remove created by
+                    object_plus.object.created_by = DieselUlid::default();
+                    // Endpoint redaction
+                    object_plus.object.endpoints = Json(DashMap::default());
                 }
                 _ => return Err(Status::invalid_argument("Resource is not public")),
             }
@@ -316,7 +312,11 @@ impl SearchService for SearchServiceImpl {
                 match object_plus.object.data_class {
                     DataClass::PUBLIC => {}
                     DataClass::PRIVATE => {
-                        //TODO: Redacted object
+                        // SPECIFIC private operations OTHER THAN strip labels
+                        // Remove created by
+                        object_plus.object.created_by = DieselUlid::default();
+                        // Endpoint redaction
+                        object_plus.object.endpoints = Json(DashMap::default());
                     }
                     _ => return Err(Status::invalid_argument("Resource is not public")),
                 }

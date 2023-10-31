@@ -26,7 +26,7 @@ async fn grpc_create_project() {
     let project_service = init_project_service().await;
 
     // Create request with OIDC token in header
-    let project_name = rand_string(32);
+    let project_name = rand_string(32).to_lowercase();
 
     let create_request = CreateProjectRequest {
         name: project_name.to_string(),
@@ -35,8 +35,8 @@ async fn grpc_create_project() {
         relations: vec![],
         data_class: DataClass::Public as i32,
         preferred_endpoint: "".to_string(),
-        default_data_license_tag: "all_rights_reserved".to_string(),
-        metadata_license_tag: "all_rights_reserved".to_string(),
+        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: "All_Rights_Reserved".to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);

@@ -4,6 +4,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
 };
+use crate::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -257,12 +258,25 @@ impl DatabaseHandler {
         let old = owr.object.clone();
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+
+        // If license is updated from all rights reserved to anything no new revision is triggered
+        let license_triggers_new_revision = match (
+            (old.data_license == ALL_RIGHTS_RESERVED),
+            (old.metadata_license == ALL_RIGHTS_RESERVED),
+        ) {
+            (true, true) => false,
+            (true, false) => !request.metadata_license_tag.is_empty(),
+            (false, true) => !request.data_license_tag.is_empty(),
+            (false, false) => {
+                !(request.data_license_tag.is_empty() && request.metadata_license_tag.is_empty())
+            }
+        };
         let (id, is_new, affected) = if request.force_revision
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
             || !request.metadata_license_tag.is_empty()
-            || !request.data_license_tag.is_empty()
+            || license_triggers_new_revision
         {
             let id = DieselUlid::generate();
             let (metadata_license, data_license) =
@@ -492,6 +506,8 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
+        authorizer: Arc<PermissionHandler>,
+        user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
         let client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
@@ -504,7 +520,21 @@ impl DatabaseHandler {
         Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
             .await?;
 
-        // TODO: Database request finish_object_staging() should return ObjectWithRelations
-        Object::get_object_with_relations(&id, &client).await
+        let object = Object::get_object_with_relations(&id, &client).await?;
+        // TODO: Add new HookTrigger for finishing objects
+        let db_handler = DatabaseHandler {
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+        };
+        tokio::spawn(async move {
+            let call = db_handler
+                .trigger_on_creation(authorizer, user_id, id)
+                .await;
+            if call.is_err() {
+                log::error!("{:?}", call);
+            }
+        });
+        Ok(object)
     }
 }

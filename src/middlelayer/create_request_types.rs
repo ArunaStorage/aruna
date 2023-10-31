@@ -3,7 +3,7 @@ use crate::caching::cache::Cache;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::license_dsl::License;
+use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
 use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use crate::utils::conversions::ContextContainer;
@@ -11,7 +11,6 @@ use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::Hash;
-use aruna_rust_api::api::storage::models::v2::Relation;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
     services::v2::{
@@ -20,7 +19,9 @@ use aruna_rust_api::api::storage::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use lazy_static::lazy_static;
 use postgres_types::Json;
+use regex::Regex;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio_postgres::Client;
@@ -37,6 +38,15 @@ pub enum Parent {
     Project(String),
     Collection(String),
     Dataset(String),
+}
+
+lazy_static! {
+    pub static ref PROJECT_SCHEMA: Regex =
+        Regex::new(r"^[a-z0-9\-]+$").expect("Regex must be valid");
+    pub static ref S3_KEY_SCHEMA: Regex =
+        Regex::new(r"^[a-zA-Z0-9\-\!\_\.\*\_\'\(\)]+$").expect("Regex must be valid");
+    pub static ref OBJECT_SCHEMA: Regex =
+        Regex::new(r"^[a-zA-Z0-9\-\!\_\.\*\_\'\(\)\/]+$").expect("Regex must be valid");
 }
 
 impl Parent {
@@ -66,12 +76,40 @@ impl Parent {
 }
 
 impl CreateRequest {
-    pub fn get_name(&self) -> String {
+    pub fn get_name(&self) -> Result<String> {
         match self {
-            CreateRequest::Project(request, _) => request.name.to_string(),
-            CreateRequest::Collection(request) => request.name.to_string(),
-            CreateRequest::Dataset(request) => request.name.to_string(),
-            CreateRequest::Object(request) => request.name.to_string(),
+            CreateRequest::Project(request, _) => {
+                let name = request.name.to_string();
+                if !PROJECT_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid project name"))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Collection(request) => {
+                let name = request.name.to_string();
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid collection name"))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Dataset(request) => {
+                let name = request.name.to_string();
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid dataset name"))
+                } else {
+                    Ok(name)
+                }
+            }
+            CreateRequest::Object(request) => {
+                let name = request.name.to_string();
+                if !OBJECT_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid object name"))
+                } else {
+                    Ok(name)
+                }
+            }
         }
     }
 
@@ -116,7 +154,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Collection(req) => req
                 .relations
@@ -125,7 +163,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Dataset(req) => req
                 .relations
@@ -134,7 +172,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Object(req) => req
                 .relations
@@ -143,7 +181,7 @@ impl CreateRequest {
                     Some(RelationEnum::Internal(internal)) => Some(internal),
                     _ => None,
                 })
-                .map(|ir| InternalRelation::from_api(&ir, id, cache.clone()))
+                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
         }
     }
@@ -290,11 +328,12 @@ impl CreateRequest {
             None => Hashes(Vec::new()),
         };
         let (metadata_license, data_license) = self.get_licenses(client).await?;
+        let name = self.get_name()?;
 
         Ok(Object {
             id,
             revision_number: 0,
-            name: self.get_name(),
+            name,
             description: self.get_description(),
             created_at: None,
             content_len: 0,
@@ -318,14 +357,22 @@ impl CreateRequest {
         match &self {
             // Projects must specify licenses
             CreateRequest::Project(req, _) => {
-                let data_tag = &req.default_data_license_tag;
-                let meta_tag = &req.metadata_license_tag;
+                let data_tag = if req.default_data_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED.to_string()
+                } else {
+                    req.default_data_license_tag.clone()
+                };
+                let meta_tag = if req.metadata_license_tag.is_empty() {
+                    ALL_RIGHTS_RESERVED.to_string()
+                } else {
+                    req.metadata_license_tag.clone()
+                };
                 if License::get(data_tag.clone(), client).await?.is_some()
                     && License::get(meta_tag.clone(), client).await?.is_some()
                 {
                     Ok((meta_tag.to_string(), data_tag.to_string()))
                 } else {
-                    Err(anyhow!("No license provided or invalid"))
+                    Err(anyhow!("Invalid license: License not found"))
                 }
             }
             CreateRequest::Collection(req) => {

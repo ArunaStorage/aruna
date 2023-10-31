@@ -12,7 +12,7 @@ pub struct License {
     pub url: String,
 }
 
-pub const ALL_RIGHTS_RESERVED: &str = "all_rights_reserved";
+pub const ALL_RIGHTS_RESERVED: &str = "All_Rights_Reserved";
 
 #[async_trait]
 impl CrudDb for License {
