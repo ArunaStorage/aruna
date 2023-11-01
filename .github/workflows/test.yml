@@ -16,7 +16,7 @@ jobs:
         with:
           submodules: recursive
       - name: Setup
-        run: docker compose up
+        run: docker compose -f compose.yaml up -d
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
