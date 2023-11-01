@@ -13,9 +13,17 @@ services:
       MEILI_MASTER_KEY: "MASTER_KEY"
   yugabyte:
     image: yugabytedb/yugabyte:2.19.2.0-b121
+    hostname: yugabyte
     ports:
       - 5433:5433
     command: 'bin/yugabyted start --tserver_flags="enable_wait_queues=true,enable_deadlock_detection=true,yb_enable_read_committed_isolation=true" --daemon=false'
+    healthcheck:
+      test: ["CMD-SHELL", 'ysqlsh -h yugabyte -p 5433 --command="\l"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+      start_interval: 5s
   keycloak:
     image: quay.io/keycloak/keycloak:21.0.2
     ports:
@@ -29,13 +37,14 @@ services:
   load_database:
     network_mode: "host"
     depends_on:
-      - yugabyte
+      yugabyte:
+        condition: service_healthy
     image: postgres:alpine3.18
     volumes:
       - ./tests/common/initial_data.sql:/data/initial_data.sql
       - ./src/database/schema.sql:/data/schema.sql
     command: >
-      sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE test' &&
+      sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS test' &&
              psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
              psql 'postgres://yugabyte@localhost:5433/test' < /data/schema.sql &&
              psql 'postgres://yugabyte@localhost:5433/test' < /data/initial_data.sql"
