@@ -10,7 +10,7 @@ VALUES
 (
     '018A0298-0FF4-995A-C4DC-B6685154E7AB', --01H819G3ZMK5DC9Q5PD18N9SXB
     'test-admin',
-    'df5b0209-60e0-4a3b-806d-bbfc99d9e152',
+    '14f0e7bf-0947-4aa1-a8cd-337ddeff4573',
     '{"global_admin": true, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
     true
 );
@@ -20,7 +20,7 @@ VALUES
 (
     '018A27CF-78B4-D2A2-1F7E-16F6F27B5F8D', --01H8KWYY5MTAH1YZGPYVS7PQWD
     'test-user',
-    '39893781-320e-4dbf-be39-c06d8b28e897', -- regular-user 1SH4VR2CGE9PZVWEE0DP5JHT4Q
+    '8dbee009-a3e8-4664-8856-14173d9abd5b', -- regular 1SH4VR2CGE9PZVWEE0DP5JHT4Q
     '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
     true
 );
@@ -30,7 +30,7 @@ VALUES
 (
     '018AE07D-5F28-8EB6-3A0A-D37CE945E645', --01HBG7TQS8HTV3M2PKFKMMBSJ5
     'another-test-user',
-    'c675b9fe-7275-46c6-af5a-2641114b5375', -- user3
+    '21e87c60-b05c-40b1-ac5c-982b52ab2865', -- regular2
     '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}}',
     true
 );
