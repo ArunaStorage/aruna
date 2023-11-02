@@ -12,7 +12,8 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -86,7 +87,7 @@ impl CollectionService for CollectionServiceImpl {
         self.cache.add_object(collection.clone());
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(collection.object.clone())],
         )
@@ -208,7 +209,7 @@ impl CollectionService for CollectionServiceImpl {
         }
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, search_update).await;
 
         let response = DeleteCollectionResponse {};
 
@@ -243,7 +244,7 @@ impl CollectionService for CollectionServiceImpl {
             .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(collection.object.clone())],
         )
@@ -286,7 +287,7 @@ impl CollectionService for CollectionServiceImpl {
             .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(collection.object.clone())],
         )
@@ -331,7 +332,7 @@ impl CollectionService for CollectionServiceImpl {
             .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(collection.object.clone())],
         )
@@ -374,7 +375,7 @@ impl CollectionService for CollectionServiceImpl {
             .upsert_object(&collection.object.id, collection.clone());
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(collection.object.clone())],
         )
@@ -421,7 +422,7 @@ impl CollectionService for CollectionServiceImpl {
         }
 
         // Add or update collection in search index
-        grpc_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, search_update).await;
 
         let collection: generic_resource::Resource = tonic_internal!(
             self.cache

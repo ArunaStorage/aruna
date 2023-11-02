@@ -10,10 +10,11 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::delete_request_types::DeleteRequest;
+use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Project};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -80,7 +81,7 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update project in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(project.object.clone())],
         )
@@ -200,7 +201,7 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update project in search index
-        grpc_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, search_update).await;
 
         return_with_log!(DeleteProjectResponse {});
     }
@@ -233,7 +234,7 @@ impl ProjectService for ProjectServiceImpl {
             .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(project.object.clone())],
         )
@@ -275,7 +276,7 @@ impl ProjectService for ProjectServiceImpl {
             .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(project.object.clone())],
         )
@@ -320,7 +321,7 @@ impl ProjectService for ProjectServiceImpl {
             .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(project.object.clone())],
         )
@@ -364,7 +365,7 @@ impl ProjectService for ProjectServiceImpl {
             .upsert_object(&project.object.id, project.clone());
 
         // Add or update project in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(project.object.clone())],
         )
@@ -412,7 +413,7 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update resources in search index
-        grpc_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, search_update).await;
 
         let project: generic_resource::Resource = tonic_internal!(
             self.cache
