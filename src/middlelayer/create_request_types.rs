@@ -9,7 +9,7 @@ use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use crate::utils::conversions::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::relation::{Relation as RelationEnum};
+use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::{Hash, InternalRelationVariant, Relation};
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
@@ -140,8 +140,6 @@ impl CreateRequest {
         };
         Ok(container.0)
     }
-
-
 
     pub fn get_other_relations(
         &self,
@@ -388,8 +386,16 @@ impl CreateRequest {
                     .get_parent()
                     .ok_or_else(|| anyhow!("No parent specified"))?
                     .get_id()?;
-                let data_tag = req.data_license_tag.clone();
-                let meta_tag = req.metadata_license_tag.clone();
+                let data_tag = if req.data_license_tag.is_empty() {
+                    None
+                } else {
+                    Some(req.data_license_tag.clone())
+                };
+                let meta_tag = if req.metadata_license_tag.is_empty() {
+                    None
+                } else {
+                    Some(req.metadata_license_tag.clone())
+                };
                 CreateRequest::check_license(data_tag, meta_tag, parent, client).await
             }
         }
@@ -398,20 +404,20 @@ impl CreateRequest {
     // Checks if licenses are specified
     // and if not tries to retrieve parent licenses
     async fn check_license(
-        data: String,
-        meta: String,
+        data: Option<String>,
+        meta: Option<String>,
         parent: DieselUlid,
         client: &Client,
     ) -> Result<(String, String)> {
-        match (meta.is_empty(), data.is_empty()) {
+        match (meta, data) {
             // both not specified -> get parent licenses
-            (true, true) => {
+            (None, None) => {
                 let parent = Object::get(parent, client)
                     .await?
                     .ok_or_else(|| anyhow!("Parent not found"))?;
                 Ok((parent.metadata_license, parent.data_license))
             }
-            (true, false) => {
+            (None, Some(data)) => {
                 let parent = Object::get(parent, client)
                     .await?
                     .ok_or_else(|| anyhow!("Parent not found"))?;
@@ -421,7 +427,7 @@ impl CreateRequest {
                     Err(anyhow!("License invalid"))
                 }
             }
-            (false, true) => {
+            (Some(meta), None) => {
                 let parent = Object::get(parent, client)
                     .await?
                     .ok_or_else(|| anyhow!("Parent not found"))?;
@@ -431,7 +437,7 @@ impl CreateRequest {
                     Err(anyhow!("License invalid"))
                 }
             }
-            (false, false) => {
+            (Some(meta), Some(data)) => {
                 if License::get(data.clone(), client).await?.is_some()
                     && License::get(meta.clone(), client).await?.is_some()
                 {
@@ -444,17 +450,15 @@ impl CreateRequest {
     }
 }
 
-fn filter_relations(relation: &Relation) -> Option<&aruna_rust_api::api::storage::models::v2::InternalRelation> {
+fn filter_relations(
+    relation: &Relation,
+) -> Option<&aruna_rust_api::api::storage::models::v2::InternalRelation> {
     match &relation.relation {
-        Some(RelationEnum::Internal(internal)) => {
-            match internal.defined_variant() {
-                InternalRelationVariant::Metadata |
-                InternalRelationVariant::Policy |
-                InternalRelationVariant::Custom => {
-                    Some(internal)
-                }
-                _ => None
-            }
+        Some(RelationEnum::Internal(internal)) => match internal.defined_variant() {
+            InternalRelationVariant::Metadata
+            | InternalRelationVariant::Policy
+            | InternalRelationVariant::Custom => Some(internal),
+            _ => None,
         },
         _ => None,
     }

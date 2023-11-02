@@ -1,6 +1,6 @@
 use crate::common::{init, test_utils};
 use aruna_server::database::dsls::hook_dsl::{
-    Hook, HookVariant, HookWithAssociatedProject, TriggerType,
+    Hook, HookVariant, HookWithAssociatedProject,
 };
 use aruna_server::database::enums::ObjectType;
 use aruna_server::database::{crud::CrudDb, enums::ObjectMapping};

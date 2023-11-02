@@ -4,8 +4,8 @@ use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as ApiUser;
 use aruna_rust_api::api::{
     notification::services::v2::{
-        anouncement_event::EventVariant as AnnEventVariant, event_message::MessageVariant,
-        AnouncementEvent, EventVariant, ResourceEvent, UserEvent,
+        announcement_event::EventVariant as AnnEventVariant, event_message::MessageVariant,
+        AnnouncementEvent, EventVariant, ResourceEvent, UserEvent,
     },
     storage::models::v2::generic_resource,
 };
@@ -268,7 +268,7 @@ async fn process_user_event(
 }
 
 async fn process_announcement_event(
-    announcement_event: AnouncementEvent,
+    announcement_event: AnnouncementEvent,
     cache: Arc<Cache>,
     database: Arc<Database>,
 ) -> anyhow::Result<()> {

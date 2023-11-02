@@ -640,7 +640,7 @@ fn extract_context_event_type_from_target(
 
             (context, event_type)
         }
-        Target::Anouncements(_) => (Context::default(), EventType::Announcement(None)),
+        Target::Announcements(_) => (Context::default(), EventType::Announcement(None)),
         Target::All(_) => (Context::proxy(), EventType::All),
     })
 }

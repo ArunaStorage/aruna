@@ -151,7 +151,7 @@ pub fn object_from_mapping(
 }
 
 #[allow(dead_code)]
-pub fn add_token<T>(mut req: tonic::Request<T>, token: &str) -> tonic::Request<T> {
+pub fn add_token<T>(mut req: Request<T>, token: &str) -> Request<T> {
     let metadata = req.metadata_mut();
     metadata.append(
         AsciiMetadataKey::from_bytes(b"Authorization").unwrap(),

@@ -1,5 +1,5 @@
 use aruna_rust_api::api::notification::services::v2::{
-    anouncement_event::EventVariant as AnnouncementVariant, event_message::MessageVariant, Reply,
+    announcement_event::EventVariant as AnnouncementVariant, event_message::MessageVariant, Reply,
 };
 use async_nats::jetstream::consumer::{Config, DeliverPolicy};
 use async_nats::jetstream::Message;

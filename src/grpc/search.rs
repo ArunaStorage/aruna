@@ -343,14 +343,14 @@ impl SearchService for SearchServiceImpl {
         let resources = objects
             .into_iter()
             .map(|(object, permission)| {
-                Ok::<ResourceWithPermission, tonic::Status>(ResourceWithPermission {
+                Ok::<ResourceWithPermission, Status>(ResourceWithPermission {
                     resource: Some(GenericResource {
                         resource: Some(tonic_invalid!(object.try_into(), "Invalid object")),
                     }),
                     permission: tonic_invalid!(permission.try_into(), "Invalid permission"),
                 })
             })
-            .collect::<Result<Vec<ResourceWithPermission>, tonic::Status>>()?;
+            .collect::<Result<Vec<ResourceWithPermission>, Status>>()?;
 
         // Create response and return with log
         let response = GetResourcesResponse { resources };

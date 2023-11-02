@@ -1,6 +1,7 @@
 use super::update_request_types::{LicenseUpdate, UpdateObject};
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
 };
@@ -18,7 +19,6 @@ use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::database::dsls::hook_dsl::TriggerVariant;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -164,18 +164,18 @@ impl DatabaseHandler {
                 match kv.variant {
                     KeyValueVariant::HOOK => {
                         trigger.push(TriggerVariant::HOOK_ADDED);
-                    },
+                    }
                     KeyValueVariant::HOOK_STATUS => {
                         return Err(anyhow!(
-                        "Can't create hook status outside of hook callbacks"
+                            "Can't create hook status outside of hook callbacks"
                         ));
-                    },
+                    }
                     KeyValueVariant::LABEL => {
                         trigger.push(TriggerVariant::LABEL_ADDED);
-                    },
+                    }
                     KeyValueVariant::STATIC_LABEL => {
                         trigger.push(TriggerVariant::STATIC_LABEL_ADDED);
-                    },
+                    }
                 }
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
@@ -202,10 +202,10 @@ impl DatabaseHandler {
         // Trigger hook
         let object_plus = Object::get_object_with_relations(&id, &client).await?;
         let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+        };
         let object_clone = object_plus.clone();
         tokio::spawn(async move {
             let response = db_handler
@@ -275,17 +275,19 @@ impl DatabaseHandler {
             (old.metadata_license == ALL_RIGHTS_RESERVED),
         ) {
             (true, true) => false,
-            (true, false) => !request.metadata_license_tag.is_empty(),
-            (false, true) => !request.data_license_tag.is_empty(),
-            (false, false) => {
-                !(request.data_license_tag.is_empty() && request.metadata_license_tag.is_empty())
-            }
+            (true, false) => request.metadata_license_tag.is_some(),
+            (false, true) => request.data_license_tag.is_some(),
+            (false, false) => match (request.data_license_tag, request.metadata_license_tag) {
+                // If nothing is updated, no new revision is triggered
+                (None, None) => false,
+                // If one or both are updated, new revision is triggered
+                (_, _) => true,
+            },
         };
         let (id, is_new, affected) = if request.force_revision
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
-            || !request.metadata_license_tag.is_empty()
             || license_triggers_new_revision
         {
             let id = DieselUlid::generate();
@@ -437,7 +439,13 @@ impl DatabaseHandler {
             // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
                 let call = db_handler
-                    .trigger_hooks(authorizer, object,user_id, vec![TriggerVariant::LABEL_ADDED], Some(kvs))
+                    .trigger_hooks(
+                        authorizer,
+                        object,
+                        user_id,
+                        vec![TriggerVariant::LABEL_ADDED],
+                        Some(kvs),
+                    )
                     .await;
                 if call.is_err() {
                     log::error!("{:?}", call);
@@ -457,7 +465,16 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let call_on_create = db_handler
-                    .trigger_hooks(authorizer, object ,user_id, vec![TriggerVariant::LABEL_ADDED,TriggerVariant::RESOURCE_CREATED], Some(kvs))
+                    .trigger_hooks(
+                        authorizer,
+                        object,
+                        user_id,
+                        vec![
+                            TriggerVariant::LABEL_ADDED,
+                            TriggerVariant::RESOURCE_CREATED,
+                        ],
+                        Some(kvs),
+                    )
                     .await;
                 if call_on_create.is_err() {
                     log::error!("{:?}", call_on_create);
@@ -471,10 +488,16 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let on_append = db_handler
-                    .trigger_hooks(authorizer, object, user_id, vec![TriggerVariant::RESOURCE_CREATED], None)
+                    .trigger_hooks(
+                        authorizer,
+                        object,
+                        user_id,
+                        vec![TriggerVariant::RESOURCE_CREATED],
+                        None,
+                    )
                     .await;
                 if on_append.is_err() {
-                   log::error!("{:?}", on_append);
+                    log::error!("{:?}", on_append);
                 }
             });
         };
@@ -527,7 +550,13 @@ impl DatabaseHandler {
         let owr = object.clone();
         tokio::spawn(async move {
             let call = db_handler
-                .trigger_hooks(authorizer, owr, user_id, vec![TriggerVariant::OBJECT_FINISHED], None)
+                .trigger_hooks(
+                    authorizer,
+                    owr,
+                    user_id,
+                    vec![TriggerVariant::OBJECT_FINISHED],
+                    None,
+                )
                 .await;
             if call.is_err() {
                 log::error!("{:?}", call);

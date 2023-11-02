@@ -253,7 +253,7 @@ async fn resource_notification_test() {
     println!("Notification emit: {:.2?}", elapsed);
 
     // Give Nats time to process the published messages as Github Actions machines are slow...
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Evaluate number of messages received
     let proj_001_messages = nats_handler

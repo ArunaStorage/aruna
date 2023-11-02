@@ -809,7 +809,7 @@ pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<Objec
 }
 
 impl ObjectWithRelations {
-    pub fn into_object_mapping<T>(&self, mapping: T) -> ObjectMapping<T> {
+    pub fn as_object_mapping<T>(&self, mapping: T) -> ObjectMapping<T> {
         match self.object.object_type {
             ObjectType::PROJECT => ObjectMapping::PROJECT(mapping),
             ObjectType::COLLECTION => ObjectMapping::COLLECTION(mapping),
@@ -937,7 +937,7 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
         children_map
             .entry(edge.origin_pid)
             .or_default()
-            .insert(edge.into_target_object_mapping());
+            .insert(edge.as_target_object_mapping());
 
         if edge.origin_type == ObjectType::PROJECT {
             projects.insert(edge.origin_pid);

@@ -5,7 +5,7 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetBy, GetEP};
 
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::notification::services::v2::anouncement_event::EventVariant as AnnouncementVariant;
+use aruna_rust_api::api::notification::services::v2::announcement_event::EventVariant as AnnouncementVariant;
 use tokio_postgres::GenericClient;
 
 impl DatabaseHandler {

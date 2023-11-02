@@ -60,12 +60,12 @@ impl ObjectService for ObjectServiceImpl {
         let is_service_account = self
             .cache
             .get_user(&user_id)
-            .ok_or_else(|| tonic::Status::not_found("User not found"))?
+            .ok_or_else(|| Status::not_found("User not found"))?
             .attributes
             .0
             .service_account;
         if is_service_account && (request.get_data_class() != 4) {
-            return Err(tonic::Status::invalid_argument(
+            return Err(Status::invalid_argument(
                 "Workspaces have to be claimed for dataclass changes",
             ));
         }

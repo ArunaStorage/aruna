@@ -20,7 +20,7 @@ impl DatabaseHandler {
         relations_remove: RelationsToRemove,
     ) -> Result<ObjectWithRelations> {
         // Collect all affected ids before transaction
-        let mut affected_objects: HashSet<diesel_ulid::DieselUlid> = HashSet::default();
+        let mut affected_objects: HashSet<DieselUlid> = HashSet::default();
         affected_objects.insert(resource.id);
         relations_add.internal.iter().for_each(|internal| {
             affected_objects.insert(internal.id);

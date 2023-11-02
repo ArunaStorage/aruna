@@ -269,7 +269,7 @@ impl UpdateObject {
                 Err(anyhow!("Workspaces need to be claimed for status updates"))
             } else {
                 Ok(DataClass::WORKSPACE)
-            }
+            };
         } else if new == 0 {
             return Ok(old.data_class);
         } else if old_converted < new {
@@ -390,24 +390,24 @@ impl UpdateObject {
         relations
     }
     pub async fn get_license(&self, old: &Object, client: &Client) -> Result<(String, String)> {
-        let metadata_license = if self.0.metadata_license_tag.is_empty() {
-            old.metadata_license.clone()
-        } else {
-            let meta = self.0.metadata_license_tag.clone();
-            if UpdateObject::check_license(&meta, client).await? {
-                meta
-            } else {
-                return Err(anyhow!("License does not exist"));
+        let metadata_license = match self.0.metadata_license_tag.clone() {
+            None => old.metadata_license.clone(),
+            Some(meta) => {
+                if UpdateObject::check_license(&meta, client).await? {
+                    meta
+                } else {
+                    return Err(anyhow!("License does not exist"));
+                }
             }
         };
-        let data_license = if self.0.data_license_tag.is_empty() {
-            old.data_license.clone()
-        } else {
-            let data = self.0.data_license_tag.clone();
-            if UpdateObject::check_license(&data, client).await? {
-                data
-            } else {
-                return Err(anyhow!("License does not exist"));
+        let data_license = match self.0.data_license_tag.clone() {
+            None => old.data_license.clone(),
+            Some(data) => {
+                if UpdateObject::check_license(&data, client).await? {
+                    data
+                } else {
+                    return Err(anyhow!("License does not exist"));
+                }
             }
         };
         Ok((metadata_license, data_license))
