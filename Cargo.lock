@@ -106,7 +106,7 @@ dependencies = [
  "hmac",
  "http",
  "itertools",
- "jsonwebtoken 9.1.0",
+ "jsonwebtoken",
  "lazy_static",
  "lettre",
  "log",
@@ -1792,22 +1792,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6971da4d9c3aa03c3d8f3ff0f4155b534aad021292003895a469716b2a230378"
 dependencies = [
  "base64 0.21.5",
- "pem 1.1.1",
+ "pem",
  "ring 0.16.20",
- "serde",
- "serde_json",
- "simple_asn1",
-]
-
-[[package]]
-name = "jsonwebtoken"
-version = "9.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "155c4d7e39ad04c172c5e3a99c434ea3b4a7ba7960b38ecd562b270b097cce09"
-dependencies = [
- "base64 0.21.5",
- "pem 3.0.2",
- "ring 0.17.5",
  "serde",
  "serde_json",
  "simple_asn1",
@@ -1950,7 +1936,7 @@ dependencies = [
  "isahc",
  "iso8601",
  "js-sys",
- "jsonwebtoken 8.3.0",
+ "jsonwebtoken",
  "log",
  "meilisearch-index-setting-macro",
  "serde",
@@ -2256,16 +2242,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8835c273a76a90455d7344889b0964598e3316e2a79ede8e36f16bdcf2228b8"
 dependencies = [
  "base64 0.13.1",
-]
-
-[[package]]
-name = "pem"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3163d2912b7c3b52d651a055f2c7eec9ba5cd22d26ef75b8dd3a59980b185923"
-dependencies = [
- "base64 0.21.5",
- "serde",
 ]
 
 [[package]]
@@ -2756,7 +2732,7 @@ dependencies = [
  "hmac",
  "home",
  "http",
- "jsonwebtoken 8.3.0",
+ "jsonwebtoken",
  "log",
  "once_cell",
  "percent-encoding",

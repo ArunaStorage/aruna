@@ -189,7 +189,7 @@ impl DatabaseHandler {
         object: ObjectWithRelations,
         user_id: DieselUlid,
         triggers: Vec<TriggerVariant>,
-        updated_labels: Option<Vec<KeyValue>>
+        updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
         dbg!("Trigger hooks started");
         let client = self.database.get_client().await?;
@@ -200,55 +200,55 @@ impl DatabaseHandler {
         } else {
             &object.object.key_values.0 .0
         };
-        let hooks: Vec<HookWithAssociatedProject> =
-            Hook::get_hooks_for_projects(&projects, &client)
-                .await?
-                .into_iter()
-                .filter_map(|h| {
-                    if triggers.contains(&h.trigger.0.variant) {
-                        let mut is_match = false;
-                        for filter in h.trigger.0.filter.clone() {
-                            match filter {
-                                Filter::Name(name) => {
-                                    let regex = Regex::new(&name).unwrap();
-                                    if regex.is_match(&object.object.name) {
+
+        // Get hooks that are associated with triggered-object parent-projects
+        let hooks: Vec<HookWithAssociatedProject> = {
+            let mut hooks = Vec::new();
+            // Filter through hooks
+            for h in Hook::get_hooks_for_projects(&projects, &client).await? {
+                // Only get hooks that are triggered
+                if triggers.contains(&h.trigger.0.variant) {
+                    let mut is_match = false;
+                    // Only get hooks that are matched by filter
+                    for filter in h.trigger.0.filter.clone() {
+                        match filter {
+                            Filter::Name(name) => {
+                                let regex = Regex::new(&name)?;
+                                if regex.is_match(&object.object.name) {
+                                    is_match = true;
+                                    break;
+                                } else {
+                                    continue;
+                                }
+                            }
+                            Filter::KeyValue(KeyValue {
+                                key,
+                                value,
+                                variant,
+                            }) => {
+                                let key_regex = Regex::new(&key)?;
+                                let value_regex = Regex::new(&value)?;
+                                for label in labels {
+                                    if (label.variant == variant)
+                                        && (key_regex.is_match(&label.key))
+                                        && (value_regex.is_match(&label.value))
+                                    {
                                         is_match = true;
                                         break;
                                     } else {
                                         continue;
                                     }
                                 }
-                                Filter::KeyValue(KeyValue {
-                                    key,
-                                    value,
-                                    variant,
-                                }) => {
-                                    let key_regex = Regex::new(&key).unwrap();
-                                    let value_regex = Regex::new(&value).unwrap();
-                                    for label in labels {
-                                        if (label.variant == variant)
-                                            && (key_regex.is_match(&label.key))
-                                            && (value_regex.is_match(&label.value))
-                                        {
-                                            is_match = true;
-                                            break;
-                                        } else {
-                                            continue;
-                                        }
-                                    }
-                                }
                             }
                         }
-                        if is_match {
-                            Some(h)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
                     }
-                })
-                .collect();
+                    if is_match {
+                        hooks.push(h)
+                    }
+                }
+            }
+            hooks
+        };
         if hooks.is_empty() {
             Ok(())
         } else {

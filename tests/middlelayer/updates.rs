@@ -460,8 +460,8 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: false,
-        data_license_tag: "".to_string(),
-        metadata_license_tag: "".to_string(),
+        data_license_tag: None,
+        metadata_license_tag: None,
     };
 
     let (updated, is_new) = db_handler
@@ -495,8 +495,8 @@ async fn update_object_test() {
         }],
         parent: None,
         force_revision: false,
-        data_license_tag: "".to_string(),
-        metadata_license_tag: "".to_string(),
+        data_license_tag: None,
+        metadata_license_tag: None,
     };
     let (new, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
@@ -521,8 +521,8 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: "".to_string(),
-        data_license_tag: "".to_string(),
+        metadata_license_tag: None,
+        data_license_tag: None,
     };
     let (new_2, is_new_2) = db_handler
         .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
@@ -543,8 +543,8 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
+        data_license_tag: Some("All_Rights_Reserved".to_string()),
     };
     let (license_updated, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)
@@ -553,10 +553,10 @@ async fn update_object_test() {
     assert!(is_new);
     assert_eq!(
         license_update.metadata_license_tag,
-        license_updated.object.metadata_license
+        Some(license_updated.object.metadata_license)
     );
     assert_eq!(
         license_update.data_license_tag,
-        license_updated.object.data_license
+        Some(license_updated.object.data_license)
     )
 }

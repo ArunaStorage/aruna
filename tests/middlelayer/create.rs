@@ -134,8 +134,8 @@ async fn create_collection() {
         relations: vec![],
         data_class: 1,
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
+        default_data_license_tag: Some("All_Rights_Reserved".to_string()),
     });
     let (coll, _) = db_handler
         .create_resource(authorizer.clone(), request, user.id, false)
@@ -212,8 +212,8 @@ async fn create_dataset() {
         relations: vec![],
         data_class: 1,
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
+        default_data_license_tag: Some("All_Rights_Reserved".to_string()),
     });
     let (ds, _) = db_handler
         .create_resource(authorizer.clone(), request, user.id, false)

@@ -45,8 +45,8 @@ async fn grpc_create_dataset() {
         relations: vec![],
         data_class: DataClass::Private as i32,
         parent: Some(Parent::ProjectId(project.id.to_string())),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
+        default_data_license_tag: Some("All_Rights_Reserved".to_string()),
+        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
     };
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
