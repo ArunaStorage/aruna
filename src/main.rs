@@ -33,6 +33,7 @@ use aruna_server::{
     notification::natsio_handler::NatsIoHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
     utils::mailclient::MailClient,
+    utils::search_utils,
 };
 use diesel_ulid::DieselUlid;
 use simple_logger::SimpleLogger;
@@ -102,6 +103,14 @@ pub async fn main() -> Result<()> {
         Some(&dotenvy::var("MEILISEARCH_API_KEY")?),
     )?;
     let meilisearch_arc = Arc::new(meilisearch_client);
+
+    let db_clone = db_arc.clone();
+    let search_clone = meilisearch_arc.clone();
+    tokio::spawn(async move {
+        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
+            log::warn!("Search index full sync failed: {}", err)
+        }
+    });
 
     // NotificationHandler
     let _ = NotificationHandler::new(

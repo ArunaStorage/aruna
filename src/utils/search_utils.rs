@@ -6,7 +6,7 @@ use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, O
 use itertools::Itertools;
 use std::sync::Arc;
 
-/// Updates the resource search index in a concurrent thread.
+/// Updates the resource search index in a background thread.
 pub async fn update_search_index(
     search_client: &Arc<MeilisearchClient>,
     index_updates: Vec<ObjectDocument>,
@@ -33,4 +33,31 @@ pub async fn update_search_index(
             log::warn!("Search index update failed: {}", err)
         }
     });
+}
+
+/// Fetches all Objects from the database and full syncs the search index in
+/// chunks of 100.000 elements.
+pub async fn full_sync_search_index(
+    database_conn: Arc<Database>,
+    search_client: Arc<MeilisearchClient>,
+) -> anyhow::Result<()> {
+    let client = database_conn.get_client().await?; // No transaction; only read
+    let filtered_objects: Vec<ObjectDocument> = Object::all(&client)
+        .await?
+        .into_iter()
+        .filter_map(|o| match o.data_class {
+            DataClass::PUBLIC | DataClass::PRIVATE => Some(o),
+            _ => None,
+        })
+        .map(|o| o.into())
+        .collect_vec();
+
+    // Update search index in chunks of 100.000 Objects
+    for chunk in filtered_objects.chunks(100000) {
+        search_client
+            .add_or_update_stuff::<ObjectDocument>(chunk, MeilisearchIndexes::OBJECT)
+            .await?;
+    }
+
+    Ok(())
 }
