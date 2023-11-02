@@ -127,15 +127,17 @@ pub async fn main() -> Result<()> {
     let default_endpoint = dotenvy::var("DEFAULT_DATAPROXY_ULID")?;
 
     // Init server builder
-    let mut builder = Server::builder().add_service(EndpointServiceServer::new(
-        EndpointServiceImpl::new(
-            db_handler_arc.clone(),
-            auth_arc.clone(),
-            cache_arc.clone(),
-            default_endpoint.to_string(),
-        )
-        .await,
-    ));
+    let mut builder = Server::builder()
+        .http2_keepalive_interval(Some(std::time::Duration::from_secs(15)))
+        .add_service(EndpointServiceServer::new(
+            EndpointServiceImpl::new(
+                db_handler_arc.clone(),
+                auth_arc.clone(),
+                cache_arc.clone(),
+                default_endpoint.to_string(),
+            )
+            .await,
+        ));
 
     // Check default endpoint -> Only endpoint service available
     let client = db_arc.get_client().await?;
