@@ -111,8 +111,8 @@ $$;
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
-    email VARCHAR(511) DEFAULT '',
-    external_id VARCHAR(511),
+    email VARCHAR(511) NOT NULL DEFAULT '',
+    external_id VARCHAR(511) UNIQUE,
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE
 );
