@@ -101,7 +101,7 @@ async fn create_and_delete_workspace() {
     let client = db_handler.database.get_client().await.unwrap();
     user.create(&client).await.unwrap();
 
-    // TODO: Create & mock endpoints
+    // Create & mock endpoints
     // -> Default endpoint
     let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
     let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
@@ -133,7 +133,7 @@ async fn create_and_delete_workspace() {
         description: "".to_string(),
         project_ids: vec![],
         owner: user.id,
-        trigger_type: aruna_server::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED,
+        trigger_type: aruna_server::database::dsls::hook_dsl::TriggerType::RESOURCE_CREATED,
         trigger_key: "some_key".to_string(),
         trigger_value: "some_value".to_string(),
         timeout: chrono::Utc::now()

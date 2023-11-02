@@ -37,9 +37,9 @@ impl PermissionHandler {
         let (main_id, token, personal, permissions, is_proxy, proxy_intent) =
             match self.token_handler.process_token(token).await {
                 Ok(results) => results,
-                Err(err) => match err.downcast_ref::<OIDCError>() {
-                    Some(_) => return Err(tonic::Status::unauthenticated("Not registered")),
-                    None => return Err(tonic::Status::unauthenticated("Unauthorized")),
+                Err(err) => return match err.downcast_ref::<OIDCError>() {
+                    Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
+                    None => Err(tonic::Status::unauthenticated("Unauthorized")),
                 },
             };
 

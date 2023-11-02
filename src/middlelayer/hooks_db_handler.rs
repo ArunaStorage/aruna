@@ -1,12 +1,12 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
-    HookWithAssociatedProject, TemplateVariant, TriggerType,
+    BasicTemplate, Credentials, ExternalHook, Filter, Hook, HookStatusValues, HookStatusVariant,
+    HookWithAssociatedProject, TemplateVariant, TriggerVariant,
 };
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
+use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
 use crate::database::dsls::user_dsl::APIToken;
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -20,6 +20,7 @@ use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
 use postgres_types::Json;
+use regex::Regex;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -167,18 +168,7 @@ impl DatabaseHandler {
 
         Ok(())
     }
-
-    pub async fn trigger_on_creation(
-        &self,
-        authorizer: Arc<PermissionHandler>,
-        object_id: DieselUlid,
-        user_id: DieselUlid,
-    ) -> Result<()> {
-        dbg!("Trigger creation triggered");
-        let client = self.database.get_client().await?;
-        dbg!(object_id);
-        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-        dbg!("THRESHOLD");
+    fn collect_projects(parents: Vec<Vec<ObjectMapping<DieselUlid>>>) -> Vec<DieselUlid> {
         let mut projects: Vec<DieselUlid> = Vec::new();
         for branch in parents {
             projects.append(
@@ -191,99 +181,173 @@ impl DatabaseHandler {
                     .collect(),
             );
         }
-        dbg!("Projects = {:?}", &projects);
+        projects
+    }
+    pub async fn trigger_hooks(
+        &self,
+        authorizer: Arc<PermissionHandler>,
+        object: ObjectWithRelations,
+        user_id: DieselUlid,
+        triggers: Vec<TriggerVariant>,
+        updated_labels: Option<Vec<KeyValue>>
+    ) -> Result<()> {
+        dbg!("Trigger hooks started");
+        let client = self.database.get_client().await?;
+        let parents = self.cache.upstream_dfs_iterative(&object.object.id)?;
+        let projects = DatabaseHandler::collect_projects(parents);
+        let labels = if let Some(labels) = &updated_labels {
+            labels
+        } else {
+            &object.object.key_values.0 .0
+        };
         let hooks: Vec<HookWithAssociatedProject> =
             Hook::get_hooks_for_projects(&projects, &client)
                 .await?
                 .into_iter()
-                .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
-                .collect();
-
-        if hooks.is_empty() {
-            Ok(())
-        } else {
-            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
-                .await?;
-            Ok(())
-        }
-    }
-
-    pub async fn trigger_on_append_hook(
-        &self,
-        authorizer: Arc<PermissionHandler>,
-        user_id: DieselUlid,
-        object_id: DieselUlid,
-        keyvals: Vec<KeyValue>,
-    ) -> Result<()> {
-        dbg!("ON_APPEND TRIGGERED");
-        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-        dbg!(&parents);
-        let mut projects: Vec<DieselUlid> = Vec::new();
-        for branch in parents {
-            projects.append(
-                &mut branch
-                    .iter()
-                    .filter_map(|parent| match parent {
-                        ObjectMapping::PROJECT(id) => Some(*id),
-                        _ => None,
-                    })
-                    .collect(),
-            );
-        }
-        dbg!("Projects = {:?}", &projects);
-        let keyvals: Vec<(String, String)> =
-            keyvals.into_iter().map(|k| (k.key, k.value)).collect();
-        dbg!("KEYVALS: {:?}", &keyvals);
-        let client = self.database.get_client().await?;
-        let hooks: Vec<HookWithAssociatedProject> =
-            Hook::get_hooks_for_projects(&projects, &client).await?;
-        dbg!("UNFILTERED: {:?}", &hooks);
-        let hooks: Vec<HookWithAssociatedProject> = hooks
-            .into_iter()
-            .filter_map(|h| {
-                if h.trigger_type == TriggerType::HOOK_ADDED {
-                    if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
-                        Some(h)
+                .filter_map(|h| {
+                    if triggers.contains(&h.trigger.0.variant) {
+                        let mut is_match = false;
+                        for filter in h.trigger.0.filter.clone() {
+                            match filter {
+                                Filter::Name(name) => {
+                                    let regex = Regex::new(&name).unwrap();
+                                    if regex.is_match(&object.object.name) {
+                                        is_match = true;
+                                        break;
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                                Filter::KeyValue(KeyValue {
+                                    key,
+                                    value,
+                                    variant,
+                                }) => {
+                                    let key_regex = Regex::new(&key).unwrap();
+                                    let value_regex = Regex::new(&value).unwrap();
+                                    for label in labels {
+                                        if (label.variant == variant)
+                                            && (key_regex.is_match(&label.key))
+                                            && (value_regex.is_match(&label.value))
+                                        {
+                                            is_match = true;
+                                            break;
+                                        } else {
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if is_match {
+                            Some(h)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })
-            .collect();
-        dbg!("FILTERED: {:?}", &hooks);
+                })
+                .collect();
         if hooks.is_empty() {
             Ok(())
         } else {
-            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
+            self.hook_action(authorizer.clone(), hooks, object, user_id)
                 .await?;
             Ok(())
         }
     }
+    //pub async fn trigger_on_creation(
+    //    &self,
+    //    authorizer: Arc<PermissionHandler>,
+    //    object_id: DieselUlid,
+    //    user_id: DieselUlid,
+    //) -> Result<()> {
+    //    dbg!("Trigger creation triggered");
+    //    let client = self.database.get_client().await?;
+    //    dbg!(object_id);
+    //    let parents = self.cache.upstream_dfs_iterative(&object_id)?;
+    //    let projects = DatabaseHandler::collect_projects(parents);
+    //    let hooks: Vec<HookWithAssociatedProject> =
+    //        Hook::get_hooks_for_projects(&projects, &client)
+    //            .await?
+    //            .into_iter()
+    //            .filter(|h| h.trigger.0.variant == TriggerVariant::RESOURCE_CREATED)
+    //            .collect();
+    //    if hooks.is_empty() {
+    //        Ok(())
+    //    } else {
+    //        self.hook_action(authorizer.clone(), hooks, object_id, user_id)
+    //            .await?;
+    //        Ok(())
+    //    }
+    //}
+
+    //pub async fn trigger_on_append_hook(
+    //    &self,
+    //    authorizer: Arc<PermissionHandler>,
+    //    user_id: DieselUlid,
+    //    object_id: DieselUlid,
+    //    keyvals: Vec<KeyValue>,
+    //) -> Result<()> {
+    //    dbg!("ON_APPEND TRIGGERED");
+    //    let parents = self.cache.upstream_dfs_iterative(&object_id)?;
+    //    dbg!(&parents);
+    //    let projects = DatabaseHandler::collect_projects(parents);
+    //    let keyvals: Vec<(String, String)> =
+    //        keyvals.into_iter().map(|k| (k.key, k.value)).collect();
+    //    dbg!("KEYVALS: {:?}", &keyvals);
+    //    let client = self.database.get_client().await?;
+    //    let hooks: Vec<HookWithAssociatedProject> =
+    //        Hook::get_hooks_for_projects(&projects, &client).await?;
+    //    dbg!("UNFILTERED: {:?}", &hooks);
+    //    let hooks: Vec<HookWithAssociatedProject> = hooks
+    //        .into_iter()
+    //        .filter_map(|h| {
+    //            if h.trigger.0.variant == TriggerVariant::HOOK_ADDED {
+    //                for filter in h.trigger.0.filter {
+    //                    //TODO: Regex matching
+    //                    match filter {
+    //                        Filter::Name(name) => {}
+    //                        Filter::KeyValue(kv) => {}
+    //                    }
+    //                }
+    //                if keyvals.contains(&(h.trigger.0.filter.clone(), h.trigger_value.clone())) {
+    //                    Some(h)
+    //                } else {
+    //                    None
+    //                }
+    //            } else {
+    //                None
+    //            }
+    //        })
+    //        .collect();
+    //    dbg!("FILTERED: {:?}", &hooks);
+    //    if hooks.is_empty() {
+    //        Ok(())
+    //    } else {
+    //        self.hook_action(authorizer.clone(), hooks, object_id, user_id)
+    //            .await?;
+    //        Ok(())
+    //    }
+    //}
 
     async fn hook_action(
         &self,
         authorizer: Arc<PermissionHandler>,
         hooks: Vec<HookWithAssociatedProject>,
-        object_id: DieselUlid,
+        object: ObjectWithRelations,
         user_id: DieselUlid,
     ) -> Result<()> {
         let mut client = self.database.get_client().await?;
         let mut affected_parents: Vec<DieselUlid> = Vec::new();
         for hook in hooks {
             dbg!("Hook: {:?}", &hook);
-            dbg!("ObjectID: {:?}", &object_id);
-            // Add HookStatus to object
-            let mut object = self
-                .cache
-                .get_object(&object_id)
-                .ok_or_else(|| anyhow!("Object not found"))?
-                .clone();
+            let mut object = object.clone();
             let status_value = HookStatusValues {
                 name: hook.name,
-                status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING,
-                trigger_type: hook.trigger_type,
+                status: HookStatusVariant::RUNNING,
+                trigger: hook.trigger.0.clone(),
             };
             let hook_status = KeyValue {
                 key: hook.id.to_string(),
@@ -292,8 +356,9 @@ impl DatabaseHandler {
             };
             dbg!("HookStatus: {:?}", &hook_status);
             object.object.key_values.0 .0.push(hook_status.clone());
-            Object::add_key_value(&object_id, &client, hook_status).await?;
-            self.cache.upsert_object(&object_id, object);
+            Object::add_key_value(&object.object.id, &client, hook_status).await?;
+            let object_id = object.object.id;
+            self.cache.upsert_object(&object.object.id, object.clone());
 
             let transaction = client.transaction().await?;
             let transaction_client = transaction.client();
@@ -430,7 +495,7 @@ impl DatabaseHandler {
             }
             transaction.commit().await?;
         }
-        let updated = Object::get_object_with_relations(&object_id, &client).await?;
+        let updated = Object::get_object_with_relations(&object.object.id, &client).await?;
         if !affected_parents.is_empty() {
             let mut affected =
                 Object::get_objects_with_relations(&affected_parents, &client).await?;

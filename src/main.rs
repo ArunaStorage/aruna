@@ -38,6 +38,7 @@ use diesel_ulid::DieselUlid;
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
+//noinspection RsTypeCheck
 #[tokio::main]
 pub async fn main() -> Result<()> {
     // Init logger

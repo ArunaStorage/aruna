@@ -1,6 +1,6 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::{Hook, Method};
+use crate::database::dsls::hook_dsl::{Filter, Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -1241,12 +1241,18 @@ impl From<&Method> for i32 {
 impl Hook {
     fn as_trigger(&self) -> Trigger {
         Trigger {
-            trigger_type: match self.trigger_type {
-                crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
-                crate::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED => 2,
+            trigger_type: match self.trigger.0.variant {
+                crate::database::dsls::hook_dsl::TriggerVariant::HOOK_ADDED => 1,
+                crate::database::dsls::hook_dsl::TriggerVariant::RESOURCE_CREATED => 2,
+                crate::database::dsls::hook_dsl::TriggerVariant::LABEL_ADDED => 3,
+                crate::database::dsls::hook_dsl::TriggerVariant::STATIC_LABEL_ADDED => 4,
+                crate::database::dsls::hook_dsl::TriggerVariant::HOOK_STATUS_CHANGED => 5,
+                crate::database::dsls::hook_dsl::TriggerVariant::OBJECT_FINISHED => 6,
             },
-            key: self.trigger_key.clone(),
-            value: self.trigger_value.clone(),
+            filter: self.trigger.0.filter.iter().map(|f| match f {
+                Filter::Name(name) => todo!(),
+                Filter::KeyValue(kv) => todo!(),
+            }),
         }
     }
     fn as_api_hook(&self) -> APIHook {

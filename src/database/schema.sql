@@ -7,7 +7,7 @@ BEGIN
             'INITIALIZING',
             'VALIDATING',
             'AVAILABLE',
-	    'UNAVAILABLE',
+	        'UNAVAILABLE',
             'ERROR',
             'DELETED'
         );
@@ -80,16 +80,22 @@ DO $$
     END
 $$;
 
+/*
 DO $$
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TriggerType') THEN
             CREATE TYPE "TriggerType" AS ENUM (
                 'HOOK_ADDED',
-                'OBJECT_CREATED'
+                'RESOURCE_CREATED',
+                'LABEL_ADDED',
+                'STATIC_LABEL_ADDED',
+                'HOOK_STATUS_CHANGED',
+                'OBJECT_FINISHED'
                 );
         END IF;
     END
 $$;
+*/
 
 DO $$
     BEGIN
@@ -222,9 +228,11 @@ CREATE TABLE IF NOT EXISTS hooks (
     description VARCHAR(1023) NOT NULL,
     project_ids UUID[],
     owner UUID REFERENCES users(id) ON DELETE CASCADE,
-    trigger_type "TriggerType" NOT NULL,
+    trigger JSONB NOT NULL,
+    /*
     trigger_key VARCHAR(511) NOT NULL,
     trigger_value VARCHAR(511) NOT NULL,
+     */
     timeout TIMESTAMP NOT NULL,
     hook JSONB NOT NULL
 );

@@ -18,6 +18,7 @@ use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
 use std::sync::Arc;
+use crate::database::dsls::hook_dsl::TriggerVariant;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -151,23 +152,30 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         let id = request.get_id()?;
         let (add_key_values, rm_key_values) = request.get_keyvals()?;
-        let mut hooks = Vec::new();
+        let mut trigger = Vec::new();
 
         if add_key_values.0.is_empty() && rm_key_values.0.is_empty() {
             return Err(anyhow!(
                 "Both add_key_values and remove_key_values are empty.",
             ));
         }
-
         if !add_key_values.0.is_empty() {
             for kv in add_key_values.0 {
-                if kv.variant == KeyValueVariant::HOOK {
-                    hooks.push(kv.clone());
-                }
-                if kv.variant == KeyValueVariant::HOOK_STATUS {
-                    return Err(anyhow!(
+                match kv.variant {
+                    KeyValueVariant::HOOK => {
+                        trigger.push(TriggerVariant::HOOK_ADDED);
+                    },
+                    KeyValueVariant::HOOK_STATUS => {
+                        return Err(anyhow!(
                         "Can't create hook status outside of hook callbacks"
-                    ));
+                        ));
+                    },
+                    KeyValueVariant::LABEL => {
+                        trigger.push(TriggerVariant::LABEL_ADDED);
+                    },
+                    KeyValueVariant::STATIC_LABEL => {
+                        trigger.push(TriggerVariant::STATIC_LABEL_ADDED);
+                    },
                 }
                 Object::add_key_value(&id, transaction_client, kv).await?;
             }
@@ -193,18 +201,20 @@ impl DatabaseHandler {
 
         // Trigger hook
         let object_plus = Object::get_object_with_relations(&id, &client).await?;
-        if !hooks.is_empty() {
-            let db_handler = DatabaseHandler {
+        let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
             };
-            tokio::spawn(async move {
-                db_handler
-                    .trigger_on_append_hook(authorizer, user_id, id, hooks)
-                    .await
-            });
-        };
+        let object_clone = object_plus.clone();
+        tokio::spawn(async move {
+            let response = db_handler
+                .trigger_hooks(authorizer, object_clone, user_id, trigger, None)
+                .await;
+            if response.is_err() {
+                log::error!("{:?}", response)
+            }
+        });
 
         // Fetch hierarchies and object relations for notifications
         let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
@@ -409,6 +419,8 @@ impl DatabaseHandler {
         // 2. New object & new key_vals
         // 3. New object & no added key_vals -> Only old key_vals
         // 4. update in place & no key_vals
+
+        let object = owr.clone();
         if !req.0.add_key_values.is_empty() && !is_new {
             dbg!("TRIGGER");
             let kvs: Vec<KeyValue> = req
@@ -425,7 +437,7 @@ impl DatabaseHandler {
             // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
                 let call = db_handler
-                    .trigger_on_append_hook(authorizer, user_id, id, kvs)
+                    .trigger_hooks(authorizer, object,user_id, vec![TriggerVariant::LABEL_ADDED], Some(kvs))
                     .await;
                 if call.is_err() {
                     log::error!("{:?}", call);
@@ -445,39 +457,24 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let call_on_create = db_handler
-                    .trigger_on_creation(authorizer.clone(), id, user_id)
+                    .trigger_hooks(authorizer, object ,user_id, vec![TriggerVariant::LABEL_ADDED,TriggerVariant::RESOURCE_CREATED], Some(kvs))
                     .await;
                 if call_on_create.is_err() {
                     log::error!("{:?}", call_on_create);
                 }
-                let call_on_append = db_handler
-                    .trigger_on_append_hook(authorizer, id, user_id, kvs)
-                    .await;
-                if call_on_append.is_err() {
-                    log::error!("{:?}", call_on_append);
-                }
             });
         } else if is_new {
-            let kvs = owr.object.key_values.0 .0.clone();
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
             };
             tokio::spawn(async move {
-                if !kvs.is_empty() {
-                    let on_append = db_handler
-                        .trigger_on_append_hook(authorizer.clone(), user_id, id, kvs)
-                        .await;
-                    if on_append.is_err() {
-                        log::error!("{:?}", on_append);
-                    }
-                }
-                let on_create = db_handler
-                    .trigger_on_creation(authorizer, id, user_id)
+                let on_append = db_handler
+                    .trigger_hooks(authorizer, object, user_id, vec![TriggerVariant::RESOURCE_CREATED], None)
                     .await;
-                if on_create.is_err() {
-                    log::error!("{:?}", on_create);
+                if on_append.is_err() {
+                   log::error!("{:?}", on_append);
                 }
             });
         };
@@ -527,9 +524,10 @@ impl DatabaseHandler {
             natsio_handler: self.natsio_handler.clone(),
             cache: self.cache.clone(),
         };
+        let owr = object.clone();
         tokio::spawn(async move {
             let call = db_handler
-                .trigger_on_creation(authorizer, user_id, id)
+                .trigger_hooks(authorizer, owr, user_id, vec![TriggerVariant::OBJECT_FINISHED], None)
                 .await;
             if call.is_err() {
                 log::error!("{:?}", call);

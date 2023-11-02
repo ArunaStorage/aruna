@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{
-    ExternalHook, Hook, InternalHook, TemplateVariant, TriggerType,
+    ExternalHook, Filter, Hook, InternalHook, TemplateVariant, Trigger, TriggerVariant,
 };
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
@@ -15,12 +15,14 @@ use aruna_rust_api::api::hooks::services::v2::{
     HookCallbackRequest, ListProjectHooksRequest, Method,
 };
 
+use crate::database::dsls::hook_dsl::Filter::KeyValue as KVFilter;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
+use postgres_types::Json;
 
 pub struct CreateHook(pub CreateHookRequest);
 
@@ -42,15 +44,60 @@ impl ListBy {
 pub struct Callback(pub HookCallbackRequest);
 
 impl CreateHook {
-    fn get_trigger(&self) -> Result<(TriggerType, String, String)> {
+    fn get_trigger(&self) -> Result<Trigger> {
         match self.0.trigger.clone() {
             Some(trigger) => match trigger.trigger_type() {
-                aruna_rust_api::api::hooks::services::v2::TriggerType::HookAdded => {
-                    Ok((TriggerType::HOOK_ADDED, trigger.key, trigger.value))
-                }
+                aruna_rust_api::api::hooks::services::v2::TriggerType::HookAdded => Ok(Trigger {
+                    variant: TriggerVariant::HOOK_ADDED,
+                    filter: vec![Filter::KeyValue(KeyValue {
+                        key: trigger.key,
+                        value: trigger.value,
+                        variant: KeyValueVariant::HOOK,
+                    })],
+                }),
+                // TODO: API update
+                //aruna_rust_api::api::hooks::services::v2::TriggerType::ResourceCreated => {
+                //    Ok((TriggerType::RESOURCE_CREATED, trigger.key, trigger.value))
+                //}
                 aruna_rust_api::api::hooks::services::v2::TriggerType::ObjectCreated => {
-                    Ok((TriggerType::OBJECT_CREATED, trigger.key, trigger.value))
+                    Ok(Trigger {
+                        variant: TriggerVariant::RESOURCE_CREATED,
+                        filter: vec![Filter::Name(trigger.key), Filter::Name(trigger.value)],
+                    })
                 }
+                aruna_rust_api::api::hooks::services::v2::TriggerType::LabelAdded => Ok(Trigger {
+                    variant: TriggerVariant::LABEL_ADDED,
+                    filter: vec![Filter::KeyValue(KeyValue {
+                        key: trigger.key,
+                        value: trigger.value,
+                        variant: KeyValueVariant::LABEL,
+                    })],
+                }),
+                aruna_rust_api::api::hooks::services::v2::TriggerType::StaticLabelAdded => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::STATIC_LABEL_ADDED,
+                        filter: vec![Filter::KeyValue(KeyValue {
+                            key: trigger.key,
+                            value: trigger.value,
+                            variant: KeyValueVariant::STATIC_LABEL,
+                        })],
+                    })
+                }
+                aruna_rust_api::api::hooks::services::v2::TriggerType::HookStatusChanged => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::HOOK_STATUS_CHANGED,
+                        filter: vec![Filter::KeyValue(KeyValue {
+                            key: trigger.key,
+                            value: trigger.value,
+                            variant: KeyValueVariant::HOOK_STATUS,
+                        })],
+                    })
+                }
+
+                // TODO: API update
+                // aruna_rust_api::api::hooks::services::v2::TriggerType::ObjectFinished => {
+                //     Ok((TriggerType::OBJECT_FINISHED, trigger.key, trigger.value))
+                // }
                 _ => Err(anyhow!("Invalid trigger type")),
             },
             None => Err(anyhow!("No trigger defined")),
@@ -75,18 +122,16 @@ impl CreateHook {
             Some(APIHook {
                 hook_type: Some(HookType::ExternalHook(external_hook)),
             }) => {
-                let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
+                let trigger = Json(self.get_trigger()?);
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     name: self.0.name.clone(),
                     description: self.0.description.clone(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
-                    trigger_type,
-                    trigger_key,
-                    trigger_value,
+                    trigger,
                     timeout: self.get_timeout()?,
-                    hook: postgres_types::Json(
+                    hook: Json(
                         crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook {
                             url: external_hook.url.clone(),
                             credentials: external_hook.credentials.clone().map(|c| {
@@ -115,7 +160,7 @@ impl CreateHook {
             Some(APIHook {
                 hook_type: Some(HookType::InternalHook(internal_hook)),
             }) => {
-                let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
+                let trigger = Json(self.get_trigger()?);
                 let internal_hook = match &internal_hook.internal_action {
                     Some(InternalAction::AddLabel(AddLabel { key, value })) => {
                         InternalHook::AddHook {
@@ -143,9 +188,7 @@ impl CreateHook {
                     description: self.0.description.to_string(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
-                    trigger_type,
-                    trigger_key,
-                    trigger_value,
+                    trigger,
                     timeout: self.get_timeout()?,
                     hook: postgres_types::Json(
                         crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook),

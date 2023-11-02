@@ -9,8 +9,8 @@ use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
 use crate::utils::conversions::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
-use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::relation::{Relation as RelationEnum};
+use aruna_rust_api::api::storage::models::v2::{Hash, InternalRelationVariant, Relation};
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
     services::v2::{
@@ -141,7 +141,9 @@ impl CreateRequest {
         Ok(container.0)
     }
 
-    pub fn get_internal_relations(
+
+
+    pub fn get_other_relations(
         &self,
         id: DieselUlid,
         cache: Arc<Cache>,
@@ -150,37 +152,25 @@ impl CreateRequest {
             CreateRequest::Project(req, _) => req
                 .relations
                 .iter()
-                .filter_map(|rel| match &rel.relation {
-                    Some(RelationEnum::Internal(internal)) => Some(internal),
-                    _ => None,
-                })
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Collection(req) => req
                 .relations
                 .iter()
-                .filter_map(|rel| match &rel.relation {
-                    Some(RelationEnum::Internal(internal)) => Some(internal),
-                    _ => None,
-                })
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Dataset(req) => req
                 .relations
                 .iter()
-                .filter_map(|rel| match &rel.relation {
-                    Some(RelationEnum::Internal(internal)) => Some(internal),
-                    _ => None,
-                })
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Object(req) => req
                 .relations
                 .iter()
-                .filter_map(|rel| match &rel.relation {
-                    Some(RelationEnum::Internal(internal)) => Some(internal),
-                    _ => None,
-                })
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
         }
@@ -312,7 +302,7 @@ impl CreateRequest {
         }
     }
 
-    pub async fn into_new_db_object(
+    pub async fn as_new_db_object(
         &self,
         user_id: DieselUlid,
         endpoint_id: DieselUlid,
@@ -451,5 +441,21 @@ impl CreateRequest {
                 }
             }
         }
+    }
+}
+
+fn filter_relations(relation: &Relation) -> Option<&aruna_rust_api::api::storage::models::v2::InternalRelation> {
+    match &relation.relation {
+        Some(RelationEnum::Internal(internal)) => {
+            match internal.defined_variant() {
+                InternalRelationVariant::Metadata |
+                InternalRelationVariant::Policy |
+                InternalRelationVariant::Custom => {
+                    Some(internal)
+                }
+                _ => None
+            }
+        },
+        _ => None,
     }
 }
