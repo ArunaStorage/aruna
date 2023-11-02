@@ -12,7 +12,8 @@ use crate::middlelayer::update_request_types::{
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{self, get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use aruna_rust_api::api::storage::services::v2::{
@@ -85,7 +86,7 @@ impl DatasetService for DatasetServiceImpl {
         self.cache.add_object(dataset.clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
@@ -207,7 +208,7 @@ impl DatasetService for DatasetServiceImpl {
         }
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, search_update).await;
 
         let response = DeleteDatasetResponse {};
 
@@ -243,7 +244,7 @@ impl DatasetService for DatasetServiceImpl {
             .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
@@ -286,7 +287,7 @@ impl DatasetService for DatasetServiceImpl {
             .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
@@ -330,7 +331,7 @@ impl DatasetService for DatasetServiceImpl {
             .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
@@ -374,7 +375,7 @@ impl DatasetService for DatasetServiceImpl {
             .upsert_object(&dataset.object.id, dataset.clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
@@ -418,7 +419,7 @@ impl DatasetService for DatasetServiceImpl {
             .upsert_object(&dataset[0].object.id, dataset[0].clone());
 
         // Add or update dataset in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(dataset[0].object.clone())],
         )

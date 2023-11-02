@@ -7,7 +7,7 @@ use crate::middlelayer::relations_request_types::ModifyRelations;
 use crate::search::meilisearch_client::MeilisearchClient;
 use crate::search::meilisearch_client::ObjectDocument;
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils;
+use crate::utils::search_utils;
 use aruna_rust_api::api::storage::services::v2::relations_service_server::RelationsService;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyRequest;
 use aruna_rust_api::api::storage::services::v2::GetHierarchyResponse;
@@ -67,7 +67,7 @@ impl RelationsService for RelationsServiceImpl {
         self.cache.upsert_object(&object.object.id, object.clone());
 
         // Add or update object in search index
-        grpc_utils::update_search_index(
+        search_utils::update_search_index(
             &self.search_client,
             vec![ObjectDocument::from(object.object.clone())],
         )

@@ -52,6 +52,14 @@ impl UserService for UserServiceImpl {
             "Token authentication error"
         );
         let request = RegisterUser(request.into_inner());
+
+        // Validate display name and email is filled
+        if request.get_display_name().is_empty() {
+            return Err(tonic::Status::invalid_argument("Display name is mandatory"));
+        } else if request.get_email().is_empty() {
+            return Err(tonic::Status::invalid_argument("Email is mandatory"));
+        }
+
         let external_id = tonic_auth!(
             self.authorizer.check_unregistered_oidc(&token).await,
             "Unauthorized"

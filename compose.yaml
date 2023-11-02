@@ -39,6 +39,7 @@ services:
     depends_on:
       yugabyte:
         condition: service_healthy
+    restart: on-failure
     image: postgres:alpine3.18
     volumes:
       - ./tests/common/initial_data.sql:/data/initial_data.sql

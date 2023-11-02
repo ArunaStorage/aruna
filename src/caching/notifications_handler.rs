@@ -17,7 +17,8 @@ use jsonwebtoken::DecodingKey;
 use time::OffsetDateTime;
 
 use crate::database::dsls::pub_key_dsl::PubKey;
-use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
+use crate::utils::search_utils;
 use crate::{
     database::{
         connection::Database,
@@ -187,26 +188,24 @@ async fn process_resource_event(
                         // Update updated object in cache and search index
                         cache.upsert_object(&res_ulid, object_plus);
 
-                        // Update resource search index
-                        search_client
-                            .add_or_update_stuff(
-                                &[ObjectDocument::try_from(proto_resource)?],
-                                MeilisearchIndexes::OBJECT,
-                            )
-                            .await?;
+                        // Update resource search index only for public/private resources
+                        search_utils::update_search_index(
+                            &search_client,
+                            vec![ObjectDocument::try_from(proto_resource)?],
+                        )
+                        .await;
                     }
                 } else {
                     // Fetch object with relations from database and put into cache
                     let client = database.get_client().await?;
                     let object_plus = Object::get_object_with_relations(&res_ulid, &client).await?;
 
-                    // Update resource search index
-                    search_client
-                        .add_or_update_stuff(
-                            &[ObjectDocument::from(object_plus.object.clone())],
-                            MeilisearchIndexes::OBJECT,
-                        )
-                        .await?;
+                    // Update resource search index only for public/private resources
+                    search_utils::update_search_index(
+                        &search_client,
+                        vec![ObjectDocument::from(object_plus.object.clone())],
+                    )
+                    .await;
 
                     // Add to cache
                     cache.object_cache.insert(res_ulid, object_plus);
