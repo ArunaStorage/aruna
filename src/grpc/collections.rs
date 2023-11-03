@@ -79,7 +79,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let (collection, _) = tonic_internal!(
             self.database_handler
-                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy,)
+                .create_resource(request, user_id, is_dataproxy,)
                 .await,
             "Internal database error"
         );
@@ -323,9 +323,7 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let collection = tonic_internal!(
-            self.database_handler
-                .update_keyvals(self.authorizer.clone(), request, user_id)
-                .await,
+            self.database_handler.update_keyvals(request, user_id).await,
             "Internal database error."
         );
         self.cache

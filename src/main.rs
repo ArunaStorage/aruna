@@ -29,6 +29,7 @@ use aruna_server::{
         projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
         users::UserServiceImpl,
     },
+    hooks,
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
@@ -90,13 +91,26 @@ pub async fn main() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("NatsIoHandler init failed"))?;
     let natsio_arc = Arc::new(natsio_handler);
 
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+
     // Init DatabaseHandler
     let database_handler = DatabaseHandler {
         database: db_arc.clone(),
         natsio_handler: natsio_arc.clone(),
         cache: cache_arc.clone(),
+        hook_sender,
     };
     let db_handler_arc = Arc::new(database_handler);
+
+    let auth_clone = auth_arc.clone();
+    let db_clone = db_handler_arc.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
 
     // MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(

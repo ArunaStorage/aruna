@@ -261,21 +261,27 @@ impl UpdateObject {
             None => old.name,
         }
     }
-    pub fn get_dataclass(&self, old: Object, is_service_account: bool) -> Result<DataClass> {
+    pub fn get_dataclass(
+        &self,
+        old: Object,
+        is_service_account: bool,
+    ) -> Result<(DataClass, bool)> {
         let new = self.0.data_class;
         let old_converted: i32 = old.data_class.clone().into();
         if is_service_account {
             return if (new != 0) || (new != 4) {
                 Err(anyhow!("Workspaces need to be claimed for status updates"))
             } else {
-                Ok(DataClass::WORKSPACE)
+                Ok((DataClass::WORKSPACE, false))
             };
         } else if new == 0 {
-            return Ok(old.data_class);
+            return Ok((old.data_class, false));
         } else if old_converted < new {
-            return Err(anyhow!("Dataclass can only be relaxed."));
+            // True because triggers new revision
+            return Ok((new.try_into()?, true));
         }
-        new.try_into()
+        // False because triggers no new revision
+        Ok((new.try_into()?, false))
     }
     pub fn get_endpoints(&self, old: Object) -> Result<DashMap<DieselUlid, bool, RandomState>> {
         // TODO -> Currently not implemented in APICall

@@ -1,4 +1,3 @@
-use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
@@ -16,12 +15,10 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
-use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn create_resource(
         &self,
-        authorizer: Arc<PermissionHandler>,
         request: CreateRequest,
         user_id: DieselUlid,
         is_dataproxy: bool,
@@ -273,6 +270,7 @@ impl DatabaseHandler {
             database: self.database.clone(),
             natsio_handler: self.natsio_handler.clone(),
             cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
         };
         let trigger: Vec<TriggerVariant> = {
             let mut trigger = vec![TriggerVariant::RESOURCE_CREATED];
@@ -295,13 +293,7 @@ impl DatabaseHandler {
         let object_with_relation = owr.clone();
         tokio::spawn(async move {
             let hook_trigger = db_handler
-                .trigger_hooks(
-                    authorizer.clone(),
-                    object_with_relation,
-                    user_id,
-                    trigger,
-                    None,
-                )
+                .trigger_hooks(object_with_relation, user_id, trigger, None)
                 .await;
             if hook_trigger.is_err() {
                 log::error!("{:?}", hook_trigger)

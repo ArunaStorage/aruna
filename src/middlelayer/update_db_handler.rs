@@ -1,5 +1,4 @@
 use super::update_request_types::{LicenseUpdate, UpdateObject};
-use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
@@ -18,7 +17,6 @@ use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, Upd
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use std::str::FromStr;
-use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -143,7 +141,6 @@ impl DatabaseHandler {
 
     pub async fn update_keyvals(
         &self,
-        authorizer: Arc<PermissionHandler>,
         request: KeyValueUpdate,
         user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
@@ -205,11 +202,12 @@ impl DatabaseHandler {
             database: self.database.clone(),
             natsio_handler: self.natsio_handler.clone(),
             cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
         };
         let object_clone = object_plus.clone();
         tokio::spawn(async move {
             let response = db_handler
-                .trigger_hooks(authorizer, object_clone, user_id, trigger, None)
+                .trigger_hooks(object_clone, user_id, trigger, None)
                 .await;
             if response.is_err() {
                 log::error!("{:?}", response)
@@ -253,7 +251,6 @@ impl DatabaseHandler {
 
     pub async fn update_grpc_object(
         &self,
-        authorizer: Arc<PermissionHandler>,
         request: UpdateObjectRequest,
         user_id: DieselUlid,
         is_service_account: bool,
@@ -284,11 +281,14 @@ impl DatabaseHandler {
                 (_, _) => true,
             },
         };
+        let (data_class, dataclass_triggers_new_revision) =
+            req.get_dataclass(old.clone(), is_service_account)?;
         let (id, is_new, affected) = if request.force_revision
             || request.name.is_some()
             || !request.remove_key_values.is_empty()
             || !request.hashes.is_empty()
             || license_triggers_new_revision
+            || dataclass_triggers_new_revision
         {
             let id = DieselUlid::generate();
             let (metadata_license, data_license) =
@@ -302,7 +302,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: user_id,
-                data_class: req.get_dataclass(old.clone(), is_service_account)?,
+                data_class,
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
                 key_values: Json(req.get_all_kvs(old.clone())?),
@@ -366,7 +366,7 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: old.created_by,
-                data_class: req.get_dataclass(old.clone(), is_service_account)?,
+                data_class,
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
                 key_values: Json(req.get_add_keyvals(old.clone())?),
@@ -435,12 +435,12 @@ impl DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
+                hook_sender: self.hook_sender.clone(),
             };
             // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
                 let call = db_handler
                     .trigger_hooks(
-                        authorizer,
                         object,
                         user_id,
                         vec![TriggerVariant::LABEL_ADDED],
@@ -462,11 +462,11 @@ impl DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
+                hook_sender: self.hook_sender.clone(),
             };
             tokio::spawn(async move {
                 let call_on_create = db_handler
                     .trigger_hooks(
-                        authorizer,
                         object,
                         user_id,
                         vec![
@@ -485,11 +485,11 @@ impl DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
                 cache: self.cache.clone(),
+                hook_sender: self.hook_sender.clone(),
             };
             tokio::spawn(async move {
                 let on_append = db_handler
                     .trigger_hooks(
-                        authorizer,
                         object,
                         user_id,
                         vec![TriggerVariant::RESOURCE_CREATED],
@@ -526,7 +526,6 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
-        authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
         let client = self.database.get_client().await?;
@@ -541,22 +540,16 @@ impl DatabaseHandler {
             .await?;
 
         let object = Object::get_object_with_relations(&id, &client).await?;
-        // TODO: Add new HookTrigger for finishing objects
         let db_handler = DatabaseHandler {
             database: self.database.clone(),
             natsio_handler: self.natsio_handler.clone(),
             cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
         };
         let owr = object.clone();
         tokio::spawn(async move {
             let call = db_handler
-                .trigger_hooks(
-                    authorizer,
-                    owr,
-                    user_id,
-                    vec![TriggerVariant::OBJECT_FINISHED],
-                    None,
-                )
+                .trigger_hooks(owr, user_id, vec![TriggerVariant::OBJECT_FINISHED], None)
                 .await;
             if call.is_err() {
                 log::error!("{:?}", call);
