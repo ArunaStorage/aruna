@@ -18,7 +18,11 @@ use crate::common::{
         DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN,
     },
 };
-use aruna_server::database::{crud::CrudDb, dsls::{object_dsl::Object, license_dsl::ALL_RIGHTS_RESERVED}, enums::ObjectStatus};
+use aruna_server::database::{
+    crud::CrudDb,
+    dsls::{license_dsl::ALL_RIGHTS_RESERVED, object_dsl::Object},
+    enums::ObjectStatus,
+};
 
 #[tokio::test]
 async fn grpc_create_project() {

@@ -24,10 +24,7 @@ impl CrudDb for License {
         let prepared = client.prepare(query).await?;
 
         let row = client
-            .query_one(
-                &prepared,
-                &[&self.tag, &self.name, &self.text, &self.url],
-            )
+            .query_one(&prepared, &[&self.tag, &self.name, &self.text, &self.url])
             .await?;
 
         *self = License::from_row(&row);

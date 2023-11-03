@@ -26,7 +26,7 @@ use crate::common::{
         USER1_ULID,
     },
 };
-use aruna_server::database::{enums::DbPermissionLevel, dsls::license_dsl::ALL_RIGHTS_RESERVED};
+use aruna_server::database::{dsls::license_dsl::ALL_RIGHTS_RESERVED, enums::DbPermissionLevel};
 
 #[tokio::test]
 async fn grpc_create_dataset() {

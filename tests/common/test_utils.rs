@@ -14,8 +14,9 @@ use aruna_server::{
     database::{
         dsls::{
             internal_relation_dsl::InternalRelation,
+            license_dsl::ALL_RIGHTS_RESERVED,
             object_dsl::{ExternalRelations, Hashes, KeyValues, Object},
-            user_dsl::{User, UserAttributes}, license_dsl::ALL_RIGHTS_RESERVED,
+            user_dsl::{User, UserAttributes},
         },
         enums::{DataClass, DbPermissionLevel, ObjectMapping, ObjectStatus, ObjectType},
     },
