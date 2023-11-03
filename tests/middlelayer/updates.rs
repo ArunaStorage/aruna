@@ -11,6 +11,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
 };
 use aruna_server::database::crud::CrudDb;
+use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use aruna_server::database::enums::{DataClass, ObjectMapping, ObjectType};
 use aruna_server::middlelayer::update_request_types::{
@@ -543,8 +544,8 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     };
     let (license_updated, is_new) = db_handler
         .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)

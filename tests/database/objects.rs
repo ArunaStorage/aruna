@@ -1,5 +1,6 @@
 use crate::common::{init, test_utils};
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
+use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::{
     DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
 };
@@ -444,8 +445,8 @@ async fn test_keyvals() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     };
     assert_eq!(object, comp_obj);
     object.remove_key_value(&client, kv).await.unwrap();
@@ -467,8 +468,8 @@ async fn test_keyvals() {
         hashes: test_object.hashes,
         dynamic: test_object.dynamic,
         endpoints: test_object.endpoints,
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     };
     assert_eq!(object, comp_obj);
 }
@@ -525,8 +526,8 @@ async fn test_external_relations() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
     //dbg!(&obj);

@@ -25,7 +25,7 @@ use crate::common::{
         DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN, USER1_ULID,
     },
 };
-use aruna_server::database::enums::DbPermissionLevel;
+use aruna_server::database::{enums::DbPermissionLevel, dsls::license_dsl::ALL_RIGHTS_RESERVED};
 
 #[tokio::test]
 async fn grpc_create_collection() {
@@ -43,8 +43,8 @@ async fn grpc_create_collection() {
         relations: vec![],
         data_class: DataClass::Private as i32,
         parent: Some(Parent::ProjectId(project.id.to_string())),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
+        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     };
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);
 

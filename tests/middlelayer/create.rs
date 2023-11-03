@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
+use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
@@ -53,8 +54,8 @@ async fn create_project() {
             relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
-            metadata_license_tag: "All_Rights_Reserved".to_string(),
-            default_data_license_tag: "All_Rights_Reserved".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         },
         default_endpoint.to_string(),
     );
@@ -114,8 +115,8 @@ async fn create_collection() {
             relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
-            metadata_license_tag: "All_Rights_Reserved".to_string(),
-            default_data_license_tag: "All_Rights_Reserved".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         },
         default_endpoint.to_string(),
     );
@@ -134,8 +135,8 @@ async fn create_collection() {
         relations: vec![],
         data_class: 1,
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     });
     let (coll, _) = db_handler
         .create_resource(authorizer.clone(), request, user.id, false)
@@ -192,8 +193,8 @@ async fn create_dataset() {
             relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
-            metadata_license_tag: "All_Rights_Reserved".to_string(),
-            default_data_license_tag: "All_Rights_Reserved".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         },
         default_endpoint.to_string(),
     );
@@ -212,8 +213,8 @@ async fn create_dataset() {
         relations: vec![],
         data_class: 1,
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     });
     let (ds, _) = db_handler
         .create_resource(authorizer.clone(), request, user.id, false)
@@ -270,8 +271,8 @@ async fn create_object() {
             relations: vec![],
             data_class: 1,
             preferred_endpoint: endpoint.to_string(),
-            metadata_license_tag: "All_Rights_Reserved".to_string(),
-            default_data_license_tag: "All_Rights_Reserved".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         },
         DieselUlid::generate().to_string(),
     );
@@ -291,8 +292,8 @@ async fn create_object() {
             relations: vec![],
             data_class: 1,
             preferred_endpoint: "".to_string(),
-            metadata_license_tag: "All_Rights_Reserved".to_string(),
-            default_data_license_tag: "All_Rights_Reserved".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         },
         default_endpoint.to_string(),
     );
@@ -312,8 +313,8 @@ async fn create_object() {
         data_class: 1,
         hashes: vec![],
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
-        data_license_tag: "All_Rights_Reserved".to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     });
     let (obj, _) = db_handler
         .create_resource(authorizer.clone(), request, user.id, false)
