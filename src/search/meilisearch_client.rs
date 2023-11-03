@@ -38,14 +38,14 @@ impl Display for MeilisearchIndexes {
 pub struct ObjectDocument {
     pub id: DieselUlid,
     pub object_type: u8, // 256 should be enough
-    pub object_status: ObjectStatus,
+    pub status: ObjectStatus,
     pub name: String,
     pub description: String,
     pub size: i64,             // Yay or nay?
     pub labels: Vec<KeyValue>, // Without specific internal labels
     pub data_class: DataClass,
     pub created_at: i64, // Converted to UNIX timestamp for filtering/sorting
-    pub dynamic: bool,   // Just for the lulz
+    pub dynamic: bool,   // Archived/Snapshot i.e. mutable/immutable
     pub metadata_license: String,
     pub data_license: String,
 }
@@ -66,7 +66,7 @@ impl From<DbObject> for ObjectDocument {
         ObjectDocument {
             id: db_object.id,
             object_type: db_object.object_type as u8,
-            object_status: db_object.object_status,
+            status: db_object.object_status,
             name: db_object.name,
             description: db_object.description,
             size: db_object.content_len,
@@ -124,7 +124,7 @@ impl From<ObjectDocument> for Project {
                 nanos: 0,
             }),
             created_by: "".to_string(),
-            status: Into::<ApiStatus>::into(object_document.object_status) as i32,
+            status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
@@ -141,7 +141,7 @@ impl TryFrom<Project> for ObjectDocument {
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
             object_type: ObjectType::PROJECT as u8,
-            object_status: ObjectStatus::try_from(project.status)?,
+            status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
             size: if let Some(stats) = project.stats {
@@ -175,7 +175,7 @@ impl From<ObjectDocument> for Collection {
                 nanos: 0,
             }),
             created_by: "".to_string(),
-            status: Into::<ApiStatus>::into(object_document.object_status) as i32,
+            status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
@@ -192,7 +192,7 @@ impl TryFrom<Collection> for ObjectDocument {
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
             object_type: ObjectType::COLLECTION as u8,
-            object_status: ObjectStatus::try_from(collection.status)?,
+            status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
             size: if let Some(stats) = collection.stats {
@@ -226,7 +226,7 @@ impl From<ObjectDocument> for Dataset {
                 nanos: 0,
             }),
             created_by: "".to_string(),
-            status: Into::<ApiStatus>::into(object_document.object_status) as i32,
+            status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
@@ -243,7 +243,7 @@ impl TryFrom<Dataset> for ObjectDocument {
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
             object_type: ObjectType::DATASET as u8,
-            object_status: ObjectStatus::try_from(dataset.status)?,
+            status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
             size: if let Some(stats) = dataset.stats {
@@ -277,7 +277,7 @@ impl From<ObjectDocument> for Object {
                 nanos: 0,
             }),
             created_by: "".to_string(),
-            status: Into::<ApiStatus>::into(object_document.object_status) as i32,
+            status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: false, // Objects are alywas persistent
             hashes: vec![],
             endpoints: vec![],
@@ -295,7 +295,7 @@ impl TryFrom<Object> for ObjectDocument {
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&object.id)?,
             object_type: ObjectType::OBJECT as u8,
-            object_status: ObjectStatus::try_from(object.status)?,
+            status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
             size: object.content_len,
