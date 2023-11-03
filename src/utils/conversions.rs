@@ -1487,7 +1487,7 @@ impl From<License> for APILicense {
         APILicense {
             tag: lic.tag,
             name: lic.name,
-            text: lic.description,
+            text: lic.text,
             url: lic.url,
         }
     }
@@ -1497,7 +1497,7 @@ impl From<CreateLicenseRequest> for License {
         License {
             tag: req.tag,
             name: req.name,
-            description: req.text,
+            text: req.text,
 
             url: req.url,
         }

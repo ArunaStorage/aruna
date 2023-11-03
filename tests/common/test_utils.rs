@@ -14,6 +14,7 @@ use aruna_server::{
     database::{
         dsls::{
             internal_relation_dsl::InternalRelation,
+            license_dsl::ALL_RIGHTS_RESERVED,
             object_dsl::{ExternalRelations, Hashes, KeyValues, Object},
             user_dsl::{User, UserAttributes},
         },
@@ -35,19 +36,19 @@ use tonic::{
 
 /* ----- Begin Testing Constants ---------- */
 #[allow(dead_code)]
-pub static ADMIN_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk0MjQsImlhdCI6MTY5ODgzOTQyNCwiYXV0aF90aW1lIjoxNjk4ODM5NDI0LCJqdGkiOiI5ZjJlMjdhYi04MDIzLTQ1MTctYTE3Yi1jNDY2OGRlZTk2MzAiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiIxNGYwZTdiZi0wOTQ3LTRhYTEtYThjZC0zMzdkZGVmZjQ1NzMiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiREFrX3BTZjYxVEpPYnpRWDhwN0JQUSIsInNlc3Npb25fc3RhdGUiOiJiYTkxYmZkMi0wNmY2LTRjYTMtOTFlYS0wYmQ1ZmQxNzZkZjIiLCJhdF9oYXNoIjoiX3pkYXhxMHlucDRvajk1UmhiRG5VdyIsImFjciI6IjEiLCJzaWQiOiJiYTkxYmZkMi0wNmY2LTRjYTMtOTFlYS0wYmQ1ZmQxNzZkZjIiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicHJlZmVycmVkX3VzZXJuYW1lIjoiYXJ1bmFhZG1pbiIsImdpdmVuX25hbWUiOiIiLCJmYW1pbHlfbmFtZSI6IiIsImVtYWlsIjoiYWRtaW5AdGVzdC5jb20ifQ.sV0qo32b4tl7Y984_hW8Pc8a8trkmNg_6MKb7l3aacEH6eC1633JsI8D6qMPw22y4Lf5sb3XOCY_LZQpIKWs7TmkaSlv-9I2Ioi9kZRHpoNd75PnYJDFi6NrK7byJ5IeE167UskEqVTNfCkhkWFUzjogDRaHL-oscb-aTG35tqR-9DcVWUb5wuyKYbJQyRVetiQIKdo-ExNgqad1ScVPdhX9ktRJRZvWSeP7AHV2NpoM3x0WojAWXNIkhWoNksUJclaR25PcTlQmAh43QvICxpaiCCKTOcNSf-wBLGzTvxvFijYjYPgfyXCThFzOJkBC-qhrpVRXQh_nVcLmXJPxCQ";
+pub const ADMIN_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk0MjQsImlhdCI6MTY5ODgzOTQyNCwiYXV0aF90aW1lIjoxNjk4ODM5NDI0LCJqdGkiOiI5ZjJlMjdhYi04MDIzLTQ1MTctYTE3Yi1jNDY2OGRlZTk2MzAiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiIxNGYwZTdiZi0wOTQ3LTRhYTEtYThjZC0zMzdkZGVmZjQ1NzMiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiREFrX3BTZjYxVEpPYnpRWDhwN0JQUSIsInNlc3Npb25fc3RhdGUiOiJiYTkxYmZkMi0wNmY2LTRjYTMtOTFlYS0wYmQ1ZmQxNzZkZjIiLCJhdF9oYXNoIjoiX3pkYXhxMHlucDRvajk1UmhiRG5VdyIsImFjciI6IjEiLCJzaWQiOiJiYTkxYmZkMi0wNmY2LTRjYTMtOTFlYS0wYmQ1ZmQxNzZkZjIiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicHJlZmVycmVkX3VzZXJuYW1lIjoiYXJ1bmFhZG1pbiIsImdpdmVuX25hbWUiOiIiLCJmYW1pbHlfbmFtZSI6IiIsImVtYWlsIjoiYWRtaW5AdGVzdC5jb20ifQ.sV0qo32b4tl7Y984_hW8Pc8a8trkmNg_6MKb7l3aacEH6eC1633JsI8D6qMPw22y4Lf5sb3XOCY_LZQpIKWs7TmkaSlv-9I2Ioi9kZRHpoNd75PnYJDFi6NrK7byJ5IeE167UskEqVTNfCkhkWFUzjogDRaHL-oscb-aTG35tqR-9DcVWUb5wuyKYbJQyRVetiQIKdo-ExNgqad1ScVPdhX9ktRJRZvWSeP7AHV2NpoM3x0WojAWXNIkhWoNksUJclaR25PcTlQmAh43QvICxpaiCCKTOcNSf-wBLGzTvxvFijYjYPgfyXCThFzOJkBC-qhrpVRXQh_nVcLmXJPxCQ";
 #[allow(dead_code)]
-pub static ADMIN_USER_ULID: &str = "01H819G3ZMK5DC9Q5PD18N9SXB";
+pub const ADMIN_USER_ULID: &str = "01H819G3ZMK5DC9Q5PD18N9SXB";
 #[allow(dead_code)]
-pub static USER1_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk1OTksImlhdCI6MTY5ODgzOTU5OSwiYXV0aF90aW1lIjoxNjk4ODM5NTk5LCJqdGkiOiJmZjkyMzEwNC1hZGNkLTRjOTEtYjdjNi03MWM1ODMxNjlhYzciLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiI4ZGJlZTAwOS1hM2U4LTQ2NjQtODg1Ni0xNDE3M2Q5YWJkNWIiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiQ21NRWxIM3JQSVF2dENBTFVSQWlPZyIsInNlc3Npb25fc3RhdGUiOiIyY2FmNGE0Ni1mZDYxLTQ2MWEtODIwZS1jMTM0YmY4ZjU0ZTYiLCJhdF9oYXNoIjoiMXRRYjhETWRaNjJVaW9MTl9tRkQxZyIsImFjciI6IjEiLCJzaWQiOiIyY2FmNGE0Ni1mZDYxLTQ2MWEtODIwZS1jMTM0YmY4ZjU0ZTYiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicHJlZmVycmVkX3VzZXJuYW1lIjoicmVndWxhciIsImdpdmVuX25hbWUiOiIiLCJmYW1pbHlfbmFtZSI6IiIsImVtYWlsIjoicmVndWxhckB0ZXN0LmNvbSJ9.dc759HTpLgcMT8exZPWpgO9k3O5eQy0KKkqVRj6LQZAIq9CcK-rEHs6P6QiT3vWq8CKLQkBcYPTY4zniKQ78spip9b1OrNdvQ5K9aHuCsZHvaH72tOXQGCsMXKwV_WX6EkRn75A1y4nqJ0H3GCcrNzJTLeh32dcUcxHZtHxcBp3SKpTeq6e-hXYP1XSK73KfSsDj5-zYcaVHWR-av7Q7YcxBul4P2bfOPQRDZNIqkHa7cZGD6nMpLb5WFB-mGHqEB3V4dmvF4Wu9CJScyiVkleG-aSRLXzGDQMtk8iRbCM-xQpr-JvwvKvQXeas5B6ifiMO8GRq8DOPf5m9rCAwEVw";
+pub const USER1_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk1OTksImlhdCI6MTY5ODgzOTU5OSwiYXV0aF90aW1lIjoxNjk4ODM5NTk5LCJqdGkiOiJmZjkyMzEwNC1hZGNkLTRjOTEtYjdjNi03MWM1ODMxNjlhYzciLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiI4ZGJlZTAwOS1hM2U4LTQ2NjQtODg1Ni0xNDE3M2Q5YWJkNWIiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiQ21NRWxIM3JQSVF2dENBTFVSQWlPZyIsInNlc3Npb25fc3RhdGUiOiIyY2FmNGE0Ni1mZDYxLTQ2MWEtODIwZS1jMTM0YmY4ZjU0ZTYiLCJhdF9oYXNoIjoiMXRRYjhETWRaNjJVaW9MTl9tRkQxZyIsImFjciI6IjEiLCJzaWQiOiIyY2FmNGE0Ni1mZDYxLTQ2MWEtODIwZS1jMTM0YmY4ZjU0ZTYiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicHJlZmVycmVkX3VzZXJuYW1lIjoicmVndWxhciIsImdpdmVuX25hbWUiOiIiLCJmYW1pbHlfbmFtZSI6IiIsImVtYWlsIjoicmVndWxhckB0ZXN0LmNvbSJ9.dc759HTpLgcMT8exZPWpgO9k3O5eQy0KKkqVRj6LQZAIq9CcK-rEHs6P6QiT3vWq8CKLQkBcYPTY4zniKQ78spip9b1OrNdvQ5K9aHuCsZHvaH72tOXQGCsMXKwV_WX6EkRn75A1y4nqJ0H3GCcrNzJTLeh32dcUcxHZtHxcBp3SKpTeq6e-hXYP1XSK73KfSsDj5-zYcaVHWR-av7Q7YcxBul4P2bfOPQRDZNIqkHa7cZGD6nMpLb5WFB-mGHqEB3V4dmvF4Wu9CJScyiVkleG-aSRLXzGDQMtk8iRbCM-xQpr-JvwvKvQXeas5B6ifiMO8GRq8DOPf5m9rCAwEVw";
 #[allow(dead_code)]
-pub static USER1_ULID: &str = "01H8KWYY5MTAH1YZGPYVS7PQWD";
+pub const USER1_ULID: &str = "01H8KWYY5MTAH1YZGPYVS7PQWD";
 #[allow(dead_code)]
-pub static USER2_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk3NDgsImlhdCI6MTY5ODgzOTc0OCwiYXV0aF90aW1lIjoxNjk4ODM5NzQ4LCJqdGkiOiI1Nzc0MmIzNS1iMGQ5LTRkNTUtYjMzYi02ODkxMjFlM2ZhNGMiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiIyMWU4N2M2MC1iMDVjLTQwYjEtYWM1Yy05ODJiNTJhYjI4NjUiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiZlM0aGJXcVE2VlI3X3NYc0wyYlRiZyIsInNlc3Npb25fc3RhdGUiOiIwMDA4MTQ5Mi0wODkwLTRmZTYtYjc1OS05Y2VmYmM1MTQ0MTMiLCJhdF9oYXNoIjoiU1JvZ0ZPV0NIMjI2THp4OExRZDBUZyIsImFjciI6IjEiLCJzaWQiOiIwMDA4MTQ5Mi0wODkwLTRmZTYtYjc1OS05Y2VmYmM1MTQ0MTMiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsInByZWZlcnJlZF91c2VybmFtZSI6InJlZ3VsYXIyIiwiZ2l2ZW5fbmFtZSI6IiIsImZhbWlseV9uYW1lIjoiIn0.DHI4fbRLn_7Ul-Vzjz5P7vaFNCOz75W_2OkWKzWF8Ipv3F7ett14-tuRo5fewngCV0JKRiSlnsfPxVkLQIh4659egQcjpZbXvgboMKtzfrUO7AMN-S9vZF143r_zwgllEHqVyAyPqymgLzCMrfk0z2r_nqVCY4qLXV-pSbETL6o_ZWhNEAjIAkD1PzhVpqD2k-OfdVzMFj8Ov7_p5xo3Pl1iNVCtK-4QpT5OLhkHb8ycbcJyuC0XRmm4Es31jtDSjuriKCP5iJl4W4GcXF9SGU9ftGRSxxumv5_p0z9u47nYf2-BcEo4H-1offDZ8MDxpg2QZ4Wh5FPBakNqjdgMww";
+pub const USER2_OIDC_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJocS1BcGJfWS15RzJ1YktjSDFmTGN4UmltZ3YzSlBSelRQUENKbEtpOW9zIn0.eyJleHAiOjE3ODUyMzk3NDgsImlhdCI6MTY5ODgzOTc0OCwiYXV0aF90aW1lIjoxNjk4ODM5NzQ4LCJqdGkiOiI1Nzc0MmIzNS1iMGQ5LTRkNTUtYjMzYi02ODkxMjFlM2ZhNGMiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjE5OTgvcmVhbG1zL3Rlc3QiLCJhdWQiOiJ0ZXN0LWxvbmciLCJzdWIiOiIyMWU4N2M2MC1iMDVjLTQwYjEtYWM1Yy05ODJiNTJhYjI4NjUiLCJ0eXAiOiJJRCIsImF6cCI6InRlc3QtbG9uZyIsIm5vbmNlIjoiZlM0aGJXcVE2VlI3X3NYc0wyYlRiZyIsInNlc3Npb25fc3RhdGUiOiIwMDA4MTQ5Mi0wODkwLTRmZTYtYjc1OS05Y2VmYmM1MTQ0MTMiLCJhdF9oYXNoIjoiU1JvZ0ZPV0NIMjI2THp4OExRZDBUZyIsImFjciI6IjEiLCJzaWQiOiIwMDA4MTQ5Mi0wODkwLTRmZTYtYjc1OS05Y2VmYmM1MTQ0MTMiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsInByZWZlcnJlZF91c2VybmFtZSI6InJlZ3VsYXIyIiwiZ2l2ZW5fbmFtZSI6IiIsImZhbWlseV9uYW1lIjoiIn0.DHI4fbRLn_7Ul-Vzjz5P7vaFNCOz75W_2OkWKzWF8Ipv3F7ett14-tuRo5fewngCV0JKRiSlnsfPxVkLQIh4659egQcjpZbXvgboMKtzfrUO7AMN-S9vZF143r_zwgllEHqVyAyPqymgLzCMrfk0z2r_nqVCY4qLXV-pSbETL6o_ZWhNEAjIAkD1PzhVpqD2k-OfdVzMFj8Ov7_p5xo3Pl1iNVCtK-4QpT5OLhkHb8ycbcJyuC0XRmm4Es31jtDSjuriKCP5iJl4W4GcXF9SGU9ftGRSxxumv5_p0z9u47nYf2-BcEo4H-1offDZ8MDxpg2QZ4Wh5FPBakNqjdgMww";
 #[allow(dead_code)]
-pub static USER2_ULID: &str = "01HBG7TQS8HTV3M2PKFKMMBSJ5";
+pub const USER2_ULID: &str = "01HBG7TQS8HTV3M2PKFKMMBSJ5";
 #[allow(dead_code)]
-pub static DEFAULT_ENDPOINT_ULID: &str = "01H81W0ZMB54YEP5711Q2BK46V";
+pub const DEFAULT_ENDPOINT_ULID: &str = "01H81W0ZMB54YEP5711Q2BK46V";
 /* ----- End Testing Constants ---------- */
 
 #[allow(dead_code)]
@@ -99,8 +100,8 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     }
 }
 
@@ -145,8 +146,8 @@ pub fn object_from_mapping(
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
         endpoints: Json(DashMap::default()),
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     }
 }
 
@@ -233,8 +234,8 @@ pub async fn fast_track_grpc_project_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         preferred_endpoint: "".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
+        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -263,6 +264,8 @@ pub async fn fast_track_grpc_collection_create(
     // Create request with token
     let collection_name = rand_string(32);
 
+    //ToDo: Fetch parent for license inheritance?
+
     let create_request = CreateCollectionRequest {
         name: collection_name.to_string(),
         description: "".to_string(),
@@ -270,8 +273,8 @@ pub async fn fast_track_grpc_collection_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: Some("All_Rights_Reserved".to_string()),
-        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
+        default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -300,6 +303,8 @@ pub async fn fast_track_grpc_dataset_create(
     // Create request with token
     let dataset_name = rand_string(32);
 
+    //ToDo: Fetch parent for license inheritance?
+
     let create_request = CreateDatasetRequest {
         name: dataset_name.to_string(),
         description: "".to_string(),
@@ -307,8 +312,8 @@ pub async fn fast_track_grpc_dataset_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: Some("All_Rights_Reserved".to_string()),
-        metadata_license_tag: Some("All_Rights_Reserved".to_string()),
+        default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);

@@ -126,7 +126,7 @@ fn generate_random_object_document() -> ObjectDocument {
     ObjectDocument {
         id: DieselUlid::generate(),
         object_type: ObjectType::try_from(rng.gen_range(1..5)).unwrap() as u8,
-        object_status: ObjectStatus::try_from(rng.gen_range(1..6)).unwrap(),
+        status: ObjectStatus::try_from(rng.gen_range(1..6)).unwrap(),
         name: project_name,
         description: "ChatGPT should create some hallucinated description of this project."
             .to_string(),
@@ -153,7 +153,7 @@ fn generate_random_object_document() -> ObjectDocument {
             .unwrap()
             .timestamp(),
         dynamic: rng.gen_bool(0.5).to_string().parse::<bool>().unwrap(),
-        metadata_license: "all_rights_reserved".to_string(),
-        data_license: "all_rights_reserved".to_string(),
+        metadata_license: "AllRightsReserved".to_string(),
+        data_license: "AllRightsReserved".to_string(),
     }
 }

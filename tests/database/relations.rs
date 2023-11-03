@@ -1,4 +1,5 @@
 use crate::common::{init, test_utils};
+use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::{DefinedVariant, ExternalRelation};
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
 use aruna_server::database::{
@@ -66,8 +67,8 @@ async fn test_external_relations() {
         hashes: create_object.hashes,
         dynamic: create_object.dynamic,
         endpoints: create_object.endpoints,
-        data_license: "All_Rights_Reserved".to_string(),
-        metadata_license: "All_Rights_Reserved".to_string(),
+        data_license: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
 

@@ -50,5 +50,5 @@ INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status
 
 INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1337, '018a03c0-7e8b-293c-eb14-e10dc4b990db', 'MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=');
 
-INSERT INTO licenses(tag, name, description, url) VALUES ('All_Rights_Reserved', 'All rights reserved', 'All rights reserved', 'license.test.org');
+INSERT INTO licenses(tag, name, text, url) VALUES ('AllRightsReserved', 'All rights reserved', 'All rights reserved', 'license.test.org');
 

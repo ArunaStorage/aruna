@@ -18,7 +18,11 @@ use crate::common::{
         DEFAULT_ENDPOINT_ULID, USER1_OIDC_TOKEN,
     },
 };
-use aruna_server::database::{crud::CrudDb, dsls::object_dsl::Object, enums::ObjectStatus};
+use aruna_server::database::{
+    crud::CrudDb,
+    dsls::{license_dsl::ALL_RIGHTS_RESERVED, object_dsl::Object},
+    enums::ObjectStatus,
+};
 
 #[tokio::test]
 async fn grpc_create_project() {
@@ -35,8 +39,8 @@ async fn grpc_create_project() {
         relations: vec![],
         data_class: DataClass::Public as i32,
         preferred_endpoint: "".to_string(),
-        default_data_license_tag: "All_Rights_Reserved".to_string(),
-        metadata_license_tag: "All_Rights_Reserved".to_string(),
+        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
     };
 
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);

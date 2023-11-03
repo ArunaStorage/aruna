@@ -13,7 +13,7 @@ async fn create_and_get_licenses() {
     let mut license: License = License {
         tag: "test_license".to_string(),
         name: "test license".to_string(),
-        description: "this is a test license".to_string(),
+        text: "this is a test license".to_string(),
         url: "test.org/test-license".to_string(),
     };
     license.create(&client).await.unwrap();
@@ -28,7 +28,7 @@ async fn create_and_get_licenses() {
     let mut err_license: License = License {
         tag: "test_license".to_string(),
         name: "error test license".to_string(),
-        description: "this is a test license that cannot be created".to_string(),
+        text: "this is a test license that cannot be created".to_string(),
         url: "test.org/error-test-license".to_string(),
     };
     assert!(err_license.create(&client).await.is_err());
@@ -37,7 +37,7 @@ async fn create_and_get_licenses() {
     let mut ok_license: License = License {
         tag: "ok_test_license".to_string(),
         name: "test license".to_string(),
-        description: "this is a test license".to_string(),
+        text: "this is a test license".to_string(),
         url: "test.org/test-license".to_string(),
     };
     assert!(ok_license.create(&client).await.is_ok());
@@ -60,7 +60,7 @@ async fn objects_and_licenses() {
     let mut license: License = License {
         tag: "another_test_license".to_string(),
         name: "another test license".to_string(),
-        description: "this is another test license".to_string(),
+        text: "this is another test license".to_string(),
         url: "test.org/another_test_license".to_string(),
     };
     let object_id = DieselUlid::generate();

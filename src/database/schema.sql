@@ -126,10 +126,10 @@ CREATE TABLE IF NOT EXISTS users (
 /* ----- Licenses -------------------------------------- */
 -- Table for licenses
 CREATE TABLE IF NOT EXISTS licenses (
-    tag VARCHAR(511) PRIMARY KEY NOT NULL,
-    name VARCHAR(511) NOT NULL,
-    description VARCHAR(1023) NOT NULL,
-    url VARCHAR(511) NOT NULL
+    tag VARCHAR(511) PRIMARY KEY NOT NULL, -- Common license abbreviation
+    name VARCHAR(511) NOT NULL,            -- Full name of the license
+    text TEXT NOT NULL,                    -- Full license text
+    url VARCHAR(2047) NOT NULL             -- URL to full license text
 );
 
 /* ----- Object Service -------------------------------------------- */

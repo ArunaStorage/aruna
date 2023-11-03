@@ -8,26 +8,23 @@ use tokio_postgres::Client;
 pub struct License {
     pub tag: String,
     pub name: String,
-    pub description: String,
+    pub text: String,
     pub url: String,
 }
 
-pub const ALL_RIGHTS_RESERVED: &str = "All_Rights_Reserved";
+pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
 
 #[async_trait]
 impl CrudDb for License {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO licenses (tag, name, description, url) 
+        let query = "INSERT INTO licenses (tag, name, text, url) 
         VALUES ( $1, $2, $3, $4) 
         RETURNING *;";
 
         let prepared = client.prepare(query).await?;
 
         let row = client
-            .query_one(
-                &prepared,
-                &[&self.tag, &self.name, &self.description, &self.url],
-            )
+            .query_one(&prepared, &[&self.tag, &self.name, &self.text, &self.url])
             .await?;
 
         *self = License::from_row(&row);

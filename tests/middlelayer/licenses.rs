@@ -20,7 +20,7 @@ async fn create_and_read_license() {
     let license = db_handler.get_license(tag).await.unwrap();
     assert_eq!(license.tag, request.tag);
     assert_eq!(license.name, request.name);
-    assert_eq!(license.description, request.text);
+    assert_eq!(license.text, request.text);
     assert_eq!(license.url, request.url);
 
     // List Licenses

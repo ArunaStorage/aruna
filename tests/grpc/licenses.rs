@@ -12,6 +12,7 @@ use aruna_rust_api::api::storage::{
         ListLicensesRequest,
     },
 };
+use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use itertools::Itertools;
 
 #[tokio::test]
@@ -141,11 +142,11 @@ async fn default_licenses() {
         .unwrap();
     assert_eq!(
         response.metadata_license_tag,
-        "All_Rights_Reserved".to_string()
+        ALL_RIGHTS_RESERVED.to_string()
     );
     assert_eq!(
         response.default_data_license_tag,
-        "All_Rights_Reserved".to_string()
+        ALL_RIGHTS_RESERVED.to_string()
     );
 
     // Create licenses and project with license
