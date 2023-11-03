@@ -471,7 +471,7 @@ impl MeilisearchClient {
         Ok(self
             .client
             .index(index_name)
-            .add_or_update(stuff, Some("id"))
+            .add_or_replace(stuff, Some("id"))
             .await?)
     }
 
